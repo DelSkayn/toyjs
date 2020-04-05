@@ -1,0 +1,15 @@
+[package]
+authors = ["delskayn <mees.delzenne@gmail.com>"]
+edition = "2018"
+name = "js"
+version = "0.1.0"
+
+[dependencies]
+unicode-xid = "0.2.0"
+
+[[example]]
+name = "ecma"
+path = "examples/ecma.rs"
+
+[dev-dependencies]
+walkdir = "2.3.1"
