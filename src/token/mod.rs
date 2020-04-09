@@ -1,6 +1,11 @@
-mod kw;
-pub use kw::*;
+use crate::source::Span;
+
 mod display;
+mod kw;
+mod op;
+
+pub use kw::*;
+pub use op::{BinOpToken, UnaryOpToken};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NumberKind {
@@ -22,35 +27,6 @@ pub enum DelimToken {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum BinOpToken {
-    /// -
-    Minus,
-    /// +
-    Plus,
-    /// *
-    Mul,
-    /// **
-    Exponentiate,
-    /// /
-    Div,
-    /// //
-    IntegerDiv,
-    /// %
-    Remainder,
-    /// <<
-    LeftShift,
-    /// >>
-    RightShift,
-    /// >>>
-    UnsignedRightShift,
-    /// &
-    BitwiseAnd,
-    /// ^
-    BitwiseXor,
-    /// |
-    BitwiseOr,
-}
-
 pub enum LitToken {
     String,
     Number { big: bool, kind: NumberKind },
@@ -59,12 +35,8 @@ pub enum LitToken {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind<'a> {
     Ident(&'a str),
-    String,
+    Lit(LitToken),
     Kw(Kw),
-    Number {
-        big: bool,
-        kind: NumberKind,
-    },
     /// ;
     SemiColon,
     /// (, [ or {,
@@ -73,16 +45,11 @@ pub enum TokenKind<'a> {
     DelimClose(DelimToken),
     BinOp(BinOpToken),
     BinOpAssign(BinOpToken),
-    /// ++
-    AddOne,
-    /// --
-    SubractOne,
+    UnaryOp(UnaryOpToken),
     /// **
     Exponentiate,
     /// **=
     ExponentiateAssign,
-    /// ~
-    BitwiseNot,
     /// <
     Less,
     /// <=
@@ -103,8 +70,6 @@ pub enum TokenKind<'a> {
     NotEqual,
     /// !==
     StrictNotEqual,
-    /// !
-    Not,
     /// .
     Dot,
     /// ..
@@ -127,13 +92,9 @@ pub enum TokenKind<'a> {
     NullCoalescing,
     /// ,
     Comma,
+    ///
+    LineTerminator,
     Unknown,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Span {
-    pub lo: u32,
-    pub hi: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

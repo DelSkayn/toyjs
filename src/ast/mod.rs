@@ -1,8 +1,70 @@
-use crate::token::Token;
+use crate::token::{Token, UnaryOpToken};
+
+#[derive(Debug)]
+pub enum PrimeExpr<'a> {
+    Literal {
+        token: Token<'a>,
+    },
+    Ident {
+        token: Token<'a>,
+    },
+    ArrayLiteral {
+        elems: Vec<Expr<'a>>,
+        spread: Box<Expr<'a>>,
+    },
+    ObjectLiteral,
+    Class,
+    Generator,
+    AsyncFunc,
+    AsyncGen,
+    Regular,
+    Template,
+}
+
+#[derive(Debug)]
+pub enum MemberExpr<'a> {
+    In {
+        left: Box<MemberExpr<'a>>,
+        right: Box<MemberExpr<'a>>,
+    },
+    Prime {
+        kind: PrimeExpr<'a>,
+    },
+    SuperDot,
+    SuperIndex {
+        expr: Expr<'a>,
+    },
+    Dot,
+    Index {
+        expr: Expr<'a>,
+    },
+    NewTarget,
+    ImportMeta,
+    New {
+        expr: Box<MemberExpr<'a>>,
+    },
+    NewCall {
+        expr: Box<MemberExpr<'a>>,
+        args: (),
+    },
+}
 
 #[derive(Debug)]
 pub enum Expr<'a> {
-    Literal { token: Token<'a> },
+    Literal {
+        token: Token<'a>,
+    },
+    Unary {
+        kind: UnaryOpToken,
+        prefix: bool,
+        arg: Box<Expr<'a>>,
+    },
+    Prime {
+        kind: PrimeExpr<'a>,
+    },
+    Lhs {
+        expr: Box<MemberExpr<'a>>,
+    },
 }
 
 #[derive(Debug)]
@@ -66,7 +128,9 @@ pub enum Stmt<'a> {
     Return,
     With,
     Labelled,
-    Throw,
+    Throw {
+        expr: Expr<'a>,
+    },
     Try {
         block: Box<Block<'a>>,
         catch: Option<Box<Catch<'a>>>,

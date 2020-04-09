@@ -1,21 +1,36 @@
 #[macro_export]
 macro_rules! tok {
+    ("target") => {
+        crate::token::TokenKind::Ident("target")
+    };
+    ("import") => {
+        crate::token::TokenKind::Ident("import")
+    };
+    ("meta") => {
+        crate::token::TokenKind::Ident("meta")
+    };
+    ("\n") => {
+        crate::token::TokenKind::LineTerminator
+    };
     (";") => {
         crate::token::TokenKind::SemiColon
     };
     ("++") => {
-        crate::token::TokenKind::AddOne
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::AddOne)
     };
     ("--") => {
-        crate::token::TokenKind::SubractOne
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::SubractOne)
     };
     ("~") => {
-        crate::token::TokenKind::BitwiseNot
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::BitwiseNot)
+    };
+    ("!") => {
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::Not)
     };
     ("<") => {
         crate::token::TokenKind::Less
     };
-    ("<= ") => {
+    ("<=") => {
         crate::token::TokenKind::LessEqual
     };
     (">") => {
@@ -41,9 +56,6 @@ macro_rules! tok {
     };
     ("!==") => {
         crate::token::TokenKind::StrictNotEqual
-    };
-    ("!") => {
-        crate::token::TokenKind::Not
     };
     (".") => {
         crate::token::TokenKind::Dot
@@ -140,6 +152,12 @@ macro_rules! tok {
     };
     ("+") => {
         crate::token::TokenKind::BinOp(crate::token::BinOpToken::Plus)
+    };
+    ("u-") => {
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::Negative)
+    };
+    ("u+") => {
+        crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::Positive)
     };
     ("*") => {
         crate::token::TokenKind::BinOp(crate::token::BinOpToken::Mul)
