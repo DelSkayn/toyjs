@@ -1,38 +1,46 @@
-use crate::token::{Span, Token, TokenKind};
+use crate::source::{Source, Span};
 use std::fmt;
 
-#[derive(Debug)]
-pub enum ParseErrorKind<'a> {
-    UnexpectedToken {
-        found: Token<'a>,
-        expected: &'static [TokenKind<'static>],
-    },
-    UnexpectedEnd,
-    Todo,
+pub enum ParseErrorKind {
+    Todo { file: &'static str, line: u32 },
 }
-impl<'a> fmt::Display for ParseErrorKind<'a> {
+
+impl fmt::Display for ParseErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use ParseErrorKind::*;
         match *self {
-            UnexpectedToken { found, expected: _ } => writeln!(
+            ParseErrorKind::Todo { file, line } => write!(
                 f,
-                "encountered unexpected token, found \"{}\", expected ",
-                found.kind
+                "parser encountered an unimplemented path in: {}:{}, Sorry!",
+                file, line
             ),
-            UnexpectedEnd => writeln!(f, "unexpected end of file"),
-            Todo => writeln!(f, "this syntax is not implemented yet"),
         }
     }
 }
 
-#[derive(Debug)]
 pub struct ParseError<'a> {
-    pub kind: ParseErrorKind<'a>,
-    pub span: Span,
+    pub kind: ParseErrorKind,
+    pub origin: Span,
+    pub source: Source<'a>,
 }
 
 impl<'a> fmt::Display for ParseError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "error: {}", self.kind)
+        writeln!(f, "error: {}", self.kind)?;
+        if let Some((a, _)) = self.source.get_source_position(self.origin) {
+            writeln!(f, "  --> {}:{}:{}", "??", a.line, a.column)?;
+            let line = self.source.line(a.line);
+            let num_chars = line[0 as usize..a.column as usize].chars().count();
+            writeln!(f, "\t | ")?;
+            writeln!(f, "{}\t | {}", a.line, line)?;
+            write!(f, "\t | ")?;
+            for _ in 0..num_chars {
+                write!(f, " ")?;
+            }
+            writeln!(f, "^")?;
+            writeln!(f, "\t | ")?;
+        } else {
+            writeln!(f, "  --> {}:??:??", "??")?;
+        }
+        Ok(())
     }
 }

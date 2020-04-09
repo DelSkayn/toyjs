@@ -1,4 +1,8 @@
-use crate::{tok, token::*};
+use crate::{
+    source::{Source, Span},
+    tok,
+    token::*,
+};
 use std::{convert::TryInto, str::Chars};
 mod chars;
 pub use crate::token::Kw;
@@ -53,6 +57,7 @@ pub struct Lexer<'a> {
     pub line: u64,
     pub column: u64,
     pub str_offset_start: usize,
+    pub src: Source<'a>,
     pub chars: CharStream<'a>,
     pub errors: Vec<LexerError>,
 }
@@ -70,6 +75,7 @@ impl<'a> Lexer<'a> {
         Lexer {
             line: 0,
             column: 0,
+            src: Source::new(source),
             str_offset_start: source.as_ptr() as usize,
             chars: CharStream::new(source),
             errors: Vec::new(),
@@ -93,7 +99,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some('+') => {
                     self.next_char();
-                    self.token(span, TokenKind::AddOne)
+                    self.token(span, tok!("++"))
                 }
                 _ => self.token(span, TokenKind::BinOp(BinOpToken::Plus)),
             },
@@ -104,7 +110,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some('-') => {
                     self.next_char();
-                    self.token(span, TokenKind::SubractOne)
+                    self.token(span, tok!("--"))
                 }
                 _ => self.token(span, TokenKind::BinOp(BinOpToken::Minus)),
             },
@@ -142,7 +148,7 @@ impl<'a> Lexer<'a> {
                 }
                 _ => self.token(span, tok!("/")),
             },
-            '~' => self.token(span, TokenKind::BitwiseNot),
+            '~' => self.token(span, tok!("~")),
             '%' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
@@ -222,7 +228,7 @@ impl<'a> Lexer<'a> {
                         _ => self.token(span, TokenKind::NotEqual),
                     }
                 }
-                _ => self.token(span, TokenKind::Not),
+                _ => self.token(span, tok!("!")),
             },
             '&' => match self.chars.peek() {
                 Some('=') => {
@@ -276,6 +282,12 @@ impl<'a> Lexer<'a> {
             },
             '"' => self.parse_string(span, '"'),
             '\'' => self.parse_string(span, '\''),
+            x if Lexer::is_line_terminator(x) => {
+                self.consume_line_terminator(x);
+                self.column = 0;
+                self.line += 1;
+                self.token(span, tok!("\n"))
+            }
             x if Lexer::is_whitespace(x) => self.parse_ident(span, x),
             x if x.is_digit(10) => self.parse_number(span, x),
             x if Lexer::is_token_start(x) => self.parse_ident(span, x),
@@ -305,12 +317,6 @@ impl<'a> Lexer<'a> {
             c = self.chars.next()?;
             self.column += 1;
             if Lexer::is_whitespace(c) {
-                continue;
-            }
-            if Lexer::is_line_terminator(c) {
-                self.consume_line_terminator(c);
-                self.column = 0;
-                self.line += 1;
                 continue;
             }
             if c == '/' {
@@ -473,20 +479,20 @@ impl<'a> Lexer<'a> {
                 None => {
                     return self.token(
                         span,
-                        TokenKind::Number {
+                        TokenKind::Lit(LitToken::Number {
                             big: false,
                             kind: NumberKind::Integer,
-                        },
+                        }),
                     )
                 }
                 Some('n') => {
                     self.chars.next();
                     return self.token(
                         span,
-                        TokenKind::Number {
+                        TokenKind::Lit(LitToken::Number {
                             big: true,
                             kind: NumberKind::Integer,
-                        },
+                        }),
                     );
                 }
                 Some('b') | Some('B') => {
@@ -529,10 +535,10 @@ impl<'a> Lexer<'a> {
         }
         self.token(
             span,
-            TokenKind::Number {
+            TokenKind::Lit(LitToken::Number {
                 big,
                 kind: NumberKind::Integer,
-            },
+            }),
         )
     }
 
@@ -549,10 +555,10 @@ impl<'a> Lexer<'a> {
         }
         self.token(
             span,
-            TokenKind::Number {
+            TokenKind::Lit(LitToken::Number {
                 big: false,
                 kind: NumberKind::Float,
-            },
+            }),
         )
     }
 
@@ -563,10 +569,10 @@ impl<'a> Lexer<'a> {
             self.error("missing exponent integer");
             return self.token(
                 span,
-                TokenKind::Number {
+                TokenKind::Lit(LitToken::Number {
                     big: false,
                     kind: num_kind,
-                },
+                }),
             );
         }
         let start = start.unwrap();
@@ -577,19 +583,19 @@ impl<'a> Lexer<'a> {
             }
             return self.token(
                 span,
-                TokenKind::Number {
+                TokenKind::Lit(LitToken::Number {
                     big: false,
                     kind: num_kind,
-                },
+                }),
             );
         }
         self.error("invalid exponent integer");
         self.token(
             span,
-            TokenKind::Number {
+            TokenKind::Lit(LitToken::Number {
                 big: false,
                 kind: num_kind,
-            },
+            }),
         )
     }
 
@@ -615,10 +621,10 @@ impl<'a> Lexer<'a> {
         }
         self.token(
             span,
-            TokenKind::Number {
+            TokenKind::Lit(LitToken::Number {
                 big,
                 kind: NumberKind::Binary,
-            },
+            }),
         )
     }
 
@@ -627,11 +633,11 @@ impl<'a> Lexer<'a> {
             let c = self.chars.next();
             if c.is_none() || Lexer::is_line_terminator(c.unwrap()) {
                 self.error("unterminated string");
-                return self.token(span, TokenKind::String);
+                return self.token(span, TokenKind::Lit(LitToken::String));
             }
             let c = c.unwrap();
             if c == start {
-                return self.token(span, TokenKind::String);
+                return self.token(span, TokenKind::Lit(LitToken::String));
             }
             // Parse escape codes
             if c == '\\' {
