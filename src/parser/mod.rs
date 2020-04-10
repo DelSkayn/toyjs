@@ -11,6 +11,7 @@ mod macros;
 mod error;
 pub use error::{ParseError, ParseErrorKind};
 
+mod expr;
 mod stmt;
 
 type PResult<'a, T> = Result<T, ParseError<'a>>;
@@ -97,12 +98,18 @@ impl<'a> Parser<'a> {
         return self.pref_span;
     }
 
+    pub fn cur_string(&mut self) -> &'a str {
+        self.source().str(self.cur_span())
+    }
+
     /// Parse a js script.
     /// One of the 2 entry points into parsing
     pub fn parse_script(&mut self) -> PResult<'a, Script<'a>> {
+        trace!("parse: script");
         let mut stmts = Vec::new();
         while self.peek().is_some() {
             stmts.push(self.parse_stmt()?);
+            eat!(self, ";");
         }
         Ok(Script { stmts })
     }
@@ -110,6 +117,7 @@ impl<'a> Parser<'a> {
     /// Parse a js module.
     /// One of the 2 entry points into parsing
     pub fn parse_module(&mut self) -> PResult<'a, Script<'a>> {
+        trace!("parse: module");
         to_do!(self)
     }
 }

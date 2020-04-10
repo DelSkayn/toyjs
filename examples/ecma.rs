@@ -20,6 +20,7 @@ fn run_file(path: &Path) -> bool {
 }
 
 fn main() {
+    env_logger::init();
     let mut count = 0;
     let mut finished = 0;
     for e in WalkDir::new("test262/test")
