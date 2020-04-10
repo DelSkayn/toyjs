@@ -86,6 +86,7 @@ impl<'a> Lexer<'a> {
         let (c, span) = self.next_char()?;
         let t = match c {
             ';' => self.token(span, tok!(";")),
+            ',' => self.token(span, tok!(",")),
             '(' => self.token(span, tok!("(")),
             ')' => self.token(span, tok!(")")),
             '{' => self.token(span, tok!("{")),

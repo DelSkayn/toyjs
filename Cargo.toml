@@ -6,6 +6,7 @@ version = "0.1.0"
 
 [dependencies]
 unicode-xid = "0.2.0"
+log = "0.4.8"
 
 [[example]]
 name = "ecma"
@@ -13,3 +14,4 @@ path = "examples/ecma.rs"
 
 [dev-dependencies]
 walkdir = "2.3.1"
+env_logger = "0.7.1"

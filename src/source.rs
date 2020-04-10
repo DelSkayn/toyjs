@@ -67,8 +67,12 @@ impl<'a> Source<'a> {
         Some((start, end))
     }
 
-    pub fn line(&'a self, line: u32) -> &'a str {
+    pub fn line(&self, line: u32) -> &'a str {
         let span = self.lines[(line - 1) as usize];
+        &self.src[span.lo as usize..span.hi as usize]
+    }
+
+    pub fn str(&self, span: Span) -> &'a str {
         &self.src[span.lo as usize..span.hi as usize]
     }
 }

@@ -1,16 +1,36 @@
 use crate::token::{Token, UnaryOpToken};
 
 #[derive(Debug)]
+pub enum Number {
+    Integer(u32),
+    Float(f64),
+}
+
+#[derive(Debug)]
+pub struct Parameters<'a> {
+    pub params: Vec<(Binding<'a>, Option<AssignExpr<'a>>)>,
+    pub rest: Option<Binding<'a>>,
+}
+
+#[derive(Debug)]
 pub enum PrimeExpr<'a> {
-    Literal {
-        token: Token<'a>,
-    },
+    String(&'a str),
+    Number(Number),
+    BinInt,
     Ident {
         token: Token<'a>,
     },
     ArrayLiteral {
         elems: Vec<Expr<'a>>,
         spread: Box<Expr<'a>>,
+    },
+    This,
+    Null,
+    Boolean(bool),
+    Function {
+        binding: Option<Token<'a>>,
+        params: Parameters<'a>,
+        block: Block<'a>,
     },
     ObjectLiteral,
     Class,
@@ -22,10 +42,15 @@ pub enum PrimeExpr<'a> {
 }
 
 #[derive(Debug)]
-pub enum MemberExpr<'a> {
+pub struct Arguments<'a> {
+    pub args: Vec<AssignExpr<'a>>,
+}
+
+#[derive(Debug)]
+pub enum AssignExpr<'a> {
     In {
-        left: Box<MemberExpr<'a>>,
-        right: Box<MemberExpr<'a>>,
+        left: Box<AssignExpr<'a>>,
+        right: Token<'a>,
     },
     Prime {
         kind: PrimeExpr<'a>,
@@ -40,12 +65,16 @@ pub enum MemberExpr<'a> {
     },
     NewTarget,
     ImportMeta,
+    Call {
+        expr: Box<AssignExpr<'a>>,
+        args: Arguments<'a>,
+    },
     New {
-        expr: Box<MemberExpr<'a>>,
+        expr: Box<AssignExpr<'a>>,
     },
     NewCall {
-        expr: Box<MemberExpr<'a>>,
-        args: (),
+        expr: Box<AssignExpr<'a>>,
+        args: Arguments<'a>,
     },
 }
 
@@ -62,14 +91,14 @@ pub enum Expr<'a> {
     Prime {
         kind: PrimeExpr<'a>,
     },
-    Lhs {
-        expr: Box<MemberExpr<'a>>,
+    AssignExpr {
+        expr: Box<AssignExpr<'a>>,
     },
 }
 
 #[derive(Debug)]
 pub struct Catch<'a> {
-    pub param: Binding<'a>,
+    pub param: Option<Binding<'a>>,
     pub block: Block<'a>,
 }
 
@@ -77,10 +106,7 @@ pub struct Catch<'a> {
 pub enum Binding<'a> {
     ObjectPattern,
     ArrayPattern,
-    Ident {
-        ident: Token<'a>,
-        initializer: Option<Expr<'a>>,
-    },
+    Ident { ident: Token<'a> },
 }
 
 #[derive(Debug)]
@@ -88,6 +114,12 @@ pub enum LexicalKind {
     Var,
     Const,
     Let,
+}
+
+#[derive(Debug)]
+pub struct LexicalDecl<'a> {
+    pub binding: Binding<'a>,
+    pub initializer: Option<AssignExpr<'a>>,
 }
 
 #[derive(Debug)]
@@ -101,7 +133,7 @@ pub enum DeclKind<'a> {
     Lexical {
         /// Wether the binding is const, otherwise it is let
         kind: LexicalKind,
-        bindings: Vec<Binding<'a>>,
+        decl: Vec<LexicalDecl<'a>>,
     },
 }
 
@@ -129,12 +161,12 @@ pub enum Stmt<'a> {
     With,
     Labelled,
     Throw {
-        expr: Expr<'a>,
+        exprs: Vec<AssignExpr<'a>>,
     },
     Try {
-        block: Box<Block<'a>>,
-        catch: Option<Box<Catch<'a>>>,
-        finally: Option<Box<Block<'a>>>,
+        block: Block<'a>,
+        catch: Option<Catch<'a>>,
+        finally: Option<Block<'a>>,
     },
     Debugger,
 }
