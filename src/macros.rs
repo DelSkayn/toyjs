@@ -3,11 +3,17 @@ macro_rules! tok {
     ("target") => {
         crate::token::TokenKind::Ident("target")
     };
+    ("of") => {
+        crate::token::TokenKind::Ident("of")
+    };
     ("string") => {
         crate::token::TokenKind::Lit(crate::token::LitToken::String)
     };
     ("number") => {
         crate::token::TokenKind::Lit(crate::token::LitToken::Number{big:_,kind:_})
+    };
+    ("lit") => {
+        crate::token::TokenKind::Lit(_)
     };
     ("import") => {
         crate::token::TokenKind::Ident("import")

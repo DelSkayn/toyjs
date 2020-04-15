@@ -56,8 +56,6 @@ impl fmt::Display for TokenKind<'_> {
                 DelimToken::Paren => write!(f, ")"),
             },
             TokenKind::UnaryOp(x) => write!(f, "{}", x),
-            TokenKind::Exponentiate => write!(f, "**"),
-            TokenKind::ExponentiateAssign => write!(f, "**="),
             TokenKind::Less => write!(f, "<"),
             TokenKind::LessEqual => write!(f, "<="),
             TokenKind::Greater => write!(f, ">"),

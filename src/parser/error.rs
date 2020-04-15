@@ -13,27 +13,84 @@ pub enum ParseErrorKind<'a> {
     UnexpectedToken {
         found: Option<Token<'a>>,
         expected: &'static [&'static str],
+        reason: Option<&'static str>,
     },
 }
 
-impl<'a> fmt::Display for ParseErrorKind<'a> {
+pub struct ParseError<'a> {
+    pub kind: ParseErrorKind<'a>,
+    pub origin: Span,
+    pub source: Source<'a>,
+}
+
+impl<'a> ParseError<'a> {
+    fn fmt_span(&self, f: &mut fmt::Formatter<'_>, span: Span) -> fmt::Result {
+        if let Some((a, _)) = self.source.get_source_position(span) {
+            writeln!(f, "  --> {}:{}:{}", "??", a.line, a.column)?;
+        } else {
+            writeln!(f, "  --> {}:??:??", "??")?;
+        }
+        Ok(())
+    }
+
+    fn fmt_span_src(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        span: Span,
+        message: Option<&'static str>,
+    ) -> fmt::Result {
+        if let Some((a, _)) = self.source.get_source_position(span) {
+            let line = self.source.line(a.line);
+            let num_chars = line[0 as usize..a.column as usize].chars().count();
+            writeln!(f, "\t | ")?;
+            writeln!(f, "{}\t | {}", a.line, line)?;
+            write!(f, "\t | ")?;
+            for _ in 0..num_chars {
+                write!(f, " ")?;
+            }
+            write!(f, "^")?;
+            if let Some(m) = message {
+                writeln!(f, " {}", m)?;
+            } else {
+                writeln!(f, "")?;
+            }
+            writeln!(f, "\t | ")?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> fmt::Display for ParseError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            ParseErrorKind::UnexpectedLineTerminator => write!(
-                f,
-                "unexpected line terminator, syntax forbids line terminator at this point",
-            ),
-            ParseErrorKind::Todo { file, line } => write!(
-                f,
-                "parser encountered an unimplemented path in: {}:{}, Sorry!",
-                file, line
-            ),
-            ParseErrorKind::UnexpectedToken { found, expected } => {
+        write!(f, "error: ")?;
+        match self.kind {
+            ParseErrorKind::UnexpectedLineTerminator => {
+                writeln!(
+                    f,
+                    "unexpected line terminator, syntax forbids line terminator at this point",
+                )?;
+                self.fmt_span(f, self.origin)?;
+                self.fmt_span_src(f, self.origin, None)
+            }
+            ParseErrorKind::Todo { file, line } => {
+                writeln!(
+                    f,
+                    "parser encountered an unimplemented path in: {}:{}, Sorry!",
+                    file, line
+                )?;
+                self.fmt_span(f, self.origin)?;
+                self.fmt_span_src(f, self.origin, None)
+            }
+            ParseErrorKind::UnexpectedToken {
+                found,
+                expected,
+                reason,
+            } => {
                 found
-                    .map(|found| write!(f, "unexpected token: found '{}' expected", found.kind))
+                    .map(|found| write!(f, "unexpected token: found '{}' expected ", found.kind))
                     .unwrap_or_else(|| write!(f, "unexpected token: found 'EOF' expected"))?;
                 if expected.len() > 1 {
-                    write!(f, " on of: [")?;
+                    write!(f, "one of: [")?;
                     let mut first = true;
                     for e in expected.iter() {
                         if !first {
@@ -49,36 +106,10 @@ impl<'a> fmt::Display for ParseErrorKind<'a> {
                 } else {
                     write!(f, "'EOF'")?;
                 }
-                Ok(())
+                writeln!(f, "")?;
+                self.fmt_span(f, self.origin)?;
+                self.fmt_span_src(f, self.origin, reason)
             }
         }
-    }
-}
-
-pub struct ParseError<'a> {
-    pub kind: ParseErrorKind<'a>,
-    pub origin: Span,
-    pub source: Source<'a>,
-}
-
-impl<'a> fmt::Display for ParseError<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "error: {}", self.kind)?;
-        if let Some((a, _)) = self.source.get_source_position(self.origin) {
-            writeln!(f, "  --> {}:{}:{}", "??", a.line, a.column)?;
-            let line = self.source.line(a.line);
-            let num_chars = line[0 as usize..a.column as usize].chars().count();
-            writeln!(f, "\t | ")?;
-            writeln!(f, "{}\t | {}", a.line, line)?;
-            write!(f, "\t | ")?;
-            for _ in 0..num_chars {
-                write!(f, " ")?;
-            }
-            writeln!(f, "^")?;
-            writeln!(f, "\t | ")?;
-        } else {
-            writeln!(f, "  --> {}:??:??", "??")?;
-        }
-        Ok(())
     }
 }

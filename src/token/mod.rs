@@ -46,10 +46,6 @@ pub enum TokenKind<'a> {
     BinOp(BinOpToken),
     BinOpAssign(BinOpToken),
     UnaryOp(UnaryOpToken),
-    /// **
-    Exponentiate,
-    /// **=
-    ExponentiateAssign,
     /// <
     Less,
     /// <=

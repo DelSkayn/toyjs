@@ -1,7 +1,7 @@
 macro_rules! is {
-    ($p:expr,$t:tt) => {
+    ($p:expr$(,$t:tt)+) => {
         match $p.peek().map(|e| e.kind) {
-            Some(tok!($t)) => true,
+            $(Some(tok!($t)) => true,)*
             _ => false,
         }
     };
@@ -36,41 +36,49 @@ macro_rules! syntax_error {
     }};
 }
 macro_rules! unexpected{
-    ($s:expr$(,$t:tt)* $(,)*) => {
+    ($s:expr$(,$t:tt)*  $(=> $r:tt)*) => {
         syntax_error!($s,crate::parser::ParseErrorKind::UnexpectedToken{
             found: $s.peek(),
             expected: &[$($t,)*],
+            reason: unexpected!(=> $($r)*)
         });
     };
+    (=> $r:tt) => {
+        Some($r)
+    };
+    (=>) => {
+        None
+    }
+}
+
+macro_rules! is_lt {
+    ($s:expr) => {{
+        $s.peek_with_lt()
+            .map(|e| e.kind == tok!("\n"))
+            .unwrap_or(false)
+    }};
 }
 
 macro_rules! no_lt {
     ($s:expr) => {{
-        if $s
-            .peek_with_lt()
-            .map(|e| e.kind == tok!("\n"))
-            .unwrap_or(false)
-        {
+        if is_lt!($s) {
             syntax_error!($s, crate::parser::ParseErrorKind::UnexpectedLineTerminator);
         }
     }};
 }
 
 macro_rules! expect{
-    ($s:expr$(,$t:tt)* $(,)*) => {
+    ($s:expr$(,$t:tt)* $(=> $r:tt)*) => {{
         let p = $s.peek();
         match p.map(|e| e.kind){
             $(Some(tok!($t)) => {
-                $s.next();
+                $s.next().unwrap()
             })*
             _ => {
-                syntax_error!($s,crate::parser::ParseErrorKind::UnexpectedToken{
-                    found: p,
-                    expected: &[$($t,)*]
-                });
+                unexpected!($s $(,$t)* $(=> $r)*)
             }
         }
-    }
+    }};
 }
 
 macro_rules! trace_log {

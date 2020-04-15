@@ -11,6 +11,7 @@ mod macros;
 mod error;
 pub use error::{ParseError, ParseErrorKind};
 
+mod decl;
 mod expr;
 mod stmt;
 
@@ -20,6 +21,7 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     peek: Option<Token<'a>>,
     pref_span: Span,
+    breakable: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -28,25 +30,36 @@ impl<'a> Parser<'a> {
             lexer,
             peek: None,
             pref_span: Span { lo: 0, hi: 0 },
+            breakable: false,
         }
     }
 
+    pub fn is_lt(&mut self) -> bool {
+        self.peek_with_lt()
+            .map(|e| e.kind == tok!("\n"))
+            .unwrap_or(false)
+    }
+
     pub fn peek_with_lt(&mut self) -> Option<Token<'a>> {
-        match self.peek {
+        let res = match self.peek {
             Some(x) => Some(x),
             None => {
                 self.peek = self.lexer.next();
                 self.peek
             }
-        }
+        };
+        trace!("peek {:?}", res);
+        res
     }
 
     pub fn next_with_lt(&mut self) -> Option<Token<'a>> {
-        self.peek.take().or_else(|| {
+        let res = self.peek.take().or_else(|| {
             let l = self.lexer.next();
             l.map(|e| self.pref_span = e.span);
             l
-        })
+        });
+        trace!("next {:?}", res);
+        res
     }
 
     pub fn eat_with_lt(&mut self, kind: TokenKind) -> bool {

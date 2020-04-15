@@ -125,9 +125,9 @@ impl<'a> Lexer<'a> {
                     match self.chars.peek() {
                         Some('=') => {
                             self.next_char();
-                            self.token(span, TokenKind::ExponentiateAssign)
+                            self.token(span, tok!("**="))
                         }
-                        _ => self.token(span, TokenKind::Exponentiate),
+                        _ => self.token(span, tok!("**")),
                     }
                 }
                 _ => self.token(span, TokenKind::BinOp(BinOpToken::Mul)),
