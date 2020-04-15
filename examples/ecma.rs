@@ -9,11 +9,11 @@ fn run_file(path: &Path) -> bool {
     let l = lexer::Lexer::new(&buffer);
     let mut p = parser::Parser::new(l);
     match p.parse_script() {
-        Ok(x) => true,
+        Ok(_) => true,
         Err(e) => {
             println!("in file: {}", path.display());
             println!("{}", e);
-            panic!();
+            //panic!();
             false
         }
     }
