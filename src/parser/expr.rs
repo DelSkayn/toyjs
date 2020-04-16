@@ -1,5 +1,7 @@
+use super::error::NumberParseErrorKind;
 use super::*;
 use crate::token::{LitToken, NumberKind, TokenKind};
+use std::num::ParseIntError;
 
 impl<'a> Parser<'a> {
     pub fn parse_expr(&mut self) -> PResult<'a, Expr<'a>> {
@@ -130,7 +132,8 @@ impl<'a> Parser<'a> {
                 return Ok(Some(LhsExpr::SuperCall { args }));
             }
             unexpected!(self, "[", ".", "(")
-        } else if eat!(self, "new") {
+        }
+        if eat!(self, "new") {
             //TODO parse "new new bla(x)" correctly
             if eat!(self, ".") {
                 expect!(self, "target");
@@ -138,7 +141,8 @@ impl<'a> Parser<'a> {
             }
             let target = Box::new(self.parse_lhs_expr()?);
             return Ok(Some(LhsExpr::New { target }));
-        } else if eat!(self, "import") {
+        }
+        if eat!(self, "import") {
             if is!(self, ".") {
                 expect!(self, ".");
                 expect!(self, "meta");
@@ -149,13 +153,16 @@ impl<'a> Parser<'a> {
                 expect!(self, ")");
                 return Ok(Some(LhsExpr::ImportCall { expr }));
             }
-        } else if eat!(self, "typeof") {
+        }
+        if eat!(self, "typeof") {
             let target = Box::new(self.parse_lhs_expr()?);
             return Ok(Some(LhsExpr::Typeof { target }));
-        } else if eat!(self, "void") {
+        }
+        if eat!(self, "void") {
             let target = Box::new(self.parse_lhs_expr()?);
             return Ok(Some(LhsExpr::Void { target }));
-        } else if eat!(self, "delete") {
+        }
+        if eat!(self, "delete") {
             let target = Box::new(self.parse_lhs_expr()?);
             return Ok(Some(LhsExpr::Delete { target }));
         }
@@ -269,14 +276,49 @@ impl<'a> Parser<'a> {
                     Ok(x) => x,
                     _ => to_do!(self),
                 }),
-                _ => Number::Integer(match self.cur_string().parse() {
-                    Ok(x) => x,
-                    e => {
-                        error!("{:?}", e);
-                        error!("{}", self.cur_string());
-                        to_do!(self)
-                    }
-                }),
+                NumberKind::Integer => self
+                    .cur_string()
+                    .parse()
+                    .map(Number::Integer)
+                    .or_else(|_| self.cur_string().parse().map(Number::Float))
+                    .or_else(|e| {
+                        syntax_error!(
+                            self,
+                            ParseErrorKind::NumberParseError {
+                                kind: NumberParseErrorKind::Float(e)
+                            }
+                        )
+                    })?,
+                NumberKind::Hex => u32::from_str_radix(&self.cur_string()[2..], 16)
+                    .map(Number::Integer)
+                    .or_else(|e| {
+                        syntax_error!(
+                            self,
+                            ParseErrorKind::NumberParseError {
+                                kind: NumberParseErrorKind::Integer(e)
+                            }
+                        )
+                    })?,
+                NumberKind::Octal => u32::from_str_radix(&self.cur_string()[2..], 8)
+                    .map(Number::Integer)
+                    .or_else(|e| {
+                        syntax_error!(
+                            self,
+                            ParseErrorKind::NumberParseError {
+                                kind: NumberParseErrorKind::Integer(e)
+                            }
+                        )
+                    })?,
+                NumberKind::Binary => u32::from_str_radix(&self.cur_string()[2..], 2)
+                    .map(Number::Integer)
+                    .or_else(|e| {
+                        syntax_error!(
+                            self,
+                            ParseErrorKind::NumberParseError {
+                                kind: NumberParseErrorKind::Integer(e)
+                            }
+                        )
+                    })?,
             };
             self.next();
             return Ok(PrimeExpr::Number(num));

@@ -1,4 +1,8 @@
-use std::{convert::TryInto, sync::Arc};
+use std::{
+    convert::TryInto,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Span {
@@ -18,10 +22,11 @@ pub struct Source<'a> {
     base_offset: usize,
     lines: Arc<Vec<Span>>,
     src: &'a str,
+    path: Option<PathBuf>,
 }
 
 impl<'a> Source<'a> {
-    pub fn new(src: &'a str) -> Self {
+    pub fn new(src: &'a str, path: Option<PathBuf>) -> Self {
         let base_offset = src.as_ptr() as usize;
         let lines = Arc::new(
             src.lines()
@@ -39,6 +44,7 @@ impl<'a> Source<'a> {
             base_offset,
             lines,
             src,
+            path,
         }
     }
 
@@ -74,5 +80,9 @@ impl<'a> Source<'a> {
 
     pub fn str(&self, span: Span) -> &'a str {
         &self.src[span.lo as usize..span.hi as usize]
+    }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_ref().map(|x| x.as_path())
     }
 }

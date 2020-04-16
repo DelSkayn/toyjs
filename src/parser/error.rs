@@ -2,7 +2,22 @@ use crate::{
     source::{Source, Span},
     token::Token,
 };
-use std::fmt;
+use std::{fmt, num};
+
+#[derive(Debug, Clone)]
+pub enum NumberParseErrorKind {
+    Integer(num::ParseIntError),
+    Float(num::ParseFloatError),
+}
+
+impl fmt::Display for NumberParseErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            NumberParseErrorKind::Integer(ref x) => write!(f, "{}", x),
+            NumberParseErrorKind::Float(ref x) => write!(f, "{}", x),
+        }
+    }
+}
 
 pub enum ParseErrorKind<'a> {
     UnexpectedLineTerminator,
@@ -15,6 +30,9 @@ pub enum ParseErrorKind<'a> {
         expected: &'static [&'static str],
         reason: Option<&'static str>,
     },
+    NumberParseError {
+        kind: NumberParseErrorKind,
+    },
 }
 
 pub struct ParseError<'a> {
@@ -25,10 +43,16 @@ pub struct ParseError<'a> {
 
 impl<'a> ParseError<'a> {
     fn fmt_span(&self, f: &mut fmt::Formatter<'_>, span: Span) -> fmt::Result {
-        if let Some((a, _)) = self.source.get_source_position(span) {
-            writeln!(f, "  --> {}:{}:{}", "??", a.line, a.column)?;
+        write!(f, " --> ")?;
+        if let Some(x) = self.source.path() {
+            write!(f, "{}", x.display())?;
         } else {
-            writeln!(f, "  --> {}:??:??", "??")?;
+            write!(f, "??")?;
+        }
+        if let Some((a, _)) = self.source.get_source_position(span) {
+            writeln!(f, ":{}:{}", a.line, a.column)?;
+        } else {
+            writeln!(f, ":??:??")?;
         }
         Ok(())
     }
@@ -80,6 +104,9 @@ impl<'a> fmt::Display for ParseError<'a> {
                 )?;
                 self.fmt_span(f, self.origin)?;
                 self.fmt_span_src(f, self.origin, None)
+            }
+            ParseErrorKind::NumberParseError { ref kind } => {
+                writeln!(f, "encountered invalid number: {}", kind)
             }
             ParseErrorKind::UnexpectedToken {
                 found,

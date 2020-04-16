@@ -3,7 +3,11 @@ use crate::{
     tok,
     token::*,
 };
-use std::{convert::TryInto, str::Chars};
+use std::{
+    convert::TryInto,
+    path::{Path, PathBuf},
+    str::Chars,
+};
 mod chars;
 pub use crate::token::Kw;
 use unicode_xid::UnicodeXID;
@@ -71,11 +75,11 @@ impl<'a> Iterator for Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub fn new(source: &'a str, path: Option<PathBuf>) -> Self {
         Lexer {
             line: 0,
             column: 0,
-            src: Source::new(source),
+            src: Source::new(source, path),
             str_offset_start: source.as_ptr() as usize,
             chars: CharStream::new(source),
             errors: Vec::new(),
@@ -620,13 +624,7 @@ impl<'a> Lexer<'a> {
             self.chars.next();
             big = true;
         }
-        self.token(
-            span,
-            TokenKind::Lit(LitToken::Number {
-                big,
-                kind: NumberKind::Binary,
-            }),
-        )
+        self.token(span, TokenKind::Lit(LitToken::Number { big, kind }))
     }
 
     fn parse_string(&mut self, span: &'a str, start: char) -> Token<'a> {
