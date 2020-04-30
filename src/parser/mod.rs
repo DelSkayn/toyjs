@@ -13,6 +13,7 @@ pub use error::{ParseError, ParseErrorKind};
 
 mod decl;
 mod expr;
+mod prime;
 mod stmt;
 
 type PResult<'a, T> = Result<T, ParseError<'a>>;
@@ -79,6 +80,10 @@ impl<'a> Parser<'a> {
             self.next_with_lt();
         }
         None
+    }
+
+    pub fn peek_kind(&mut self) -> Option<TokenKind<'a>> {
+        self.peek().map(|t| t.kind)
     }
 
     pub fn next(&mut self) -> Option<Token<'a>> {

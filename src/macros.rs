@@ -43,16 +43,16 @@ macro_rules! tok {
         crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::Not)
     };
     ("<") => {
-        crate::token::TokenKind::Less
+        crate::token::TokenKind::Relation(RelationToken::Less)
     };
     ("<=") => {
-        crate::token::TokenKind::LessEqual
+        crate::token::TokenKind::Relation(RelationToken::LessEqual)
     };
     (">") => {
-        crate::token::TokenKind::Greater
+        crate::token::TokenKind::Relation(RelationToken::Greater)
     };
     (">=") => {
-        crate::token::TokenKind::GreaterEqual
+        crate::token::TokenKind::Relation(RelationToken::GreaterEqual)
     };
     ("=") => {
         crate::token::TokenKind::Assign
@@ -61,16 +61,16 @@ macro_rules! tok {
         crate::token::TokenKind::Arrow
     };
     ("==") => {
-        crate::token::TokenKind::Equal
+        crate::token::TokenKind::Relation(RelationToken::Equal)
     };
     ("===") => {
-        crate::token::TokenKind::StrictEqual
+        crate::token::TokenKind::Relation(RelationToken::StrictEqual)
     };
     ("!=") => {
-        crate::token::TokenKind::NotEqual
+        crate::token::TokenKind::Relation(RelationToken::NotEqual)
     };
     ("!==") => {
-        crate::token::TokenKind::StrictNotEqual
+        crate::token::TokenKind::Relation(RelationToken::StrictNotEqual)
     };
     (".") => {
         crate::token::TokenKind::Dot

@@ -49,3 +49,25 @@ pub enum UnaryOpToken {
     /// typeof
     Typeof,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RelationToken {
+    /// <
+    Less,
+    /// <=
+    LessEqual,
+    /// >
+    Greater,
+    /// >=
+    GreaterEqual,
+    /// =>
+    Arrow,
+    /// ==
+    Equal,
+    /// ===
+    StrictEqual,
+    /// !=
+    NotEqual,
+    /// !==
+    StrictNotEqual,
+}
