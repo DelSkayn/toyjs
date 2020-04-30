@@ -43,7 +43,7 @@ fn main() {
         println!("100% COVERAGE Hurray! 🎉🎉")
     }
     println!(
-        "[num tests: {} | succesfull: {}] = rate: {}",
+        "Parsing: \n[num tests: {} | succesfull: {}] = rate: {}",
         count,
         finished,
         finished as f32 / count as f32

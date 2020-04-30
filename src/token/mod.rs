@@ -5,7 +5,7 @@ mod kw;
 mod op;
 
 pub use kw::*;
-pub use op::{BinOpToken, UnaryOpToken};
+pub use op::{BinOpToken, RelationToken, UnaryOpToken};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NumberKind {
@@ -46,26 +46,9 @@ pub enum TokenKind<'a> {
     BinOp(BinOpToken),
     BinOpAssign(BinOpToken),
     UnaryOp(UnaryOpToken),
-    /// <
-    Less,
-    /// <=
-    LessEqual,
-    /// >
-    Greater,
-    /// >=
-    GreaterEqual,
+    Relation(RelationToken),
     /// =
     Assign,
-    /// =>
-    Arrow,
-    /// ==
-    Equal,
-    /// ===
-    StrictEqual,
-    /// !=
-    NotEqual,
-    /// !==
-    StrictNotEqual,
     /// .
     Dot,
     /// ..

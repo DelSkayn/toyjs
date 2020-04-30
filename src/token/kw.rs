@@ -40,7 +40,6 @@ pub enum Kw {
     Void,
     While,
     With,
-    Yield,
 }
 
 impl Kw {
@@ -84,7 +83,6 @@ impl Kw {
             Kw::Void => "void",
             Kw::While => "while",
             Kw::With => "with",
-            Kw::Yield => "yield",
         }
     }
 }

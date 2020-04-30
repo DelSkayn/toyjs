@@ -235,7 +235,7 @@ impl<'a> Parser<'a> {
             let expr = self.parse_expr()?;
             if expr.exprs.len() == 1 {
                 match expr.exprs.into_iter().next().unwrap() {
-                    AssignExpr::Lhs { expr } => Some(ForDecl::LhsExpr(expr)),
+                    AssignExpr::LhsExpr(expr) => Some(ForDecl::LhsExpr(expr)),
                     x => Some(ForDecl::Expr(Expr { exprs: vec![x] })),
                 }
             } else {

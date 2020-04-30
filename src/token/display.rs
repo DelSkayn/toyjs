@@ -1,4 +1,4 @@
-use super::{BinOpToken, DelimToken, LitToken, TokenKind, UnaryOpToken};
+use super::{BinOpToken, DelimToken, LitToken, RelationToken, TokenKind, UnaryOpToken};
 use std::fmt;
 
 impl fmt::Display for UnaryOpToken {
@@ -37,6 +37,22 @@ impl fmt::Display for BinOpToken {
     }
 }
 
+impl fmt::Display for RelationToken {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RelationToken::Less => write!(f, "<"),
+            RelationToken::LessEqual => write!(f, "<="),
+            RelationToken::Greater => write!(f, ">"),
+            RelationToken::GreaterEqual => write!(f, ">="),
+            RelationToken::Arrow => write!(f, "=>"),
+            RelationToken::Equal => write!(f, "=="),
+            RelationToken::StrictEqual => write!(f, "==="),
+            RelationToken::NotEqual => write!(f, "!="),
+            RelationToken::StrictNotEqual => write!(f, "!=="),
+        }
+    }
+}
+
 impl fmt::Display for TokenKind<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -56,16 +72,8 @@ impl fmt::Display for TokenKind<'_> {
                 DelimToken::Paren => write!(f, ")"),
             },
             TokenKind::UnaryOp(x) => write!(f, "{}", x),
-            TokenKind::Less => write!(f, "<"),
-            TokenKind::LessEqual => write!(f, "<="),
-            TokenKind::Greater => write!(f, ">"),
-            TokenKind::GreaterEqual => write!(f, ">="),
+            TokenKind::Relation(x) => write!(f, "{}", x),
             TokenKind::Assign => write!(f, "="),
-            TokenKind::Arrow => write!(f, "=>"),
-            TokenKind::Equal => write!(f, "=="),
-            TokenKind::StrictEqual => write!(f, "==="),
-            TokenKind::NotEqual => write!(f, "!="),
-            TokenKind::StrictNotEqual => write!(f, "!=="),
             TokenKind::Dot => write!(f, "."),
             TokenKind::DotDot => write!(f, ".."),
             TokenKind::DotDotDot => write!(f, "..."),

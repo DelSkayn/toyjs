@@ -115,7 +115,7 @@ impl<'a> fmt::Display for ParseError<'a> {
             } => {
                 found
                     .map(|found| write!(f, "unexpected token: found '{}' expected ", found.kind))
-                    .unwrap_or_else(|| write!(f, "unexpected token: found 'EOF' expected"))?;
+                    .unwrap_or_else(|| write!(f, "unexpected token"))?;
                 if expected.len() > 1 {
                     write!(f, "one of: [")?;
                     let mut first = true;

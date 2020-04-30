@@ -1,4 +1,4 @@
-use crate::token::{BinOpToken, Token, UnaryOpToken};
+use crate::token::{BinOpToken, RelationToken, Token, UnaryOpToken};
 
 #[derive(Debug)]
 pub enum Number {
@@ -75,56 +75,51 @@ pub enum PrimeExpr<'a> {
 #[derive(Debug)]
 pub struct Arguments<'a> {
     pub args: Vec<AssignExpr<'a>>,
+    pub rest: Option<Box<AssignExpr<'a>>>,
 }
 
 #[derive(Debug)]
 pub enum LhsExpr<'a> {
+    New(Box<LhsExpr<'a>>),
     Prime(PrimeExpr<'a>),
+    Import(Box<AssignExpr<'a>>),
+    SuperCall(Arguments<'a>),
+    SuperIdx(Expr<'a>),
+    SuperDot(Token<'a>),
+    ImportMeta,
+    NewTarget,
     Index {
-        on: Box<LhsExpr<'a>>,
-        idx: Expr<'a>,
+        lhs: Box<LhsExpr<'a>>,
+        expr: Expr<'a>,
     },
     Dot {
-        on: Box<LhsExpr<'a>>,
+        lhs: Box<LhsExpr<'a>>,
         ident: Token<'a>,
     },
     Call {
-        on: Box<LhsExpr<'a>>,
+        lhs: Box<LhsExpr<'a>>,
         args: Arguments<'a>,
-    },
-    SuperDot {
-        ident: Token<'a>,
-    },
-    SuperIndex {
-        idx: Expr<'a>,
-    },
-    NewTarget,
-    ImportMeta,
-    ImportCall {
-        expr: Box<AssignExpr<'a>>,
-    },
-    SuperCall {
-        args: Arguments<'a>,
-    },
-    New {
-        target: Box<LhsExpr<'a>>,
-    },
-    Typeof {
-        target: Box<LhsExpr<'a>>,
-    },
-    Void {
-        target: Box<LhsExpr<'a>>,
-    },
-    Delete {
-        target: Box<LhsExpr<'a>>,
     },
 }
 
 #[derive(Debug)]
 pub enum AssignExpr<'a> {
-    Lhs {
-        expr: LhsExpr<'a>,
+    Delete(Box<AssignExpr<'a>>),
+    Void(Box<AssignExpr<'a>>),
+    Typeof(Box<AssignExpr<'a>>),
+    Positive(Box<AssignExpr<'a>>),
+    Negative(Box<AssignExpr<'a>>),
+    BinaryNot(Box<AssignExpr<'a>>),
+    Not(Box<AssignExpr<'a>>),
+    Unary {
+        op: UnaryOpToken,
+        expr: Box<AssignExpr<'a>>,
     },
+    Post {
+        incr: bool,
+        expr: Box<AssignExpr<'a>>,
+    },
+    LhsExpr(LhsExpr<'a>),
     Assign {
         lhs: LhsExpr<'a>,
         expr: Box<AssignExpr<'a>>,
@@ -135,19 +130,22 @@ pub enum AssignExpr<'a> {
         expr: Box<AssignExpr<'a>>,
     },
     BinOp {
-        lhs: LhsExpr<'a>,
+        lhs: Box<AssignExpr<'a>>,
         op: BinOpToken,
         expr: Box<AssignExpr<'a>>,
     },
-    ShortCircuit {
-        left: Box<AssignExpr<'a>>,
-        right: Box<AssignExpr<'a>>,
+    Relation {
+        lhs: Box<AssignExpr<'a>>,
+        rel: RelationToken,
+        expr: Box<AssignExpr<'a>>,
     },
-    Equal {
-        strict: bool,
-        not: bool,
-        left: Box<AssignExpr<'a>>,
-        right: Box<AssignExpr<'a>>,
+    Instanceof {
+        lhs: Box<AssignExpr<'a>>,
+        expr: Box<AssignExpr<'a>>,
+    },
+    In {
+        lhs: Box<AssignExpr<'a>>,
+        expr: Box<AssignExpr<'a>>,
     },
 }
 

@@ -164,7 +164,7 @@ impl<'a> Lexer<'a> {
             '<' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
-                    self.token(span, TokenKind::LessEqual)
+                    self.token(span, tok!("<="))
                 }
                 Some('<') => {
                     self.next_char();
@@ -176,12 +176,12 @@ impl<'a> Lexer<'a> {
                         _ => self.token(span, TokenKind::BinOp(BinOpToken::LeftShift)),
                     }
                 }
-                _ => self.token(span, TokenKind::Less),
+                _ => self.token(span, tok!("<")),
             },
             '>' => match self.chars.peek() {
                 Some('=') => {
                     self.next_char();
-                    self.token(span, TokenKind::GreaterEqual)
+                    self.token(span, tok!(">="))
                 }
                 Some('>') => {
                     self.next_char();
@@ -207,7 +207,7 @@ impl<'a> Lexer<'a> {
                         _ => self.token(span, TokenKind::BinOp(BinOpToken::RightShift)),
                     }
                 }
-                _ => self.token(span, TokenKind::Greater),
+                _ => self.token(span, tok!(">")),
             },
             '=' => match self.chars.peek() {
                 Some('=') => {
@@ -215,9 +215,9 @@ impl<'a> Lexer<'a> {
                     match self.chars.peek() {
                         Some('=') => {
                             self.next_char();
-                            self.token(span, TokenKind::StrictEqual)
+                            self.token(span, tok!("==="))
                         }
-                        _ => self.token(span, TokenKind::Equal),
+                        _ => self.token(span, tok!("==")),
                     }
                 }
                 _ => self.token(span, TokenKind::Assign),
@@ -228,9 +228,9 @@ impl<'a> Lexer<'a> {
                     match self.chars.peek() {
                         Some('=') => {
                             self.next_char();
-                            self.token(span, TokenKind::StrictNotEqual)
+                            self.token(span, tok!("!=="))
                         }
-                        _ => self.token(span, TokenKind::NotEqual),
+                        _ => self.token(span, tok!("!=")),
                     }
                 }
                 _ => self.token(span, tok!("!")),
@@ -452,7 +452,6 @@ impl<'a> Lexer<'a> {
                 "void" => Kw::Void,
                 "while" => Kw::While,
                 "with" => Kw::With,
-                "yield" => Kw::Yield,
                 _ => return t,
             },
             _ => return t,
