@@ -3,6 +3,15 @@ macro_rules! tok {
     ("target") => {
         crate::token::TokenKind::Ident("target")
     };
+    ("get") => {
+        crate::token::TokenKind::Ident("get")
+    };
+    ("set") => {
+        crate::token::TokenKind::Ident("set")
+    };
+    ("static") => {
+        crate::token::TokenKind::Ident("static")
+    };
     ("of") => {
         crate::token::TokenKind::Ident("of")
     };
@@ -88,10 +97,10 @@ macro_rules! tok {
         crate::token::TokenKind::DoubleColon
     };
     ("&&") => {
-        crate::token::TokenKind::And
+        crate::token::TokenKind::Relation(RelationToken::And)
     };
     ("||") => {
-        crate::token::TokenKind::Or
+        crate::token::TokenKind::Relation(RelationToken::Or)
     };
     ("?") => {
         crate::token::TokenKind::Tenary

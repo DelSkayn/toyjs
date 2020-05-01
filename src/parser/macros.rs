@@ -27,12 +27,14 @@ macro_rules! to_do {
 
 macro_rules! syntax_error {
     ($s:expr,$err:expr) => {{
-        return Err(crate::parser::ParseError {
+        let e = crate::parser::ParseError {
             kind: $err,
             origin: $s.cur_span(),
             source: $s.source(),
-        })
-        .into();
+        };
+        #[cfg(debug_assertions)]
+        debug!("error in {}:{} :: {}\n", file!(), line!(), e);
+        return Err(e).into();
     }};
 }
 macro_rules! unexpected{

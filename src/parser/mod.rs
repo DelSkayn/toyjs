@@ -11,6 +11,7 @@ mod macros;
 mod error;
 pub use error::{ParseError, ParseErrorKind};
 
+mod class;
 mod decl;
 mod expr;
 mod prime;

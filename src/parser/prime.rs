@@ -158,32 +158,70 @@ impl<'a> Parser<'a> {
             if properties.len() != 0 {
                 expect!(self, ",");
             }
-            if eat!(self, "[") {
-                let idx = self.parse_expr()?;
-                expect!(self, "]");
-                expect!(self, ":");
-                let expr = self.parse_assignment_expr()?;
-                properties.push(Property::Computed { idx, expr });
-                continue;
-            }
-            if is!(self, "ident") {
-                let token = self.next().unwrap();
-                if eat!(self, ":") {
-                    properties.push(Property::IdentAssign {
-                        idx: token,
-                        expr: self.parse_assignment_expr()?,
-                    });
-                } else {
-                    properties.push(Property::Ident {
-                        token: self.next().unwrap(),
-                    });
-                }
-                continue;
-            }
             if eat!(self, "}") {
                 break;
             }
-            to_do!(self)
+            if eat!(self, "...") {
+                properties.push(Property::Rest {
+                    expr: self.parse_assignment_expr()?,
+                });
+                continue;
+            }
+            let name = self.parse_property_name()?;
+            if eat!(self, ":") {
+                let expr = self.parse_assignment_expr()?;
+                properties.push(Property::Prop { name, expr });
+                continue;
+            }
+            // Check for method definitions
+            if is!(self, "(") {
+                let params = self.parse_params()?;
+                let block = self.parse_block_stmt()?;
+                properties.push(Property::Method(Method {
+                    ty: MethodType::Normal,
+                    is_static: false,
+                    name,
+                    block,
+                    params,
+                }));
+                continue;
+            }
+            if is!(self, ",") || is!(self, "}") {
+                match name {
+                    PropertyName::Ident(x) => {
+                        properties.push(Property::Ident(x));
+                        continue;
+                    }
+                    _ => unexpected!(self,":","method" => "expected method or initializer"),
+                }
+            }
+            let ty = if let PropertyName::Ident(x) = name {
+                if x.kind == TokenKind::Ident("get") {
+                    MethodType::Getter
+                } else if x.kind == TokenKind::Ident("set") {
+                    MethodType::Setter
+                } else {
+                    unexpected!(self)
+                }
+            } else {
+                unexpected!(self)
+            };
+            let name = self.parse_property_name()?;
+            let params = if ty == MethodType::Getter {
+                expect!(self, "(");
+                expect!(self,")" => "getters dont have parameters");
+                Parameters::default()
+            } else {
+                self.parse_params()?
+            };
+            let block = self.parse_block_stmt()?;
+            properties.push(Property::Method(Method {
+                name,
+                params: params,
+                is_static: false,
+                ty,
+                block,
+            }))
         }
         Ok(PrimeExpr::ObjectLiteral { properties })
     }

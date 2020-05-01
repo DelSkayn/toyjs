@@ -154,4 +154,46 @@ impl<'a> Parser<'a> {
         }
         return Ok(Binding::ObjectPattern { bindings, rest });
     }
+
+    pub fn parse_property_name(&mut self) -> PResult<'a, PropertyName<'a>> {
+        if is!(self, "ident") {
+            return Ok(PropertyName::Ident(self.next().unwrap()));
+        }
+        if is!(self, "lit") {
+            return Ok(PropertyName::Literal(self.next().unwrap()));
+        }
+        if eat!(self, "[") {
+            let res = self.parse_assignment_expr()?;
+            expect!(self, "]");
+            return Ok(PropertyName::Computed(res));
+        }
+        unexpected!(self, "ident", "lit", "[");
+    }
+
+    // TODO check for uniqueness
+    pub fn parse_params(&mut self) -> PResult<'a, Parameters<'a>> {
+        trace_log!("parameters");
+        expect!(self, "(");
+        let mut params = Vec::new();
+        let mut rest = None;
+        while !eat!(self, ")") {
+            if eat!(self, "...") {
+                rest = Some(self.parse_binding()?);
+                expect!(self,")" => "rest binding should be last parameter");
+                break;
+            }
+            let binding = self.parse_binding()?;
+            let initializer = if eat!(self, "=") {
+                Some(self.parse_assignment_expr()?)
+            } else {
+                None
+            };
+            params.push((binding, initializer));
+            if !eat!(self, ",") {
+                expect!(self,")" => "expected end of parameters, missing comma?");
+                break;
+            }
+        }
+        Ok(Parameters { params, rest })
+    }
 }

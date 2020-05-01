@@ -49,6 +49,8 @@ impl fmt::Display for RelationToken {
             RelationToken::StrictEqual => write!(f, "==="),
             RelationToken::NotEqual => write!(f, "!="),
             RelationToken::StrictNotEqual => write!(f, "!=="),
+            RelationToken::And => write!(f, "&&"),
+            RelationToken::Or => write!(f, "||"),
         }
     }
 }
@@ -79,8 +81,6 @@ impl fmt::Display for TokenKind<'_> {
             TokenKind::DotDotDot => write!(f, "..."),
             TokenKind::Colon => write!(f, ":"),
             TokenKind::DoubleColon => write!(f, "::"),
-            TokenKind::And => write!(f, "&&"),
-            TokenKind::Or => write!(f, "||"),
             TokenKind::Tenary => write!(f, "?"),
             TokenKind::TenaryNull => write!(f, "?."),
             TokenKind::NullCoalescing => write!(f, "??"),

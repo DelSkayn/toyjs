@@ -70,4 +70,8 @@ pub enum RelationToken {
     NotEqual,
     /// !==
     StrictNotEqual,
+    /// &&
+    And,
+    /// ||
+    Or,
 }
