@@ -59,10 +59,6 @@ pub enum TokenKind<'a> {
     Colon,
     /// ::
     DoubleColon,
-    /// &&
-    And,
-    /// ||
-    Or,
     /// ?
     Tenary,
     /// ?.

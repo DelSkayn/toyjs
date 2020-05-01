@@ -47,9 +47,9 @@ impl<'a> Parser<'a> {
         }
         if eat!(self, "return") {
             let expr = if is_lt!(self) || is!(self, ";") {
-                Some(self.parse_expr()?)
-            } else {
                 None
+            } else {
+                Some(self.parse_expr()?)
             };
             return Ok(Stmt::Return { expr });
         }
@@ -60,6 +60,9 @@ impl<'a> Parser<'a> {
             return Ok(Stmt::Declaration {
                 kind: self.parse_decl()?,
             });
+        }
+        if is!(self, "class") {
+            return Ok(Stmt::Class(self.parse_class()?));
         }
         if eat!(self, ";") {
             return Ok(Stmt::Empty);
@@ -142,36 +145,6 @@ impl<'a> Parser<'a> {
             eat!(self, ";");
         }
         Ok(Block { stmts })
-    }
-
-    pub fn parse_params(&mut self) -> PResult<'a, Parameters<'a>> {
-        trace_log!("parameters");
-        expect!(self, "(");
-        if eat!(self, ")") {
-            return Ok(Parameters {
-                params: Vec::new(),
-                rest: None,
-            });
-        }
-        let mut params = Vec::new();
-        let mut rest = None;
-        loop {
-            if eat!(self, "...") {
-                rest = Some(self.parse_binding()?);
-            }
-            let binding = self.parse_binding()?;
-            let initializer = if eat!(self, "=") {
-                Some(self.parse_assignment_expr()?)
-            } else {
-                None
-            };
-            params.push((binding, initializer));
-            if !eat!(self, ",") {
-                break;
-            }
-        }
-        expect!(self, ")");
-        Ok(Parameters { params, rest })
     }
 
     pub fn parse_switch_stmt(&mut self) -> PResult<'a, Stmt<'a>> {

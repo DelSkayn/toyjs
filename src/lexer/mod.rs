@@ -242,7 +242,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some('&') => {
                     self.next_char();
-                    self.token(span, TokenKind::And)
+                    self.token(span, tok!("&&"))
                 }
                 _ => self.token(span, TokenKind::BinOp(BinOpToken::BitwiseAnd)),
             },
@@ -253,7 +253,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some('|') => {
                     self.next_char();
-                    self.token(span, TokenKind::Or)
+                    self.token(span, tok!("||"))
                 }
                 _ => self.token(span, TokenKind::BinOp(BinOpToken::BitwiseOr)),
             },

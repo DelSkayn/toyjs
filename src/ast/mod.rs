@@ -1,12 +1,35 @@
 use crate::token::{BinOpToken, RelationToken, Token, UnaryOpToken};
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum MethodType {
+    Normal,
+    Getter,
+    Setter,
+}
+
+#[derive(Debug)]
+pub struct Method<'a> {
+    pub name: PropertyName<'a>,
+    pub params: Parameters<'a>,
+    pub is_static: bool,
+    pub ty: MethodType,
+    pub block: Block<'a>,
+}
+
+#[derive(Debug)]
+pub enum PropertyName<'a> {
+    Literal(Token<'a>),
+    Ident(Token<'a>),
+    Computed(AssignExpr<'a>),
+}
+
 #[derive(Debug)]
 pub enum Number {
     Integer(u32),
     Float(f64),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Parameters<'a> {
     pub params: Vec<(Binding<'a>, Option<AssignExpr<'a>>)>,
     pub rest: Option<Binding<'a>>,
@@ -21,15 +44,17 @@ pub enum ArrayElement<'a> {
 
 #[derive(Debug)]
 pub enum Property<'a> {
-    Ident {
-        token: Token<'a>,
-    },
+    Ident(Token<'a>),
     Computed {
         idx: Expr<'a>,
         expr: AssignExpr<'a>,
     },
-    IdentAssign {
-        idx: Token<'a>,
+    Prop {
+        name: PropertyName<'a>,
+        expr: AssignExpr<'a>,
+    },
+    Method(Method<'a>),
+    Rest {
         expr: AssignExpr<'a>,
     },
 }
@@ -278,6 +303,13 @@ pub enum ForDecl<'a> {
 }
 
 #[derive(Debug)]
+pub struct Class<'a> {
+    pub name: Option<Token<'a>>,
+    pub heritage: Option<LhsExpr<'a>>,
+    pub methods: Vec<Method<'a>>,
+}
+
+#[derive(Debug)]
 pub enum Stmt<'a> {
     /// A new block statement,
     /// { stmts, .. }
@@ -285,6 +317,7 @@ pub enum Stmt<'a> {
     Declaration {
         kind: DeclKind<'a>,
     },
+    Class(Class<'a>),
     Empty,
     Expr {
         expr: Expr<'a>,
