@@ -113,11 +113,12 @@ impl<'a> fmt::Display for ParseError<'a> {
                 expected,
                 reason,
             } => {
-                found
-                    .map(|found| write!(f, "unexpected token: found '{}' expected ", found.kind))
-                    .unwrap_or_else(|| write!(f, "unexpected token"))?;
+                write!(f, "unexpected token")?;
+                if let Some(x) = found {
+                    write!(f, ": found '{}'", x.kind)?;
+                }
                 if expected.len() > 1 {
-                    write!(f, "one of: [")?;
+                    write!(f, " expected one of: [")?;
                     let mut first = true;
                     for e in expected.iter() {
                         if !first {
@@ -129,9 +130,7 @@ impl<'a> fmt::Display for ParseError<'a> {
                     }
                     write!(f, "]")?;
                 } else if expected.len() == 1 {
-                    write!(f, "'{}'", expected[0])?;
-                } else {
-                    write!(f, "'EOF'")?;
+                    write!(f, " expected '{}'", expected[0])?;
                 }
                 writeln!(f, "")?;
                 self.fmt_span(f, self.origin)?;

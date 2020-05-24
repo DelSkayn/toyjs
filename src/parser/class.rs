@@ -1,9 +1,17 @@
 use super::*;
 
 impl<'a> Parser<'a> {
-    pub fn parse_class(&mut self) -> PResult<'a, Class<'a>> {
+    pub fn parse_class(&mut self, stmt: bool) -> PResult<'a, Class<'a>> {
         expect!(self, "class");
-        let name = expect!(self, "ident" => "expected class name");
+        let name = if stmt {
+            Some(expect!(self, "ident" => "expected class name"))
+        } else {
+            if is!(self, "ident") {
+                Some(self.next().unwrap())
+            } else {
+                None
+            }
+        };
         let heritage = if eat!(self, "extends") {
             Some(self.parse_lhs_expr()?)
         } else {
@@ -53,7 +61,7 @@ impl<'a> Parser<'a> {
             });
         }
         Ok(Class {
-            name: Some(name),
+            name,
             heritage,
             methods,
         })

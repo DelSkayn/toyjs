@@ -18,8 +18,10 @@ impl<'a> Parser<'a> {
         if eat!(self, "true") {
             return Ok(PrimeExpr::Boolean(true));
         }
-        if eat!(self, "string") {
-            return Ok(PrimeExpr::String(self.cur_string()));
+        if is!(self, "string") {
+            let string = self.cur_string();
+            self.next();
+            return Ok(PrimeExpr::String(string));
         }
         if is!(self, "[") {
             // Array literal
@@ -28,6 +30,9 @@ impl<'a> Parser<'a> {
         if is!(self, "{") {
             // Object literal
             return self.parse_object_expr();
+        }
+        if is!(self, "class") {
+            return Ok(PrimeExpr::Class(Box::new(self.parse_class(false)?)));
         }
         if eat!(self, "(") {
             if eat!(self, ")") {
@@ -59,7 +64,7 @@ impl<'a> Parser<'a> {
                 None
             };
             let params = self.parse_params()?;
-            let block = self.parse_block_stmt()?;
+            let block = self.alter_state(|x| x._return = true, |this| this.parse_block_stmt())?;
             if generator {
                 return Ok(PrimeExpr::Generator {
                     binding,
@@ -72,10 +77,6 @@ impl<'a> Parser<'a> {
                 params,
                 block,
             });
-        }
-        if eat!(self, "class") {
-            // class expression
-            to_do!(self)
         }
         if eat!(self, "/") {
             // regular expression
@@ -147,7 +148,7 @@ impl<'a> Parser<'a> {
                 token: self.next().unwrap(),
             });
         }
-        to_do!(self)
+        unexpected!(self)
     }
 
     pub fn parse_object_expr(&mut self) -> PResult<'a, PrimeExpr<'a>> {
@@ -176,7 +177,8 @@ impl<'a> Parser<'a> {
             // Check for method definitions
             if is!(self, "(") {
                 let params = self.parse_params()?;
-                let block = self.parse_block_stmt()?;
+                let block =
+                    self.alter_state(|x| x._return = true, |this| this.parse_block_stmt())?;
                 properties.push(Property::Method(Method {
                     ty: MethodType::Normal,
                     is_static: false,
@@ -217,7 +219,7 @@ impl<'a> Parser<'a> {
             let block = self.parse_block_stmt()?;
             properties.push(Property::Method(Method {
                 name,
-                params: params,
+                params,
                 is_static: false,
                 ty,
                 block,
@@ -231,26 +233,28 @@ impl<'a> Parser<'a> {
 
         expect!(self, "[");
         let mut elems = Vec::new();
-        let mut had_comma = false;
+        let mut rest = None;
         while !eat!(self, "]") {
-            if eat!(self, ",") {
-                elems.push(ArrayElement::Elision);
-            } else if eat!(self, "...") {
-                elems.push(ArrayElement::Spread {
-                    expr: self.parse_assignment_expr()?,
-                });
-                had_comma = eat!(self, ",");
-            } else {
-                elems.push(ArrayElement::Expr {
-                    expr: self.parse_assignment_expr()?,
-                });
-                had_comma = eat!(self, ",");
+            if elems.len() != 0 {
+                expect!(self, ",");
             }
+            if eat!(self, "]") {
+                break;
+            }
+            if is!(self, ",") {
+                elems.push(ArrayElement::Elision);
+                continue;
+            }
+            if eat!(self, "...") {
+                rest = Some(Box::new(self.parse_assignment_expr()?));
+                expect!(self,"]" => "spread element must be the last element");
+                break;
+            }
+            elems.push(ArrayElement::Expr {
+                expr: Box::new(self.parse_assignment_expr()?),
+            });
         }
-        if had_comma {
-            elems.push(ArrayElement::Elision);
-        }
-        Ok(PrimeExpr::ArrayLiteral { elems })
+        Ok(PrimeExpr::ArrayLiteral { elems, rest })
     }
 
     pub fn parse_arguments(&mut self) -> PResult<'a, Arguments<'a>> {

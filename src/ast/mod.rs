@@ -1,5 +1,8 @@
 use crate::token::{BinOpToken, RelationToken, Token, UnaryOpToken};
 
+mod expr;
+pub use expr::*;
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum MethodType {
     Normal,
@@ -38,8 +41,7 @@ pub struct Parameters<'a> {
 #[derive(Debug)]
 pub enum ArrayElement<'a> {
     Elision,
-    Expr { expr: AssignExpr<'a> },
-    Spread { expr: AssignExpr<'a> },
+    Expr { expr: Box<AssignExpr<'a>> },
 }
 
 #[derive(Debug)]
@@ -60,123 +62,9 @@ pub enum Property<'a> {
 }
 
 #[derive(Debug)]
-pub enum PrimeExpr<'a> {
-    String(&'a str),
-    Number(Number),
-    BinInt,
-    Ident {
-        token: Token<'a>,
-    },
-    This,
-    Null,
-    Boolean(bool),
-    Function {
-        binding: Option<Token<'a>>,
-        params: Parameters<'a>,
-        block: Block<'a>,
-    },
-    ObjectLiteral {
-        properties: Vec<Property<'a>>,
-    },
-    ArrayLiteral {
-        elems: Vec<ArrayElement<'a>>,
-    },
-    Class,
-    Generator {
-        binding: Option<Token<'a>>,
-        params: Parameters<'a>,
-        block: Block<'a>,
-    },
-    ParamList {
-        expr: Option<Expr<'a>>,
-        rest: Option<Binding<'a>>,
-    },
-    AsyncFunc,
-    AsyncGen,
-    Regular,
-    Template,
-}
-
-#[derive(Debug)]
 pub struct Arguments<'a> {
     pub args: Vec<AssignExpr<'a>>,
     pub rest: Option<Box<AssignExpr<'a>>>,
-}
-
-#[derive(Debug)]
-pub enum LhsExpr<'a> {
-    New(Box<LhsExpr<'a>>),
-    Prime(PrimeExpr<'a>),
-    Import(Box<AssignExpr<'a>>),
-    SuperCall(Arguments<'a>),
-    SuperIdx(Expr<'a>),
-    SuperDot(Token<'a>),
-    ImportMeta,
-    NewTarget,
-    Index {
-        lhs: Box<LhsExpr<'a>>,
-        expr: Expr<'a>,
-    },
-    Dot {
-        lhs: Box<LhsExpr<'a>>,
-        ident: Token<'a>,
-    },
-    Call {
-        lhs: Box<LhsExpr<'a>>,
-        args: Arguments<'a>,
-    },
-}
-
-#[derive(Debug)]
-pub enum AssignExpr<'a> {
-    Delete(Box<AssignExpr<'a>>),
-    Void(Box<AssignExpr<'a>>),
-    Typeof(Box<AssignExpr<'a>>),
-    Positive(Box<AssignExpr<'a>>),
-    Negative(Box<AssignExpr<'a>>),
-    BinaryNot(Box<AssignExpr<'a>>),
-    Not(Box<AssignExpr<'a>>),
-    Unary {
-        op: UnaryOpToken,
-        expr: Box<AssignExpr<'a>>,
-    },
-    Post {
-        incr: bool,
-        expr: Box<AssignExpr<'a>>,
-    },
-    LhsExpr(LhsExpr<'a>),
-    Assign {
-        lhs: LhsExpr<'a>,
-        expr: Box<AssignExpr<'a>>,
-    },
-    AssignOp {
-        lhs: LhsExpr<'a>,
-        op: BinOpToken,
-        expr: Box<AssignExpr<'a>>,
-    },
-    BinOp {
-        lhs: Box<AssignExpr<'a>>,
-        op: BinOpToken,
-        expr: Box<AssignExpr<'a>>,
-    },
-    Relation {
-        lhs: Box<AssignExpr<'a>>,
-        rel: RelationToken,
-        expr: Box<AssignExpr<'a>>,
-    },
-    Instanceof {
-        lhs: Box<AssignExpr<'a>>,
-        expr: Box<AssignExpr<'a>>,
-    },
-    In {
-        lhs: Box<AssignExpr<'a>>,
-        expr: Box<AssignExpr<'a>>,
-    },
-}
-
-#[derive(Debug)]
-pub struct Expr<'a> {
-    pub exprs: Vec<AssignExpr<'a>>,
 }
 
 #[derive(Debug)]
@@ -202,19 +90,14 @@ pub enum BindingElement<'a> {
 
 #[derive(Debug)]
 pub enum ObjectBinding<'a> {
-    Ident {
+    SingleName {
         ident: Token<'a>,
-        init: Option<AssignExpr<'a>>,
+        expr: Option<AssignExpr<'a>>,
     },
-    Literal {
-        lit: Token<'a>,
-        bind: Binding<'a>,
-        init: Option<AssignExpr<'a>>,
-    },
-    Computed {
-        expr: Expr<'a>,
-        bind: Binding<'a>,
-        init: Option<AssignExpr<'a>>,
+    PropertyName {
+        name: PropertyName<'a>,
+        binding: Box<Binding<'a>>,
+        expr: Option<AssignExpr<'a>>,
     },
 }
 
@@ -235,7 +118,7 @@ pub enum Binding<'a> {
     },
     ArrayPattern {
         bindings: Vec<ArrayBinding<'a>>,
-        rest: Option<Token<'a>>,
+        rest: Option<Box<Binding<'a>>>,
     },
     Ident {
         ident: Token<'a>,
@@ -256,6 +139,12 @@ pub struct LexicalDecl<'a> {
 }
 
 #[derive(Debug)]
+pub struct Decl<'a> {
+    pub kind: LexicalKind,
+    pub decl: Vec<LexicalDecl<'a>>,
+}
+
+#[derive(Debug)]
 pub enum DeclKind<'a> {
     Function,
     Generator,
@@ -263,11 +152,7 @@ pub enum DeclKind<'a> {
     AsyncGenerator,
     Class,
     /// Let and const bindings
-    Lexical {
-        /// Wether the binding is const, otherwise it is let
-        kind: LexicalKind,
-        decl: Vec<LexicalDecl<'a>>,
-    },
+    Lexical(Decl<'a>),
 }
 
 #[derive(Debug)]
@@ -283,30 +168,49 @@ pub struct Clause<'a> {
 
 #[derive(Debug)]
 pub enum ForKind<'a> {
-    In {
+    Empty {
+        condition: Option<Expr<'a>>,
+        iteration: Option<Expr<'a>>,
+    },
+    DeclCLike {
+        decl: Decl<'a>,
+        condition: Option<Expr<'a>>,
+        iteration: Option<Expr<'a>>,
+    },
+    DeclIn {
+        decl: Decl<'a>,
         expr: Expr<'a>,
     },
-    Of {
+    DeclOf {
+        decl: Decl<'a>,
         expr: AssignExpr<'a>,
     },
-    CLike {
-        cmp: Option<Expr<'a>>,
-        incr: Option<Expr<'a>>,
+    ExprCLike {
+        expr: Expr<'a>,
+        condition: Option<Expr<'a>>,
+        iteration: Option<Expr<'a>>,
     },
-}
-
-#[derive(Debug)]
-pub enum ForDecl<'a> {
-    Decl(DeclKind<'a>),
-    LhsExpr(LhsExpr<'a>),
-    Expr(Expr<'a>),
+    ExprIn {
+        lhs: AssignExpr<'a>,
+        expr: Expr<'a>,
+    },
+    ExprOf {
+        lhs: AssignExpr<'a>,
+        expr: Expr<'a>,
+    },
 }
 
 #[derive(Debug)]
 pub struct Class<'a> {
     pub name: Option<Token<'a>>,
-    pub heritage: Option<LhsExpr<'a>>,
+    pub heritage: Option<AssignExpr<'a>>,
     pub methods: Vec<Method<'a>>,
+}
+
+#[derive(Debug)]
+pub struct For<'a> {
+    pub kind: ForKind<'a>,
+    pub stmt: Box<Stmt<'a>>,
 }
 
 #[derive(Debug)]
@@ -332,11 +236,7 @@ pub enum Stmt<'a> {
         clauses: Vec<Clause<'a>>,
         default: Option<Vec<Stmt<'a>>>,
     },
-    For {
-        start: Option<ForDecl<'a>>,
-        kind: ForKind<'a>,
-        stmt: Box<Stmt<'a>>,
-    },
+    For(For<'a>),
     Continue,
     Break {
         label: Option<Token<'a>>,

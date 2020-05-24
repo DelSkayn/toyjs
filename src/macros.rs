@@ -52,16 +52,16 @@ macro_rules! tok {
         crate::token::TokenKind::UnaryOp(crate::token::UnaryOpToken::Not)
     };
     ("<") => {
-        crate::token::TokenKind::Relation(RelationToken::Less)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::Less)
     };
     ("<=") => {
-        crate::token::TokenKind::Relation(RelationToken::LessEqual)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::LessEqual)
     };
     (">") => {
-        crate::token::TokenKind::Relation(RelationToken::Greater)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::Greater)
     };
     (">=") => {
-        crate::token::TokenKind::Relation(RelationToken::GreaterEqual)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::GreaterEqual)
     };
     ("=") => {
         crate::token::TokenKind::Assign
@@ -70,16 +70,16 @@ macro_rules! tok {
         crate::token::TokenKind::Arrow
     };
     ("==") => {
-        crate::token::TokenKind::Relation(RelationToken::Equal)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::Equal)
     };
     ("===") => {
-        crate::token::TokenKind::Relation(RelationToken::StrictEqual)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::StrictEqual)
     };
     ("!=") => {
-        crate::token::TokenKind::Relation(RelationToken::NotEqual)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::NotEqual)
     };
     ("!==") => {
-        crate::token::TokenKind::Relation(RelationToken::StrictNotEqual)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::StrictNotEqual)
     };
     (".") => {
         crate::token::TokenKind::Dot
@@ -97,10 +97,10 @@ macro_rules! tok {
         crate::token::TokenKind::DoubleColon
     };
     ("&&") => {
-        crate::token::TokenKind::Relation(RelationToken::And)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::And)
     };
     ("||") => {
-        crate::token::TokenKind::Relation(RelationToken::Or)
+        crate::token::TokenKind::Relation(crate::token::RelationToken::Or)
     };
     ("?") => {
         crate::token::TokenKind::Tenary

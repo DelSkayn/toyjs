@@ -3,7 +3,7 @@ use super::*;
 impl<'a> Parser<'a> {
     /// Parses a declration in to form of
     /// `[let|var|const] ident [= expr](,ident [= expr])*`
-    pub fn parse_decl(&mut self) -> PResult<'a, DeclKind<'a>> {
+    pub fn parse_decl(&mut self) -> PResult<'a, Decl<'a>> {
         trace_log!("declaration");
         let mut kind = None;
         if eat!(self, "var") {
@@ -50,7 +50,7 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        return Ok(DeclKind::Lexical { kind, decl });
+        return Ok(Decl { kind, decl });
     }
 
     pub fn parse_binding(&mut self) -> PResult<'a, Binding<'a>> {
@@ -73,29 +73,28 @@ impl<'a> Parser<'a> {
         let mut bindings = Vec::new();
         let mut rest = None;
         while !eat!(self, "]") {
-            if eat!(self, ",") {
-                bindings.push(ArrayBinding::Elision);
-            } else if eat!(self, "...") {
-                if !is!(self, "ident") {
-                    unexpected!(self, "ident");
-                }
-                rest = Some(self.next().unwrap());
-                expect!(self, "]");
+            if bindings.len() != 0 {
+                expect!(self, ",");
+            }
+            if eat!(self, "]") {
                 break;
             }
-            let binding = self.parse_binding()?;
+            if is!(self, ",") {
+                bindings.push(ArrayBinding::Elision);
+                continue;
+            }
+            if eat!(self, "...") {
+                rest = Some(Box::new(self.parse_binding()?));
+                expect!(self,"]" => "rest binding should be last");
+                break;
+            }
+            let bind = self.parse_binding()?;
             let expr = if eat!(self, "=") {
                 Some(self.parse_assignment_expr()?)
             } else {
                 None
             };
-            bindings.push(ArrayBinding::Binding {
-                bind: binding,
-                expr,
-            });
-            if !is!(self, "]") {
-                expect!(self, ",");
-            }
+            bindings.push(ArrayBinding::Binding { bind, expr });
         }
         return Ok(Binding::ArrayPattern { bindings, rest });
     }
@@ -104,54 +103,46 @@ impl<'a> Parser<'a> {
         expect!(self, "{");
         let mut bindings = Vec::new();
         let mut rest = None;
-        while !eat!(self, "}") {
-            if !bindings.is_empty() {
+        while !is!(self, "}") {
+            if bindings.len() != 0 {
                 expect!(self, ",");
             }
-
-            if eat!(self, "...") {
-                rest = Some(expect!(self, "ident"));
-                expect!(self, "}");
+            if is!(self, "}") {
                 break;
             }
-
-            if is!(self, "lit") {
-                let lit = self.next().unwrap();
-                expect!(self, ":");
-                let bind = self.parse_binding()?;
-                let init = if eat!(self, "=") {
+            if eat!(self, "...") {
+                let token = expect!(self, "ident");
+                expect!(self,"}" => "rest binding should be last");
+                rest = Some(token);
+                break;
+            }
+            let name = self.parse_property_name()?;
+            if eat!(self, ":") {
+                let binding = Box::new(self.parse_binding()?);
+                let expr = if eat!(self, "=") {
                     Some(self.parse_assignment_expr()?)
                 } else {
                     None
                 };
-                bindings.push(ObjectBinding::Literal { lit, bind, init });
-                continue;
-            }
-            if is!(self, "[") {
-                let expr = self.parse_expr()?;
-                expect!(self, "]");
-                expect!(self, ":");
-                let bind = self.parse_binding()?;
-                let init = if eat!(self, "=") {
+                bindings.push(ObjectBinding::PropertyName {
+                    name,
+                    binding,
+                    expr,
+                });
+            } else {
+                let ident = match name {
+                    PropertyName::Ident(x) => x,
+                    _ => unexpected!(self,":" => "expected binding element after non-identifier"),
+                };
+                let expr = if eat!(self, "=") {
                     Some(self.parse_assignment_expr()?)
                 } else {
                     None
                 };
-                bindings.push(ObjectBinding::Computed { expr, bind, init });
-                continue;
+                bindings.push(ObjectBinding::SingleName { ident, expr });
             }
-            if is!(self, "ident") {
-                let ident = self.next().unwrap();
-                let init = if eat!(self, "=") {
-                    Some(self.parse_assignment_expr()?)
-                } else {
-                    None
-                };
-                bindings.push(ObjectBinding::Ident { ident, init });
-                continue;
-            }
-            unexpected!(self, "lit", "[", "...", "ident");
         }
+        expect!(self, "}");
         return Ok(Binding::ObjectPattern { bindings, rest });
     }
 
