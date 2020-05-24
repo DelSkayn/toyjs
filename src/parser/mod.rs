@@ -2,7 +2,7 @@ use crate::{
     ast::*,
     lexer::Lexer,
     source::{Source, Span},
-    token::{Token, TokenKind},
+    token::{DelimToken, Token, TokenKind},
 };
 
 #[macro_use]
@@ -19,11 +19,35 @@ mod stmt;
 
 type PResult<'a, T> = Result<T, ParseError<'a>>;
 
+#[derive(Clone, Copy)]
+pub struct StateFlags {
+    pub _in: bool,
+    pub _yield: bool,
+    pub _await: bool,
+    pub _break: bool,
+    pub _continue: bool,
+    pub _return: bool,
+}
+
+impl Default for StateFlags {
+    fn default() -> Self {
+        StateFlags {
+            _in: true,
+            _yield: false,
+            _await: false,
+            _break: false,
+            _continue: false,
+            _return: false,
+        }
+    }
+}
+
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     peek: Option<Token<'a>>,
     pref_span: Span,
-    breakable: bool,
+    state: StateFlags,
+    //parens: Vec<(DelimToken, Span)>,
 }
 
 impl<'a> Parser<'a> {
@@ -32,8 +56,22 @@ impl<'a> Parser<'a> {
             lexer,
             peek: None,
             pref_span: Span { lo: 0, hi: 0 },
-            breakable: false,
+            state: StateFlags::default(),
+            //parens: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn alter_state<T>(
+        &mut self,
+        alter: impl FnOnce(&mut StateFlags),
+        this: impl FnOnce(&mut Parser<'a>) -> T,
+    ) -> T {
+        let old = self.state;
+        alter(&mut self.state);
+        let res = this(self);
+        self.state = old;
+        res
     }
 
     pub fn is_lt(&mut self) -> bool {

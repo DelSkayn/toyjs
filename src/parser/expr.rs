@@ -1,9 +1,87 @@
 use super::error::NumberParseErrorKind;
 use super::*;
+use crate::ast::AssignExpr as Op;
 use crate::token::{BinOpToken, LitToken, NumberKind, TokenKind, UnaryOpToken};
 use std::num::ParseIntError;
 
+pub enum Operand<'a> {
+    Ident(Token<'a>),
+    Super,
+    Import,
+}
+
+fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
+    match kind {
+        tok!("=")
+        | tok!("*=")
+        | tok!("/=")
+        | tok!("%=")
+        | tok!("+=")
+        | tok!("-=")
+        | tok!("<<=")
+        | tok!(">>=")
+        | tok!(">>>=")
+        | tok!("&=")
+        | tok!("^=")
+        | tok!("|=")
+        | tok!("**=") => Some((1, 2)),
+        tok!("?") => Some((4, 3)),
+        tok!("??") => Some((6, 5)),
+        tok!("||") => Some((7, 8)),
+        tok!("&&") => Some((9, 10)),
+        tok!("|") => Some((11, 12)),
+        tok!("^") => Some((13, 14)),
+        tok!("&") => Some((15, 16)),
+        tok!("==") | tok!("!=") | tok!("===") | tok!("!==") => Some((17, 18)),
+        tok!("<") | tok!(">") | tok!("<=") | tok!(">=") | tok!("instanceof") | tok!("in") => {
+            Some((19, 20))
+        }
+        tok!("<<") | tok!(">>") | tok!(">>>") => Some((21, 22)),
+        tok!("+") | tok!("-") => Some((23, 24)),
+        tok!("*") | tok!("%") | tok!("/") => Some((25, 26)),
+        tok!("**") => Some((27, 28)),
+        tok!("?.") => Some((36, 35)),
+        tok!(".") => Some((38, 37)),
+        _ => None,
+    }
+}
+
+fn postfix_binding_power(kind: TokenKind) -> Option<(u8, ())> {
+    match kind {
+        tok!("++") | tok!("--") => Some((31, ())),
+        tok!("[") | tok!("(") => Some((38, ())),
+        _ => None,
+    }
+}
+
+fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
+    match kind {
+        tok!("delete")
+        | tok!("void")
+        | tok!("typeof")
+        | tok!("+")
+        | tok!("-")
+        | tok!("~")
+        | tok!("!") => Some(((), 29)),
+        tok!("++") | tok!("--") => Some(((), 31)),
+        tok!("new") => Some(((), 33)),
+        _ => None,
+    }
+}
+
 impl<'a> Parser<'a> {
+    pub fn parse_lhs_expr(&mut self) -> PResult<'a, AssignExpr<'a>> {
+        to_do!(self)
+    }
+
+    pub fn parse_expr_with_in(&mut self) -> PResult<'a, Expr<'a>> {
+        let old = self.state._in;
+        self.state._in = true;
+        let res = self.parse_expr();
+        self.state._in = old;
+        res
+    }
+
     pub fn parse_expr(&mut self) -> PResult<'a, Expr<'a>> {
         let mut exprs = vec![self.parse_assignment_expr()?];
         while eat!(self, ",") {
@@ -12,196 +90,128 @@ impl<'a> Parser<'a> {
         Ok(Expr { exprs })
     }
 
-    pub fn parse_assignment_expr(&mut self) -> PResult<'a, AssignExpr<'a>> {
-        let mut start = self.parse_assignment_expr_ll()?;
-        loop {
-            if eat!(self, "++") {
-                start = AssignExpr::Post {
-                    incr: true,
-                    expr: Box::new(start),
-                };
-                continue;
-            }
-            if eat!(self, "--") {
-                start = AssignExpr::Post {
-                    incr: false,
-                    expr: Box::new(start),
-                };
-                continue;
-            }
-            if is!(self, "=") {
-                if let AssignExpr::LhsExpr(lhs) = start {
-                    self.next();
-                    let expr = Box::new(self.parse_assignment_expr()?);
-                    return Ok(AssignExpr::Assign { lhs, expr });
-                }
-                unexpected!( => "cannot assign to rhs expression");
-            }
-            if let Some(TokenKind::BinOpAssign(op)) = self.peek_kind() {
-                if let AssignExpr::LhsExpr(lhs) = start {
-                    self.next();
-                    let expr = Box::new(self.parse_assignment_expr()?);
-                    return Ok(AssignExpr::AssignOp { lhs, op, expr });
-                }
-                unexpected!( => "cannot assign to rhs expression");
-            }
-            if let Some(TokenKind::BinOp(op)) = self.peek_kind() {
-                self.next();
-                let expr = Box::new(self.parse_assignment_expr()?);
-                return Ok(AssignExpr::BinOp {
-                    lhs: Box::new(start),
-                    op,
-                    expr,
-                });
-            }
-            if let Some(TokenKind::Relation(rel)) = self.peek_kind() {
-                self.next();
-                let expr = Box::new(self.parse_assignment_expr()?);
-                return Ok(AssignExpr::Relation {
-                    lhs: Box::new(start),
-                    rel,
-                    expr,
-                });
-            }
-            if eat!(self, "instanceof") {
-                let expr = Box::new(self.parse_assignment_expr()?);
-                return Ok(AssignExpr::Instanceof {
-                    lhs: Box::new(start),
-                    expr,
-                });
-            }
-            if eat!(self, "in") {
-                let expr = Box::new(self.parse_assignment_expr()?);
-                return Ok(AssignExpr::In {
-                    lhs: Box::new(start),
-                    expr,
-                });
-            }
-            break;
-        }
-        return Ok(start);
+    pub fn parse_assignment_expr(&mut self) -> PResult<'a, Op<'a>> {
+        self.parse_ops(0)
     }
 
-    pub fn parse_assignment_expr_ll(&mut self) -> PResult<'a, AssignExpr<'a>> {
-        if eat!(self, "delete") {
-            let inner = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Delete(inner));
-        }
-        if eat!(self, "void") {
-            let inner = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Void(inner));
-        }
-        if eat!(self, "typeof") {
-            let inner = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Typeof(inner));
-        }
-        if eat!(self, "-") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::Negative,
-                expr,
-            });
-        }
-        if eat!(self, "+") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::Positive,
-                expr,
-            });
-        }
-        if eat!(self, "~") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::BitwiseNot,
-                expr,
-            });
-        }
-        if eat!(self, "!") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::Not,
-                expr,
-            });
-        }
-        if eat!(self, "++") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::AddOne,
-                expr,
-            });
-        }
-        if eat!(self, "--") {
-            let expr = Box::new(self.parse_assignment_expr()?);
-            return Ok(AssignExpr::Unary {
-                op: UnaryOpToken::SubractOne,
-                expr,
-            });
-        }
-        Ok(AssignExpr::LhsExpr(self.parse_lhs_expr()?))
-    }
-    pub fn parse_lhs_expr(&mut self) -> PResult<'a, LhsExpr<'a>> {
-        let mut start = self.parse_lhs_expr_ll()?;
+    pub fn parse_ops(&mut self, min_bp: u8) -> PResult<'a, Op<'a>> {
+        trace_log!("assign expr");
+        let mut lhs =
+            if let Some(((), r_bp)) = self.peek_kind().and_then(|x| prefix_binding_power(x)) {
+                let op = PrefixOp::from_token(self.next().unwrap()).unwrap();
+                match op {
+                    PrefixOp::New => {
+                        if eat!(self, ".") {
+                            expect!(self, "meta");
+                            Op::NewTarget
+                        } else {
+                            let expr = Box::new(self.parse_ops(r_bp)?);
+                            Op::Prefix {
+                                op: PrefixOp::New,
+                                expr,
+                            }
+                        }
+                    }
+                    op => {
+                        let expr = Box::new(self.parse_ops(r_bp)?);
+                        Op::Prefix { op, expr }
+                    }
+                }
+            } else {
+                let exp = self.parse_primary_expr()?;
+                Op::Prime(exp)
+            };
+
         loop {
-            if eat!(self, "[") {
-                let expr = self.parse_expr()?;
-                expect!(self, "]");
-                start = LhsExpr::Index {
-                    lhs: Box::new(start),
-                    expr,
-                };
+            let op = match self.peek_kind() {
+                Some(x) => x,
+                None => break,
+            };
+
+            if let Some((l_bp, ())) = postfix_binding_power(op) {
+                if l_bp < min_bp {
+                    break;
+                }
+                if eat!(self, "[") {
+                    let expr = self.parse_expr()?;
+                    expect!(self, "]");
+                    lhs = Op::Postfix {
+                        expr: Box::new(lhs),
+                        op: PostfixOp::Index(expr),
+                    };
+                } else if is!(self, "(") {
+                    let args = self.parse_arguments()?;
+                    lhs = Op::Postfix {
+                        expr: Box::new(lhs),
+                        op: PostfixOp::Call(args),
+                    };
+                } else {
+                    lhs = Op::Postfix {
+                        expr: Box::new(lhs),
+                        op: if eat!(self, "++") {
+                            PostfixOp::Increment
+                        } else if eat!(self, "--") {
+                            PostfixOp::Decrement
+                        } else {
+                            panic!(
+                                "encountered postfix operator with binding power but no production"
+                            )
+                        },
+                    };
+                }
                 continue;
             }
-            if eat!(self, ".") {
-                let ident = expect!(self, "ident");
-                start = LhsExpr::Dot {
-                    lhs: Box::new(start),
-                    ident,
-                };
-                continue;
-            }
-            if is!(self, "(") {
-                let args = self.parse_arguments()?;
-                start = LhsExpr::Call {
-                    lhs: Box::new(start),
-                    args,
-                };
+
+            if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+                if l_bp < min_bp {
+                    break;
+                }
+                if eat!(self, "?") {
+                    let mhs = self.parse_ops(0)?;
+                    expect!(self, ":");
+                    let rhs = self.parse_ops(r_bp)?;
+                    lhs = Op::Bin {
+                        lhs: Box::new(lhs),
+                        op: BinOp::Tenary(Box::new(mhs)),
+                        rhs: Box::new(rhs),
+                    };
+                } else if eat!(self, "[") {
+                } else {
+                    let op = BinOp::from_token(self.peek().unwrap()).unwrap();
+                    match op {
+                        BinOp::Assign(_) => {
+                            if !lhs.is_assign_lhs() {
+                                unexpected!(self => "left-hand side is not assignable")
+                            }
+                        }
+                        _ => {}
+                    }
+                    self.next();
+                    let rhs = self.parse_ops(r_bp)?;
+                    lhs = Op::Bin {
+                        lhs: Box::new(lhs),
+                        op,
+                        rhs: Box::new(rhs),
+                    }
+                }
                 continue;
             }
             break;
         }
-        return Ok(start);
+        Ok(lhs)
     }
 
-    pub fn parse_lhs_expr_ll(&mut self) -> PResult<'a, LhsExpr<'a>> {
-        trace_log!("lhs expression");
-        if eat!(self, "new") {
-            if eat!(self, ".") {
-                expect!(self, "meta");
-                return Ok(LhsExpr::NewTarget);
-            }
-            return Ok(LhsExpr::New(Box::new(self.parse_lhs_expr()?)));
+    pub fn parse_operand(&mut self) -> PResult<'a, Op<'a>> {
+        if eat!(self, "super") {
+            return Ok(Op::Super);
         }
         if eat!(self, "import") {
             if eat!(self, ".") {
-                expect!(self, "target");
-                return Ok(LhsExpr::ImportMeta);
+                expect!(self, "meta");
+                return Ok(Op::ImportMeta);
             }
-            expect!(self, "(");
-            let res = Ok(LhsExpr::Import(Box::new(self.parse_assignment_expr()?)));
-            expect!(self, ")");
-            return res;
+            return Ok(Op::Import);
         }
-        if eat!(self, "super") {
-            if eat!(self, ".") {
-                let token = expect!(self, "ident");
-                return Ok(LhsExpr::SuperDot(token));
-            }
-            if eat!(self, "[") {
-                let expr = self.parse_expr()?;
-                expect!(self, "]");
-                return Ok(LhsExpr::SuperIdx(expr));
-            }
-        }
-        return Ok(LhsExpr::Prime(self.parse_primary_expr()?));
+        Ok(Op::Prime(self.parse_primary_expr()?))
     }
 }
