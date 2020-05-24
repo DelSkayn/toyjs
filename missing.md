@@ -6,10 +6,10 @@ Parsing
 Formatting the code into a AST
 
 Missing:
-- [*] For loops
+- [x] For loops
 - [ ] Better Delim handling
-- [*] Semi Keyword handling
-- [*] Operator precedence
+- [x] Semi Keyword handling
+- [x] Operator precedence
 - [ ] Bigint
 - [ ] Unicode escape codes
 - [ ] Regex's
