@@ -114,7 +114,7 @@ impl<'a> Parser<'a> {
                 },
                 |this| this.parse_stmt(),
             )?);
-            return Ok(Some(Stmt::DoWhile { body, expr }));
+            return Ok(Some(Stmt::While { body, expr }));
         }
         Ok(None)
     }

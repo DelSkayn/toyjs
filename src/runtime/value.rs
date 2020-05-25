@@ -4,9 +4,9 @@ const MAX_DOUBLE: u64 = (0xfff8_0000) << 32;
 pub const TAG_PTR: u64 = (0xfff9_0000) << 32;
 pub const TAG_STRING: u64 = (0xfffa_0000) << 32;
 pub const TAG_INT: u64 = (0xfffb_0000) << 32;
-pub const TAG_UNDEFINED: u64 = (0xfffc_0000) << 32;
+pub const TAG_BOOL: u64 = (0xfffc_0000) << 32;
 pub const TAG_NULL: u64 = (0xfffd_0000) << 32;
-const TAG_AVAILABLE_4: u64 = (0xfffe_0000) << 32;
+pub const TAG_UNDEFINED: u64 = (0xfffe_0000) << 32;
 const TAG_AVAILABLE_5: u64 = (0xffff_0000) << 32;
 
 const PTR_MASK: u64 = 0x0000_ffff_ffff_fff8;
