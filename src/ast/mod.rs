@@ -245,6 +245,10 @@ pub enum Stmt<'a> {
         body: Box<Stmt<'a>>,
         expr: Expr<'a>,
     },
+    While {
+        expr: Expr<'a>,
+        body: Box<Stmt<'a>>,
+    },
     Return {
         expr: Option<Expr<'a>>,
     },
