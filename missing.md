@@ -15,12 +15,13 @@ Missing:
 - [ ] Regex's
 - [ ] Templates
 - [ ] HTML comment's
-- [ ] Arraw functions
+- [ ] Arrow functions
 - [ ] Futures
 - [ ] Generators
 - [ ] Labels
 - [ ] Private members?
 - [ ] Spans in AST
+- [ ] String interner
 
 Compiling
 ---------
