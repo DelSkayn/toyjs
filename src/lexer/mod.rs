@@ -477,39 +477,37 @@ impl<'a> Lexer<'a> {
         self.token(span, TokenKind::Ident(string))
     }
 
+    fn cur_str(&self, span: &'a str) -> &'a str {
+        let lo = span.as_ptr() as usize;
+        let hi = self.chars.as_str().as_ptr() as usize;
+        &span[..hi - lo]
+    }
+
     fn parse_number(&mut self, span: &'a str, start: char) -> Token<'a> {
         if start == '0' {
             match self.chars.peek() {
                 None => {
                     return self.token(
                         span,
-                        TokenKind::Lit(LitToken::Number {
-                            big: false,
-                            kind: NumberKind::Integer,
-                        }),
+                        TokenKind::Lit(LitToken::Number(NumberKind::Integer(0))),
                     )
                 }
                 Some('n') => {
                     self.chars.next();
-                    return self.token(
-                        span,
-                        TokenKind::Lit(LitToken::Number {
-                            big: true,
-                            kind: NumberKind::Integer,
-                        }),
-                    );
+                    return self
+                        .token(span, TokenKind::Lit(LitToken::Number(NumberKind::Big("0"))));
                 }
                 Some('b') | Some('B') => {
                     self.chars.next();
-                    return self.parse_non_decimal(span, NumberKind::Binary);
+                    return self.parse_non_decimal(span, 2);
                 }
                 Some('o') | Some('O') => {
                     self.chars.next();
-                    return self.parse_non_decimal(span, NumberKind::Octal);
+                    return self.parse_non_decimal(span, 8);
                 }
                 Some('x') | Some('X') => {
                     self.chars.next();
-                    return self.parse_non_decimal(span, NumberKind::Hex);
+                    return self.parse_non_decimal(span, 16);
                 }
                 _ => {}
             }
@@ -529,7 +527,7 @@ impl<'a> Lexer<'a> {
             }
             Some('e') | Some('E') => {
                 self.chars.next();
-                return self.parse_number_exponent(span, NumberKind::Integer);
+                return self.parse_number_exponent(span);
             }
             Some('n') => {
                 self.chars.next();
@@ -537,13 +535,23 @@ impl<'a> Lexer<'a> {
             }
             _ => {}
         }
-        self.token(
-            span,
-            TokenKind::Lit(LitToken::Number {
-                big,
-                kind: NumberKind::Integer,
-            }),
-        )
+        if big {
+            let cur_str = self.cur_str(span);
+            self.token(
+                span,
+                TokenKind::Lit(LitToken::Number(NumberKind::Big(cur_str))),
+            )
+        } else {
+            self.token(span, self.parse_number_string(span))
+        }
+    }
+
+    fn parse_number_string(&self, span: &'a str) -> TokenKind<'a> {
+        let num = self.cur_str(span).parse::<f64>().unwrap();
+        if (num as i32) as f64 == num {
+            return TokenKind::Lit(LitToken::Number(NumberKind::Integer(num as i32)));
+        }
+        TokenKind::Lit(LitToken::Number(NumberKind::Float(num)))
     }
 
     fn parse_number_mantissa(&mut self, span: &'a str) -> Token<'a> {
@@ -553,31 +561,22 @@ impl<'a> Lexer<'a> {
         match self.chars.peek() {
             Some('e') | Some('E') => {
                 self.chars.next();
-                return self.parse_number_exponent(span, NumberKind::Float);
+                return self.parse_number_exponent(span);
             }
             _ => {}
         }
-        self.token(
-            span,
-            TokenKind::Lit(LitToken::Number {
-                big: false,
-                kind: NumberKind::Float,
-            }),
-        )
+        self.token(span, self.parse_number_string(span))
+    }
+
+    fn invalid_number(&self, reason: &'static str) -> TokenKind<'a> {
+        TokenKind::Lit(LitToken::Number(NumberKind::Invalid(reason)))
     }
 
     // TODO techically exponent must only be parsed if there is  a number following it.
-    fn parse_number_exponent(&mut self, span: &'a str, num_kind: NumberKind) -> Token<'a> {
+    fn parse_number_exponent(&mut self, span: &'a str) -> Token<'a> {
         let start = self.chars.peek();
         if start.is_none() {
-            self.error("missing exponent integer");
-            return self.token(
-                span,
-                TokenKind::Lit(LitToken::Number {
-                    big: false,
-                    kind: num_kind,
-                }),
-            );
+            return self.token(span, self.invalid_number("missing exponent integer"));
         }
         let start = start.unwrap();
         if start == '-' || start == '+' || !start.is_digit(10) {
@@ -585,31 +584,12 @@ impl<'a> Lexer<'a> {
             while self.chars.peek().map(|x| x.is_digit(10)).unwrap_or(false) {
                 self.chars.next();
             }
-            return self.token(
-                span,
-                TokenKind::Lit(LitToken::Number {
-                    big: false,
-                    kind: num_kind,
-                }),
-            );
+            return self.token(span, self.parse_number_string(span));
         }
-        self.error("invalid exponent integer");
-        self.token(
-            span,
-            TokenKind::Lit(LitToken::Number {
-                big: false,
-                kind: num_kind,
-            }),
-        )
+        self.token(span, self.invalid_number("invalid exponent integer"))
     }
 
-    fn parse_non_decimal(&mut self, span: &'a str, kind: NumberKind) -> Token<'a> {
-        let radix = match kind {
-            NumberKind::Octal => 8,
-            NumberKind::Hex => 16,
-            NumberKind::Binary => 2,
-            _ => panic!("invalid non decimal number kind"),
-        };
+    fn parse_non_decimal(&mut self, span: &'a str, radix: u32) -> Token<'a> {
         while self
             .chars
             .peek()
@@ -623,7 +603,27 @@ impl<'a> Lexer<'a> {
             self.chars.next();
             big = true;
         }
-        self.token(span, TokenKind::Lit(LitToken::Number { big, kind }))
+        let cur_str = self.cur_str(span);
+        if big {
+            self.token(
+                span,
+                TokenKind::Lit(LitToken::Number(NumberKind::Big(&cur_str[2..]))),
+            )
+        } else {
+            // TODO handle failure
+            let num = u64::from_str_radix(&cur_str[2..], radix).unwrap();
+            if num as i32 as u64 == num {
+                self.token(
+                    span,
+                    TokenKind::Lit(LitToken::Number(NumberKind::Integer(num as i32))),
+                )
+            } else {
+                self.token(
+                    span,
+                    TokenKind::Lit(LitToken::Number(NumberKind::Float(num as f64))),
+                )
+            }
+        }
     }
 
     fn parse_string(&mut self, span: &'a str, start: char) -> Token<'a> {
@@ -631,11 +631,15 @@ impl<'a> Lexer<'a> {
             let c = self.chars.next();
             if c.is_none() || Lexer::is_line_terminator(c.unwrap()) {
                 self.error("unterminated string");
-                return self.token(span, TokenKind::Lit(LitToken::String));
+                let s = self.cur_str(span);
+                let len = s.len();
+                return self.token(span, TokenKind::Lit(LitToken::String(&s[1..len - 1])));
             }
             let c = c.unwrap();
             if c == start {
-                return self.token(span, TokenKind::Lit(LitToken::String));
+                let s = self.cur_str(span);
+                let len = s.len();
+                return self.token(span, TokenKind::Lit(LitToken::String(&s[1..len - 1])));
             }
             // Parse escape codes
             if c == '\\' {

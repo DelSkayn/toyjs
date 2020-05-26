@@ -1,9 +1,10 @@
 use super::*;
+use crate::token::{LitToken, NumberKind};
 
 impl<'a> Parser<'a> {
     /// Parses a declration in to form of
     /// `[let|var|const] ident [= expr](,ident [= expr])*`
-    pub fn parse_decl(&mut self) -> PResult<'a, Decl<'a>> {
+    pub fn parse_decl(&mut self) -> PResult<'a, Decl> {
         trace_log!("declaration");
         let mut kind = None;
         if eat!(self, "var") {
@@ -53,7 +54,7 @@ impl<'a> Parser<'a> {
         return Ok(Decl { kind, decl });
     }
 
-    pub fn parse_binding(&mut self) -> PResult<'a, Binding<'a>> {
+    pub fn parse_binding(&mut self) -> PResult<'a, Binding> {
         trace_log!("binding");
         if is!(self, "[") {
             return self.parse_array_binding();
@@ -61,14 +62,13 @@ impl<'a> Parser<'a> {
         if is!(self, "{") {
             return self.parse_object_binding();
         }
-        if is!(self, "ident") {
-            let ident = self.next().unwrap();
-            return Ok(Binding::Ident { ident });
+        if let Some(x) = self.next_ident() {
+            return Ok(Binding::Ident(x));
         }
         unexpected!(self, "[", "{", "ident")
     }
 
-    pub fn parse_array_binding(&mut self) -> PResult<'a, Binding<'a>> {
+    pub fn parse_array_binding(&mut self) -> PResult<'a, Binding> {
         expect!(self, "[");
         let mut bindings = Vec::new();
         let mut rest = None;
@@ -99,7 +99,7 @@ impl<'a> Parser<'a> {
         return Ok(Binding::ArrayPattern { bindings, rest });
     }
 
-    pub fn parse_object_binding(&mut self) -> PResult<'a, Binding<'a>> {
+    pub fn parse_object_binding(&mut self) -> PResult<'a, Binding> {
         expect!(self, "{");
         let mut bindings = Vec::new();
         let mut rest = None;
@@ -111,9 +111,11 @@ impl<'a> Parser<'a> {
                 break;
             }
             if eat!(self, "...") {
-                let token = expect!(self, "ident");
-                expect!(self,"}" => "rest binding should be last");
-                rest = Some(token);
+                if let Some(x) = self.next_ident() {
+                    rest = Some(x);
+                } else {
+                    unexpected!(self,"}" => "rest binding should be last");
+                }
                 break;
             }
             let name = self.parse_property_name()?;
@@ -146,12 +148,12 @@ impl<'a> Parser<'a> {
         return Ok(Binding::ObjectPattern { bindings, rest });
     }
 
-    pub fn parse_property_name(&mut self) -> PResult<'a, PropertyName<'a>> {
-        if is!(self, "ident") {
-            return Ok(PropertyName::Ident(self.next().unwrap()));
+    pub fn parse_property_name(&mut self) -> PResult<'a, PropertyName> {
+        if let Some(x) = self.next_ident() {
+            return Ok(PropertyName::Ident(x));
         }
         if is!(self, "lit") {
-            return Ok(PropertyName::Literal(self.next().unwrap()));
+            return Ok(PropertyName::Literal(self.parse_literal()?));
         }
         if eat!(self, "[") {
             let res = self.parse_assignment_expr()?;
@@ -161,8 +163,26 @@ impl<'a> Parser<'a> {
         unexpected!(self, "ident", "lit", "[");
     }
 
+    pub fn parse_literal(&mut self) -> PResult<'a, Literal> {
+        let tok = expect!(self, "lit");
+        let kind = match tok.kind {
+            TokenKind::Lit(x) => x,
+            _ => unreachable!(),
+        };
+        match kind {
+            LitToken::String(x) => Ok(Literal::String(x.to_string())),
+            LitToken::Number(x) => Ok(match x {
+                NumberKind::Integer(x) => Literal::Number(Number::Integer(x)),
+                NumberKind::Float(x) => Literal::Number(Number::Float(x)),
+                NumberKind::Big(x) => Literal::Number(Number::Big(x.to_string())),
+                //TODO change unexpected to proper error.
+                NumberKind::Invalid(x) => syntax_error!(self, ParseErrorKind::NumberParseError(x)),
+            }),
+        }
+    }
+
     // TODO check for uniqueness
-    pub fn parse_params(&mut self) -> PResult<'a, Parameters<'a>> {
+    pub fn parse_params(&mut self) -> PResult<'a, Parameters> {
         trace_log!("parameters");
         expect!(self, "(");
         let mut params = Vec::new();

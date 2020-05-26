@@ -30,9 +30,7 @@ pub enum ParseErrorKind<'a> {
         expected: &'static [&'static str],
         reason: Option<&'static str>,
     },
-    NumberParseError {
-        kind: NumberParseErrorKind,
-    },
+    NumberParseError(&'static str),
 }
 
 pub struct ParseError<'a> {
@@ -105,8 +103,8 @@ impl<'a> fmt::Display for ParseError<'a> {
                 self.fmt_span(f, self.origin)?;
                 self.fmt_span_src(f, self.origin, None)
             }
-            ParseErrorKind::NumberParseError { ref kind } => {
-                writeln!(f, "encountered invalid number: {}", kind)
+            ParseErrorKind::NumberParseError(reason) => {
+                writeln!(f, "encountered invalid number: {}", reason)
             }
             ParseErrorKind::UnexpectedToken {
                 found,

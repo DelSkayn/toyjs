@@ -11,118 +11,126 @@ pub enum MethodType {
 }
 
 #[derive(Debug)]
-pub struct Method<'a> {
-    pub name: PropertyName<'a>,
-    pub params: Parameters<'a>,
+pub struct Method {
+    pub name: PropertyName,
+    pub params: Parameters,
     pub is_static: bool,
     pub ty: MethodType,
-    pub block: Block<'a>,
+    pub block: Block,
 }
 
 #[derive(Debug)]
-pub enum PropertyName<'a> {
-    Literal(Token<'a>),
-    Ident(Token<'a>),
-    Computed(AssignExpr<'a>),
+pub enum PropertyName {
+    Literal(Literal),
+    Ident(Ident),
+    Computed(AssignExpr),
+}
+
+#[derive(Debug)]
+pub struct Ident(pub String);
+
+#[derive(Debug)]
+pub enum Literal {
+    Number(Number),
+    String(String),
 }
 
 #[derive(Debug)]
 pub enum Number {
-    Integer(u32),
+    Integer(i32),
     Float(f64),
+    Big(String),
 }
 
 #[derive(Debug, Default)]
-pub struct Parameters<'a> {
-    pub params: Vec<(Binding<'a>, Option<AssignExpr<'a>>)>,
-    pub rest: Option<Binding<'a>>,
+pub struct Parameters {
+    pub params: Vec<(Binding, Option<AssignExpr>)>,
+    pub rest: Option<Binding>,
 }
 
 #[derive(Debug)]
-pub enum ArrayElement<'a> {
+pub enum ArrayElement {
     Elision,
-    Expr { expr: Box<AssignExpr<'a>> },
+    Expr { expr: Box<AssignExpr> },
 }
 
 #[derive(Debug)]
-pub enum Property<'a> {
-    Ident(Token<'a>),
+pub enum Property {
+    Ident(Ident),
     Computed {
-        idx: Expr<'a>,
-        expr: AssignExpr<'a>,
+        idx: Expr,
+        expr: AssignExpr,
     },
     Prop {
-        name: PropertyName<'a>,
-        expr: AssignExpr<'a>,
+        name: PropertyName,
+        expr: AssignExpr,
     },
-    Method(Method<'a>),
+    Method(Method),
     Rest {
-        expr: AssignExpr<'a>,
+        expr: AssignExpr,
     },
 }
 
 #[derive(Debug)]
-pub struct Arguments<'a> {
-    pub args: Vec<AssignExpr<'a>>,
-    pub rest: Option<Box<AssignExpr<'a>>>,
+pub struct Arguments {
+    pub args: Vec<AssignExpr>,
+    pub rest: Option<Box<AssignExpr>>,
 }
 
 #[derive(Debug)]
-pub struct Catch<'a> {
-    pub param: Option<Binding<'a>>,
-    pub block: Block<'a>,
+pub struct Catch {
+    pub param: Option<Binding>,
+    pub block: Block,
 }
 
 #[derive(Debug)]
-pub struct SingleBinding<'a> {
-    pub ident: Token<'a>,
-    pub initializer: Option<AssignExpr<'a>>,
+pub struct SingleBinding {
+    pub ident: Ident,
+    pub initializer: Option<AssignExpr>,
 }
 
 #[derive(Debug)]
-pub enum BindingElement<'a> {
-    Single(SingleBinding<'a>),
+pub enum BindingElement {
+    Single(SingleBinding),
     Binding {
-        bind: Binding<'a>,
-        expr: Option<AssignExpr<'a>>,
+        bind: Binding,
+        expr: Option<AssignExpr>,
     },
 }
 
 #[derive(Debug)]
-pub enum ObjectBinding<'a> {
+pub enum ObjectBinding {
     SingleName {
-        ident: Token<'a>,
-        expr: Option<AssignExpr<'a>>,
+        ident: Ident,
+        expr: Option<AssignExpr>,
     },
     PropertyName {
-        name: PropertyName<'a>,
-        binding: Box<Binding<'a>>,
-        expr: Option<AssignExpr<'a>>,
+        name: PropertyName,
+        binding: Box<Binding>,
+        expr: Option<AssignExpr>,
     },
 }
 
 #[derive(Debug)]
-pub enum ArrayBinding<'a> {
+pub enum ArrayBinding {
     Elision,
     Binding {
-        bind: Binding<'a>,
-        expr: Option<AssignExpr<'a>>,
+        bind: Binding,
+        expr: Option<AssignExpr>,
     },
 }
 
 #[derive(Debug)]
-pub enum Binding<'a> {
+pub enum Binding {
     ObjectPattern {
-        bindings: Vec<ObjectBinding<'a>>,
-        rest: Option<Token<'a>>,
+        bindings: Vec<ObjectBinding>,
+        rest: Option<Ident>,
     },
     ArrayPattern {
-        bindings: Vec<ArrayBinding<'a>>,
-        rest: Option<Box<Binding<'a>>>,
+        bindings: Vec<ArrayBinding>,
+        rest: Option<Box<Binding>>,
     },
-    Ident {
-        ident: Token<'a>,
-    },
+    Ident(Ident),
 }
 
 #[derive(Debug)]
@@ -133,142 +141,142 @@ pub enum LexicalKind {
 }
 
 #[derive(Debug)]
-pub struct LexicalDecl<'a> {
-    pub binding: Binding<'a>,
-    pub initializer: Option<AssignExpr<'a>>,
+pub struct LexicalDecl {
+    pub binding: Binding,
+    pub initializer: Option<AssignExpr>,
 }
 
 #[derive(Debug)]
-pub struct Decl<'a> {
+pub struct Decl {
     pub kind: LexicalKind,
-    pub decl: Vec<LexicalDecl<'a>>,
+    pub decl: Vec<LexicalDecl>,
 }
 
 #[derive(Debug)]
-pub enum DeclKind<'a> {
+pub enum DeclKind {
     Function,
     Generator,
     AsyncFunction,
     AsyncGenerator,
     Class,
     /// Let and const bindings
-    Lexical(Decl<'a>),
+    Lexical(Decl),
 }
 
 #[derive(Debug)]
-pub struct Block<'a> {
-    pub stmts: Vec<Stmt<'a>>,
+pub struct Block {
+    pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug)]
-pub struct Clause<'a> {
-    pub expr: Expr<'a>,
-    pub stmts: Vec<Stmt<'a>>,
+pub struct Clause {
+    pub expr: Expr,
+    pub stmts: Vec<Stmt>,
 }
 
 #[derive(Debug)]
-pub enum ForKind<'a> {
+pub enum ForKind {
     Empty {
-        condition: Option<Expr<'a>>,
-        iteration: Option<Expr<'a>>,
+        condition: Option<Expr>,
+        iteration: Option<Expr>,
     },
     DeclCLike {
-        decl: Decl<'a>,
-        condition: Option<Expr<'a>>,
-        iteration: Option<Expr<'a>>,
+        decl: Decl,
+        condition: Option<Expr>,
+        iteration: Option<Expr>,
     },
     DeclIn {
-        decl: Decl<'a>,
-        expr: Expr<'a>,
+        decl: Decl,
+        expr: Expr,
     },
     DeclOf {
-        decl: Decl<'a>,
-        expr: AssignExpr<'a>,
+        decl: Decl,
+        expr: AssignExpr,
     },
     ExprCLike {
-        expr: Expr<'a>,
-        condition: Option<Expr<'a>>,
-        iteration: Option<Expr<'a>>,
+        expr: Expr,
+        condition: Option<Expr>,
+        iteration: Option<Expr>,
     },
     ExprIn {
-        lhs: AssignExpr<'a>,
-        expr: Expr<'a>,
+        lhs: AssignExpr,
+        expr: Expr,
     },
     ExprOf {
-        lhs: AssignExpr<'a>,
-        expr: Expr<'a>,
+        lhs: AssignExpr,
+        expr: Expr,
     },
 }
 
 #[derive(Debug)]
-pub struct Class<'a> {
-    pub name: Option<Token<'a>>,
-    pub heritage: Option<AssignExpr<'a>>,
-    pub methods: Vec<Method<'a>>,
+pub struct Class {
+    pub name: Option<Ident>,
+    pub heritage: Option<AssignExpr>,
+    pub methods: Vec<Method>,
 }
 
 #[derive(Debug)]
-pub struct For<'a> {
-    pub kind: ForKind<'a>,
-    pub stmt: Box<Stmt<'a>>,
+pub struct For {
+    pub kind: ForKind,
+    pub stmt: Box<Stmt>,
 }
 
 #[derive(Debug)]
-pub enum Stmt<'a> {
+pub enum Stmt {
     /// A new block statement,
     /// { stmts, .. }
-    Block(Block<'a>),
+    Block(Block),
     Declaration {
-        kind: DeclKind<'a>,
+        kind: DeclKind,
     },
-    Class(Class<'a>),
+    Class(Class),
     Empty,
     Expr {
-        expr: Expr<'a>,
+        expr: Expr,
     },
     If {
-        expr: Expr<'a>,
-        body: Box<Stmt<'a>>,
-        else_body: Option<Box<Stmt<'a>>>,
+        expr: Expr,
+        body: Box<Stmt>,
+        else_body: Option<Box<Stmt>>,
     },
     Switch {
-        expr: Expr<'a>,
-        clauses: Vec<Clause<'a>>,
-        default: Option<Vec<Stmt<'a>>>,
+        expr: Expr,
+        clauses: Vec<Clause>,
+        default: Option<Vec<Stmt>>,
     },
-    For(For<'a>),
+    For(For),
     Continue,
     Break {
-        label: Option<Token<'a>>,
+        label: Option<Ident>,
     },
     DoWhile {
-        body: Box<Stmt<'a>>,
-        expr: Expr<'a>,
+        body: Box<Stmt>,
+        expr: Expr,
     },
     While {
-        expr: Expr<'a>,
-        body: Box<Stmt<'a>>,
+        expr: Expr,
+        body: Box<Stmt>,
     },
     Return {
-        expr: Option<Expr<'a>>,
+        expr: Option<Expr>,
     },
     Labelled,
     Throw {
-        expr: Expr<'a>,
+        expr: Expr,
     },
     Try {
-        block: Block<'a>,
-        catch: Option<Catch<'a>>,
-        finally: Option<Block<'a>>,
+        block: Block,
+        catch: Option<Catch>,
+        finally: Option<Block>,
     },
     With {
-        expr: Expr<'a>,
-        stmt: Box<Stmt<'a>>,
+        expr: Expr,
+        stmt: Box<Stmt>,
     },
     Debugger,
 }
 
 #[derive(Debug)]
-pub struct Script<'a> {
-    pub stmts: Vec<Stmt<'a>>,
+pub struct Script {
+    pub stmts: Vec<Stmt>,
 }

@@ -70,11 +70,11 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_lhs_expr(&mut self) -> PResult<'a, AssignExpr<'a>> {
+    pub fn parse_lhs_expr(&mut self) -> PResult<'a, AssignExpr> {
         to_do!(self)
     }
 
-    pub fn parse_expr_with_in(&mut self) -> PResult<'a, Expr<'a>> {
+    pub fn parse_expr_with_in(&mut self) -> PResult<'a, Expr> {
         let old = self.state._in;
         self.state._in = true;
         let res = self.parse_expr();
@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
         res
     }
 
-    pub fn parse_expr(&mut self) -> PResult<'a, Expr<'a>> {
+    pub fn parse_expr(&mut self) -> PResult<'a, Expr> {
         let mut exprs = vec![self.parse_assignment_expr()?];
         while eat!(self, ",") {
             exprs.push(self.parse_assignment_expr()?);
@@ -90,11 +90,11 @@ impl<'a> Parser<'a> {
         Ok(Expr { exprs })
     }
 
-    pub fn parse_assignment_expr(&mut self) -> PResult<'a, Op<'a>> {
+    pub fn parse_assignment_expr(&mut self) -> PResult<'a, Op> {
         self.parse_ops(0)
     }
 
-    pub fn parse_ops(&mut self, min_bp: u8) -> PResult<'a, Op<'a>> {
+    pub fn parse_ops(&mut self, min_bp: u8) -> PResult<'a, Op> {
         trace_log!("assign expr");
         let mut lhs =
             if let Some(((), r_bp)) = self.peek_kind().and_then(|x| prefix_binding_power(x)) {
@@ -201,7 +201,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    pub fn parse_operand(&mut self) -> PResult<'a, Op<'a>> {
+    pub fn parse_operand(&mut self) -> PResult<'a, Op> {
         if eat!(self, "super") {
             return Ok(Op::Super);
         }

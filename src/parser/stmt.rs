@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> Parser<'a> {
-    pub fn parse_stmt(&mut self) -> PResult<'a, Stmt<'a>> {
+    pub fn parse_stmt(&mut self) -> PResult<'a, Stmt> {
         trace_log!("statement");
 
         if let Some(x) = self.parse_break_stmt()? {
@@ -64,15 +64,13 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_break_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_break_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if self.state._break {
             if eat!(self, "break") {
                 if !self.is_lt() {
-                    if is!(self, "ident") {
-                        return Ok(Some(Stmt::Break {
-                            label: Some(self.next().unwrap()),
-                        }));
-                    }
+                    return Ok(Some(Stmt::Break {
+                        label: self.next_ident(),
+                    }));
                 }
                 return Ok(Some(Stmt::Break { label: None }));
             }
@@ -84,7 +82,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_do_while_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_do_while_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if eat!(self, "do") {
             let body = Box::new(self.alter_state(
                 |x| {
@@ -102,7 +100,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_while_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_while_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if eat!(self, "while") {
             expect!(self, "(");
             let expr = self.parse_expr()?;
@@ -119,7 +117,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_return_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_return_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if is!(self, "return") {
             if self.state._return {
                 self.next();
@@ -136,7 +134,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_if_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_if_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if eat!(self, "if") {
             expect!(self, "(");
             let expr = self.parse_expr_with_in()?;
@@ -156,7 +154,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_try_stmt(&mut self) -> PResult<'a, Option<Stmt<'a>>> {
+    pub fn parse_try_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
         if eat!(self, "try") {
             let block = self.parse_block_stmt()?;
             let catch = if eat!(self, "catch") {
@@ -189,7 +187,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_block_stmt(&mut self) -> PResult<'a, Block<'a>> {
+    pub fn parse_block_stmt(&mut self) -> PResult<'a, Block> {
         trace_log!("block statement");
         expect!(self, "{");
         let mut stmts = Vec::new();
@@ -200,7 +198,7 @@ impl<'a> Parser<'a> {
         Ok(Block { stmts })
     }
 
-    pub fn parse_switch_stmt(&mut self) -> PResult<'a, Stmt<'a>> {
+    pub fn parse_switch_stmt(&mut self) -> PResult<'a, Stmt> {
         expect!(self, "switch");
         expect!(self, "(");
         let expr = self.parse_expr_with_in()?;
@@ -251,7 +249,7 @@ impl<'a> Parser<'a> {
         });
     }
 
-    pub fn parse_for_stmt(&mut self) -> PResult<'a, For<'a>> {
+    pub fn parse_for_stmt(&mut self) -> PResult<'a, For> {
         trace_log!("for statement");
         expect!(self, "for");
         expect!(self, "(");

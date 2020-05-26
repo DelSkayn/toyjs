@@ -1,16 +1,16 @@
 use super::*;
 
 impl<'a> Parser<'a> {
-    pub fn parse_class(&mut self, stmt: bool) -> PResult<'a, Class<'a>> {
+    pub fn parse_class(&mut self, stmt: bool) -> PResult<'a, Class> {
         expect!(self, "class");
         let name = if stmt {
-            Some(expect!(self, "ident" => "expected class name"))
-        } else {
-            if is!(self, "ident") {
-                Some(self.next().unwrap())
+            if let Some(x) = self.next_ident() {
+                Some(x)
             } else {
-                None
+                unexpected!(self, "ident" => "expected class name");
             }
+        } else {
+            self.next_ident()
         };
         let heritage = if eat!(self, "extends") {
             Some(self.parse_lhs_expr()?)
@@ -25,22 +25,22 @@ impl<'a> Parser<'a> {
             }
             let is_static = eat!(self, "static");
 
-            let mut name = self.parse_property_name()?;
+            let name = self.parse_property_name()?;
             let mut ty = MethodType::Normal;
-            if let PropertyName::Ident(x) = name {
-                if x.kind == TokenKind::Ident("get") {
-                    if !is!(self, "(") {
-                        name = self.parse_property_name()?;
+            let name = match name {
+                PropertyName::Ident(x) => {
+                    if x.0 == "get" && !is!(self, "(") {
                         ty = MethodType::Getter;
-                    }
-                }
-                if x.kind == TokenKind::Ident("set") {
-                    if !is!(self, "(") {
-                        name = self.parse_property_name()?;
+                        self.parse_property_name()?
+                    } else if x.0 == "set" && !is!(self, "(") {
                         ty = MethodType::Setter;
+                        self.parse_property_name()?
+                    } else {
+                        PropertyName::Ident(x)
                     }
                 }
-            }
+                x => x,
+            };
             let params = if ty == MethodType::Getter {
                 expect!(self, "(");
                 expect!(self,")" => "getters dont have arguments");
