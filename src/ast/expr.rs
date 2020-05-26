@@ -1,37 +1,34 @@
 use super::*;
 
 #[derive(Debug)]
-pub enum PrimeExpr<'a> {
-    String(&'a str),
-    Number(Number),
+pub enum PrimeExpr {
+    Literal(Literal),
     BinInt,
-    Ident {
-        token: Token<'a>,
-    },
+    Ident(Ident),
     This,
     Null,
     Boolean(bool),
     Function {
-        binding: Option<Token<'a>>,
-        params: Parameters<'a>,
-        block: Block<'a>,
+        binding: Option<Ident>,
+        params: Parameters,
+        block: Block,
     },
     ObjectLiteral {
-        properties: Vec<Property<'a>>,
+        properties: Vec<Property>,
     },
     ArrayLiteral {
-        elems: Vec<ArrayElement<'a>>,
-        rest: Option<Box<AssignExpr<'a>>>,
+        elems: Vec<ArrayElement>,
+        rest: Option<Box<AssignExpr>>,
     },
-    Class(Box<Class<'a>>),
+    Class(Box<Class>),
     Generator {
-        binding: Option<Token<'a>>,
-        params: Parameters<'a>,
-        block: Block<'a>,
+        binding: Option<Ident>,
+        params: Parameters,
+        block: Block,
     },
     ParamList {
-        expr: Option<Expr<'a>>,
-        rest: Option<Binding<'a>>,
+        expr: Option<Expr>,
+        rest: Option<Binding>,
     },
     AsyncFunc,
     AsyncGen,
@@ -72,11 +69,11 @@ impl PrefixOp {
 }
 
 #[derive(Debug)]
-pub enum PostfixOp<'a> {
+pub enum PostfixOp {
     Increment,
     Decrement,
-    Index(Expr<'a>),
-    Call(Arguments<'a>),
+    Index(Expr),
+    Call(Arguments),
 }
 
 #[derive(Debug)]
@@ -97,8 +94,8 @@ pub enum AssignOp {
 }
 
 #[derive(Debug)]
-pub enum BinOp<'a> {
-    Tenary(Box<AssignExpr<'a>>),
+pub enum BinOp {
+    Tenary(Box<AssignExpr>),
     Assign(AssignOp),
     Coalesce,
     Or,
@@ -129,7 +126,7 @@ pub enum BinOp<'a> {
     Dot,
 }
 
-impl<'a> BinOp<'a> {
+impl BinOp {
     pub fn from_token(token: Token) -> Option<Self> {
         match token.kind {
             tok!("=") => Some(BinOp::Assign(AssignOp::Assign)),
@@ -178,34 +175,34 @@ impl<'a> BinOp<'a> {
 }
 
 #[derive(Debug)]
-pub enum AssignExpr<'a> {
+pub enum AssignExpr {
     Prefix {
         op: PrefixOp,
-        expr: Box<AssignExpr<'a>>,
+        expr: Box<AssignExpr>,
     },
     Postfix {
-        expr: Box<AssignExpr<'a>>,
-        op: PostfixOp<'a>,
+        expr: Box<AssignExpr>,
+        op: PostfixOp,
     },
     Bin {
-        lhs: Box<AssignExpr<'a>>,
-        op: BinOp<'a>,
-        rhs: Box<AssignExpr<'a>>,
+        lhs: Box<AssignExpr>,
+        op: BinOp,
+        rhs: Box<AssignExpr>,
     },
-    Prime(PrimeExpr<'a>),
-    Covered(Expr<'a>),
+    Prime(PrimeExpr),
+    Covered(Expr),
     NewTarget,
     Super,
     Import,
     ImportMeta,
 }
 
-impl<'a> AssignExpr<'a> {
+impl AssignExpr {
     /// Wether this production is an assignable left hand side expression.
     pub fn is_assign_lhs(&self) -> bool {
         match *self {
             AssignExpr::Prime(ref p) => match p {
-                PrimeExpr::Ident { token: _ } => true,
+                PrimeExpr::Ident(_) => true,
                 PrimeExpr::This => true,
                 _ => false,
             },
@@ -228,6 +225,6 @@ impl<'a> AssignExpr<'a> {
 }
 
 #[derive(Debug)]
-pub struct Expr<'a> {
-    pub exprs: Vec<AssignExpr<'a>>,
+pub struct Expr {
+    pub exprs: Vec<AssignExpr>,
 }

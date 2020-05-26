@@ -144,6 +144,16 @@ impl<'a> Parser<'a> {
         false
     }
 
+    pub fn next_ident(&mut self) -> Option<Ident> {
+        match self.peek_kind() {
+            Some(TokenKind::Ident(x)) => {
+                self.next();
+                Some(Ident(x.to_string()))
+            }
+            _ => None,
+        }
+    }
+
     pub fn source(&self) -> Source<'a> {
         self.lexer.src.clone()
     }
@@ -161,7 +171,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a js script.
     /// One of the 2 entry points into parsing
-    pub fn parse_script(&mut self) -> PResult<'a, Script<'a>> {
+    pub fn parse_script(&mut self) -> PResult<'a, Script> {
         trace!("parse: script");
         let mut stmts = Vec::new();
         while self.peek().is_some() {
@@ -173,7 +183,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a js module.
     /// One of the 2 entry points into parsing
-    pub fn parse_module(&mut self) -> PResult<'a, Script<'a>> {
+    pub fn parse_module(&mut self) -> PResult<'a, Script> {
         trace!("parse: module");
         to_do!(self)
     }

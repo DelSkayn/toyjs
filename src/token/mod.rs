@@ -8,12 +8,11 @@ pub use kw::*;
 pub use op::{BinOpToken, RelationToken, UnaryOpToken};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NumberKind {
-    Hex,
-    Binary,
-    Octal,
-    Integer,
-    Float,
+pub enum NumberKind<'a> {
+    Invalid(&'static str),
+    Integer(i32),
+    Float(f64),
+    Big(&'a str),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,15 +26,15 @@ pub enum DelimToken {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LitToken {
-    String,
-    Number { big: bool, kind: NumberKind },
+pub enum LitToken<'a> {
+    String(&'a str),
+    Number(NumberKind<'a>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TokenKind<'a> {
     Ident(&'a str),
-    Lit(LitToken),
+    Lit(LitToken<'a>),
     Kw(Kw),
     /// ;
     SemiColon,

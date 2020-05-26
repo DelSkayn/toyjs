@@ -4,7 +4,7 @@ use crate::token::{LitToken, NumberKind, TokenKind};
 use std::num::ParseIntError;
 
 impl<'a> Parser<'a> {
-    pub fn parse_primary_expr(&mut self) -> PResult<'a, PrimeExpr<'a>> {
+    pub fn parse_primary_expr(&mut self) -> PResult<'a, PrimeExpr> {
         trace_log!("primary expression");
         if eat!(self, "this") {
             return Ok(PrimeExpr::This);
@@ -19,9 +19,7 @@ impl<'a> Parser<'a> {
             return Ok(PrimeExpr::Boolean(true));
         }
         if is!(self, "string") {
-            let string = self.cur_string();
-            self.next();
-            return Ok(PrimeExpr::String(string));
+            return Ok(PrimeExpr::Literal(self.parse_literal()?));
         }
         if is!(self, "[") {
             // Array literal
@@ -58,11 +56,7 @@ impl<'a> Parser<'a> {
         }
         if eat!(self, "function") {
             let generator = eat!(self, "*");
-            let binding = if is!(self, "ident") {
-                Some(self.next().unwrap())
-            } else {
-                None
-            };
+            let binding = self.next_ident();
             let params = self.parse_params()?;
             let block = self.alter_state(|x| x._return = true, |this| this.parse_block_stmt())?;
             if generator {
@@ -83,75 +77,15 @@ impl<'a> Parser<'a> {
             to_do!(self)
         }
         if is!(self, "number") {
-            let number = self.peek().unwrap();
-            let (big, kind) = match number.kind {
-                TokenKind::Lit(LitToken::Number { big, kind }) => (big, kind),
-                _ => unreachable!(),
-            };
-            if big {
-                to_do!(self);
-            }
-            let num = match kind {
-                NumberKind::Float => Number::Float(match self.cur_string().parse() {
-                    Ok(x) => x,
-                    _ => to_do!(self),
-                }),
-                NumberKind::Integer => self
-                    .cur_string()
-                    .parse()
-                    .map(Number::Integer)
-                    .or_else(|_| self.cur_string().parse().map(Number::Float))
-                    .or_else(|e| {
-                        syntax_error!(
-                            self,
-                            ParseErrorKind::NumberParseError {
-                                kind: NumberParseErrorKind::Float(e)
-                            }
-                        )
-                    })?,
-                NumberKind::Hex => u32::from_str_radix(&self.cur_string()[2..], 16)
-                    .map(Number::Integer)
-                    .or_else(|e| {
-                        syntax_error!(
-                            self,
-                            ParseErrorKind::NumberParseError {
-                                kind: NumberParseErrorKind::Integer(e)
-                            }
-                        )
-                    })?,
-                NumberKind::Octal => u32::from_str_radix(&self.cur_string()[2..], 8)
-                    .map(Number::Integer)
-                    .or_else(|e| {
-                        syntax_error!(
-                            self,
-                            ParseErrorKind::NumberParseError {
-                                kind: NumberParseErrorKind::Integer(e)
-                            }
-                        )
-                    })?,
-                NumberKind::Binary => u32::from_str_radix(&self.cur_string()[2..], 2)
-                    .map(Number::Integer)
-                    .or_else(|e| {
-                        syntax_error!(
-                            self,
-                            ParseErrorKind::NumberParseError {
-                                kind: NumberParseErrorKind::Integer(e)
-                            }
-                        )
-                    })?,
-            };
-            self.next();
-            return Ok(PrimeExpr::Number(num));
+            return Ok(PrimeExpr::Literal(self.parse_literal()?));
         }
-        if is!(self, "ident") {
-            return Ok(PrimeExpr::Ident {
-                token: self.next().unwrap(),
-            });
+        if let Some(x) = self.next_ident() {
+            return Ok(PrimeExpr::Ident(x));
         }
         unexpected!(self)
     }
 
-    pub fn parse_object_expr(&mut self) -> PResult<'a, PrimeExpr<'a>> {
+    pub fn parse_object_expr(&mut self) -> PResult<'a, PrimeExpr> {
         trace_log!("object expression");
         expect!(self, "{");
         let mut properties = Vec::new();
@@ -198,9 +132,9 @@ impl<'a> Parser<'a> {
                 }
             }
             let ty = if let PropertyName::Ident(x) = name {
-                if x.kind == TokenKind::Ident("get") {
+                if x.0 == "get" {
                     MethodType::Getter
-                } else if x.kind == TokenKind::Ident("set") {
+                } else if x.0 == "set" {
                     MethodType::Setter
                 } else {
                     unexpected!(self)
@@ -228,7 +162,7 @@ impl<'a> Parser<'a> {
         Ok(PrimeExpr::ObjectLiteral { properties })
     }
 
-    pub fn parse_array_expr(&mut self) -> PResult<'a, PrimeExpr<'a>> {
+    pub fn parse_array_expr(&mut self) -> PResult<'a, PrimeExpr> {
         trace_log!("array expression");
 
         expect!(self, "[");
@@ -257,7 +191,7 @@ impl<'a> Parser<'a> {
         Ok(PrimeExpr::ArrayLiteral { elems, rest })
     }
 
-    pub fn parse_arguments(&mut self) -> PResult<'a, Arguments<'a>> {
+    pub fn parse_arguments(&mut self) -> PResult<'a, Arguments> {
         expect!(self, "(");
         let mut args = Vec::new();
         let mut rest = None;

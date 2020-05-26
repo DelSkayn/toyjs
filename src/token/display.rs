@@ -59,9 +59,9 @@ impl fmt::Display for TokenKind<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TokenKind::Ident(x) => write!(f, "{}", x),
-            TokenKind::Lit(LitToken::String) => write!(f, "String"),
+            TokenKind::Lit(LitToken::String(_)) => write!(f, "String"),
             TokenKind::Kw(x) => write!(f, "{}", x),
-            TokenKind::Lit(LitToken::Number { big: _, kind: _ }) => write!(f, "number"),
+            TokenKind::Lit(LitToken::Number(_)) => write!(f, "number"),
             TokenKind::SemiColon => write!(f, ";"),
             TokenKind::DelimOpen(x) => match x {
                 DelimToken::Brace => write!(f, "{{"),

@@ -16,10 +16,10 @@ macro_rules! tok {
         crate::token::TokenKind::Ident("of")
     };
     ("string") => {
-        crate::token::TokenKind::Lit(crate::token::LitToken::String)
+        crate::token::TokenKind::Lit(crate::token::LitToken::String(_))
     };
     ("number") => {
-        crate::token::TokenKind::Lit(crate::token::LitToken::Number{big:_,kind:_})
+        crate::token::TokenKind::Lit(crate::token::LitToken::Number(_))
     };
     ("lit") => {
         crate::token::TokenKind::Lit(_)
