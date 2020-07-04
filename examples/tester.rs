@@ -29,7 +29,7 @@ fn main() {
             }
         };
         unsafe {
-            let mut runtime = runtime::Runtime::new(&x.0);
+            let mut runtime = runtime::Runtime::new(&x);
             let res = runtime.run_unsafe();
             if let Some(x) = res {
                 if x.is_float() {
@@ -37,6 +37,21 @@ fn main() {
                 }
                 if x.is_int() {
                     println!("value: {:?}", x.into_int());
+                }
+                if x.is_bool() {
+                    if x.into_bool() {
+                        println!("value: true")
+                    } else {
+                        println!("value: false")
+                    }
+                }
+                if x.is_null() {
+                    println!("value: null")
+                }
+                if x.is_string() {
+                    let val = x.into_string();
+                    println!("value: \"{}\"", val.value());
+                    val.drop();
                 }
             }
         }
