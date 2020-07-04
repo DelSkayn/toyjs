@@ -132,6 +132,11 @@ impl<'a> Runtime<'a> {
                     (*self.get(dst)) = data;
                     self.push(data);
                 }
+                op::MOV => {
+                    let dst = bc::op_a(instr);
+                    let src = bc::op_d(instr);
+                    *self.get(dst) = *self.get(src as u8);
+                }
                 op::ADD => {
                     let val1 = *self.get(bc::op_b(instr));
                     let val2 = *self.get(bc::op_c(instr));
