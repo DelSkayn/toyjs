@@ -70,7 +70,7 @@ impl Compiler {
                 *free_reg -= 1;
                 match op {
                     BinOp::Plus => {
-                        self.type_a(op::ADD, rl, rl, dbg!(rr));
+                        self.type_a(op::ADD, rl, rl, rr);
                         return Ok(rl);
                     }
                     BinOp::Minus => {
