@@ -46,7 +46,7 @@ macro_rules! op_code{
     };
 
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $B:ident, $C:ident)) => {
-        write!($w,"{}\t{}:{}\t{}:{}\t{}:{}",
+        write!($w,"{:4}  {:3}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             ($i & A_MASK) >> 8,
@@ -57,7 +57,7 @@ macro_rules! op_code{
             )
     };
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $D:ident)) => {
-        write!($w,"{}\t{}:{}\t_:_\t{}:{}",
+        write!($w,"{:4}  {:3}:0x{:<2x}    _:_     {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             ($i & A_MASK) >> 8,

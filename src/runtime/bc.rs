@@ -107,7 +107,7 @@ op_code!(
         /// load constant primitive value operand D and store them into reg A
         CLP(dst, prim),
         /// load data constant with index operand D into reg A
-        /// if the last bit of the idx is set the value is not a idx but a register for and offset;
+        /// if the last bit of the idx is set the value is not a direct index but a register for and offset;
         CLD(dst, idx),
 
         /// set the entry from the key in reg D to the value from reg A in the global object
