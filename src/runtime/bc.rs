@@ -115,6 +115,9 @@ op_code!(
         /// set reg A to value int the global object with the key in reg D.
         GGET(dst, key),
 
+        /// copy a value from one register to an other
+        MOV(dst, src),
+
         /// Add the values from reg A and reg B and store them into reg C
         ADD(dst, op, op),
         /// Add the values from reg A and reg B and store them into reg C
