@@ -61,7 +61,6 @@ pub struct Lexer<'a> {
     pub line: u64,
     pub column: u64,
     pub str_offset_start: usize,
-    pub src: Source<'a>,
     pub chars: CharStream<'a>,
     pub errors: Vec<LexerError>,
 }
@@ -75,13 +74,12 @@ impl<'a> Iterator for Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str, path: Option<PathBuf>) -> Self {
+    pub fn new(source: &'a Source) -> Self {
         Lexer {
             line: 0,
             column: 0,
-            src: Source::new(source, path),
-            str_offset_start: source.as_ptr() as usize,
-            chars: CharStream::new(source),
+            str_offset_start: source.src.as_ptr() as usize,
+            chars: CharStream::new(&source.src),
             errors: Vec::new(),
         }
     }

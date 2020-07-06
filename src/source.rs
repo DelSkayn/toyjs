@@ -1,8 +1,15 @@
 use std::{
     convert::TryInto,
+    fmt,
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[derive(Debug)]
+pub struct Sourced<'a, T> {
+    pub source: &'a Source,
+    pub value: T,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Span {
@@ -17,16 +24,16 @@ pub struct Pos {
 }
 
 #[derive(Clone, Debug)]
-pub struct Source<'a> {
+pub struct Source {
     /// Line offsets
     base_offset: usize,
     lines: Arc<Vec<Span>>,
-    src: &'a str,
+    pub src: String,
     path: Option<PathBuf>,
 }
 
-impl<'a> Source<'a> {
-    pub fn new(src: &'a str, path: Option<PathBuf>) -> Self {
+impl Source {
+    pub fn new(src: String, path: Option<PathBuf>) -> Self {
         let base_offset = src.as_ptr() as usize;
         let lines = Arc::new(
             src.lines()
@@ -73,16 +80,64 @@ impl<'a> Source<'a> {
         Some((start, end))
     }
 
-    pub fn line(&self, line: u32) -> &'a str {
+    pub fn line(&self, line: u32) -> &str {
         let span = self.lines[(line - 1) as usize];
         &self.src[span.lo as usize..span.hi as usize]
     }
 
-    pub fn str(&self, span: Span) -> &'a str {
+    pub fn str(&self, span: Span) -> &str {
         &self.src[span.lo as usize..span.hi as usize]
     }
 
     pub fn path(&self) -> Option<&Path> {
         self.path.as_ref().map(|x| x.as_path())
+    }
+
+    pub fn wrap<T>(&self, value: T) -> Sourced<T> {
+        Sourced {
+            value,
+            source: &self,
+        }
+    }
+
+    pub fn fmt_span(&self, f: &mut fmt::Formatter<'_>, span: Span) -> fmt::Result {
+        write!(f, " --> ")?;
+        if let Some(x) = self.path() {
+            write!(f, "{}", x.display())?;
+        } else {
+            write!(f, "??")?;
+        }
+        if let Some((a, _)) = self.get_source_position(span) {
+            writeln!(f, ":{}:{}", a.line, a.column)?;
+        } else {
+            writeln!(f, ":??:??")?;
+        }
+        Ok(())
+    }
+
+    pub fn fmt_span_src(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+        span: Span,
+        message: Option<&'static str>,
+    ) -> fmt::Result {
+        if let Some((a, _)) = self.get_source_position(span) {
+            let line = self.line(a.line);
+            let num_chars = line[0 as usize..a.column as usize].chars().count();
+            writeln!(f, "\t | ")?;
+            writeln!(f, "{}\t | {}", a.line, line)?;
+            write!(f, "\t | ")?;
+            for _ in 0..num_chars {
+                write!(f, " ")?;
+            }
+            write!(f, "^")?;
+            if let Some(m) = message {
+                writeln!(f, " {}", m)?;
+            } else {
+                writeln!(f, "")?;
+            }
+            writeln!(f, "\t | ")?;
+        }
+        Ok(())
     }
 }

@@ -61,8 +61,8 @@ impl<T> Rc<T> {
     }
 
     #[inline(always)]
-    pub unsafe fn value(self) -> &'static T {
-        &(*self.ptr).value
+    pub unsafe fn value(self) -> &'static mut T {
+        &mut (*self.ptr).value
     }
 
     pub unsafe fn drop(self) {

@@ -1,29 +1,31 @@
 //! The runtime executing the code.
 pub mod value;
-pub use value::{JSValue, TAG_INT, TAG_MASK};
+pub use value::JSValue;
 pub mod bc;
 use bc::Bytecode;
 pub mod object;
 use object::Object;
 pub mod rc;
+use rc::Rc;
 pub mod string;
-use bc::{op, Instruction};
+use bc::{op, DataValue, Instruction};
 use std::{alloc, f64, mem, ptr};
 use string::StringRc;
 
 const INITIAL_STACK_SIZE: usize = mem::size_of::<JSValue>() * 8;
+// Full range for now
+// prop too big for final value
+const NUM_REGISTERS: usize = 255;
 
 pub struct Runtime<'a> {
     stack: *mut JSValue,
     size: usize,
     code: &'a [Instruction],
-    data: &'a [JSValue],
+    data: &'a [DataValue],
     pc: usize,
     frame: *mut JSValue,
-    // Full range for now
-    // prop too big for final value
-    regs: [JSValue; 256],
-    global: Object,
+    regs: [JSValue; NUM_REGISTERS],
+    global: rc::Rc<Object>,
 }
 
 impl<'a> Drop for Runtime<'a> {
@@ -51,7 +53,7 @@ impl<'a> Runtime<'a> {
             code,
             data,
             regs,
-            global: Object::new(),
+            global: rc::Rc::new(Object::new()),
         }
     }
 
@@ -70,6 +72,7 @@ impl<'a> Runtime<'a> {
 
     #[inline(always)]
     pub unsafe fn get(&mut self, idx: u8) -> &mut JSValue {
+        debug_assert!(idx < NUM_REGISTERS as u8);
         self.regs.get_unchecked_mut(idx as usize)
     }
 
@@ -92,6 +95,32 @@ impl<'a> Runtime<'a> {
             let instr = self.code[self.pc];
             let op = bc::op_op(instr);
             match op {
+                op::OSET => {
+                    let op_a = bc::op_a(instr);
+                    let obj = if op_a == 0xff {
+                        JSValue::object(self.global)
+                    } else {
+                        *self.get(op_a)
+                    };
+                    let key = *self.get(bc::op_b(instr));
+                    let val = *self.get(bc::op_c(instr));
+                    let key = Self::as_string(key);
+                    obj.into_object()
+                        .value()
+                        .set(key, val.clone())
+                        .map(|x| x.drop());
+                }
+                op::OGET => {
+                    let op_b = bc::op_b(instr);
+                    let obj = if op_b == 0xff {
+                        JSValue::object(self.global)
+                    } else {
+                        *self.get(op_b)
+                    };
+                    let key = *self.get(bc::op_c(instr));
+                    let val = obj.into_object().value().get(&Self::as_string(key));
+                    *self.get(bc::op_a(instr)) = val;
+                }
                 op::CLL => {
                     let val = bc::op_d(instr);
                     *self.get(bc::op_a(instr)) = JSValue::int(val as i32);
@@ -128,7 +157,10 @@ impl<'a> Runtime<'a> {
                         }
                     };
                     let dst = bc::op_a(instr);
-                    let data = self.data[idx].clone();
+                    let data = match self.data[idx].clone() {
+                        DataValue::String(x) => JSValue::string(Rc::new(x)),
+                        DataValue::Object(x) => JSValue::object(Rc::new(x)),
+                    };
                     (*self.get(dst)) = data;
                     self.push(data);
                 }
@@ -205,20 +237,25 @@ impl<'a> Runtime<'a> {
     }
 
     pub unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
-        if a.is_string() && b.is_string() {
-            let mut new_str = a.into_string().value().clone();
-            new_str.push_str(b.into_string().value());
-            return JSValue::string(StringRc::new(new_str));
-        }
-        if a.is_string() {
-            let string = format!("{}{}", a.into_string().value(), Self::as_float(b));
-            return JSValue::string(StringRc::new(string));
-        }
-        if b.is_string() {
-            let string = format!("{}{}", Self::as_float(a), b.into_string().value());
-            return JSValue::string(StringRc::new(string));
+        if a.is_string() || b.is_string() {
+            let mut s = Self::as_string(a);
+            s.push_str(&Self::as_string(b));
+            return JSValue::string(StringRc::new(s));
         }
         Self::bin_arithmatic(a, b, op::ADD)
+    }
+
+    unsafe fn as_string(val: JSValue) -> String {
+        match val.tag() {
+            value::TAG_STRING => val.into_string().value().clone(),
+            value::TAG_INT => val.into_int().to_string(),
+            value::TAG_BOOL => val.into_bool().to_string(),
+            value::TAG_OBJECT => "[object Object]".to_string(),
+            value::TAG_UNDEFINED => "undefined".to_string(),
+            value::TAG_NULL => "null".to_string(),
+            value::TAG_AVAILABLE_5 => panic!("invalid tag"),
+            _ => unreachable!(),
+        }
     }
 
     pub unsafe fn bin_arithmatic(a: JSValue, b: JSValue, op: u8) -> JSValue {
@@ -260,6 +297,6 @@ impl<'a> Runtime<'a> {
 
     #[inline]
     pub unsafe fn both_int(a: JSValue, b: JSValue) -> bool {
-        a.0.bits & TAG_MASK == TAG_INT && b.0.bits & TAG_MASK == TAG_INT
+        a.0.bits & value::TAG_MASK == value::TAG_INT && b.0.bits & value::TAG_MASK == value::TAG_INT
     }
 }

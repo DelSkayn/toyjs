@@ -1,5 +1,5 @@
 use crate::{
-    source::{Source, Span},
+    source::{Source, Sourced, Span},
     token::Token,
 };
 use std::{fmt, num};
@@ -36,63 +36,21 @@ pub enum ParseErrorKind<'a> {
 pub struct ParseError<'a> {
     pub kind: ParseErrorKind<'a>,
     pub origin: Span,
-    pub source: Source<'a>,
 }
 
-impl<'a> ParseError<'a> {
-    fn fmt_span(&self, f: &mut fmt::Formatter<'_>, span: Span) -> fmt::Result {
-        write!(f, " --> ")?;
-        if let Some(x) = self.source.path() {
-            write!(f, "{}", x.display())?;
-        } else {
-            write!(f, "??")?;
-        }
-        if let Some((a, _)) = self.source.get_source_position(span) {
-            writeln!(f, ":{}:{}", a.line, a.column)?;
-        } else {
-            writeln!(f, ":??:??")?;
-        }
-        Ok(())
-    }
+impl<'a> ParseError<'a> {}
 
-    fn fmt_span_src(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-        span: Span,
-        message: Option<&'static str>,
-    ) -> fmt::Result {
-        if let Some((a, _)) = self.source.get_source_position(span) {
-            let line = self.source.line(a.line);
-            let num_chars = line[0 as usize..a.column as usize].chars().count();
-            writeln!(f, "\t | ")?;
-            writeln!(f, "{}\t | {}", a.line, line)?;
-            write!(f, "\t | ")?;
-            for _ in 0..num_chars {
-                write!(f, " ")?;
-            }
-            write!(f, "^")?;
-            if let Some(m) = message {
-                writeln!(f, " {}", m)?;
-            } else {
-                writeln!(f, "")?;
-            }
-            writeln!(f, "\t | ")?;
-        }
-        Ok(())
-    }
-}
-
-impl<'a> fmt::Display for ParseError<'a> {
+impl<'a> fmt::Display for Sourced<'a, ParseError<'a>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "error: ")?;
-        match self.kind {
+        match self.value.kind {
             ParseErrorKind::UnexpectedLineTerminator => {
                 writeln!(
                     f,
                     "unexpected line terminator, syntax forbids line terminator at this point",
                 )?;
-                self.fmt_span(f, self.origin)?;
-                self.fmt_span_src(f, self.origin, None)
+                self.source.fmt_span(f, self.value.origin)?;
+                self.source.fmt_span_src(f, self.value.origin, None)
             }
             ParseErrorKind::Todo { file, line } => {
                 writeln!(
@@ -100,8 +58,8 @@ impl<'a> fmt::Display for ParseError<'a> {
                     "parser encountered an unimplemented path in: {}:{}, Sorry!",
                     file, line
                 )?;
-                self.fmt_span(f, self.origin)?;
-                self.fmt_span_src(f, self.origin, None)
+                self.source.fmt_span(f, self.value.origin)?;
+                self.source.fmt_span_src(f, self.value.origin, None)
             }
             ParseErrorKind::NumberParseError(reason) => {
                 writeln!(f, "encountered invalid number: {}", reason)
@@ -131,8 +89,8 @@ impl<'a> fmt::Display for ParseError<'a> {
                     write!(f, " expected '{}'", expected[0])?;
                 }
                 writeln!(f, "")?;
-                self.fmt_span(f, self.origin)?;
-                self.fmt_span_src(f, self.origin, reason)
+                self.source.fmt_span(f, self.value.origin)?;
+                self.source.fmt_span_src(f, self.value.origin, reason)
             }
         }
     }
