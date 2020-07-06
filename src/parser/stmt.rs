@@ -3,76 +3,65 @@ use super::*;
 impl<'a> Parser<'a> {
     pub fn parse_stmt(&mut self) -> PResult<'a, Stmt> {
         trace_log!("statement");
+        let span = self.cur_span();
 
-        if let Some(x) = self.parse_break_stmt()? {
-            return Ok(x);
-        }
-        if let Some(x) = self.parse_do_while_stmt()? {
-            return Ok(x);
-        }
-        if let Some(x) = self.parse_while_stmt()? {
-            return Ok(x);
-        }
-        if is!(self, "for") {
-            return self.parse_for_stmt().map(Stmt::For);
-        }
-        if let Some(x) = self.parse_return_stmt()? {
-            return Ok(x);
-        }
-        if is!(self, "{") {
-            return Ok(Stmt::Block(self.parse_block_stmt()?));
-        }
-        if is!(self, "var", "let", "const") {
+        let kind = if let Some(x) = self.parse_break_stmt()? {
+            x
+        } else if let Some(x) = self.parse_do_while_stmt()? {
+            x
+        } else if let Some(x) = self.parse_while_stmt()? {
+            x
+        } else if is!(self, "for") {
+            self.parse_for_stmt().map(StmtKind::For)?
+        } else if let Some(x) = self.parse_return_stmt()? {
+            x
+        } else if is!(self, "{") {
+            StmtKind::Block(self.parse_block_stmt()?)
+        } else if is!(self, "var", "let", "const") {
             let decl = self.alter_state(|x| x._in = true, |this| this.parse_decl())?;
-            return Ok(Stmt::Declaration {
+            StmtKind::Declaration {
                 kind: DeclKind::Lexical(decl),
-            });
-        }
-        if is!(self, "class") {
-            return Ok(Stmt::Class(self.parse_class(true)?));
-        }
-        if eat!(self, ";") {
-            return Ok(Stmt::Empty);
-        }
-        if eat!(self, "debugger") {
+            }
+        } else if is!(self, "class") {
+            StmtKind::Class(self.parse_class(true)?)
+        } else if eat!(self, ";") {
+            StmtKind::Empty
+        } else if eat!(self, "debugger") {
             eat!(self, ";");
-            return Ok(Stmt::Debugger);
-        }
-        if eat!(self, "throw") {
+            StmtKind::Debugger
+        } else if eat!(self, "throw") {
             no_lt!(self);
             let expr = self.parse_expr_with_in()?;
-            return Ok(Stmt::Throw { expr });
-        }
-        if let Some(x) = self.parse_if_stmt()? {
-            return Ok(x);
-        }
-        if is!(self, "switch") {
-            return self.parse_switch_stmt();
-        }
-        if eat!(self, "with") {
+            StmtKind::Throw { expr }
+        } else if let Some(x) = self.parse_if_stmt()? {
+            x
+        } else if is!(self, "switch") {
+            self.parse_switch_stmt()?
+        } else if eat!(self, "with") {
             expect!(self, "(");
             let expr = self.parse_expr()?;
             expect!(self, ")");
             let stmt = Box::new(self.parse_stmt()?);
-            return Ok(Stmt::With { expr, stmt });
-        }
-        if let Some(x) = self.parse_try_stmt()? {
-            return Ok(x);
-        }
-        Ok(Stmt::Expr {
-            expr: self.parse_expr()?,
-        })
+            StmtKind::With { expr, stmt }
+        } else if let Some(x) = self.parse_try_stmt()? {
+            x
+        } else {
+            StmtKind::Expr {
+                expr: self.parse_expr()?,
+            }
+        };
+        Ok(Stmt { kind, span })
     }
 
-    pub fn parse_break_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_break_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if self.state._break {
             if eat!(self, "break") {
                 if !self.is_lt() {
-                    return Ok(Some(Stmt::Break {
+                    return Ok(Some(StmtKind::Break {
                         label: self.next_ident(),
                     }));
                 }
-                return Ok(Some(Stmt::Break { label: None }));
+                return Ok(Some(StmtKind::Break { label: None }));
             }
         } else {
             if is!(self, "break") {
@@ -82,7 +71,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_do_while_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_do_while_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if eat!(self, "do") {
             let body = Box::new(self.alter_state(
                 |x| {
@@ -95,12 +84,12 @@ impl<'a> Parser<'a> {
             expect!(self, "(");
             let expr = self.parse_expr()?;
             expect!(self, ")");
-            return Ok(Some(Stmt::DoWhile { body, expr }));
+            return Ok(Some(StmtKind::DoWhile { body, expr }));
         }
         Ok(None)
     }
 
-    pub fn parse_while_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_while_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if eat!(self, "while") {
             expect!(self, "(");
             let expr = self.parse_expr()?;
@@ -112,12 +101,12 @@ impl<'a> Parser<'a> {
                 },
                 |this| this.parse_stmt(),
             )?);
-            return Ok(Some(Stmt::While { body, expr }));
+            return Ok(Some(StmtKind::While { body, expr }));
         }
         Ok(None)
     }
 
-    pub fn parse_return_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_return_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if is!(self, "return") {
             if self.state._return {
                 self.next();
@@ -126,7 +115,7 @@ impl<'a> Parser<'a> {
                 } else {
                     Some(self.parse_expr_with_in()?)
                 };
-                return Ok(Some(Stmt::Return { expr }));
+                return Ok(Some(StmtKind::Return { expr }));
             } else {
                 unexpected!(self => "return not allowed in this context")
             }
@@ -134,7 +123,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_if_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_if_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if eat!(self, "if") {
             expect!(self, "(");
             let expr = self.parse_expr_with_in()?;
@@ -145,7 +134,7 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            return Ok(Some(Stmt::If {
+            return Ok(Some(StmtKind::If {
                 expr,
                 body,
                 else_body,
@@ -154,7 +143,7 @@ impl<'a> Parser<'a> {
         Ok(None)
     }
 
-    pub fn parse_try_stmt(&mut self) -> PResult<'a, Option<Stmt>> {
+    pub fn parse_try_stmt(&mut self) -> PResult<'a, Option<StmtKind>> {
         if eat!(self, "try") {
             let block = self.parse_block_stmt()?;
             let catch = if eat!(self, "catch") {
@@ -178,7 +167,7 @@ impl<'a> Parser<'a> {
             } else {
                 None
             };
-            return Ok(Some(Stmt::Try {
+            return Ok(Some(StmtKind::Try {
                 block,
                 catch,
                 finally,
@@ -198,7 +187,7 @@ impl<'a> Parser<'a> {
         Ok(Block { stmts })
     }
 
-    pub fn parse_switch_stmt(&mut self) -> PResult<'a, Stmt> {
+    pub fn parse_switch_stmt(&mut self) -> PResult<'a, StmtKind> {
         expect!(self, "switch");
         expect!(self, "(");
         let expr = self.parse_expr_with_in()?;
@@ -242,7 +231,7 @@ impl<'a> Parser<'a> {
             }
             unexpected!(self, "case", "default", "}")
         }
-        return Ok(Stmt::Switch {
+        return Ok(StmtKind::Switch {
             expr,
             clauses,
             default: def,

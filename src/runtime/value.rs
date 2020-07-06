@@ -8,7 +8,7 @@ pub const TAG_NULL: u64 = (0xfffb_0000) << 32;
 pub const TAG_UNDEFINED: u64 = (0xfffc_0000) << 32;
 pub const TAG_OBJECT: u64 = (0xfffd_0000) << 32;
 pub const TAG_STRING: u64 = (0xfffe_0000) << 32;
-const TAG_AVAILABLE_5: u64 = (0xffff_0000) << 32;
+pub const TAG_AVAILABLE_5: u64 = (0xffff_0000) << 32;
 pub const TAG_MASK: u64 = 0xffff_0000 << 32;
 
 const PTR_MASK: u64 = 0x0000_ffff_ffff_fff8;
@@ -23,6 +23,14 @@ pub union JSValueUnion {
 
 #[derive(Copy, Clone)]
 pub struct JSValue(pub JSValueUnion);
+
+impl fmt::Debug for JSValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("JSValue")
+            .field(unsafe { &self.0.bits })
+            .finish()
+    }
+}
 
 impl fmt::Display for JSValue {
     fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {

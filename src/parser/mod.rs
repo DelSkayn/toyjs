@@ -154,19 +154,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn source(&self) -> Source<'a> {
-        self.lexer.src.clone()
-    }
-
     pub fn cur_span(&mut self) -> Span {
         if let Some(x) = self.peek() {
             return x.span;
         }
         return self.pref_span;
-    }
-
-    pub fn cur_string(&mut self) -> &'a str {
-        self.source().str(self.cur_span())
     }
 
     /// Parse a js script.

@@ -1,17 +1,53 @@
 use crate::{
     ast::*,
     runtime::{
-        bc::{self, op, Bytecode, Instruction},
+        bc::{self, op, Bytecode, DataValue, Instruction},
         string::StringRc,
         JSValue,
     },
 };
 use fxhash::FxHashMap;
+use std::{result::Result as StdResult, u64};
+
+#[macro_use]
+mod macros;
+
+mod error;
+pub use error::{CompilerError, CompilerErrorKind};
+mod expr;
+mod stmt;
+
+type Result<T> = StdResult<T, error::CompilerError>;
+
+pub struct RegAlloc {
+    regs: u64,
+}
+
+impl RegAlloc {
+    pub fn new() -> Self {
+        RegAlloc { regs: u64::MAX }
+    }
+
+    pub fn alloc(&mut self) -> Option<u8> {
+        let next = self.regs.trailing_zeros();
+        if next == 64 {
+            return None;
+        }
+        let mask = 1 << next;
+        self.regs ^= mask;
+        return Some(next as u8);
+    }
+
+    pub fn free(&mut self, reg: u8) {
+        let mask = 1 << reg as u64;
+        self.regs |= mask
+    }
+}
 
 pub struct Compiler {
     instructions: Vec<Instruction>,
-    data: Vec<JSValue>,
-    free_reg: u8,
+    data: Vec<DataValue>,
+    regs: RegAlloc,
     sym_table: FxHashMap<String, u8>,
 }
 
@@ -20,7 +56,7 @@ impl Compiler {
         Compiler {
             instructions: Vec::new(),
             data: Vec::new(),
-            free_reg: 0,
+            regs: RegAlloc::new(),
             sym_table: FxHashMap::default(),
         }
     }
@@ -40,196 +76,29 @@ impl Compiler {
         self.instructions.push(instr)
     }
 
-    pub fn compile_script(&mut self, script: Script) -> Result<Bytecode, ()> {
+    pub fn compile_script(mut self, script: &Script) -> Result<Bytecode> {
         for stmt in script.stmts.iter() {
             self.compile_statement(stmt)?;
         }
         self.type_d(op::RET, 0, 0);
         Ok(Bytecode {
-            instructions: self.instructions.clone().into_boxed_slice(),
-            data: self.data.clone().into_boxed_slice(),
+            instructions: self.instructions.into_boxed_slice(),
+            data: self.data.into_boxed_slice(),
         })
     }
 
-    pub fn compile_statement(&mut self, stmt: &Stmt) -> Result<(), ()> {
-        match *stmt {
-            Stmt::Expr { ref expr } => self.compile_expr(expr),
-            Stmt::Declaration { ref kind } => match kind {
-                DeclKind::Lexical(ref x) => {
-                    for d in x.decl.iter() {
-                        self.compile_lexical_decl(d)?;
-                    }
-                    Ok(())
-                }
-                _ => Err(()),
-            },
-            _ => Err(()),
-        }
-    }
-
-    pub fn compile_lexical_decl(&mut self, decl: &LexicalDecl) -> Result<(), ()> {
-        let tok = match decl.binding {
-            Binding::Ident(ref x) => x,
-            _ => return Err(()),
-        };
-        if let Some(reg) = self.sym_table.get(&tok.0).cloned() {
-            if let Some(ref x) = decl.initializer {
-                let expr_reg = self.compile_assign_expr(x)?;
-                self.type_d(op::MOV, reg, expr_reg as u16);
-                self.free_reg -= 1;
+    pub fn load_int(&mut self, reg: u8, int: u64) {
+        if int as u32 as u64 == int {
+            let int = int as u32;
+            self.type_d(op::CLL, reg, int as u16);
+            if int & 0xffff_0000 != 0 {
+                self.type_d(op::CLH, reg, (int >> 16) as u16);
             }
-            return Ok(());
-        }
-        let reg = if let Some(ref x) = decl.initializer {
-            self.compile_assign_expr(x)?
         } else {
-            let res = self.free_reg;
-            self.free_reg += 1;
-            res
-        };
-        self.sym_table.insert(tok.0.clone(), reg);
-        Ok(())
-    }
-
-    pub fn compile_expr(&mut self, expr: &Expr) -> Result<(), ()> {
-        for expr in expr.exprs.iter() {
-            self.compile_assign_expr(expr)?;
+            let v = (int as f64).to_bits();
+            self.type_d(op::CLF, reg, 0);
+            self.write(v as u32);
+            self.write((v >> 32) as u32);
         }
-        Ok(())
-    }
-
-    pub fn compile_assign_expr(&mut self, op: &AssignExpr) -> Result<u8, ()> {
-        match *op {
-            AssignExpr::Bin {
-                ref lhs,
-                ref op,
-                ref rhs,
-            } => {
-                let rl = self.compile_assign_expr(lhs)?;
-                let rr = self.compile_assign_expr(rhs)?;
-                self.free_reg -= 1;
-                match op {
-                    BinOp::Plus => {
-                        self.type_a(op::ADD, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    BinOp::Minus => {
-                        self.type_a(op::SUB, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    BinOp::Mul => {
-                        self.type_a(op::MUL, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    BinOp::Div => {
-                        self.type_a(op::DIV, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    BinOp::Modulo => {
-                        self.type_a(op::MOD, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    BinOp::Power => {
-                        self.type_a(op::POW, rl, rl, rr);
-                        return Ok(rl);
-                    }
-                    _ => return Err(()),
-                }
-            }
-            AssignExpr::Prime(ref p) => return self.compile_prime_expr(p),
-            _ => return Err(()),
-        }
-    }
-
-    pub fn compile_prime_expr(&mut self, prime: &PrimeExpr) -> Result<u8, ()> {
-        match *prime {
-            PrimeExpr::Boolean(value) => {
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                let val = if value {
-                    bc::PRIM_VAL_TRUE
-                } else {
-                    bc::PRIM_VAL_FALSE
-                };
-                self.type_d(op::CLP, cur, val);
-                return Ok(cur);
-            }
-            PrimeExpr::Literal(ref x) => self.compile_literal(x),
-            PrimeExpr::Null => {
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                self.type_d(op::CLP, cur, bc::PRIM_VAL_NULL);
-                return Ok(cur);
-            }
-            PrimeExpr::Ident(ref x) => {
-                let reg = self.sym_table.get(&x.0).cloned().ok_or(())?;
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                self.type_d(op::MOV, cur, reg as u16);
-                return Ok(cur);
-            }
-            _ => Err(()),
-        }
-    }
-
-    pub fn compile_literal(&mut self, lit: &Literal) -> Result<u8, ()> {
-        match lit {
-            Literal::String(ref x) => {
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                let data_value = StringRc::new(x.clone());
-                let js_value = unsafe { JSValue::string(data_value) };
-                let idx = self.data.len() as u64;
-                self.data.push(js_value);
-                // does it fit
-                if idx < 0x7fff {
-                    self.type_d(op::CLD, cur, idx as u16);
-                } else {
-                    self.load_integer(cur, idx);
-                    let val = cur as u16 | 0x8000;
-                    self.type_d(op::CLD, cur, val);
-                }
-                return Ok(cur);
-            }
-            Literal::Number(Number::Integer(x)) => {
-                let x = *x as u32;
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                self.load_integer(cur, x as u64);
-                return Ok(cur);
-            }
-            Literal::Number(Number::Float(x)) => {
-                let cur = self.free_reg;
-                self.free_reg += 1;
-                self.type_d(op::CLF, cur, 0);
-                let val = x.to_bits();
-                self.write((val & 0xffff_ffff) as u32);
-                self.write((val >> 32) as u32);
-                return Ok(cur);
-            }
-            Literal::Number(Number::Big(_)) => {
-                return Err(());
-            }
-        }
-    }
-
-    pub fn load_integer(&mut self, reg: u8, int: u64) {
-        if int < 0xffff_ffff {
-            self.type_d(op::CLL, reg, (int & 0xffff) as u16);
-            let rem = int >> 16;
-            if rem != 0 {
-                self.type_d(op::CLH, reg, rem as u16);
-            }
-            return;
-        }
-        let val = int as f64;
-        if val as u64 != int {
-            // TODO replace with error?
-            panic!("data size grew to large to fit into 52 bit float")
-        }
-        self.type_d(op::CLF, reg, 0);
-        let val = val.to_bits();
-        self.write((val & 0xffff_ffff) as u32);
-        self.write((val >> 32) as u32);
     }
 }

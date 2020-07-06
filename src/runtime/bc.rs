@@ -1,4 +1,4 @@
-use super::JSValue;
+use super::{JSValue, Object};
 use std::{fmt, mem};
 
 #[macro_use]
@@ -11,17 +11,15 @@ pub const PRIM_VAL_TRUE: u16 = 1;
 pub const PRIM_VAL_NULL: u16 = 2;
 pub const PRIM_VAL_UNDEFINED: u16 = 3;
 
-pub struct Bytecode {
-    pub instructions: Box<[Instruction]>,
-    pub data: Box<[JSValue]>,
+#[derive(Clone, Debug)]
+pub enum DataValue {
+    String(String),
+    Object(Object),
 }
 
-impl Drop for Bytecode {
-    fn drop(&mut self) {
-        for d in self.data.iter() {
-            unsafe { d.drop() }
-        }
-    }
+pub struct Bytecode {
+    pub instructions: Box<[Instruction]>,
+    pub data: Box<[DataValue]>,
 }
 
 impl fmt::Display for Bytecode {
@@ -29,7 +27,7 @@ impl fmt::Display for Bytecode {
         let mut cur = 0;
         writeln!(f, "DATA:")?;
         for (idx, x) in self.data.iter().enumerate() {
-            writeln!(f, "{}:{}", idx, x)?;
+            writeln!(f, "{}:{:?}", idx, x)?;
         }
         writeln!(f, "\nINSTRUCTIONS:")?;
         while cur != self.instructions.len() {
@@ -111,9 +109,9 @@ op_code!(
         CLD(dst, idx),
 
         /// set the entry from the key in reg D to the value from reg A in the global object
-        GSET(val, key),
+        OSET(obj, key, val),
         /// set reg A to value int the global object with the key in reg D.
-        GGET(dst, key),
+        OGET(dst, obj, key),
 
         /// copy a value from one register to an other
         MOV(dst, src),

@@ -30,10 +30,7 @@ macro_rules! syntax_error {
         let e = crate::parser::ParseError {
             kind: $err,
             origin: $s.cur_span(),
-            source: $s.source(),
         };
-        #[cfg(debug_assertions)]
-        debug!("error in {}:{} :: {}\n", file!(), line!(), e);
         return Err(e).into();
     }};
 }

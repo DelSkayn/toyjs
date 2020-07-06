@@ -1,12 +1,13 @@
-use crate::source::Span;
+use crate::source::{Source, Span};
 use std::fmt;
 
+#[derive(Debug)]
 pub enum CompilerErrorKind {
-    Todo { file: &'static str, line: u32 },
+    Todo,
 }
 
 impl fmt::Display for CompilerErrorKind {
-    fn fmt(&self, w: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
         match self {
             _ => {}
         }
@@ -14,8 +15,10 @@ impl fmt::Display for CompilerErrorKind {
     }
 }
 
+#[derive(Debug)]
 pub struct CompilerError {
-    loc: Option<Span>,
-    kind: CompilerErrorKind,
-    source: Source,
+    pub span: Span,
+    pub kind: CompilerErrorKind,
 }
+
+impl CompilerError {}

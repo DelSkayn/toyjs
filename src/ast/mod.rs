@@ -1,4 +1,7 @@
-use crate::token::{BinOpToken, RelationToken, Token, UnaryOpToken};
+use crate::{
+    source::Span,
+    token::{BinOpToken, RelationToken, Token, UnaryOpToken},
+};
 
 mod expr;
 pub use expr::*;
@@ -222,7 +225,13 @@ pub struct For {
 }
 
 #[derive(Debug)]
-pub enum Stmt {
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum StmtKind {
     /// A new block statement,
     /// { stmts, .. }
     Block(Block),

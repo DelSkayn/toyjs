@@ -3,6 +3,7 @@ use fxhash::FxHashMap;
 
 pub type ObjectRc = Rc<Object>;
 
+#[derive(Debug)]
 pub struct Object {
     map: FxHashMap<String, JSValue>,
 }
@@ -32,6 +33,10 @@ impl Object {
     }
 
     pub fn set(&mut self, name: String, value: JSValue) -> Option<JSValue> {
+        if value.is_undefined() {
+            self.map.remove(&name);
+            return None;
+        }
         self.map.insert(name, value)
     }
 }
