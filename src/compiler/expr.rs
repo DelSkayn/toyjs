@@ -57,6 +57,10 @@ impl Compiler {
                     BinOp::BitwiseOr => Op::BOR,
                     BinOp::BitwiseAnd => Op::BAND,
                     BinOp::BitwiseXor => Op::BXOR,
+                    BinOp::Equal => Op::EQ,
+                    BinOp::StrictEqual => Op::SEQ,
+                    BinOp::NotEqual => Op::NEQ,
+                    BinOp::StrictNotEqual => Op::SNEQ,
                     _ => todo!(),
                 };
                 self.type_a(op, left, left, right);

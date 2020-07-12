@@ -172,6 +172,11 @@ op_code!(
         SHR(dst, op, op),
         USR(dst, op, op),
 
+        EQ(dst, op, op),
+        SEQ(dst, op, op),
+        NEQ(dst, op, op),
+        SNEQ(dst, op, op),
+
         /// return
         RET(src, null),
     }
