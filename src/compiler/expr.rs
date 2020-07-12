@@ -54,6 +54,18 @@ impl Compiler {
                 self.compile_literal(reg, x);
                 Ok(reg)
             }
+            PrimeExpr::ParamList { ref expr, ref rest } => {
+                if rest.is_some() {
+                    todo!()
+                }
+                if let Some(ref x) = expr {
+                    Ok(self
+                        .parse_expression(x)?
+                        .expect("should be true, handle with error??"))
+                } else {
+                    todo!()
+                }
+            }
             PrimeExpr::Ident(ref x) => {
                 let reg = self.regs.alloc().unwrap();
                 let k_reg = self.regs.alloc().unwrap();
