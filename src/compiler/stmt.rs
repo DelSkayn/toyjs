@@ -39,13 +39,12 @@ impl Compiler {
             };
 
             if let Some(ref expr) = decl.initializer {
-                if let Some(reg) = self.compile_assignment_expr(expr)? {
-                    let k_reg = self.regs.alloc().unwrap();
-                    self.load_data_value(k_reg, DataValue::String(value.clone()));
-                    self.type_a(Op::OSET, 0xff, k_reg, reg);
-                    self.regs.free(k_reg);
-                    self.regs.free(reg);
-                }
+                let reg = self.compile_assignment_expr(expr)?;
+                let k_reg = self.regs.alloc().unwrap();
+                self.load_data_value(k_reg, DataValue::String(value.clone()));
+                self.type_a(Op::OSET, 0xff, k_reg, reg);
+                self.regs.free(k_reg);
+                self.regs.free(reg);
             };
             //TODO eventually we should prob do something that
             //when we do not initialize the variable

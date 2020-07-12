@@ -9,7 +9,7 @@ pub mod rc;
 use rc::Rc;
 pub mod string;
 use bc::{op, DataValue, Instruction};
-use std::{alloc, f64, mem, ptr};
+use std::{alloc, f64, mem, num, ptr};
 use string::StringRc;
 
 const INITIAL_STACK_SIZE: usize = mem::size_of::<JSValue>() * 8;
@@ -229,6 +229,34 @@ impl<'a> Runtime<'a> {
                     let res = Self::bin_arithmatic(val1, val2, op::MOD);
                     *self.get(bc::op_a(instr)) = res;
                 }
+                op::POS => {
+                    let val = *self.get(bc::op_d(instr) as u8);
+                    let val = Self::float_to_val(Self::as_float(val));
+                    *self.get(bc::op_a(instr)) = val;
+                }
+                op::NEG => {
+                    let val = *self.get(bc::op_d(instr) as u8);
+                    let val = Self::float_to_val(-Self::as_float(val));
+                    *self.get(bc::op_a(instr)) = val;
+                }
+                op::SHL => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
+                    let c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    let c = (c & 0x1f) as i32;
+                    *self.get(bc::op_a(instr)) = JSValue::from(b << c);
+                }
+                op::SHR => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
+                    let c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    let c = (c & 0x1f) as i32;
+                    *self.get(bc::op_a(instr)) = JSValue::from((b >> c) as i32);
+                }
+                op::USR => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr))) as u32;
+                    let mut c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    c &= 0x1f;
+                    *self.get(bc::op_a(instr)) = JSValue::from((b >> c) as i32);
+                }
                 op::RET => return Some(self.regs[bc::op_a(instr) as usize]),
                 _ => panic!("invalid instruction"),
             }
@@ -236,7 +264,34 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    pub unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
+    unsafe fn as_i32(val: JSValue) -> i32 {
+        let val = Self::as_float(val);
+        let val = match val.classify() {
+            num::FpCategory::Nan | num::FpCategory::Infinite | num::FpCategory::Zero => return 0,
+            _ => val,
+        };
+        val as i32
+    }
+
+    unsafe fn as_u32(val: JSValue) -> u32 {
+        let val = Self::as_float(val);
+        let val = match val.classify() {
+            num::FpCategory::Nan | num::FpCategory::Infinite | num::FpCategory::Zero => return 0,
+            _ => val,
+        };
+        val as u32
+    }
+
+    #[inline]
+    fn float_to_val(val: f64) -> JSValue {
+        if val as i32 as f64 == val {
+            JSValue::from(val as i32)
+        } else {
+            JSValue::from(val)
+        }
+    }
+
+    unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
         if a.is_string() || b.is_string() {
             let mut s = Self::as_string(a);
             s.push_str(&Self::as_string(b));
@@ -271,11 +326,7 @@ impl<'a> Runtime<'a> {
             op::POW => a.powf(b),
             _ => panic!("invalid op"),
         };
-        return if (res as i32) as f64 == res {
-            JSValue::from(res as i32)
-        } else {
-            JSValue::from(res)
-        };
+        return Self::float_to_val(res);
     }
 
     pub unsafe fn as_float(val: JSValue) -> f64 {

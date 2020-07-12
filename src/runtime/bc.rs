@@ -145,18 +145,27 @@ op_code!(
         /// copy a value from one register to an other
         MOV(dst, src),
 
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Add the values from reg B and reg C and store them into reg A
         ADD(dst, op, op),
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Subtract the values from reg B and reg C and store them into reg A
         SUB(dst, op, op),
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Multiply the values from reg B and reg C and store them into reg A
         MUL(dst, op, op),
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Divide the values from reg B and reg C and store them into reg A
         DIV(dst, op, op),
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Modulo the values from reg B and reg C and store them into reg A
         MOD(dst, op, op),
-        /// Add the values from reg A and reg B and store them into reg C
+        /// Power the values from reg B and reg C and store them into reg A
         POW(dst, op, op),
+        /// Negate the value from the reg B and store in reg A
+        NEG(dst, src),
+        /// do the unaryPos operation on the value from the reg B and store in reg A
+        POS(dst, src),
+
+        SHL(dst, op, op),
+        SHR(dst, op, op),
+        USR(dst, op, op),
+
         /// return
         RET(src, null),
     }
