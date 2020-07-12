@@ -1,3 +1,4 @@
+//! Bytecode format definition.
 use super::{JSValue, Object};
 use std::{fmt, mem};
 
@@ -6,12 +7,16 @@ mod macros;
 
 pub type Instruction = u32;
 
+/// The primitive value for the boolean 'false' in the CLP instruction
 pub const PRIM_VAL_FALSE: u16 = 0;
+/// The primitive value for the boolean 'true' in the CLP instruction
 pub const PRIM_VAL_TRUE: u16 = 1;
+/// The primitive value for 'null' in the CLP instruction
 pub const PRIM_VAL_NULL: u16 = 2;
+/// The primitive value for 'undefined' in the CLP instruction
 pub const PRIM_VAL_UNDEFINED: u16 = 3;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DataValue {
     String(String),
     Object(Object),
@@ -51,44 +56,68 @@ pub const B_MASK: u32 = 0xff << 16;
 pub const C_MASK: u32 = 0xff << 24;
 pub const D_MASK: u32 = 0xffff << 16;
 
-#[derive(Eq, PartialEq, Debug)]
-enum InstructionType {
+/// Possible instruction types
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub enum InstructionType {
+    /// An instruction in the form of
+    /// ```
+    /// 0  2  4  6  8 10 12 14 16 18 20 22 24 26 28 30 32
+    /// +-----------+-----------+-----------+-----------+
+    /// |  OP CODE  |   REG A   |   REG B   |   REG C   |
+    /// +-----------+-----------+-----------+-----------+
+    /// ```
     A,
+    /// An instruction in the form of
+    /// ```
+    /// 0  2  4  6  8 10 12 14 16 18 20 22 24 26 28 30 32
+    /// +-----------+-----------+-----------------------+
+    /// |  OP CODE  |   REG A   |         REG D         |
+    /// +-----------+-----------+-----------------------+
+    /// ```
     D,
 }
 
+/// Create a type A instruction
+/// Checks for validity of instruction in debug mode
 #[inline]
-pub fn type_a(op: u8, a: u8, b: u8, c: u8) -> Instruction {
+pub fn type_a(op: Op, a: u8, b: u8, c: u8) -> Instruction {
     debug_assert_eq!(get_type(op), InstructionType::A);
     (op as u32) | (a as u32) << 8 | (b as u32) << 16 | (c as u32) << 24
 }
 
+/// Create a type D instruction
+/// Checks for validity of instruction in debug mode
 #[inline]
-pub fn type_d(op: u8, a: u8, d: u16) -> Instruction {
+pub fn type_d(op: Op, a: u8, d: u16) -> Instruction {
     debug_assert_eq!(get_type(op), InstructionType::D);
     op as u32 | (a as u32) << 8 | (d as u32) << 16
 }
 
+/// Get the OP code of an instruction
 #[inline]
 pub fn op_op(instr: Instruction) -> u8 {
     (instr & OP_MASK) as u8
 }
 
+/// Get A register of an instruction
 #[inline]
 pub fn op_a(instr: Instruction) -> u8 {
     ((instr & A_MASK) >> 8) as u8
 }
 
+/// Get B register of an instruction
 #[inline]
 pub fn op_b(instr: Instruction) -> u8 {
     ((instr & B_MASK) >> 16) as u8
 }
 
+/// Get C register of an instruction
 #[inline]
 pub fn op_c(instr: Instruction) -> u8 {
     ((instr & C_MASK) >> 24) as u8
 }
 
+/// Get D register of an instruction
 #[inline]
 pub fn op_d(instr: Instruction) -> u16 {
     ((instr & D_MASK) >> 16) as u16

@@ -1,7 +1,7 @@
 use crate::{
     ast::{AssignExpr, BinOp, Expr, Literal, Number, PrimeExpr},
     compiler::{Compiler, Result},
-    runtime::bc::{self, op, DataValue},
+    runtime::bc::{self, DataValue, Op},
 };
 
 impl Compiler {
@@ -27,11 +27,11 @@ impl Compiler {
                 let left = self.compile_assignment_expr(lhs)?.unwrap();
                 let right = self.compile_assignment_expr(rhs)?.unwrap();
                 let op = match op {
-                    BinOp::Plus => op::ADD,
-                    BinOp::Minus => op::SUB,
-                    BinOp::Mul => op::MUL,
-                    BinOp::Modulo => op::MOD,
-                    BinOp::Power => op::POW,
+                    BinOp::Plus => Op::ADD,
+                    BinOp::Minus => Op::SUB,
+                    BinOp::Mul => Op::MUL,
+                    BinOp::Modulo => Op::MOD,
+                    BinOp::Power => Op::POW,
                     _ => todo!(),
                 };
                 self.type_a(op, left, left, right);
@@ -46,12 +46,20 @@ impl Compiler {
         match expr {
             PrimeExpr::Null => {
                 let reg = self.regs.alloc().unwrap();
-                self.type_d(op::CLP, reg, bc::PRIM_VAL_NULL);
+                self.type_d(Op::CLP, reg, bc::PRIM_VAL_NULL);
                 Ok(reg)
             }
             PrimeExpr::Literal(ref x) => {
                 let reg = self.regs.alloc().unwrap();
                 self.compile_literal(reg, x);
+                Ok(reg)
+            }
+            PrimeExpr::Ident(ref x) => {
+                let reg = self.regs.alloc().unwrap();
+                let k_reg = self.regs.alloc().unwrap();
+                self.load_data_value(k_reg, DataValue::String(x.0.clone()));
+                self.type_a(Op::OGET, reg, 0xff, k_reg);
+                self.regs.free(k_reg);
                 Ok(reg)
             }
             _ => todo!(),
@@ -63,7 +71,7 @@ impl Compiler {
             Literal::Number(x) => match x {
                 Number::Float(x) => {
                     let x = x.to_bits();
-                    self.type_d(op::CLF, reg, 0);
+                    self.type_d(Op::CLF, reg, 0);
                     self.instructions.push(x as u32);
                     self.instructions.push((x >> 32) as u32);
                 }
@@ -72,18 +80,7 @@ impl Compiler {
                 }
                 Number::Big(_) => todo!(),
             },
-            Literal::String(x) => {
-                let idx = self.data.len();
-                self.data.push(DataValue::String(x.clone()));
-                if idx < 0x7fff {
-                    self.type_d(op::CLD, reg, idx as u16);
-                    return;
-                }
-                let tmp = self.regs.alloc().unwrap();
-                self.load_int(tmp, idx as u64);
-                self.type_d(op::CLD, reg, 0x8000 | tmp as u16);
-                self.regs.free(tmp);
-            }
+            Literal::String(ref x) => self.load_data_value(reg, DataValue::String(x.clone())),
         }
     }
 }

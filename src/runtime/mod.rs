@@ -15,7 +15,7 @@ use string::StringRc;
 const INITIAL_STACK_SIZE: usize = mem::size_of::<JSValue>() * 8;
 // Full range for now
 // prop too big for final value
-const NUM_REGISTERS: usize = 255;
+const NUM_REGISTERS: usize = 64;
 
 pub struct Runtime<'a> {
     stack: *mut JSValue,
@@ -66,12 +66,12 @@ impl<'a> Runtime<'a> {
             self.stack = alloc::realloc(self.stack as *mut _, layout, size) as *mut _;
             self.frame = self.stack.add(frame_offset / mem::size_of::<JSValue>());
         }
-        (*self.frame) = js_value;
+        self.frame.write(js_value);
         self.frame = self.frame.add(1);
     }
 
     #[inline(always)]
-    pub unsafe fn get(&mut self, idx: u8) -> &mut JSValue {
+    unsafe fn get(&mut self, idx: u8) -> &mut JSValue {
         debug_assert!(idx < NUM_REGISTERS as u8);
         self.regs.get_unchecked_mut(idx as usize)
     }
@@ -84,7 +84,7 @@ impl<'a> Runtime<'a> {
 
     unsafe fn unwind(&mut self) {
         self.frame = self.frame.sub(1);
-        while self.stack.sub(1) != self.frame {
+        while self.frame >= self.stack {
             (*self.frame).drop();
             self.frame = self.frame.sub(1);
         }
@@ -98,7 +98,7 @@ impl<'a> Runtime<'a> {
                 op::OSET => {
                     let op_a = bc::op_a(instr);
                     let obj = if op_a == 0xff {
-                        JSValue::object(self.global)
+                        JSValue::from(self.global)
                     } else {
                         *self.get(op_a)
                     };
@@ -113,7 +113,7 @@ impl<'a> Runtime<'a> {
                 op::OGET => {
                     let op_b = bc::op_b(instr);
                     let obj = if op_b == 0xff {
-                        JSValue::object(self.global)
+                        JSValue::from(self.global)
                     } else {
                         *self.get(op_b)
                     };
@@ -123,23 +123,23 @@ impl<'a> Runtime<'a> {
                 }
                 op::CLL => {
                     let val = bc::op_d(instr);
-                    *self.get(bc::op_a(instr)) = JSValue::int(val as i32);
+                    *self.get(bc::op_a(instr)) = JSValue::from(val as i32);
                 }
                 op::CLH => {
                     let val = bc::op_d(instr) as u64;
-                    self.get(bc::op_a(instr)).0.bits |= val << 16;
+                    self.get(bc::op_a(instr)).bits |= val << 16;
                 }
                 op::CLF => {
                     let val = self.code[self.pc + 1] as u64 | (self.code[self.pc + 2] as u64) << 32;
-                    self.get(bc::op_a(instr)).0.bits = val;
+                    *self.get(bc::op_a(instr)) = JSValue::from(f64::from_bits(val));
                     self.pc += 2;
                 }
                 op::CLP => {
                     let prim = match bc::op_d(instr) {
                         bc::PRIM_VAL_NULL => JSValue::null(),
                         bc::PRIM_VAL_UNDEFINED => JSValue::undefined(),
-                        bc::PRIM_VAL_TRUE => JSValue::bool(true),
-                        bc::PRIM_VAL_FALSE => JSValue::bool(false),
+                        bc::PRIM_VAL_TRUE => JSValue::from(true),
+                        bc::PRIM_VAL_FALSE => JSValue::from(false),
                         _ => panic!("invalid primitive value!"),
                     };
                     *self.get(bc::op_a(instr)) = prim;
@@ -158,8 +158,8 @@ impl<'a> Runtime<'a> {
                     };
                     let dst = bc::op_a(instr);
                     let data = match self.data[idx].clone() {
-                        DataValue::String(x) => JSValue::string(Rc::new(x)),
-                        DataValue::Object(x) => JSValue::object(Rc::new(x)),
+                        DataValue::String(x) => JSValue::from(Rc::new(x)),
+                        DataValue::Object(x) => JSValue::from(Rc::new(x)),
                     };
                     (*self.get(dst)) = data;
                     self.push(data);
@@ -173,13 +173,13 @@ impl<'a> Runtime<'a> {
                     let val1 = *self.get(bc::op_b(instr));
                     let val2 = *self.get(bc::op_c(instr));
                     if Self::both_int(val1, val2) {
-                        let val1 = val1.0.int as i64;
-                        let val2 = val2.0.int as i64;
+                        let val1 = val1.into_int() as i64;
+                        let val2 = val2.into_int() as i64;
                         let res = val1 + val2;
                         let res = if (res as i32) as i64 != res {
-                            JSValue::float(res as f64)
+                            JSValue::from(res as f64)
                         } else {
-                            JSValue::int(res as i32)
+                            JSValue::from(res as i32)
                         };
                         *self.get(bc::op_a(instr)) = res;
                     } else {
@@ -191,13 +191,13 @@ impl<'a> Runtime<'a> {
                     let val1 = *self.get(bc::op_b(instr));
                     let val2 = *self.get(bc::op_c(instr));
                     if Self::both_int(val1, val2) {
-                        let val1 = val1.0.int as i64;
-                        let val2 = val2.0.int as i64;
+                        let val1 = val1.into_int() as i64;
+                        let val2 = val2.into_int() as i64;
                         let res = val1 - val2;
                         let res = if (res as i32) as i64 != res {
-                            JSValue::float(res as f64)
+                            JSValue::from(res as f64)
                         } else {
-                            JSValue::int(res as i32)
+                            JSValue::from(res as i32)
                         };
                         *self.get(bc::op_a(instr)) = res;
                     } else {
@@ -240,7 +240,7 @@ impl<'a> Runtime<'a> {
         if a.is_string() || b.is_string() {
             let mut s = Self::as_string(a);
             s.push_str(&Self::as_string(b));
-            return JSValue::string(StringRc::new(s));
+            return JSValue::from(StringRc::new(s));
         }
         Self::bin_arithmatic(a, b, op::ADD)
     }
@@ -253,7 +253,7 @@ impl<'a> Runtime<'a> {
             value::TAG_OBJECT => "[object Object]".to_string(),
             value::TAG_UNDEFINED => "undefined".to_string(),
             value::TAG_NULL => "null".to_string(),
-            value::TAG_AVAILABLE_5 => panic!("invalid tag"),
+            value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
             _ => unreachable!(),
         }
     }
@@ -272,31 +272,33 @@ impl<'a> Runtime<'a> {
             _ => panic!("invalid op"),
         };
         return if (res as i32) as f64 == res {
-            JSValue::int(res as i32)
+            JSValue::from(res as i32)
         } else {
-            JSValue::float(res)
+            JSValue::from(res)
         };
     }
 
     pub unsafe fn as_float(val: JSValue) -> f64 {
-        if val.is_float() {
-            return val.0.float;
+        match val.tag() {
+            value::TAG_INT => val.into_int() as f64,
+            value::TAG_STRING => {
+                let s = val.into_string().value();
+                if s.len() == 0 {
+                    0.0
+                } else {
+                    val.into_string().value().parse::<f64>().unwrap_or(f64::NAN)
+                }
+            }
+            value::TAG_UNDEFINED => f64::NAN,
+            value::TAG_NULL => 0.0,
+            value::TAG_OBJECT => f64::NAN,
+            value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
+            _ => val.into_float(),
         }
-        if val.is_int() {
-            return val.into_int() as f64;
-        }
-        if val.is_string() {
-            let s = val.into_string().value();
-            if s.len() == 0 {
-                return 0.0;
-            };
-            return val.into_string().value().parse::<f64>().unwrap_or(f64::NAN);
-        }
-        todo!()
     }
 
     #[inline]
     pub unsafe fn both_int(a: JSValue, b: JSValue) -> bool {
-        a.0.bits & value::TAG_MASK == value::TAG_INT && b.0.bits & value::TAG_MASK == value::TAG_INT
+        a.bits & value::TAG_MASK == value::TAG_INT && b.bits & value::TAG_MASK == value::TAG_INT
     }
 }

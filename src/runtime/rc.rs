@@ -1,11 +1,16 @@
-use std::{alloc, mem};
+use std::{alloc, cell, mem};
 
+/// An object which can be used to increment the reference count of
+/// any Rc object regardless of the contained value.
 #[repr(C)]
 pub struct RcCount {
     count: u64,
 }
 
 impl RcCount {
+    /// Increment the reference count of pointer representing a Rc<T>,
+    /// # Safety
+    /// Pointer must be a valid pointer as obtained from `Rc::to_raw`.
     pub unsafe fn incr_raw(ptr: *mut ()) {
         let ptr = ptr as *mut RcCount;
         (*ptr).count += 1;
@@ -18,8 +23,14 @@ struct RcVal<T> {
     value: mem::ManuallyDrop<T>,
 }
 
-/// Struct for manual reference counting, it is the users responsibility to
-/// keep the count correct.
+/// A struct for manual reference counting, it is the users responsibility to
+/// make sure the reference count remains correct.
+///
+/// Unlike the Rc from the standart library this pointer will not increment or decrement
+/// reference count on its own.
+///
+/// As such constructing `Rc` from raw pointers is save as using the pointer in any
+/// other way the constructing and deconstructing is unsafe.
 pub struct Rc<T> {
     ptr: *mut RcVal<T>,
 }
@@ -37,14 +48,16 @@ impl<T> Rc<T> {
         unsafe {
             let layout = alloc::Layout::new::<RcVal<T>>();
             let alloc = alloc::alloc(layout) as *mut RcVal<T>;
-            (*alloc).count = 1;
-            (*alloc).value = mem::ManuallyDrop::new(value);
+            alloc.write(RcVal {
+                count: 1,
+                value: mem::ManuallyDrop::new(value),
+            });
             Rc { ptr: alloc }
         }
     }
 
     #[inline(always)]
-    pub unsafe fn from_raw(ptr: *mut ()) -> Self {
+    pub fn from_raw(ptr: *mut ()) -> Self {
         Rc { ptr: ptr as _ }
     }
 
@@ -54,17 +67,16 @@ impl<T> Rc<T> {
     }
 
     #[inline(always)]
-    pub fn incr(&mut self) {
-        unsafe {
-            (*self.ptr).count += 1;
-        }
+    pub unsafe fn incr(&self) {
+        (*self.ptr).count += 1;
     }
 
     #[inline(always)]
-    pub unsafe fn value(self) -> &'static mut T {
+    pub unsafe fn value(&self) -> &'static mut T {
         &mut (*self.ptr).value
     }
 
+    #[inline]
     pub unsafe fn drop(self) {
         let val = &mut *self.ptr;
         val.count -= 1;
@@ -77,7 +89,7 @@ impl<T> Rc<T> {
 }
 
 impl<T: Clone + 'static> Rc<T> {
-    pub unsafe fn clone_obj(self) -> Self {
+    pub unsafe fn deep_clone(self) -> Self {
         Rc::new(self.value().clone())
     }
 }

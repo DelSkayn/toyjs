@@ -1,18 +1,30 @@
+//! Javascript runtime object functionality
+
 use crate::runtime::{rc::Rc, JSValue};
 use fxhash::FxHashMap;
+use std::hash;
 
 pub type ObjectRc = Rc<Object>;
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Object {
     map: FxHashMap<String, JSValue>,
+}
+
+impl hash::Hash for Object {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        for (k, v) in self.map.iter() {
+            k.hash(state);
+            v.hash(state);
+        }
+    }
 }
 
 impl Clone for Object {
     fn clone(&self) -> Self {
         let mut map = self.map.clone();
         for v in map.values_mut() {
-            *v = unsafe { v.clone() };
+            *v = unsafe { v.deep_clone() };
         }
         Object { map }
     }
@@ -34,8 +46,7 @@ impl Object {
 
     pub fn set(&mut self, name: String, value: JSValue) -> Option<JSValue> {
         if value.is_undefined() {
-            self.map.remove(&name);
-            return None;
+            return self.map.remove(&name);
         }
         self.map.insert(name, value)
     }
