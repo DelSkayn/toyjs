@@ -14,6 +14,7 @@ Missing:
 - [x] Semi Keyword handling
 - [x] Operator precedence
 - [ ] Spans in AST
+  - [ ] Find a good way for spans to exist in the AST
 - [ ] String interner
 - [ ] Bigint
 - [ ] Unicode escape codes
@@ -33,15 +34,22 @@ Compiling the AST into bytecode
 Missing:
 - [x] Basic aritmetic expressions
 - [ ] Error infrastructure.
-- [ ] Basic variables
+- [ ] Variable handling
+  - [x] Basic globals
+  - [ ] Let binding
+  - [ ] Const binding
+- [ ] Spans with bytecode for error handling
 - [ ] Logical operations
 - [ ] If Else
 - [ ] Basic while loop
 - [ ] Basic for loop
 - [ ] Basic map like Objects
 - [ ] Functions
+  - [ ] Inlining small functions?
+  - [ ] Tail call?
 - [ ] Strings
 - [ ] Bindings
+- [ ] Classes
 - [ ] Optimization pases:
     - [ ] Dead code elimination
     - [ ] Pre calculation
@@ -51,17 +59,28 @@ Missing:
 VM
 --
 Running the bytecode as well as builtin functions.
+- [x] Value implementation with NaN-tagging
+- [ ] Instructions
+  - [x] Basic format
+  - [x] Decoding and encoding
+  - [x] Disassembeling
 - [x] Basic aritmetic expressions
 - [ ] Error infrastructure.
-- [ ] Basic variables
+- [ ] Const data
+  - [x] Basic implementation
+  - [ ] Allow serialization
+  - [ ] Fast instantion of objects.
+  - [ ] Copy on write like functionality?
+- [ ] Objects
+  - [x] Basic object functionality
+  - [ ] Handle object constants
+  - [ ] Better object index, something like the atoms from quickjs
+- [ ] Variables
+  - [x] Basic globals as object properties
+  - [ ] Scoped variables
 - [ ] Logical operations
-- [ ] If Else
-- [ ] Basic while loop
-- [ ] Basic for loop
-- [ ] Basic map like Objects
+- [ ] Jumps
 - [ ] Functions
-- [ ] Bindings
+  - [ ] Implement basic call convention
+  - [ ] Tail call?
 - [ ] Everything Else
-
-Missing:
-Everything
