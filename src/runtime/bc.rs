@@ -161,6 +161,12 @@ op_code!(
         NEG(dst, src),
         /// do the unaryPos operation on the value from the reg B and store in reg A
         POS(dst, src),
+        /// Bitwise and
+        BAND(dst, op, op),
+        /// Bitwise or
+        BOR(dst, op, op),
+        /// Bitwise exclusive or
+        BXOR(dst, op, op),
 
         SHL(dst, op, op),
         SHR(dst, op, op),
