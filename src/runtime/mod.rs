@@ -229,6 +229,21 @@ impl<'a> Runtime<'a> {
                     let res = Self::bin_arithmatic(val1, val2, op::MOD);
                     *self.get(bc::op_a(instr)) = res;
                 }
+                op::BAND => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
+                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
+                    *self.get(bc::op_a(instr)) = JSValue::from(b & c);
+                }
+                op::BOR => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
+                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
+                    *self.get(bc::op_a(instr)) = JSValue::from(b | c);
+                }
+                op::BXOR => {
+                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
+                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
+                    *self.get(bc::op_a(instr)) = JSValue::from(b ^ c);
+                }
                 op::POS => {
                     let val = *self.get(bc::op_d(instr) as u8);
                     let val = Self::float_to_val(Self::as_float(val));

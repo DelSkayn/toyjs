@@ -54,6 +54,9 @@ impl Compiler {
                     BinOp::ShiftLeft => Op::SHL,
                     BinOp::ShiftRight => Op::SHR,
                     BinOp::UnsignedShiftRight => Op::USR,
+                    BinOp::BitwiseOr => Op::BOR,
+                    BinOp::BitwiseAnd => Op::BAND,
+                    BinOp::BitwiseXor => Op::BXOR,
                     _ => todo!(),
                 };
                 self.type_a(op, left, left, right);
