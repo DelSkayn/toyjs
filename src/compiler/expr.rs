@@ -1,42 +1,64 @@
 use crate::{
-    ast::{AssignExpr, BinOp, Expr, Literal, Number, PrimeExpr},
+    ast::{AssignExpr, BinOp, Expr, Literal, Number, PrefixOp, PrimeExpr},
     compiler::{Compiler, Result},
     runtime::bc::{self, DataValue, Op},
 };
 
 impl Compiler {
-    pub fn parse_expression(&mut self, expr: &Expr) -> Result<Option<u8>> {
-        let mut reg = None;
+    pub fn parse_expression(&mut self, expr: &Expr) -> Result<u8> {
+        if expr.exprs.len() == 0 {
+            todo!()
+        }
+        let mut reg = 0xff;
         for expr in expr.exprs.iter() {
-            if let Some(x) = reg {
-                self.regs.free(x);
+            if reg != 0xff {
+                self.regs.free(reg);
             }
             reg = self.compile_assignment_expr(expr)?;
         }
         Ok(reg)
     }
 
-    pub fn compile_assignment_expr(&mut self, expr: &AssignExpr) -> Result<Option<u8>> {
+    pub fn compile_assignment_expr(&mut self, expr: &AssignExpr) -> Result<u8> {
         match expr {
-            AssignExpr::Prime(ref x) => Ok(Some(self.compile_prime_expr(x)?)),
+            AssignExpr::Prime(ref x) => Ok(self.compile_prime_expr(x)?),
+            AssignExpr::Prefix { ref op, ref expr } => {
+                let reg = self.compile_assignment_expr(expr)?;
+                match op {
+                    PrefixOp::Increment => todo!(),
+                    PrefixOp::Decrement => todo!(),
+                    PrefixOp::Negative => {
+                        self.type_d(Op::NEG, reg, reg as u16);
+                        Ok(reg)
+                    }
+                    PrefixOp::Positive => {
+                        self.type_d(Op::POS, reg, reg as u16);
+                        Ok(reg)
+                    }
+                    _ => todo!(),
+                }
+            }
             AssignExpr::Bin {
                 ref lhs,
                 op,
                 ref rhs,
             } => {
-                let left = self.compile_assignment_expr(lhs)?.unwrap();
-                let right = self.compile_assignment_expr(rhs)?.unwrap();
+                let left = self.compile_assignment_expr(lhs)?;
+                let right = self.compile_assignment_expr(rhs)?;
                 let op = match op {
                     BinOp::Plus => Op::ADD,
                     BinOp::Minus => Op::SUB,
                     BinOp::Mul => Op::MUL,
                     BinOp::Modulo => Op::MOD,
                     BinOp::Power => Op::POW,
+                    BinOp::ShiftLeft => Op::SHL,
+                    BinOp::ShiftRight => Op::SHR,
+                    BinOp::UnsignedShiftRight => Op::USR,
                     _ => todo!(),
                 };
                 self.type_a(op, left, left, right);
                 self.regs.free(right);
-                Ok(Some(left))
+                Ok(left)
             }
             _ => todo!(),
         }
@@ -59,12 +81,20 @@ impl Compiler {
                     todo!()
                 }
                 if let Some(ref x) = expr {
-                    Ok(self
-                        .parse_expression(x)?
-                        .expect("should be true, handle with error??"))
+                    Ok(self.parse_expression(x)?)
                 } else {
                     todo!()
                 }
+            }
+            PrimeExpr::Boolean(x) => {
+                let reg = self.regs.alloc().unwrap();
+                let p = if *x {
+                    bc::PRIM_VAL_TRUE
+                } else {
+                    bc::PRIM_VAL_FALSE
+                };
+                self.type_d(Op::CLP, reg, p);
+                Ok(reg)
             }
             PrimeExpr::Ident(ref x) => {
                 let reg = self.regs.alloc().unwrap();

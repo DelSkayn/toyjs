@@ -8,6 +8,7 @@ pub type ObjectRc = Rc<Object>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Object {
+    prototype: JSValue,
     map: FxHashMap<String, JSValue>,
 }
 
@@ -26,13 +27,17 @@ impl Clone for Object {
         for v in map.values_mut() {
             *v = unsafe { v.deep_clone() };
         }
-        Object { map }
+        Object {
+            prototype: unsafe { self.prototype.deep_clone() },
+            map,
+        }
     }
 }
 
 impl Object {
     pub fn new() -> Self {
         Object {
+            prototype: JSValue::null(),
             map: FxHashMap::default(),
         }
     }
