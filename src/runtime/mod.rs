@@ -272,6 +272,26 @@ impl<'a> Runtime<'a> {
                     c &= 0x1f;
                     *self.get(bc::op_a(instr)) = JSValue::from((b >> c) as i32);
                 }
+                op::SEQ => {
+                    let b = *self.get(bc::op_b(instr));
+                    let c = *self.get(bc::op_c(instr));
+                    *self.get(bc::op_a(instr)) = JSValue::from(Self::strict_eq(b, c))
+                }
+                op::EQ => {
+                    let b = *self.get(bc::op_b(instr));
+                    let c = *self.get(bc::op_c(instr));
+                    *self.get(bc::op_a(instr)) = JSValue::from(Self::eq(b, c))
+                }
+                op::SNEQ => {
+                    let b = *self.get(bc::op_b(instr));
+                    let c = *self.get(bc::op_c(instr));
+                    *self.get(bc::op_a(instr)) = JSValue::from(!Self::strict_eq(b, c))
+                }
+                op::NEQ => {
+                    let b = *self.get(bc::op_b(instr));
+                    let c = *self.get(bc::op_c(instr));
+                    *self.get(bc::op_a(instr)) = JSValue::from(!Self::eq(b, c))
+                }
                 op::RET => return Some(self.regs[bc::op_a(instr) as usize]),
                 _ => panic!("invalid instruction"),
             }
@@ -306,13 +326,21 @@ impl<'a> Runtime<'a> {
         }
     }
 
-    unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
-        if a.is_string() || b.is_string() {
-            let mut s = Self::as_string(a);
-            s.push_str(&Self::as_string(b));
-            return JSValue::from(StringRc::new(s));
+    unsafe fn as_bool(val: JSValue) -> bool {
+        match val.tag() {
+            value::TAG_STRING => val.into_string().value().len() != 0,
+            value::TAG_INT => val.into_int() != 0,
+            value::TAG_BOOL => val.into_bool(),
+            value::TAG_OBJECT => true,
+            value::TAG_UNDEFINED => false,
+            value::TAG_NULL => false,
+            value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
+            _ => {
+                let v = val.into_float();
+                // comparison is done this way to handle NaN correctly.
+                v > 0.0 || v < 0.0
+            }
         }
-        Self::bin_arithmatic(a, b, op::ADD)
     }
 
     unsafe fn as_string(val: JSValue) -> String {
@@ -324,24 +352,8 @@ impl<'a> Runtime<'a> {
             value::TAG_UNDEFINED => "undefined".to_string(),
             value::TAG_NULL => "null".to_string(),
             value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
-            _ => unreachable!(),
+            _ => val.into_float().to_string(),
         }
-    }
-
-    pub unsafe fn bin_arithmatic(a: JSValue, b: JSValue, op: u8) -> JSValue {
-        let a = Runtime::as_float(a);
-        let b = Runtime::as_float(b);
-
-        let res = match op {
-            op::ADD => a + b,
-            op::SUB => a + (-b),
-            op::MUL => a * b,
-            op::DIV => a / b,
-            op::MOD => a % b,
-            op::POW => a.powf(b),
-            _ => panic!("invalid op"),
-        };
-        return Self::float_to_val(res);
     }
 
     pub unsafe fn as_float(val: JSValue) -> f64 {
@@ -358,9 +370,101 @@ impl<'a> Runtime<'a> {
             value::TAG_UNDEFINED => f64::NAN,
             value::TAG_NULL => 0.0,
             value::TAG_OBJECT => f64::NAN,
+            value::TAG_BOOL => {
+                if val.into_bool() {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
             _ => val.into_float(),
         }
+    }
+
+    unsafe fn strict_eq(b: JSValue, c: JSValue) -> bool {
+        if b.is_float() && c.is_float() {
+            return b.into_float() == c.into_float();
+        }
+        let b_tag = b.tag();
+        if b_tag != c.tag() {
+            return false;
+        }
+        match b_tag {
+            value::TAG_INT | value::TAG_BOOL => b.bits == c.bits,
+            value::TAG_UNDEFINED | value::TAG_NULL => true,
+            value::TAG_STRING => b.into_string().value() == c.into_string().value(),
+            value::TAG_OBJECT => b.into_raw_ptr() == c.into_raw_ptr(),
+            _ => unreachable!(),
+        }
+    }
+
+    unsafe fn eq(b: JSValue, c: JSValue) -> bool {
+        if b.is_float() && c.is_float() {
+            return b.into_float() == c.into_float();
+        }
+        let b_tag = b.tag();
+        let c_tag = c.tag();
+        if b_tag == c_tag {
+            return match b_tag {
+                value::TAG_INT | value::TAG_BOOL => b.bits == c.bits,
+                value::TAG_UNDEFINED | value::TAG_NULL => true,
+                value::TAG_STRING => b.into_string().value() == c.into_string().value(),
+                value::TAG_OBJECT => b.into_raw_ptr() == c.into_raw_ptr(),
+                _ => unreachable!(),
+            };
+        }
+
+        if b_tag == value::TAG_UNDEFINED && c_tag == value::TAG_NULL {
+            return true;
+        }
+        if b_tag == value::TAG_NULL && c_tag == value::TAG_UNDEFINED {
+            return true;
+        }
+        if b.is_float() {
+            return b.into_float() == Self::as_float(c);
+        }
+        match b_tag {
+            value::TAG_UNDEFINED => c_tag == value::TAG_NULL,
+            value::TAG_NULL => c_tag == value::TAG_UNDEFINED,
+            value::TAG_INT => b.into_int() as f64 == Self::as_float(c),
+            value::TAG_BOOL => {
+                let c_num = Self::as_float(c);
+                if b.into_bool() {
+                    c_num == 1.0
+                } else {
+                    c_num == 0.0
+                }
+            }
+            value::TAG_OBJECT => todo!(),
+            value::TAG_STRING => Self::as_float(b) == Self::as_float(c),
+            _ => panic!(),
+        }
+    }
+
+    unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
+        if a.is_string() || b.is_string() {
+            let mut s = Self::as_string(a);
+            s.push_str(&Self::as_string(b));
+            return JSValue::from(StringRc::new(s));
+        }
+        Self::bin_arithmatic(a, b, op::ADD)
+    }
+
+    pub unsafe fn bin_arithmatic(a: JSValue, b: JSValue, op: u8) -> JSValue {
+        let a = Runtime::as_float(a);
+        let b = Runtime::as_float(b);
+
+        let res = match op {
+            op::ADD => a + b,
+            op::SUB => a + (-b),
+            op::MUL => a * b,
+            op::DIV => a / b,
+            op::MOD => a % b,
+            op::POW => a.powf(b),
+            _ => panic!("invalid op"),
+        };
+        return Self::float_to_val(res);
     }
 
     #[inline]
