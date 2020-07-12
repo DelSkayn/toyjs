@@ -17,11 +17,11 @@ pub enum NumberKind<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DelimToken {
-    /// ( or )
+    /// `( or )`
     Paren,
-    /// [ or ]
+    /// `\[ or \]`
     Bracket,
-    /// { or }
+    /// `{ or }`
     Brace,
 }
 
@@ -36,37 +36,37 @@ pub enum TokenKind<'a> {
     Ident(&'a str),
     Lit(LitToken<'a>),
     Kw(Kw),
-    /// ;
+    /// `;`
     SemiColon,
-    /// (, [ or {,
+    /// `(, [ or {,`
     DelimOpen(DelimToken),
-    /// ), ] or },
+    /// `), ] or },`
     DelimClose(DelimToken),
     BinOp(BinOpToken),
     BinOpAssign(BinOpToken),
     UnaryOp(UnaryOpToken),
     Relation(RelationToken),
-    /// =
+    /// `=`
     Assign,
-    /// .
+    /// `.`
     Dot,
-    /// ..
+    /// `..`
     DotDot,
-    /// ...
+    /// `...`
     DotDotDot,
-    /// :
+    /// `:`
     Colon,
-    /// ::
+    /// `::`
     DoubleColon,
-    /// ?
+    /// `?`
     Tenary,
-    /// ?.
+    /// `?.`
     TenaryNull,
-    /// ??
+    /// `??`
     NullCoalescing,
-    /// ,
+    /// `,`
     Comma,
-    ///
+    /// `\n`
     LineTerminator,
     Unknown,
 }

@@ -1,7 +1,7 @@
 use crate::{
     ast::*,
     runtime::{
-        bc::{self, op, Bytecode, DataValue, Instruction},
+        bc::{self, Bytecode, DataValue, Instruction, Op},
         string::StringRc,
         JSValue,
     },
@@ -62,12 +62,12 @@ impl Compiler {
     }
 
     #[inline]
-    pub fn type_a(&mut self, op: u8, a: u8, b: u8, c: u8) {
+    pub fn type_a(&mut self, op: Op, a: u8, b: u8, c: u8) {
         self.instructions.push(bc::type_a(op, a, b, c))
     }
 
     #[inline]
-    pub fn type_d(&mut self, op: u8, a: u8, d: u16) {
+    pub fn type_d(&mut self, op: Op, a: u8, d: u16) {
         self.instructions.push(bc::type_d(op, a, d))
     }
 
@@ -80,7 +80,7 @@ impl Compiler {
         for stmt in script.stmts.iter() {
             self.compile_statement(stmt)?;
         }
-        self.type_d(op::RET, 0, 0);
+        self.type_d(Op::RET, 0, 0);
         Ok(Bytecode {
             instructions: self.instructions.into_boxed_slice(),
             data: self.data.into_boxed_slice(),
@@ -90,15 +90,28 @@ impl Compiler {
     pub fn load_int(&mut self, reg: u8, int: u64) {
         if int as u32 as u64 == int {
             let int = int as u32;
-            self.type_d(op::CLL, reg, int as u16);
+            self.type_d(Op::CLL, reg, int as u16);
             if int & 0xffff_0000 != 0 {
-                self.type_d(op::CLH, reg, (int >> 16) as u16);
+                self.type_d(Op::CLH, reg, (int >> 16) as u16);
             }
         } else {
             let v = (int as f64).to_bits();
-            self.type_d(op::CLF, reg, 0);
+            self.type_d(Op::CLF, reg, 0);
             self.write(v as u32);
             self.write((v >> 32) as u32);
         }
+    }
+
+    pub fn load_data_value(&mut self, reg: u8, value: DataValue) {
+        let idx = self.data.len();
+        self.data.push(value);
+        if idx < 0x7fff {
+            self.type_d(Op::CLD, reg, idx as u16);
+            return;
+        }
+        let tmp = self.regs.alloc().unwrap();
+        self.load_int(tmp, idx as u64);
+        self.type_d(Op::CLD, reg, 0x8000 | tmp as u16);
+        self.regs.free(tmp);
     }
 }
