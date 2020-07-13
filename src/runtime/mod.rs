@@ -360,7 +360,7 @@ impl<'a> Runtime<'a> {
         match val.tag() {
             value::TAG_INT => val.into_int() as f64,
             value::TAG_STRING => {
-                let s = val.into_string().value();
+                let s = val.into_string().value().trim();
                 if s.len() == 0 {
                     0.0
                 } else {

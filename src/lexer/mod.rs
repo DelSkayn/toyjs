@@ -388,7 +388,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn is_whitespace(c: char) -> bool {
-        c == chars::TAB
+        c == chars::HT
             || c == chars::VT
             || c == chars::FF
             || c == chars::SP
@@ -625,52 +625,107 @@ impl<'a> Lexer<'a> {
     }
 
     fn parse_string(&mut self, span: &'a str, start: char) -> Token<'a> {
+        let mut buff = String::new();
         loop {
             let c = self.chars.next();
             if c.is_none() || Lexer::is_line_terminator(c.unwrap()) {
                 self.error("unterminated string");
-                let s = self.cur_str(span);
-                let len = s.len();
-                return self.token(span, TokenKind::Lit(LitToken::String(&s[1..len - 1])));
+                return self.token(span, TokenKind::Lit(LitToken::String(buff)));
             }
             let c = c.unwrap();
             if c == start {
-                let s = self.cur_str(span);
-                let len = s.len();
-                return self.token(span, TokenKind::Lit(LitToken::String(&s[1..len - 1])));
+                return self.token(span, TokenKind::Lit(LitToken::String(buff)));
             }
             // Parse escape codes
             if c == '\\' {
-                match self.chars.peek() {
-                    Some('\'') | Some('"') | Some('\\') | Some('b') | Some('f') | Some('n')
-                    | Some('r') | Some('t') | Some('v') | Some('0') => {
+                let peek = self.chars.peek();
+                if peek.is_none() {
+                    self.error("unfinished escape sequence");
+                };
+                let peek = peek.unwrap();
+                match peek {
+                    '\'' => {
+                        buff.push('\'');
                         self.chars.next();
                     }
-                    Some('x') => {
+                    '\"' => {
+                        buff.push('\"');
                         self.chars.next();
+                    }
+                    '\\' => {
+                        buff.push('\\');
+                        self.chars.next();
+                    }
+                    'b' => {
+                        buff.push(chars::BS);
+                        self.chars.next();
+                    }
+                    't' => {
+                        buff.push(chars::HT);
+                        self.chars.next();
+                    }
+                    'f' => {
+                        buff.push(chars::FF);
+                        self.chars.next();
+                    }
+                    'n' => {
+                        buff.push(chars::LF);
+                        self.chars.next();
+                    }
+                    'v' => {
+                        buff.push(chars::VT);
+                        self.chars.next();
+                    }
+                    'r' => {
+                        buff.push(chars::CR);
+                        self.chars.next();
+                    }
+                    '0' => {
+                        buff.push('\0');
+                        self.chars.next();
+                    }
+                    'x' => {
+                        self.chars.next();
+                        let mut val = 0;
                         for _ in 0..2 {
                             match self.chars.peek() {
-                                Some(x) if x.is_digit(16) => {
-                                    self.chars.next();
+                                Some(x) => {
+                                    if let Some(x) = x.to_digit(16) {
+                                        val <<= 4;
+                                        val |= x as u8;
+                                        self.chars.next();
+                                    }
                                 }
-                                Some(_) => self.error("invalid hex escape sequence"),
-                                None => self.error("unfinished hex escape sequence"),
+                                None => {
+                                    self.error("unfinished hex escape sequence");
+                                    break;
+                                }
                             }
                         }
+                        buff.push(val.into());
                     }
-                    Some('u') => {
+                    'u' => {
                         self.chars.next();
                         if let Some('{') = self.chars.peek() {
-                            // TODO prob wrong
-                            loop {
-                                match self.chars.next() {
+                            self.chars.next();
+                            let mut val = 0u32;
+                            let mut finished = false;
+                            for _ in 0..6 {
+                                match self.chars.peek() {
                                     Some('}') => {
+                                        self.chars.next();
+                                        finished = true;
                                         break;
                                     }
-                                    Some(x) if x.is_digit(16) => {}
-                                    Some(_) => {
-                                        self.error("invalid unicode escape sequence");
-                                        break;
+                                    Some(x) => {
+                                        if let Some(x) = x.to_digit(16) {
+                                            self.chars.next();
+                                            val <<= 4;
+                                            val |= x as u32;
+                                        } else {
+                                            self.error("invalid unicode escape sequence");
+                                            break;
+                                        }
                                     }
                                     None => {
                                         self.error("unfinished unicode escape sequence");
@@ -678,29 +733,51 @@ impl<'a> Lexer<'a> {
                                     }
                                 }
                             }
+                            if !finished {
+                                if self.chars.next() != Some('}') {
+                                    self.error("expected end of unicode code point");
+                                }
+                            }
+
+                            if let Ok(val) = val.try_into() {
+                                buff.push(val);
+                            } else {
+                                self.error("invalid unicode code point");
+                            }
                         } else {
+                            let mut val = 0u32;
                             for _ in 0..4 {
                                 match self.chars.peek() {
-                                    Some(x) if x.is_digit(16) => {
-                                        self.chars.next();
+                                    Some(x) => {
+                                        if let Some(x) = x.to_digit(16) {
+                                            self.chars.next();
+                                            val <<= 4;
+                                            val |= x;
+                                        } else {
+                                            self.error("invalid unicode escape sequence");
+                                            break;
+                                        }
                                     }
-                                    Some(_) => self.error("invalid unicode escape sequence"),
                                     None => self.error("unfinished unicode escape sequence"),
                                 }
                             }
+                            if let Ok(val) = val.try_into() {
+                                buff.push(val);
+                            } else {
+                                self.error("invalid unicode code point");
+                            }
                         }
                     }
-                    Some(x) if Lexer::is_line_terminator(x) => {
+                    x if Lexer::is_line_terminator(x) => {
                         self.chars.next();
                         self.consume_line_terminator(x);
                     }
-                    Some(_) => {
-                        self.chars.next();
-                    }
-                    None => {
-                        self.error("unfinished escape sequence");
+                    _ => {
+                        self.error("invalid escape code");
                     }
                 }
+            } else {
+                buff.push(c)
             }
         }
     }

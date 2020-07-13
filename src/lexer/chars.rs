@@ -1,7 +1,7 @@
 /// Characters by there name in the EMCA2020 spec.
 
 /// Character Tabluation
-pub const TAB: char = '\u{0009}';
+pub const HT: char = '\u{0009}';
 /// Line Tabluation
 pub const VT: char = '\u{000B}';
 /// Form Feed
@@ -25,6 +25,8 @@ pub const CR: char = '\u{000D}';
 pub const LS: char = '\u{2028}';
 /// Paragraph seperator
 pub const PS: char = '\u{2029}';
+/// Backspace
+pub const BS: char = '\u{0008}';
 
 /// Any other unicode space seperator
 pub const USP: [char; 15] = [
