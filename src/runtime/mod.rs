@@ -292,7 +292,11 @@ impl<'a> Runtime<'a> {
                     let c = *self.get(bc::op_c(instr));
                     *self.get(bc::op_a(instr)) = JSValue::from(!Self::eq(b, c))
                 }
-                op::RET => return Some(self.regs[bc::op_a(instr) as usize]),
+                op::RET => {
+                    let val = *self.get(bc::op_a(instr));
+                    val.incr();
+                    return Some(val);
+                }
                 _ => panic!("invalid instruction"),
             }
             self.pc += 1;
