@@ -79,6 +79,7 @@ impl<T> Rc<T> {
     #[inline]
     pub unsafe fn drop(self) {
         let val = &mut *self.ptr;
+        debug_assert_ne!(val.count, 0);
         val.count -= 1;
         if val.count == 0 {
             mem::ManuallyDrop::drop(&mut val.value);
