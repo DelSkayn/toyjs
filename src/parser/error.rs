@@ -52,7 +52,7 @@ impl<'a> fmt::Display for Sourced<'a, ParseError<'a>> {
                 self.source.fmt_span(f, self.value.origin)?;
                 self.source.fmt_span_src(f, self.value.origin, None)
             }
-            ParseErrorKind::Todo { file, line } => {
+            ParseErrorKind::Todo { ref file, ref line } => {
                 writeln!(
                     f,
                     "parser encountered an unimplemented path in: {}:{}, Sorry!",
@@ -65,7 +65,7 @@ impl<'a> fmt::Display for Sourced<'a, ParseError<'a>> {
                 writeln!(f, "encountered invalid number: {}", reason)
             }
             ParseErrorKind::UnexpectedToken {
-                found,
+                ref found,
                 expected,
                 reason,
             } => {

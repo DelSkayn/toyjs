@@ -81,11 +81,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn peek_with_lt(&mut self) -> Option<Token<'a>> {
-        let res = match self.peek {
+        let res = match self.peek.clone() {
             Some(x) => Some(x),
             None => {
                 self.peek = self.lexer.next();
-                self.peek
+                self.peek.clone()
             }
         };
         trace!("peek {:?}", res);
@@ -95,7 +95,7 @@ impl<'a> Parser<'a> {
     pub fn next_with_lt(&mut self) -> Option<Token<'a>> {
         let res = self.peek.take().or_else(|| {
             let l = self.lexer.next();
-            l.map(|e| self.pref_span = e.span);
+            l.as_ref().map(|e| self.pref_span = e.span);
             l
         });
         trace!("next {:?}", res);

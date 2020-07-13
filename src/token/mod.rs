@@ -25,13 +25,13 @@ pub enum DelimToken {
     Brace,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LitToken<'a> {
-    String(&'a str),
+    String(String),
     Number(NumberKind<'a>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind<'a> {
     Ident(&'a str),
     Lit(LitToken<'a>),
@@ -71,7 +71,7 @@ pub enum TokenKind<'a> {
     Unknown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
     pub span: Span,
