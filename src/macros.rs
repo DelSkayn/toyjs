@@ -1,19 +1,26 @@
+/// A short hand for writing token kinds
 #[macro_export]
-macro_rules! tok {
+macro_rules! t {
     ("target") => {
-        crate::token::TokenKind::Ident("target")
+        crate::token::TokenKind::Ident(crate::interner::consts::TARGET)
     };
     ("get") => {
-        crate::token::TokenKind::Ident("get")
+        crate::token::TokenKind::Ident(crate::interner::consts::GET)
     };
     ("set") => {
-        crate::token::TokenKind::Ident("set")
+        crate::token::TokenKind::Ident(crate::interner::consts::SET)
     };
     ("static") => {
-        crate::token::TokenKind::Ident("static")
+        crate::token::TokenKind::Ident(crate::interner::consts::STATIC)
     };
     ("of") => {
-        crate::token::TokenKind::Ident("of")
+        crate::token::TokenKind::Ident(crate::interner::consts::OF)
+    };
+    ("import") => {
+        crate::token::TokenKind::Ident(crate::interner::consts::IMPORT)
+    };
+    ("meta") => {
+        crate::token::TokenKind::Ident(crate::interner::consts::META)
     };
     ("string") => {
         crate::token::TokenKind::Lit(crate::token::LitToken::String(_))
@@ -23,12 +30,6 @@ macro_rules! tok {
     };
     ("lit") => {
         crate::token::TokenKind::Lit(_)
-    };
-    ("import") => {
-        crate::token::TokenKind::Ident("import")
-    };
-    ("meta") => {
-        crate::token::TokenKind::Ident("meta")
     };
     ("ident") => {
         crate::token::TokenKind::Ident(_)
