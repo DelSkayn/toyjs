@@ -9,15 +9,22 @@ pub type Result<T> = StdResult<T, LexerError>;
 
 mod chars;
 mod ident;
+mod number;
+mod string;
 mod utf;
 
+#[derive(Debug)]
 pub enum LexerErrorKind {
     InvalidUtf8,
     UnknownToken,
     UnClosedMultiLineComment,
     UnClosedString,
+    InvalidNumber,
+    InvalidEscapeCode,
+    NotYetSupported,
 }
 
+#[derive(Debug)]
 pub struct LexerError {
     pub span: Span,
     pub kind: LexerErrorKind,
@@ -51,11 +58,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn eat(&mut self) -> Option<u8> {
-        if self.bytes.len() < self.cur {
+        if self.cur < self.bytes.len() {
             self.peek = None;
             let res = self.bytes[self.cur];
             self.cur += 1;
             Some(res)
+        } else {
+            None
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        if self.cur < self.bytes.len() {
+            Some(self.bytes[self.cur])
         } else {
             None
         }
@@ -69,18 +84,13 @@ impl<'a> Lexer<'a> {
                 return Ok(None);
             };
             match peek {
-                chars::TAB
-                | chars::VT
-                | chars::FF
-                | chars::SP
-                | chars::NBSP
-                | chars::LF
-                | chars::CR => self.last_end = self.cur,
+                chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => {
+                    self.last_end = self.cur;
+                    self.eat();
+                }
                 x if Self::is_non_ascii(x) => match self.peek_char()?.unwrap() {
                     // These are all the unicode whitespace characters
-                    chars::LS
-                    | chars::PS
-                    | chars::ZWNBSP
+                    chars::ZWNBSP
                     | chars::USP_1
                     | chars::USP_2
                     | chars::USP_3
@@ -95,7 +105,10 @@ impl<'a> Lexer<'a> {
                     | chars::USP_12
                     | chars::USP_13
                     | chars::USP_14
-                    | chars::USP_15 => self.last_end = self.cur,
+                    | chars::USP_15 => {
+                        self.last_end = self.cur;
+                        self.eat();
+                    }
                     _ => {
                         return Ok(self.eat());
                     }
@@ -105,12 +118,32 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek(&self) -> Option<u8> {
-        if self.bytes.len() < self.cur + 1 {
-            Some(self.bytes[self.cur + 1])
-        } else {
-            None
+    fn eat_newline(&mut self, c: u8) -> bool {
+        match c {
+            chars::LF => {
+                self.eat();
+                return true;
+            }
+            chars::CR => {
+                self.eat();
+                if self.peek() == Some(chars::LF) {
+                    self.eat();
+                }
+                return true;
+            }
+            x if Self::is_non_ascii(x) => {
+                self.cur -= 1;
+                match self.peek_char() {
+                    Ok(Some(chars::LS)) | Ok(Some(chars::PS)) => {
+                        self.eat_char().unwrap();
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
         }
+        return false;
     }
 
     fn error(&mut self, error: LexerErrorKind) -> LexerError {
@@ -126,8 +159,8 @@ impl<'a> Lexer<'a> {
             "span index larger then u32::MAX, source file possibly to big to handle!"
         );
         let span = Span {
-            begin: start as u32,
-            end: cur as u32,
+            lo: start as u32,
+            hi: cur as u32,
         };
         LexerError { span, kind: error }
     }
@@ -145,38 +178,23 @@ impl<'a> Lexer<'a> {
             "span index larger then u32::MAX, source file possibly to big to handle!"
         );
         let span = Span {
-            begin: start as u32,
-            end: cur as u32,
+            lo: start as u32,
+            hi: cur as u32,
         };
         Ok(Some(Token { span, kind }))
     }
 
     fn eat_line_comment(&mut self) -> Result<()> {
         loop {
-            let peek = if let Some(x) = self.peek() {
+            let next = if let Some(x) = self.eat() {
                 x
             } else {
                 break;
             };
-            match peek {
-                chars::LF => {
-                    self.eat();
-                    break;
-                }
-                chars::CR => {
-                    self.eat();
-                    if self.peek() == Some(chars::LF) {
-                        self.eat();
-                    }
-                    break;
-                }
-                x if Self::is_non_ascii(x) => match self.eat_char()?.unwrap() {
-                    chars::LS => break,
-                    chars::PS => break,
-                    _ => {}
-                },
-                _ => {}
+            if self.eat_newline(next) {
+                break;
             }
+            self.eat();
         }
         Ok(())
     }
@@ -187,37 +205,14 @@ impl<'a> Lexer<'a> {
                 .eat()
                 .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?
             {
-                b'*' => {
-                    match self
-                        .eat()
-                        .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?
-                    {
-                        b'/' => return Ok(()),
-                        _ => {}
+                b'*' => match self.peek() {
+                    Some(b'/') => {
+                        self.eat();
+                        return Ok(());
                     }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn lex_string(&mut self, start: u8) -> Result<Option<Token>> {
-        self.buffer.clear();
-        loop {
-            match self
-                .eat()
-                .ok_or_else(|| self.error(LexerErrorKind::UnClosedString))?
-            {
-                chars::LF | chars::CR => return Err(self.error(LexerErrorKind::UnClosedString)),
-                s if s == start => {
-                    let s = self.interner.intern(&self.buffer);
-                    return self.token(TokenKind::Lit(LitToken::String(s)));
-                }
-                x if Self::is_non_ascii(x) => match self.eat_char()?.unwrap() {
-                    chars::LS | chars::PS => return Err(self.error(LexerErrorKind::UnClosedString)),
-                    x => self.buffer.push(x),
+                    _ => {}
                 },
-                x => self.buffer.push(x.into()),
+                _ => {}
             }
         }
     }
@@ -418,15 +413,15 @@ impl<'a> Lexer<'a> {
                         _ => self.token(t!("..")),
                     }
                 }
-                Some(_) => todo!(), //if x.is_digit(10) => self.parse_number(b'.'),
+                Some(x) if Self::is_digit(x) => self.lex_number(b'.'),
                 _ => self.token(TokenKind::Dot),
             },
+            x if self.eat_newline(x) => self.token(t!("\n")),
+            b'`' => return Err(self.error(LexerErrorKind::NotYetSupported)),
             b'"' => self.lex_string(b'"'),
             b'\'' => self.lex_string(b'\''),
-            _ => {
-                self.cur -= 1;
-                self.lex_ident()
-            }
+            x if Self::is_digit(x) => self.lex_number(x),
+            _ => self.lex_ident(),
         }
     }
 }

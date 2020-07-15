@@ -1,12 +1,35 @@
+use js::{interner::Interner, lexer::Lexer};
+use std::io::{self, BufRead};
+
+fn main() {
+    let mut interner = Interner::with_capacity(2048);
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        let line = line.unwrap();
+        let mut lexer = Lexer::new(line.as_bytes(), &mut interner);
+        loop {
+            match lexer.next() {
+                Ok(None) => break,
+                Ok(Some(x)) => println!("{:?}", x),
+                Err(e) => println!("error: {:?}", e),
+            }
+        }
+    }
+}
+/*
 use js::{
     compiler, lexer, parser,
     parser::ParseErrorKind,
     runtime,
     source::{Source, Sourced},
 };
-use std::io::{self, BufRead};
+use std::{
+    io::{self, BufRead},
+    mem,
+};
 
 fn main() {
+    println!("{}", mem::size_of::<js::token::Token>());
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line = line.unwrap();
@@ -62,4 +85,4 @@ fn main() {
             }
         }
     }
-}
+}*/

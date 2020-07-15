@@ -3,7 +3,7 @@
 #[macro_use]
 mod macros;
 
-mod interner;
-mod lexer;
-mod source;
-mod token;
+pub mod interner;
+pub mod lexer;
+pub mod source;
+pub mod token;

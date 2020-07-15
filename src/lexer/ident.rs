@@ -68,6 +68,7 @@ impl<'a> Lexer<'a> {
         self.cur -= 1;
         let c = self.eat_char()?.unwrap();
         if !Self::is_token_start(c) {
+            dbg!(c);
             return Err(self.error(LexerErrorKind::UnknownToken));
         }
         self.buffer.push(c);

@@ -18,7 +18,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn eat_char(&mut self) -> Result<Option<char>> {
-        if let Some((x, idx)) = self.peek {
+        if let Some((x, idx)) = self.peek.take() {
             self.cur += idx as usize;
             return Ok(Some(x));
         }
@@ -28,7 +28,10 @@ impl<'a> Lexer<'a> {
             return Ok(None);
         };
         match (!start).leading_zeros() {
-            0 => Ok(Some(start.into())),
+            0 => {
+                self.eat();
+                Ok(Some(start.into()))
+            }
             2 => {
                 // 0b110x_xxxx
                 let mut val = 0u32;
