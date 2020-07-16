@@ -139,7 +139,6 @@ impl<'a> Parser<'a> {
                         op: BinOp::Tenary(Box::new(mhs)),
                         rhs: Box::new(rhs),
                     };
-                } else if eat!(self, "[") {
                 } else {
                     let op = BinOp::from_token(self.peek().unwrap().clone()).unwrap();
                     match op {
@@ -165,9 +164,3 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 }
-res = []
-for i in range(len(lst)-2):
-    if lst[i] == list[i+2] and lst[i] != list[i+1]:
-        res.append([lst[i],lst[i+1],lst[i+2]])
-return res;
-

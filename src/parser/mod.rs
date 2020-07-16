@@ -1,7 +1,7 @@
 use crate::{
-    ast::*,
     lexer::Lexer,
     source::{Source, Span},
+    ssa::SsaBuilder,
     token::{DelimToken, Token, TokenKind},
 };
 
@@ -47,6 +47,7 @@ pub struct Parser<'a> {
     peek: Option<Token>,
     pref_span: Span,
     state: StateFlags,
+    builder: SsaBuilder,
 }
 
 impl<'a> Parser<'a> {
@@ -56,6 +57,7 @@ impl<'a> Parser<'a> {
             peek: None,
             pref_span: Span { lo: 0, hi: 0 },
             state: StateFlags::default(),
+            builder: SsaBuilder::new(),
         }
     }
 
@@ -140,16 +142,6 @@ impl<'a> Parser<'a> {
             }
         }
         false
-    }
-
-    pub fn next_ident(&mut self) -> Option<Ident> {
-        match self.peek_kind() {
-            Some(TokenKind::Ident(x)) => {
-                self.next();
-                Some(Ident(x.to_string()))
-            }
-            _ => None,
-        }
     }
 
     pub fn cur_span(&mut self) -> Span {
