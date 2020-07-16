@@ -6,7 +6,7 @@ impl<'a> Lexer<'a> {
         self.buffer.clear();
         loop {
             match self
-                .eat()
+                .next_byte()
                 .ok_or_else(|| self.error(LexerErrorKind::UnClosedString))?
             {
                 b'\\' => self.lex_escape_code()?,
@@ -15,7 +15,7 @@ impl<'a> Lexer<'a> {
                     let s = self.interner.intern(&self.buffer);
                     return self.token(TokenKind::Lit(LitToken::String(s)));
                 }
-                x if Self::is_non_ascii(x) => match self.eat_char()?.unwrap() {
+                x if Self::is_non_ascii(x) => match self.next_char()?.unwrap() {
                     chars::LS | chars::PS => return Err(self.error(LexerErrorKind::UnClosedString)),
                     x => self.buffer.push(x),
                 },
@@ -32,7 +32,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_escape_code(&mut self) -> Result<()> {
-        let next = if let Some(x) = self.eat() {
+        let next = if let Some(x) = self.next_byte() {
             x
         } else {
             return Err(self.error(LexerErrorKind::InvalidUtf8));
@@ -49,15 +49,15 @@ impl<'a> Lexer<'a> {
             b'v' => self.buffer.push(chars::VT.into()),
             b'r' => self.buffer.push(chars::CR.into()),
             chars::LF => {
-                if self.peek() == Some(chars::CR) {
-                    self.eat();
+                if self.peek_byte() == Some(chars::CR) {
+                    self.next_byte();
                 }
             }
             chars::CR => {}
             b'x' => {
                 let mut val = 0u8;
                 for _ in 0..2 {
-                    match self.eat() {
+                    match self.next_byte() {
                         Some(e) => {
                             let digit = self.digit_from_byte(e)?;
                             val <<= 4;
@@ -69,7 +69,7 @@ impl<'a> Lexer<'a> {
                 self.buffer.push(val.into());
             }
             b'u' => {
-                let next = if let Some(x) = self.eat() {
+                let next = if let Some(x) = self.next_byte() {
                     x
                 } else {
                     return Err(self.error(LexerErrorKind::InvalidEscapeCode));
@@ -78,7 +78,7 @@ impl<'a> Lexer<'a> {
                     let mut val = 0u32;
                     let mut finished = false;
                     for i in 0..6 {
-                        match self.eat() {
+                        match self.next_byte() {
                             Some(b'}') => {
                                 if i == 0 {
                                     return Err(self.error(LexerErrorKind::InvalidEscapeCode));
@@ -94,7 +94,7 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     if !finished {
-                        if self.eat() != Some(b'}') {
+                        if self.next_byte() != Some(b'}') {
                             return Err(self.error(LexerErrorKind::InvalidEscapeCode));
                         }
                     }
@@ -105,7 +105,7 @@ impl<'a> Lexer<'a> {
                 } else {
                     let mut val = 0u32;
                     for _ in 0..4 {
-                        match self.eat() {
+                        match self.next_byte() {
                             Some(e) => {
                                 let digit = self.digit_from_byte(e)?;
                                 val <<= 4;
@@ -120,7 +120,7 @@ impl<'a> Lexer<'a> {
                     self.buffer.push(val)
                 }
             }
-            x if Self::is_non_ascii(x) => match self.eat_char()? {
+            x if Self::is_non_ascii(x) => match self.next_char()? {
                 Some(chars::LS) | Some(chars::PS) => {}
                 _ => return Err(self.error(LexerErrorKind::InvalidEscapeCode)),
             },

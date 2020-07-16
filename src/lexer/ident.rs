@@ -19,7 +19,7 @@ impl<'a> Lexer<'a> {
         return false;
     }
 
-    fn is_keyword(x: &str) -> Option<Kw> {
+    fn to_keyword(x: &str) -> Option<Kw> {
         match x {
             "await" => Some(Kw::Await),
             "break" => Some(Kw::Break),
@@ -66,7 +66,7 @@ impl<'a> Lexer<'a> {
     pub fn lex_ident(&mut self) -> Result<Option<Token>> {
         self.buffer.clear();
         self.cur -= 1;
-        let c = self.eat_char()?.unwrap();
+        let c = self.next_char()?.unwrap();
         if !Self::is_token_start(c) {
             dbg!(c);
             return Err(self.error(LexerErrorKind::UnknownToken));
@@ -77,9 +77,9 @@ impl<'a> Lexer<'a> {
                 break;
             }
             self.buffer.push(x);
-            self.eat_char().ok();
+            self.next_char().ok();
         }
-        if let Some(x) = Self::is_keyword(&self.buffer) {
+        if let Some(x) = Self::to_keyword(&self.buffer) {
             return self.token(TokenKind::Kw(x));
         }
         let s = self.interner.intern(&self.buffer);

@@ -42,23 +42,23 @@ impl<'a> Lexer<'a> {
     pub fn lex_number(&mut self, start: u8) -> Result<Option<Token>> {
         let str_start = self.cur - 1;
         if start == b'0' {
-            match self.peek() {
+            match self.peek_byte() {
                 None => return self.token_num(NumberKind::Integer(0)),
                 Some(b'n') => {
-                    self.eat();
+                    self.next_byte();
                     let s = self.interner.intern("0");
                     return self.token_num(NumberKind::Big(s));
                 }
                 Some(b'b') | Some(b'B') => {
-                    self.eat();
+                    self.next_byte();
                     return self.lex_non_decimal(2, str_start);
                 }
                 Some(b'o') | Some(b'O') => {
-                    self.eat();
+                    self.next_byte();
                     return self.lex_non_decimal(8, str_start);
                 }
                 Some(b'x') | Some(b'X') => {
-                    self.eat();
+                    self.next_byte();
                     return self.lex_non_decimal(16, str_start);
                 }
                 _ => {}
@@ -67,21 +67,21 @@ impl<'a> Lexer<'a> {
         if start == b'.' {
             return self.lex_number_mantissa(str_start);
         }
-        while self.peek().map(|x| Self::is_digit(x)).unwrap_or(false) {
-            self.eat();
+        while self.peek_byte().map(|x| Self::is_digit(x)).unwrap_or(false) {
+            self.next_byte();
         }
         let mut big = false;
-        match self.peek() {
+        match self.peek_byte() {
             Some(b'.') => {
-                self.eat();
+                self.next_byte();
                 return self.lex_number_mantissa(str_start);
             }
             Some(b'e') | Some(b'E') => {
-                self.eat();
+                self.next_byte();
                 return self.lex_number_exponent(str_start);
             }
             Some(b'n') => {
-                self.eat();
+                self.next_byte();
                 big = true;
             }
             _ => (),
@@ -105,12 +105,12 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number_mantissa(&mut self, str_start: usize) -> Result<Option<Token>> {
-        while self.peek().map(Self::is_digit).unwrap_or(false) {
-            self.eat();
+        while self.peek_byte().map(Self::is_digit).unwrap_or(false) {
+            self.next_byte();
         }
-        match self.peek() {
+        match self.peek_byte() {
             Some(b'e') | Some(b'E') => {
-                self.eat();
+                self.next_byte();
                 return self.lex_number_exponent(str_start);
             }
             _ => {}
@@ -119,15 +119,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_number_exponent(&mut self, str_start: usize) -> Result<Option<Token>> {
-        let start = self.peek();
+        let start = self.peek_byte();
         if start.is_none() {
             return Err(self.error(LexerErrorKind::InvalidNumber));
         }
         let start = start.unwrap();
         if start == b'-' || start == b'+' || !Self::is_digit(start) {
-            self.eat();
-            while self.peek().map(Self::is_digit).unwrap_or(false) {
-                self.eat();
+            self.next_byte();
+            while self.peek_byte().map(Self::is_digit).unwrap_or(false) {
+                self.next_byte();
             }
             return self.lex_number_string(str_start);
         }
@@ -136,15 +136,15 @@ impl<'a> Lexer<'a> {
 
     pub fn lex_non_decimal(&mut self, radix: u8, str_start: usize) -> Result<Option<Token>> {
         while self
-            .peek()
+            .peek_byte()
             .map(|c| Self::is_radix(c, radix))
             .unwrap_or(false)
         {
-            self.eat();
+            self.next_byte();
         }
         let mut big = false;
-        if let Some(b'n') = self.peek() {
-            self.eat();
+        if let Some(b'n') = self.peek_byte() {
+            self.next_byte();
             big = true;
         }
         let s = str::from_utf8(&self.bytes[str_start..self.cur]).unwrap();
