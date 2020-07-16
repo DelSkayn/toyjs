@@ -92,7 +92,7 @@ impl<'a> Parser<'a> {
                 None => break,
             };
 
-            if let Some((l_bp, ())) = postfix_binding_power(op.clone()) {
+            if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;
                 }
@@ -126,7 +126,7 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            if let Some((l_bp, r_bp)) = infix_binding_power(op.clone()) {
+            if let Some((l_bp, r_bp)) = infix_binding_power(op) {
                 if l_bp < min_bp {
                     break;
                 }

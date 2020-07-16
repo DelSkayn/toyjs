@@ -33,13 +33,13 @@ pub struct LexerError {
 pub struct Lexer<'a> {
     pub interner: &'a mut Interner,
     bytes: &'a [u8],
-    last_end: usize,
+
+    pending_char: Option<(char, u8)>,
+
+    last: usize,
     cur: usize,
-    line: u64,
-    column: u64,
-    error: bool,
+
     buffer: String,
-    peek: Option<(char, u32)>,
 }
 
 impl<'a> Lexer<'a> {
@@ -47,19 +47,17 @@ impl<'a> Lexer<'a> {
         Lexer {
             interner,
             bytes,
-            last_end: 0,
+            last: 0,
             cur: 0,
-            line: 0,
-            column: 0,
-            error: false,
             buffer: String::new(),
-            peek: None,
+            pending_char: None,
         }
     }
 
-    fn eat(&mut self) -> Option<u8> {
+    /// Returns the next byte and consumes it.
+    fn next_byte(&mut self) -> Option<u8> {
         if self.cur < self.bytes.len() {
-            self.peek = None;
+            self.pending_char = None;
             let res = self.bytes[self.cur];
             self.cur += 1;
             Some(res)
@@ -68,7 +66,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek(&self) -> Option<u8> {
+    /// Returns the next byte
+    fn peek_byte(&self) -> Option<u8> {
         if self.cur < self.bytes.len() {
             Some(self.bytes[self.cur])
         } else {
@@ -76,17 +75,19 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn eat_skip_whitespace(&mut self) -> Result<Option<u8>> {
+    /// Returns the next byte skipping any whitespace characters.
+    /// Will error on invalid utf-8 characters.
+    fn next_skip_whitespace(&mut self) -> Result<Option<u8>> {
         loop {
-            let peek = if let Some(x) = self.peek() {
+            let peek = if let Some(x) = self.peek_byte() {
                 x
             } else {
                 return Ok(None);
             };
             match peek {
                 chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => {
-                    self.last_end = self.cur;
-                    self.eat();
+                    self.last = self.cur;
+                    self.next_byte();
                 }
                 x if Self::is_non_ascii(x) => match self.peek_char()?.unwrap() {
                     // These are all the unicode whitespace characters
@@ -106,28 +107,30 @@ impl<'a> Lexer<'a> {
                     | chars::USP_13
                     | chars::USP_14
                     | chars::USP_15 => {
-                        self.last_end = self.cur;
-                        self.eat();
+                        self.last = self.cur;
+                        self.next_byte();
                     }
                     _ => {
-                        return Ok(self.eat());
+                        return Ok(self.next_byte());
                     }
                 },
-                _ => return Ok(self.eat()),
+                _ => return Ok(self.next_byte()),
             }
         }
     }
 
-    fn eat_newline(&mut self, c: u8) -> bool {
+    /// Will eat the next line terminator if there is one
+    /// returns true if a line terminator was eaten.
+    fn eat_line_terminator(&mut self, c: u8) -> bool {
         match c {
             chars::LF => {
-                self.eat();
+                self.next_byte();
                 return true;
             }
             chars::CR => {
-                self.eat();
-                if self.peek() == Some(chars::LF) {
-                    self.eat();
+                self.next_byte();
+                if self.peek_byte() == Some(chars::LF) {
+                    self.next_byte();
                 }
                 return true;
             }
@@ -135,7 +138,7 @@ impl<'a> Lexer<'a> {
                 self.cur -= 1;
                 match self.peek_char() {
                     Ok(Some(chars::LS)) | Ok(Some(chars::PS)) => {
-                        self.eat_char().unwrap();
+                        self.next_char().unwrap();
                         return true;
                     }
                     _ => {}
@@ -148,8 +151,8 @@ impl<'a> Lexer<'a> {
 
     fn error(&mut self, error: LexerErrorKind) -> LexerError {
         let cur = self.cur;
-        let start = self.last_end;
-        self.last_end = self.cur;
+        let start = self.last;
+        self.last = self.cur;
         assert!(
             cur <= u32::MAX as usize,
             "span index larger then u32::MAX, source file possibly to big to handle!"
@@ -167,8 +170,8 @@ impl<'a> Lexer<'a> {
 
     fn token(&mut self, kind: TokenKind) -> Result<Option<Token>> {
         let cur = self.cur;
-        let start = self.last_end;
-        self.last_end = self.cur;
+        let start = self.last;
+        self.last = self.cur;
         assert!(
             cur <= u32::MAX as usize,
             "span index larger then u32::MAX, source file possibly to big to handle!"
@@ -184,30 +187,30 @@ impl<'a> Lexer<'a> {
         Ok(Some(Token { span, kind }))
     }
 
-    fn eat_line_comment(&mut self) -> Result<()> {
+    fn lex_line_comment(&mut self) -> Result<()> {
         loop {
-            let next = if let Some(x) = self.eat() {
+            let next = if let Some(x) = self.next_byte() {
                 x
             } else {
                 break;
             };
-            if self.eat_newline(next) {
+            if self.eat_line_terminator(next) {
                 break;
             }
-            self.eat();
+            self.next_byte();
         }
         Ok(())
     }
 
-    fn eat_multi_line_comment(&mut self) -> Result<()> {
+    fn lex_multi_line_comment(&mut self) -> Result<()> {
         loop {
             match self
-                .eat()
+                .next_byte()
                 .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?
             {
-                b'*' => match self.peek() {
+                b'*' => match self.peek_byte() {
                     Some(b'/') => {
-                        self.eat();
+                        self.next_byte();
                         return Ok(());
                     }
                     _ => {}
@@ -217,8 +220,9 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Returns the next token from the source if there is one.
     pub fn next(&mut self) -> Result<Option<Token>> {
-        let next = self.eat_skip_whitespace()?;
+        let next = self.next_skip_whitespace()?;
         if next.is_none() {
             return Ok(None);
         }
@@ -232,39 +236,39 @@ impl<'a> Lexer<'a> {
             b'}' => self.token(t!("}")),
             b'[' => self.token(t!("[")),
             b']' => self.token(t!("]")),
-            b'+' => match self.peek() {
+            b'+' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("+="))
                 }
                 Some(b'+') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("++"))
                 }
                 _ => self.token(t!("+")),
             },
-            b'-' => match self.peek() {
+            b'-' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("-="))
                 }
                 Some(b'-') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("--"))
                 }
                 _ => self.token(t!("-")),
             },
 
-            b'*' => match self.peek() {
+            b'*' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("*"))
                 }
                 Some(b'*') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!("**="))
                         }
                         _ => self.token(t!("**")),
@@ -273,39 +277,39 @@ impl<'a> Lexer<'a> {
                 _ => self.token(t!("*")),
             },
 
-            b'/' => match self.peek() {
+            b'/' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("/="))
                 }
                 Some(b'/') => {
-                    self.eat_line_comment()?;
+                    self.lex_line_comment()?;
                     self.next()
                 }
                 Some(b'*') => {
-                    self.eat_multi_line_comment()?;
+                    self.lex_multi_line_comment()?;
                     self.next()
                 }
                 _ => self.token(t!("/")),
             },
             b'~' => self.token(t!("~")),
-            b'%' => match self.peek() {
+            b'%' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("%="))
                 }
                 _ => self.token(t!("%")),
             },
-            b'<' => match self.peek() {
+            b'<' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("<="))
                 }
                 Some(b'<') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!("<<="))
                         }
                         _ => self.token(t!("<<")),
@@ -313,23 +317,23 @@ impl<'a> Lexer<'a> {
                 }
                 _ => self.token(t!("<")),
             },
-            b'>' => match self.peek() {
+            b'>' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!(">="))
                 }
                 Some(b'>') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!(">>="))
                         }
                         Some(b'>') => {
-                            self.eat();
-                            match self.peek() {
+                            self.next_byte();
+                            match self.peek_byte() {
                                 Some(b'=') => {
-                                    self.eat();
+                                    self.next_byte();
                                     self.token(t!(">>>="))
                                 }
                                 _ => self.token(t!(">>>")),
@@ -340,25 +344,25 @@ impl<'a> Lexer<'a> {
                 }
                 _ => self.token(t!(">")),
             },
-            b'=' => match self.peek() {
+            b'=' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!("==="))
                         }
                         _ => self.token(t!("==")),
                     }
                 }
-                _ => self.token(TokenKind::Assign),
+                _ => self.token(t!("=")),
             },
-            b'!' => match self.peek() {
+            b'!' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!("!=="))
                         }
                         _ => self.token(t!("!=")),
@@ -366,48 +370,48 @@ impl<'a> Lexer<'a> {
                 }
                 _ => self.token(t!("!")),
             },
-            b'&' => match self.peek() {
+            b'&' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("&="))
                 }
                 Some(b'&') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("&&"))
                 }
                 _ => self.token(t!("&")),
             },
-            b'|' => match self.peek() {
+            b'|' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("|="))
                 }
                 Some(b'|') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("||"))
                 }
                 _ => self.token(t!("|")),
             },
-            b'^' => match self.peek() {
+            b'^' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("^="))
                 }
                 _ => self.token(t!("^")),
             },
-            b':' => match self.peek() {
+            b':' => match self.peek_byte() {
                 Some(b':') => {
-                    self.eat();
+                    self.next_byte();
                     self.token(t!("::"))
                 }
                 _ => self.token(t!(":")),
             },
-            b'.' => match self.peek() {
+            b'.' => match self.peek_byte() {
                 Some(b'.') => {
-                    self.eat();
-                    match self.peek() {
+                    self.next_byte();
+                    match self.peek_byte() {
                         Some(b'.') => {
-                            self.eat();
+                            self.next_byte();
                             self.token(t!("..."))
                         }
                         _ => self.token(t!("..")),
@@ -416,7 +420,7 @@ impl<'a> Lexer<'a> {
                 Some(x) if Self::is_digit(x) => self.lex_number(b'.'),
                 _ => self.token(TokenKind::Dot),
             },
-            x if self.eat_newline(x) => self.token(t!("\n")),
+            x if self.eat_line_terminator(x) => self.token(t!("\n")),
             b'`' => return Err(self.error(LexerErrorKind::NotYetSupported)),
             b'"' => self.lex_string(b'"'),
             b'\'' => self.lex_string(b'\''),
