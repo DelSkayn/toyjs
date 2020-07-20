@@ -1,4 +1,6 @@
-use js::{interner::Interner, lexer::Lexer};
+use js::{
+    compiler::Compiler, interner::Interner, lexer::Lexer, parser::Parser, runtime, source::Source,
+};
 use std::io::{self, BufRead};
 
 fn main() {
@@ -6,12 +8,45 @@ fn main() {
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line = line.unwrap();
-        let mut lexer = Lexer::new(line.as_bytes(), &mut interner);
-        loop {
-            match lexer.next() {
-                Ok(None) => break,
-                Ok(Some(x)) => println!("{:?}", x),
-                Err(e) => println!("error: {:?}", e),
+        let lexer = Lexer::new(line.as_bytes(), &mut interner);
+        let mut parser = Parser::new(lexer);
+        match parser.parse_script() {
+            Ok(_) => {}
+            Err(e) => {
+                let s = Source::new(line, None);
+                println!("PARSE ERROR: {}", s.wrap(e));
+                continue;
+            }
+        };
+        let ssa = parser.builder.build();
+        println!("PARSE_OKAY:\n{:#?}", ssa);
+        let bc = Compiler::compile(&ssa, &interner);
+        println!("instructions: \n{}", bc);
+        unsafe {
+            let mut runtime = runtime::Runtime::new(&bc);
+            let res = runtime.run_unsafe();
+            if let Some(x) = res {
+                if x.is_float() {
+                    println!("value: {:?}", x.into_float());
+                }
+                if x.is_int() {
+                    println!("value: {:?}", x.into_int());
+                }
+                if x.is_bool() {
+                    if x.into_bool() {
+                        println!("value: true")
+                    } else {
+                        println!("value: false")
+                    }
+                }
+                if x.is_null() {
+                    println!("value: null")
+                }
+                if x.is_string() {
+                    let val = x.into_string();
+                    println!("value: \"{}\"", val.value());
+                    val.drop();
+                }
             }
         }
     }

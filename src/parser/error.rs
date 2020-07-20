@@ -1,4 +1,5 @@
 use crate::{
+    lexer::LexerError,
     source::{Source, Sourced, Span},
     token::Token,
 };
@@ -31,6 +32,9 @@ pub enum ParseErrorKind {
         reason: Option<&'static str>,
     },
     NumberParseError(&'static str),
+    InvalidToken {
+        error: LexerError,
+    },
 }
 
 pub struct ParseError {
@@ -89,6 +93,11 @@ impl<'a> fmt::Display for Sourced<'a, ParseError> {
                 writeln!(f, "")?;
                 self.source.fmt_span(f, self.value.origin)?;
                 self.source.fmt_span_src(f, self.value.origin, reason)
+            }
+            //TODO better lexer error formatting
+            ParseErrorKind::InvalidToken { ref error } => {
+                writeln!(f, "invalid token: {:?}", error)?;
+                self.source.fmt_span(f, self.value.origin)
             }
         }
     }

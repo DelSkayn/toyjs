@@ -86,8 +86,8 @@ impl<'a> Lexer<'a> {
             };
             match peek {
                 chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => {
-                    self.last = self.cur;
                     self.next_byte();
+                    self.last = self.cur;
                 }
                 x if Self::is_non_ascii(x) => match self.peek_char()?.unwrap() {
                     // These are all the unicode whitespace characters
@@ -229,6 +229,7 @@ impl<'a> Lexer<'a> {
         let next = next.unwrap();
         match next {
             b';' => self.token(t!(";")),
+            b':' => self.token(t!(":")),
             b',' => self.token(t!(",")),
             b'(' => self.token(t!("(")),
             b')' => self.token(t!(")")),
@@ -236,6 +237,22 @@ impl<'a> Lexer<'a> {
             b'}' => self.token(t!("}")),
             b'[' => self.token(t!("[")),
             b']' => self.token(t!("]")),
+            b'?' => match self.peek_byte() {
+                Some(b'?') => {
+                    self.next_byte();
+                    self.token(t!("??"))
+                }
+                Some(b'.') => {
+                    self.next_byte();
+                    if self.peek_byte().map(Self::is_digit).unwrap_or(false) {
+                        self.cur -= 1;
+                        self.token(t!("?"))
+                    } else {
+                        self.token(t!("?."))
+                    }
+                }
+                _ => self.token(t!("?")),
+            },
             b'+' => match self.peek_byte() {
                 Some(b'=') => {
                     self.next_byte();
@@ -398,13 +415,6 @@ impl<'a> Lexer<'a> {
                     self.token(t!("^="))
                 }
                 _ => self.token(t!("^")),
-            },
-            b':' => match self.peek_byte() {
-                Some(b':') => {
-                    self.next_byte();
-                    self.token(t!("::"))
-                }
-                _ => self.token(t!(":")),
             },
             b'.' => match self.peek_byte() {
                 Some(b'.') => {

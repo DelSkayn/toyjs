@@ -14,6 +14,7 @@ pub use error::{ParseError, ParseErrorKind};
 mod class;
 mod decl;
 mod expr;
+mod ops;
 mod prime;
 mod stmt;
 

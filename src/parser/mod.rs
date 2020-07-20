@@ -1,7 +1,7 @@
 use crate::{
     lexer::Lexer,
     source::{Source, Span},
-    ssa::SsaBuilder,
+    ssa::{InstrVar, Instruction, SsaBuilder},
     token::{DelimToken, Token, TokenKind},
 };
 
@@ -11,13 +11,14 @@ mod macros;
 mod error;
 pub use error::{ParseError, ParseErrorKind};
 
-mod class;
-mod decl;
+//mod class;
+//mod decl;
 mod expr;
+mod ops;
 mod prime;
 mod stmt;
 
-type PResult<'a, T> = Result<T, ParseError<'a>>;
+type PResult<'a, T> = Result<T, ParseError>;
 
 #[derive(Clone, Copy)]
 pub struct StateFlags {
@@ -47,7 +48,7 @@ pub struct Parser<'a> {
     peek: Option<Token>,
     pref_span: Span,
     state: StateFlags,
-    builder: SsaBuilder,
+    pub builder: SsaBuilder,
 }
 
 impl<'a> Parser<'a> {
@@ -76,76 +77,82 @@ impl<'a> Parser<'a> {
 
     pub fn is_lt(&mut self) -> bool {
         self.peek_with_lt()
-            .map(|e| e.kind == tok!("\n"))
+            .map(|e| e.map(|e| e.kind == t!("\n")))
+            .unwrap_or(None)
             .unwrap_or(false)
     }
 
-    pub fn peek_with_lt(&mut self) -> Option<Token> {
+    pub fn peek_with_lt(&mut self) -> PResult<Option<Token>> {
         let res = match self.peek.clone() {
             Some(x) => Some(x),
             None => {
-                self.peek = self.lexer.next();
+                self.peek = self.lexer.next().map_err(|error| ParseError {
+                    kind: ParseErrorKind::InvalidToken { error },
+                    origin: self.cur_span(),
+                })?;
                 self.peek.clone()
             }
         };
         trace!("peek {:?}", res);
-        res
+        Ok(res)
     }
 
-    pub fn next_with_lt(&mut self) -> Option<Token> {
-        let res = self.peek.take().or_else(|| {
-            let l = self.lexer.next();
-            l.as_ref().map(|e| self.pref_span = e.span);
-            l
-        });
-        trace!("next {:?}", res);
-        res
+    pub fn next_with_lt(&mut self) -> PResult<Option<Token>> {
+        if let Some(x) = self.peek.take() {
+            return Ok(Some(x));
+        }
+        let res = self.lexer.next().map_err(|error| ParseError {
+            kind: ParseErrorKind::InvalidToken { error },
+            origin: self.cur_span(),
+        })?;
+        res.as_ref().map(|e| self.pref_span = e.span);
+        Ok(res)
     }
 
-    pub fn eat_with_lt(&mut self, kind: TokenKind) -> bool {
-        if self.peek_with_lt().filter(|e| e.kind == kind).is_some() {
-            self.next_with_lt();
-            true
+    pub fn eat_with_lt(&mut self, kind: TokenKind) -> PResult<bool> {
+        if self.peek_with_lt()?.filter(|e| e.kind == kind).is_some() {
+            self.next_with_lt().ok();
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
-    pub fn peek(&mut self) -> Option<Token> {
-        while let Some(x) = self.peek_with_lt() {
-            if x.kind != tok!("\n") {
-                return Some(x);
+    pub fn peek(&mut self) -> PResult<Option<Token>> {
+        while let Some(x) = self.peek_with_lt()? {
+            if x.kind != t!("\n") {
+                return Ok(Some(x));
             }
-            self.next_with_lt();
+            self.next_with_lt()?;
         }
-        None
+        Ok(None)
     }
 
-    pub fn peek_kind(&mut self) -> Option<TokenKind> {
-        self.peek().map(|t| t.kind)
+    pub fn peek_kind(&mut self) -> PResult<Option<TokenKind>> {
+        Ok(self.peek()?.map(|t| t.kind))
     }
 
-    pub fn next(&mut self) -> Option<Token> {
-        while let Some(x) = self.next_with_lt() {
-            if x.kind != tok!("\n") {
-                return Some(x);
+    pub fn next(&mut self) -> PResult<Option<Token>> {
+        while let Some(x) = self.next_with_lt()? {
+            if x.kind != t!("\n") {
+                return Ok(Some(x));
             }
         }
-        None
+        Ok(None)
     }
 
-    pub fn eat(&mut self, kind: TokenKind) -> bool {
-        if let Some(x) = self.peek() {
+    pub fn eat(&mut self, kind: TokenKind) -> PResult<bool> {
+        if let Some(x) = self.peek()? {
             if x.kind == kind {
-                self.next();
-                return true;
+                self.next()?;
+                return Ok(true);
             }
         }
-        false
+        Ok(false)
     }
 
     pub fn cur_span(&mut self) -> Span {
-        if let Some(x) = self.peek() {
+        if let Ok(Some(x)) = self.peek() {
             return x.span;
         }
         return self.pref_span;
@@ -153,19 +160,21 @@ impl<'a> Parser<'a> {
 
     /// Parse a js script.
     /// One of the 2 entry points into parsing
-    pub fn parse_script(&mut self) -> PResult<'a, Script> {
+    pub fn parse_script(&mut self) -> PResult<()> {
         trace!("parse: script");
-        let mut stmts = Vec::new();
-        while self.peek().is_some() {
-            stmts.push(self.parse_stmt()?);
+        let mut last = None;
+        while self.peek()?.is_some() {
+            last = self.parse_stmt()?;
             eat!(self, ";");
         }
-        Ok(Script { stmts })
+        let value = last.map(|e| e.into()).unwrap_or(InstrVar::null());
+        self.builder.push_instruction(Instruction::Return { value });
+        Ok(())
     }
 
     /// Parse a js module.
     /// One of the 2 entry points into parsing
-    pub fn parse_module(&mut self) -> PResult<'a, Script> {
+    pub fn parse_module(&mut self) -> PResult<()> {
         trace!("parse: module");
         to_do!(self)
     }
