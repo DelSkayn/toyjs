@@ -28,7 +28,7 @@ macro_rules! t {
     ("number") => {
         crate::token::TokenKind::Lit(crate::token::LitToken::Number(_))
     };
-    ("lit") => {
+    ("literal") => {
         crate::token::TokenKind::Lit(_)
     };
     ("ident") => {

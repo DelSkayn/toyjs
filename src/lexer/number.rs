@@ -147,7 +147,7 @@ impl<'a> Lexer<'a> {
             self.next_byte();
             big = true;
         }
-        let s = str::from_utf8(&self.bytes[str_start..self.cur]).unwrap();
+        let s = str::from_utf8(&self.bytes[str_start + 2..self.cur]).unwrap();
         if big {
             let s = self.interner.intern(s);
             self.token_num(NumberKind::Big(s))

@@ -9,7 +9,6 @@ pub use op::{BinOpToken, RelationToken, UnaryOpToken};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum NumberKind {
-    Invalid(StringId),
     Integer(i32),
     Float(f64),
     Big(StringId),
