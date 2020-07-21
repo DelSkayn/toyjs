@@ -26,10 +26,15 @@ impl fmt::Display for Bytecode {
         }
         let mut cur = 0;
         writeln!(f, "\nINSTRUCTIONS:")?;
+        let n_chars = (self.instructions.len() as f64).log10() as u64 + 1;
         while cur != self.instructions.len() {
             let instr = self.instructions[cur];
+            let cur_n_chars = (cur as f64).log10() as u64 + 1;
+            for _ in 0..n_chars - cur_n_chars {
+                write!(f, " ")?;
+            }
+            write!(f, "{}: ", cur)?;
             format_instr(instr, f)?;
-            write!(f, "")?;
             match op_op(instr) {
                 op::CLD => {
                     if op_d(instr) == 0xffff {
