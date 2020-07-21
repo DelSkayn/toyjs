@@ -20,7 +20,7 @@ pub struct Runtime<'a> {
     size: usize,
     code: &'a [Instruction],
     data: &'a [DataValue],
-    pc: usize,
+    pc: *const u8,
     frame: *mut JSValue,
     regs: [JSValue; NUM_REGISTERS],
     global: rc::Rc<Object>,
@@ -47,7 +47,7 @@ impl<'a> Runtime<'a> {
             stack,
             size: INITIAL_STACK_SIZE,
             frame: stack,
-            pc: 0,
+            pc: code.as_ptr() as *const _,
             code,
             data,
             regs,
@@ -66,6 +66,47 @@ impl<'a> Runtime<'a> {
         }
         self.frame.write(js_value);
         self.frame = self.frame.add(1);
+    }
+
+    #[cfg(debug_assertions)]
+    fn check_bounds(&self) {
+        let last = unsafe { self.code.as_ptr().add(self.code.len() - 1) };
+        // + 3 for the last 3 bytes in the 4 wide u32
+        assert!(self.pc as usize <= last as usize + 3);
+    }
+
+    #[inline(always)]
+    unsafe fn read_u8(&mut self) -> u8 {
+        #[cfg(debug_assertions)]
+        self.check_bounds();
+        let res = self.pc.read();
+        self.pc = self.pc.add(mem::size_of::<u8>());
+        res
+    }
+
+    #[inline(always)]
+    unsafe fn read_u16(&mut self) -> u16 {
+        debug_assert_eq!(self.pc.align_offset(mem::align_of::<u16>()), 0);
+        #[cfg(debug_assertions)]
+        self.check_bounds();
+        let res = (self.pc as *const u16).read();
+        self.pc = self.pc.add(mem::size_of::<u16>());
+        res
+    }
+
+    #[inline(always)]
+    unsafe fn read_u32(&mut self) -> u32 {
+        debug_assert_eq!(self.pc.align_offset(mem::align_of::<u32>()), 0);
+        #[cfg(debug_assertions)]
+        self.check_bounds();
+        let res = (self.pc as *const u32).read();
+        self.pc = self.pc.add(mem::size_of::<u32>());
+        res
+    }
+
+    #[inline(always)]
+    unsafe fn jump(&mut self, pc: u32) {
+        self.pc = self.code.as_ptr().add(pc as usize) as *const u8;
     }
 
     #[inline(always)]
@@ -90,18 +131,19 @@ impl<'a> Runtime<'a> {
 
     unsafe fn run_loop(&mut self) -> Option<JSValue> {
         loop {
-            let instr = self.code[self.pc];
-            let op = bc::op_op(instr);
+            let op = self.read_u8();
             match op {
                 op::OSET => {
-                    let op_a = bc::op_a(instr);
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let key = *self.get(op_b);
+                    let val = *self.get(op_c);
                     let obj = if op_a == 0xff {
                         JSValue::from(self.global)
                     } else {
                         *self.get(op_a)
                     };
-                    let key = *self.get(bc::op_b(instr));
-                    let val = *self.get(bc::op_c(instr));
                     let key = Self::as_string(key);
                     obj.into_object()
                         .value()
@@ -109,25 +151,26 @@ impl<'a> Runtime<'a> {
                         .map(|x| x.drop());
                 }
                 op::OGET => {
-                    let op_b = bc::op_b(instr);
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
                     let obj = if op_b == 0xff {
                         JSValue::from(self.global)
                     } else {
                         *self.get(op_b)
                     };
-                    let key = *self.get(bc::op_c(instr));
+                    let key = *self.get(op_c);
                     let val = obj.into_object().value().get(&Self::as_string(key));
-                    *self.get(bc::op_a(instr)) = val;
+                    *self.get(op_a) = val;
                 }
                 op::CLD => {
-                    let val = bc::op_d(instr);
+                    let dst = self.read_u8();
+                    let val = self.read_u16();
                     let idx = if val != 0xffff {
                         val as usize
                     } else {
-                        self.pc += 1;
-                        self.code[self.pc] as usize
+                        self.read_u32() as usize
                     };
-                    let dst = bc::op_a(instr);
                     let data = match self.data[idx].clone() {
                         DataValue::String(x) => JSValue::from(Rc::new(x)),
                         DataValue::Direct(x) => x,
@@ -136,13 +179,16 @@ impl<'a> Runtime<'a> {
                     self.push(data);
                 }
                 op::MOV => {
-                    let dst = bc::op_a(instr);
-                    let src = bc::op_d(instr);
+                    let dst = self.read_u8();
+                    let src = self.read_u16();
                     *self.get(dst) = *self.get(src as u8);
                 }
                 op::ADD => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     if Self::both_int(val1, val2) {
                         let val1 = val1.into_int() as i64;
                         let val2 = val2.into_int() as i64;
@@ -152,15 +198,18 @@ impl<'a> Runtime<'a> {
                         } else {
                             JSValue::from(res as i32)
                         };
-                        *self.get(bc::op_a(instr)) = res;
+                        *self.get(op_a) = res;
                     } else {
                         let res = Self::bin_addition(val1, val2);
-                        *self.get(bc::op_a(instr)) = res;
+                        *self.get(op_a) = res;
                     }
                 }
                 op::SUB => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     if Self::both_int(val1, val2) {
                         let val1 = val1.into_int() as i64;
                         let val2 = val2.into_int() as i64;
@@ -170,107 +219,172 @@ impl<'a> Runtime<'a> {
                         } else {
                             JSValue::from(res as i32)
                         };
-                        *self.get(bc::op_a(instr)) = res;
+                        *self.get(op_a) = res;
                     } else {
                         let res = Self::bin_arithmatic(val1, val2, op::SUB);
-                        *self.get(bc::op_a(instr)) = res;
+                        *self.get(op_a) = res;
                     }
                 }
                 op::MUL => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::MUL);
-                    *self.get(bc::op_a(instr)) = res;
+                    *self.get(op_a) = res;
                 }
                 op::DIV => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::DIV);
-                    *self.get(bc::op_a(instr)) = res;
+                    *self.get(op_a) = res;
                 }
                 op::POW => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::POW);
-                    *self.get(bc::op_a(instr)) = res;
+                    *self.get(op_a) = res;
                 }
                 op::MOD => {
-                    let val1 = *self.get(bc::op_b(instr));
-                    let val2 = *self.get(bc::op_c(instr));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let val1 = *self.get(op_b);
+                    let val2 = *self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::MOD);
-                    *self.get(bc::op_a(instr)) = res;
+                    *self.get(op_a) = res;
                 }
                 op::BAND => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
-                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
-                    *self.get(bc::op_a(instr)) = JSValue::from(b & c);
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b));
+                    let c = Self::as_i32(*self.get(op_c));
+                    *self.get(op_a) = JSValue::from(b & c);
                 }
                 op::BOR => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
-                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
-                    *self.get(bc::op_a(instr)) = JSValue::from(b | c);
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b));
+                    let c = Self::as_i32(*self.get(op_c));
+                    *self.get(op_a) = JSValue::from(b | c);
                 }
                 op::BXOR => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
-                    let c = Self::as_i32(*self.get(bc::op_c(instr)));
-                    *self.get(bc::op_a(instr)) = JSValue::from(b ^ c);
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b));
+                    let c = Self::as_i32(*self.get(op_c));
+                    *self.get(op_a) = JSValue::from(b ^ c);
                 }
                 op::POS => {
-                    let val = *self.get(bc::op_d(instr) as u8);
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let val = *self.get(op_d as u8);
                     let val = Self::float_to_val(Self::as_float(val));
-                    *self.get(bc::op_a(instr)) = val;
+                    *self.get(op_a) = val;
                 }
                 op::NEG => {
-                    let val = *self.get(bc::op_d(instr) as u8);
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let val = *self.get(op_d as u8);
                     let val = Self::float_to_val(-Self::as_float(val));
-                    *self.get(bc::op_a(instr)) = val;
+                    *self.get(op_a) = val;
                 }
                 op::SHL => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
-                    let c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b));
+                    let c = Self::as_u32(*self.get(op_c));
                     let c = (c & 0x1f) as i32;
-                    *self.get(bc::op_a(instr)) = JSValue::from(b << c);
+                    *self.get(op_a) = JSValue::from(b << c);
                 }
                 op::SHR => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr)));
-                    let c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b));
+                    let c = Self::as_u32(*self.get(op_c));
                     let c = (c & 0x1f) as i32;
-                    *self.get(bc::op_a(instr)) = JSValue::from((b >> c) as i32);
+                    *self.get(op_a) = JSValue::from((b >> c) as i32);
                 }
                 op::USR => {
-                    let b = Self::as_i32(*self.get(bc::op_b(instr))) as u32;
-                    let mut c = Self::as_u32(*self.get(bc::op_c(instr)));
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = Self::as_i32(*self.get(op_b)) as u32;
+                    let mut c = Self::as_u32(*self.get(op_c));
                     c &= 0x1f;
-                    *self.get(bc::op_a(instr)) = JSValue::from((b >> c) as i32);
+                    *self.get(op_a) = JSValue::from((b >> c) as i32);
                 }
                 op::SEQ => {
-                    let b = *self.get(bc::op_b(instr));
-                    let c = *self.get(bc::op_c(instr));
-                    *self.get(bc::op_a(instr)) = JSValue::from(Self::strict_eq(b, c))
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    *self.get(op_a) = JSValue::from(Self::strict_eq(b, c))
                 }
                 op::EQ => {
-                    let b = *self.get(bc::op_b(instr));
-                    let c = *self.get(bc::op_c(instr));
-                    *self.get(bc::op_a(instr)) = JSValue::from(Self::eq(b, c))
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    *self.get(op_a) = JSValue::from(Self::eq(b, c))
                 }
                 op::SNEQ => {
-                    let b = *self.get(bc::op_b(instr));
-                    let c = *self.get(bc::op_c(instr));
-                    *self.get(bc::op_a(instr)) = JSValue::from(!Self::strict_eq(b, c))
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    *self.get(op_a) = JSValue::from(!Self::strict_eq(b, c))
                 }
                 op::NEQ => {
-                    let b = *self.get(bc::op_b(instr));
-                    let c = *self.get(bc::op_c(instr));
-                    *self.get(bc::op_a(instr)) = JSValue::from(!Self::eq(b, c))
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    *self.get(op_a) = JSValue::from(!Self::eq(b, c))
+                }
+                op::JCO => {
+                    let op_cond = self.read_u8();
+                    let cond = *self.get(op_cond);
+                    let neg = self.read_u16();
+                    if Self::as_bool(cond) as u16 != neg {
+                        let tar = self.read_u32();
+                        self.jump(tar);
+                    } else {
+                        self.read_u32();
+                    }
+                }
+                op::J => {
+                    self.read_u8();
+                    self.read_u16();
+                    let tar = self.read_u32();
+                    self.jump(tar);
                 }
                 op::RET => {
-                    let val = *self.get(bc::op_a(instr));
+                    let val = self.read_u8();
+                    let val = *self.get(val);
                     val.incr();
+                    // Just to be correct
+                    self.read_u16();
                     return Some(val);
                 }
                 _ => panic!("invalid instruction"),
             }
-            self.pc += 1;
         }
     }
 

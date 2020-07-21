@@ -93,7 +93,7 @@ pub enum Instruction {
     /// Declare to ssa instruction declarations to be the same instruction.
     Alias { left: InstrVar, right: InstrVar },
     /// Return from the current stack the value
-    /// Can be null in which case the
+    /// Can be null in which case undefined is returned
     Return { value: InstrVar },
 }
 
