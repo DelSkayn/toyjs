@@ -60,20 +60,20 @@ macro_rules! op_code{
         write!($w,"{:4}  {:3}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
-            ($i & A_MASK) >> 8,
+            op_a($i),
             stringify!($B),
-            ($i & B_MASK) >> 16,
+            op_b($i),
             stringify!($C),
-            ($i & C_MASK) >> 24,
+            op_c($i),
             )
     };
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $D:ident)) => {
         write!($w,"{:4}  {:3}:0x{:<2x}    _:_     {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
-            ($i & A_MASK) >> 8,
+            op_a($i),
             stringify!($D),
-            ($i & D_MASK) >> 16,
+            op_d($i),
             )
     };
 

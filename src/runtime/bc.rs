@@ -156,18 +156,29 @@ op_code!(
         /// Bitwise exclusive or
         BXOR(dst, op, op),
 
+        /// Shift left
         SHL(dst, op, op),
+        /// Shift right
         SHR(dst, op, op),
+        /// Shift right unsigned
         USR(dst, op, op),
 
+        /// Equal
         EQ(dst, op, op),
+        /// Strict Equal
         SEQ(dst, op, op),
+        /// Not Equal
         NEQ(dst, op, op),
+        /// Strict Not Equal
         SNEQ(dst, op, op),
+
+        /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
+        JCO(cond, neg),
+        /// jump to the index at the next instruction slot
+        J(null, null),
 
         /// return
         RET(src, null),
-
         /// return undefined
         RETU(null, null),
     }
