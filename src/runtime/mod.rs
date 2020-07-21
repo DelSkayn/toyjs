@@ -12,7 +12,7 @@ use bc::{op, DataValue, Instruction};
 use std::{alloc, f64, mem, num, ptr};
 use string::StringRc;
 
-const INITIAL_STACK_SIZE: usize = mem::size_of::<JSValue>() * 8;
+const INITIAL_STACK_SIZE: usize = 8;
 pub const NUM_REGISTERS: usize = 8;
 
 pub struct Runtime<'a> {
@@ -28,8 +28,10 @@ pub struct Runtime<'a> {
 
 impl<'a> Drop for Runtime<'a> {
     fn drop(&mut self) {
-        let val_size = mem::size_of::<JSValue>();
-        let layout = alloc::Layout::from_size_align(self.size, val_size).unwrap();
+        let val_size = mem::align_of::<JSValue>();
+        let layout =
+            alloc::Layout::from_size_align(self.size * mem::size_of::<JSValue>(), val_size)
+                .unwrap();
         unsafe { alloc::dealloc(self.stack as *mut _, layout) }
     }
 }
@@ -40,7 +42,11 @@ impl<'a> Runtime<'a> {
         let data = &code.data;
         let code = &code.instructions;
         let val_size = mem::size_of::<JSValue>();
-        let layout = alloc::Layout::from_size_align(INITIAL_STACK_SIZE, val_size).unwrap();
+        let layout = alloc::Layout::from_size_align(
+            INITIAL_STACK_SIZE * mem::size_of::<JSValue>(),
+            val_size,
+        )
+        .unwrap();
         let stack = alloc::alloc(layout) as *mut _;
         let regs = mem::zeroed();
         Runtime {
@@ -56,13 +62,20 @@ impl<'a> Runtime<'a> {
     }
 
     unsafe fn push(&mut self, js_value: JSValue) {
-        if self.stack.add(self.size) == self.frame {
-            let size = self.size << 1;
-            let layout =
-                alloc::Layout::from_size_align(self.size, mem::size_of::<JSValue>()).unwrap();
-            let frame_offset = self.frame as usize - self.stack as usize;
-            self.stack = alloc::realloc(self.stack as *mut _, layout, size) as *mut _;
-            self.frame = self.stack.add(frame_offset / mem::size_of::<JSValue>());
+        if dbg!(self.stack.add(self.size)) == dbg!(self.frame) {
+            let offset = self.size;
+            let layout = alloc::Layout::from_size_align(
+                self.size * mem::size_of::<JSValue>(),
+                mem::align_of::<JSValue>(),
+            )
+            .unwrap();
+            self.size = self.size.next_power_of_two() << 1;
+            self.stack = alloc::realloc(
+                self.stack as *mut _,
+                layout,
+                self.size * mem::size_of::<JSValue>(),
+            ) as *mut _;
+            self.frame = self.stack.add(offset);
         }
         self.frame.write(js_value);
         self.frame = self.frame.add(1);
@@ -172,11 +185,14 @@ impl<'a> Runtime<'a> {
                         self.read_u32() as usize
                     };
                     let data = match self.data[idx].clone() {
-                        DataValue::String(x) => JSValue::from(Rc::new(x)),
+                        DataValue::String(x) => {
+                            let value = JSValue::from(Rc::new(x));
+                            self.push(value);
+                            value
+                        }
                         DataValue::Direct(x) => x,
                     };
                     (*self.get(dst)) = data;
-                    self.push(data);
                 }
                 op::MOV => {
                     let dst = self.read_u8();
