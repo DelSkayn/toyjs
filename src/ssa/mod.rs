@@ -38,6 +38,7 @@ pub enum UnaryOp {
     Delete,
     Typeof,
     Void,
+    ToBool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -139,7 +140,7 @@ impl SsaBuilder {
         SsaVar(id)
     }
 
-    pub fn patch_target(&mut self, instr: SsaVar, target: InstrVar) {
+    pub fn patch_jump_target(&mut self, instr: SsaVar, target: InstrVar) {
         let t = target;
         match self.instructions[instr.0 as usize] {
             Instruction::Jump { ref mut target } => *target = t,

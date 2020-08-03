@@ -57,7 +57,7 @@ macro_rules! op_code{
     };
 
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $B:ident, $C:ident)) => {
-        write!($w,"{:4}  {:3}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
+        write!($w,"{:4}  {:>4}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             op_a($i),
@@ -68,7 +68,7 @@ macro_rules! op_code{
             )
     };
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $D:ident)) => {
-        write!($w,"{:4}  {:3}:0x{:<2x}    _:_     {:>4}:{:#x}",
+        write!($w,"{:4}  {:>4}:0x{:<2x}    _:_     {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             op_a($i),

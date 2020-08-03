@@ -169,8 +169,28 @@ impl<'a> Parser<'a> {
                 });
                 return Ok(res);
             }
-            t!("||") => BinOp::Or,
-            t!("&&") => BinOp::And,
+            x @ t!("||") | x @ t!("&&") => {
+                let lhs = self.builder.push_instruction(Instruction::Unary {
+                    kind: UnaryOp::ToBool,
+                    operand: lhs.into(),
+                });
+                let cond_jump = self.builder.push_instruction(Instruction::CondJump {
+                    negative: x == t!("&&"),
+                    condition: lhs.into(),
+                    target: InstrVar::null(),
+                });
+                let rhs = self.parse_ops_rec(r_bp)?;
+                let rhs = self.builder.push_instruction(Instruction::Unary {
+                    kind: UnaryOp::ToBool,
+                    operand: rhs.into(),
+                });
+                let target = self.builder.push_instruction(Instruction::Alias {
+                    left: lhs.into(),
+                    right: rhs.into(),
+                });
+                self.builder.patch_jump_target(cond_jump, target.into());
+                return Ok(target);
+            }
             t!("|") => BinOp::BitwiseOr,
             t!("&") => BinOp::BitwiseAnd,
             t!("^") => BinOp::BitwiseXor,

@@ -315,6 +315,13 @@ impl<'a> Runtime<'a> {
                     let val = Self::float_to_val(-Self::as_float(val));
                     *self.get(op_a) = val;
                 }
+                op::BOOL => {
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let val = *self.get(op_d as u8);
+                    let val = Self::as_bool(val);
+                    *self.get(op_a) = JSValue::from(val);
+                }
                 op::SHL => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
