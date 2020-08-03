@@ -7,11 +7,16 @@ pub use constant::{Constant, Null, Undefined};
 pub struct ConstantId(pub u32);
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-pub struct InstrVar(pub u32);
+pub struct InstrVar(u32);
 
 impl InstrVar {
     pub fn null() -> Self {
         InstrVar(u32::max_value())
+    }
+
+    pub fn as_u32(self) -> u32 {
+        assert!(self != Self::null());
+        self.0
     }
 }
 
@@ -73,8 +78,14 @@ pub enum BinOp {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
+    Move {
+        operand: InstrVar,
+    },
     /// Do a unary operations on an operand.
-    Unary { kind: UnaryOp, operand: InstrVar },
+    Unary {
+        kind: UnaryOp,
+        operand: InstrVar,
+    },
     /// Do a binary operations on the 2 operands.
     Binary {
         kind: BinOp,
@@ -89,14 +100,23 @@ pub enum Instruction {
         target: InstrVar,
     },
     /// Jump to the target instruction
-    Jump { target: InstrVar },
+    Jump {
+        target: InstrVar,
+    },
     /// load a constant
-    LoadConstant { constant: ConstantId },
+    LoadConstant {
+        constant: ConstantId,
+    },
     /// Declare to ssa instruction declarations to be the same instruction.
-    Alias { left: InstrVar, right: InstrVar },
+    Alias {
+        left: InstrVar,
+        right: InstrVar,
+    },
     /// Return from the current stack the value
     /// Can be null in which case undefined is returned
-    Return { value: InstrVar },
+    Return {
+        value: InstrVar,
+    },
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
@@ -111,7 +131,7 @@ pub struct Ssa {
 pub struct SsaBuilder {
     instructions: Vec<Instruction>,
     constants: Vec<Constant>,
-    constant_location: FxHashMap<Constant, SsaVar>,
+    constant_location: FxHashMap<Constant, usize>,
 }
 
 impl SsaBuilder {
@@ -154,24 +174,30 @@ impl SsaBuilder {
         }
     }
 
+    pub fn patch_jump_target_next(&mut self, instr: SsaVar) {
+        self.patch_jump_target(instr, self.next_id().into())
+    }
+
     pub fn load_constant<T: Into<Constant>>(&mut self, t: T) -> SsaVar {
         self.load_constant_inner(t.into())
     }
 
     fn load_constant_inner(&mut self, c: Constant) -> SsaVar {
-        if let Some(x) = self.constant_location.get(&c) {
-            return *x;
-        }
+        let const_id = if let Some(x) = self.constant_location.get(&c) {
+            *x
+        } else {
+            let len = self.constants.len();
+            self.constants.push(c.clone());
+            self.constant_location.insert(c, len);
+            len
+        };
         assert!(
             self.constants.len() < (u32::max_value() - 2) as usize,
             "to many constants!"
         );
-        let const_id = self.constants.len();
-        self.constants.push(c.clone());
         let res = self.push_instruction(Instruction::LoadConstant {
             constant: ConstantId(const_id as u32),
         });
-        self.constant_location.insert(c.clone(), res);
         res
     }
 

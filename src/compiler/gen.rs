@@ -33,6 +33,11 @@ impl Compiler {
                     break;
                 }
                 match *instr {
+                    Instruction::Move { operand } => {
+                        let src = register_alloc[operand.as_u32() as usize];
+                        let dst = register_alloc[idx];
+                        instructions.push(bc::type_d(bc::Op::MOV, dst, src as u16));
+                    }
                     Instruction::Binary { kind, left, right } => {
                         let op = match kind {
                             BinOp::Add => bc::Op::ADD,
@@ -53,8 +58,8 @@ impl Compiler {
                             BinOp::StrictNotEqual => bc::Op::SNEQ,
                             _ => todo!(),
                         };
-                        let left = register_alloc[left.0 as usize];
-                        let right = register_alloc[right.0 as usize];
+                        let left = register_alloc[left.as_u32() as usize];
+                        let right = register_alloc[right.as_u32() as usize];
                         let dest = register_alloc[idx];
                         instructions.push(bc::type_a(op, dest, left, right));
                     }
@@ -66,7 +71,7 @@ impl Compiler {
                             UnaryOp::IsNullish => bc::Op::ISNUL,
                             _ => todo!(),
                         };
-                        let operand = register_alloc[operand.0 as usize];
+                        let operand = register_alloc[operand.as_u32() as usize];
                         let dest = register_alloc[idx];
                         instructions.push(bc::type_d(op, dest, operand as u16));
                     }
@@ -74,7 +79,7 @@ impl Compiler {
                         if value == InstrVar::null() {
                             instructions.push(bc::type_d(bc::Op::RETU, 0, 0));
                         } else {
-                            let operand = register_alloc[value.0 as usize];
+                            let operand = register_alloc[value.as_u32() as usize];
                             instructions.push(bc::type_d(bc::Op::RET, operand, 0));
                         }
                     }
@@ -88,12 +93,13 @@ impl Compiler {
                         }
                     }
                     Instruction::Jump { target } => {
+                        assert!(target != InstrVar::null());
                         instructions.push(bc::type_d(bc::Op::J, 0, 0));
-                        if target.0 as usize > idx {
-                            pending_targets.push_back((target.0, instructions.len()));
+                        if target.as_u32() as usize > idx {
+                            pending_targets.push_back((target.as_u32(), instructions.len()));
                             instructions.push(0);
                         } else {
-                            instructions.push(ssa_to_bytecode[target.0 as usize]);
+                            instructions.push(ssa_to_bytecode[target.as_u32() as usize]);
                         }
                     }
                     Instruction::Alias { left: _, right: _ } => {}
@@ -102,13 +108,14 @@ impl Compiler {
                         target,
                         condition,
                     } => {
-                        let cond = register_alloc[condition.0 as usize] as u8;
+                        assert!(target != InstrVar::null());
+                        let cond = register_alloc[condition.as_u32() as usize] as u8;
                         instructions.push(bc::type_d(bc::Op::JCO, cond, negative as u16));
-                        if target.0 as usize > idx {
-                            pending_targets.push_back((target.0, instructions.len()));
+                        if target.as_u32() as usize > idx {
+                            pending_targets.push_back((target.as_u32(), instructions.len()));
                             instructions.push(0);
                         } else {
-                            instructions.push(ssa_to_bytecode[target.0 as usize]);
+                            instructions.push(ssa_to_bytecode[target.as_u32() as usize]);
                         }
                     }
                 }
