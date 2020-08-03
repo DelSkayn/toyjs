@@ -168,6 +168,8 @@ op_code!(
 
         /// Convert the value to a boolean
         BOOL(dst, src),
+        /// Convert the value to a boolean
+        ISNUL(dst, src),
 
         /// Shift left
         SHL(dst, op, op),

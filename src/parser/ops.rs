@@ -191,6 +191,24 @@ impl<'a> Parser<'a> {
                 self.builder.patch_jump_target(cond_jump, target.into());
                 return Ok(target);
             }
+            t!("??") => {
+                let cond = self.builder.push_instruction(Instruction::Unary {
+                    kind: UnaryOp::IsNullish,
+                    operand: lhs.into(),
+                });
+                let cond_jump = self.builder.push_instruction(Instruction::CondJump {
+                    negative: true,
+                    condition: cond.into(),
+                    target: InstrVar::null(),
+                });
+                let rhs = self.parse_ops_rec(r_bp)?;
+                let target = self.builder.push_instruction(Instruction::Alias {
+                    left: lhs.into(),
+                    right: rhs.into(),
+                });
+                self.builder.patch_jump_target(cond_jump, target.into());
+                return Ok(target);
+            }
             t!("|") => BinOp::BitwiseOr,
             t!("&") => BinOp::BitwiseAnd,
             t!("^") => BinOp::BitwiseXor,
