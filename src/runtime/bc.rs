@@ -39,8 +39,13 @@ impl fmt::Display for Bytecode {
                 op::CLD => {
                     if op_d(instr) == 0xffff {
                         cur += 1;
-                        write!(f, ":{}", self.instructions[cur])?;
+                        write!(f, " const:{}", self.instructions[cur])?;
                     }
+                    cur += 1;
+                }
+                op::J | op::JCO => {
+                    cur += 1;
+                    write!(f, "  target:{}", self.instructions[cur])?;
                     cur += 1;
                 }
                 _ => cur += 1,
@@ -160,6 +165,9 @@ op_code!(
         BOR(dst, op, op),
         /// Bitwise exclusive or
         BXOR(dst, op, op),
+
+        /// Convert the value to a boolean
+        BOOL(dst, src),
 
         /// Shift left
         SHL(dst, op, op),

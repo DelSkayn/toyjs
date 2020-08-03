@@ -51,13 +51,13 @@ impl<'a> Parser<'a> {
             let jump_cond_target = self.builder.next_id();
             self.parse_stmt()?;
             self.builder
-                .patch_target(jump, self.builder.next_id().into());
+                .patch_jump_target(jump, self.builder.next_id().into());
             jump_cond_target
         } else {
             self.builder.next_id()
         };
         self.builder
-            .patch_target(jump_cond, jump_cond_target.into());
+            .patch_jump_target(jump_cond, jump_cond_target.into());
         Ok(())
     }
 }
