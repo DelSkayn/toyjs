@@ -34,6 +34,7 @@ impl Default for VarInfo {
 impl Compiler {
     pub fn needs_register(instruction: Instruction) -> bool {
         match instruction {
+            Instruction::Move { operand: _ } => true,
             Instruction::Unary {
                 kind: _,
                 operand: _,
@@ -45,7 +46,13 @@ impl Compiler {
             } => true,
             Instruction::LoadConstant { constant: _ } => true,
             Instruction::Alias { left: _, right: _ } => true,
-            _ => false,
+            Instruction::Jump { target: _ } => false,
+            Instruction::CondJump {
+                target: _,
+                condition: _,
+                negative: _,
+            } => false,
+            Instruction::Return { value: _ } => false,
         }
     }
 
@@ -138,42 +145,45 @@ impl Compiler {
             .iter()
             .enumerate()
             .for_each(|(idx, instr)| match instr {
+                Instruction::Move { operand } => {
+                    vars[operand.as_u32() as usize].live = idx as u32;
+                }
                 Instruction::Unary { kind: _, operand } => {
-                    vars[operand.0 as usize].live = idx as u32;
+                    vars[operand.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::Binary {
                     kind: _,
                     left,
                     right,
                 } => {
-                    vars[left.0 as usize].live = idx as u32;
-                    vars[right.0 as usize].live = idx as u32;
+                    vars[left.as_u32() as usize].live = idx as u32;
+                    vars[right.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::CondJump {
                     negative: _,
                     condition,
                     target: _,
                 } => {
-                    vars[condition.0 as usize].live = idx as u32;
+                    vars[condition.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::Alias { left, right } => {
-                    vars[left.0 as usize].live = idx as u32;
-                    vars[right.0 as usize].live = idx as u32;
-                    assert!(vars[left.0 as usize]
+                    vars[left.as_u32() as usize].live = idx as u32;
+                    vars[right.as_u32() as usize].live = idx as u32;
+                    assert!(vars[left.as_u32() as usize]
                         .alias_parent
                         .replace(idx as u32)
                         .is_none());
-                    assert!(vars[right.0 as usize]
+                    assert!(vars[right.as_u32() as usize]
                         .alias_parent
                         .replace(idx as u32)
                         .is_none());
                     assert!(vars[idx]
                         .alias_childeren
-                        .replace((left.0, right.0))
+                        .replace((left.as_u32(), right.as_u32()))
                         .is_none());
                 }
                 Instruction::Return { value } => {
-                    vars[value.0 as usize].live = idx as u32;
+                    vars[value.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::Jump { target: _ } => {}
                 Instruction::LoadConstant { constant: _ } => {

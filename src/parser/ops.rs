@@ -143,26 +143,26 @@ impl<'a> Parser<'a> {
                     condition: lhs.into(),
                     target: InstrVar::null(),
                 });
-                let mhs = self.parse_ops_rec(0)?;
+                let next_id = self.builder.next_id();
+                let mut mhs = self.parse_ops_rec(0)?;
+                if next_id == self.builder.next_id() {
+                    mhs = self.builder.push_instruction(Instruction::Move {
+                        operand: mhs.into(),
+                    });
+                }
                 let jump_instr = self.builder.push_instruction(Instruction::Jump {
                     target: InstrVar::null(),
                 });
-                let next_id = self.builder.next_id();
-                match self.builder.get_mut(cond_jump_instr) {
-                    Instruction::CondJump {
-                        negative: _,
-                        condition: _,
-                        ref mut target,
-                    } => *target = next_id.into(),
-                    _ => panic!(),
-                }
                 expect!(self, ":");
-                let rhs = self.parse_ops_rec(r_bp)?;
+                self.builder.patch_jump_target_next(cond_jump_instr);
                 let next_id = self.builder.next_id();
-                match self.builder.get_mut(jump_instr) {
-                    Instruction::Jump { ref mut target } => *target = next_id.into(),
-                    _ => panic!(),
+                let mut rhs = self.parse_ops_rec(r_bp)?;
+                if next_id == self.builder.next_id() {
+                    rhs = self.builder.push_instruction(Instruction::Move {
+                        operand: rhs.into(),
+                    });
                 }
+                self.builder.patch_jump_target_next(jump_instr);
                 let res = self.builder.push_instruction(Instruction::Alias {
                     left: mhs.into(),
                     right: rhs.into(),
@@ -170,20 +170,18 @@ impl<'a> Parser<'a> {
                 return Ok(res);
             }
             x @ t!("||") | x @ t!("&&") => {
-                let lhs = self.builder.push_instruction(Instruction::Unary {
-                    kind: UnaryOp::ToBool,
-                    operand: lhs.into(),
-                });
                 let cond_jump = self.builder.push_instruction(Instruction::CondJump {
                     negative: x == t!("&&"),
                     condition: lhs.into(),
                     target: InstrVar::null(),
                 });
-                let rhs = self.parse_ops_rec(r_bp)?;
-                let rhs = self.builder.push_instruction(Instruction::Unary {
-                    kind: UnaryOp::ToBool,
-                    operand: rhs.into(),
-                });
+                let next_id = self.builder.next_id();
+                let mut rhs = self.parse_ops_rec(r_bp)?;
+                if next_id == self.builder.next_id() {
+                    rhs = self.builder.push_instruction(Instruction::Move {
+                        operand: rhs.into(),
+                    });
+                }
                 let target = self.builder.push_instruction(Instruction::Alias {
                     left: lhs.into(),
                     right: rhs.into(),
@@ -201,7 +199,13 @@ impl<'a> Parser<'a> {
                     condition: cond.into(),
                     target: InstrVar::null(),
                 });
-                let rhs = self.parse_ops_rec(r_bp)?;
+                let next_id = self.builder.next_id();
+                let mut rhs = self.parse_ops_rec(r_bp)?;
+                if next_id == self.builder.next_id() {
+                    rhs = self.builder.push_instruction(Instruction::Move {
+                        operand: rhs.into(),
+                    });
+                }
                 let target = self.builder.push_instruction(Instruction::Alias {
                     left: lhs.into(),
                     right: rhs.into(),
