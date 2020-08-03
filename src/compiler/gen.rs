@@ -63,6 +63,7 @@ impl Compiler {
                             UnaryOp::Postive => bc::Op::POS,
                             UnaryOp::Negative => bc::Op::NEG,
                             UnaryOp::ToBool => bc::Op::BOOL,
+                            UnaryOp::IsNullish => bc::Op::ISNUL,
                             _ => todo!(),
                         };
                         let operand = register_alloc[operand.0 as usize];

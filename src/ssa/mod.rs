@@ -39,6 +39,7 @@ pub enum UnaryOp {
     Typeof,
     Void,
     ToBool,
+    IsNullish,
 }
 
 #[derive(Clone, Copy, Debug)]

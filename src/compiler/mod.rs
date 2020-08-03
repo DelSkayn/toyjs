@@ -10,21 +10,14 @@ pub struct Compiler;
 #[derive(Debug)]
 pub struct LifeInfo {
     vars: Vec<VarInfo>,
-    aliased: Vec<AliasedInfo>,
-}
-
-#[derive(Debug)]
-pub struct AliasedInfo {
-    parent: u32,
-    left: u32,
-    right: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct VarInfo {
     live: u32,
     rematerializable: bool,
-    aliased: Option<u32>,
+    alias_parent: Option<u32>,
+    alias_childeren: Option<(u32, u32)>,
 }
 
 impl Default for VarInfo {
@@ -32,7 +25,8 @@ impl Default for VarInfo {
         VarInfo {
             live: u32::max_value(),
             rematerializable: false,
-            aliased: None,
+            alias_parent: None,
+            alias_childeren: None,
         }
     }
 }
@@ -73,38 +67,43 @@ impl Compiler {
             let info = &live.vars[i];
             let mut free = 0;
             let mut next = runtime::NUM_REGISTERS as u8;
-            if let Some(x) = info.aliased {
-                // Handle aliased instructions
-                // In case of the left hand instruction
-                // just allocate it as normal
-                let aliased = &live.aliased[x as usize];
-                if aliased.right == i as u32 {
+            if let Some(x) = info.alias_parent {
+                let (left, right) = live.vars[x as usize].alias_childeren.unwrap();
+                if left.max(right) == i as u32 {
+                    let last = if left == i as u32 { right } else { left };
                     for j in 0..runtime::NUM_REGISTERS as u8 {
-                        if active[j as usize] == aliased.left {
-                            active[j as usize] = aliased.right;
+                        if active[j as usize] == last {
+                            active[j as usize] = i as u32;
                             next = j;
                             break;
                         }
                     }
+                    println!("{}", i);
+                    println!("{:?}", active);
+                    println!("{:?}", next);
                     assert!(
                         next != runtime::NUM_REGISTERS as u8,
                         "aliased register not present!"
                     );
                     res.push(next);
                     continue;
-                } else if aliased.parent == i as u32 {
-                    for j in 0..runtime::NUM_REGISTERS as u8 {
-                        if active[j as usize] == aliased.right {
-                            active[j as usize] = aliased.parent;
-                            next = j;
-                            break;
-                        }
+                }
+            }
+            if let Some((left, right)) = info.alias_childeren {
+                let last = left.max(right);
+                for j in 0..runtime::NUM_REGISTERS as u8 {
+                    if active[j as usize] == last {
+                        active[j as usize] = i as u32;
+                        next = j;
+                        break;
                     }
-                    assert!(
-                        next != runtime::NUM_REGISTERS as u8,
-                        "aliased register not present!"
-                    );
-                    res.push(next);
+                }
+                assert!(
+                    next != runtime::NUM_REGISTERS as u8,
+                    "aliased register not present!"
+                );
+                res.push(next);
+                if info.alias_parent.is_none() {
                     continue;
                 }
             }
@@ -134,7 +133,6 @@ impl Compiler {
     pub fn calc_live_info(ssa: &Ssa) -> LifeInfo {
         let len = ssa.instructions.len();
         // u32::max_value indicates that the value is never used
-        let mut aliased = Vec::new();
         let mut vars = vec![VarInfo::default(); len];
         ssa.instructions
             .iter()
@@ -161,15 +159,18 @@ impl Compiler {
                 Instruction::Alias { left, right } => {
                     vars[left.0 as usize].live = idx as u32;
                     vars[right.0 as usize].live = idx as u32;
-                    let aliased_idx = aliased.len() as u32;
-                    vars[idx].aliased = Some(aliased_idx);
-                    vars[left.0 as usize].aliased = Some(aliased_idx);
-                    vars[right.0 as usize].aliased = Some(aliased_idx);
-                    aliased.push(AliasedInfo {
-                        parent: idx as u32,
-                        left: left.0 as u32,
-                        right: right.0 as u32,
-                    });
+                    assert!(vars[left.0 as usize]
+                        .alias_parent
+                        .replace(idx as u32)
+                        .is_none());
+                    assert!(vars[right.0 as usize]
+                        .alias_parent
+                        .replace(idx as u32)
+                        .is_none());
+                    assert!(vars[idx]
+                        .alias_childeren
+                        .replace((left.0, right.0))
+                        .is_none());
                 }
                 Instruction::Return { value } => {
                     vars[value.0 as usize].live = idx as u32;
@@ -179,6 +180,6 @@ impl Compiler {
                     vars[idx].rematerializable = true;
                 }
             });
-        LifeInfo { aliased, vars }
+        LifeInfo { vars }
     }
 }
