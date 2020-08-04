@@ -13,6 +13,7 @@ pub use error::{ParseError, ParseErrorKind};
 
 //mod class;
 //mod decl;
+mod decl;
 mod expr;
 mod ops;
 mod prime;

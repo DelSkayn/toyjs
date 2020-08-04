@@ -78,6 +78,16 @@ pub enum BinOp {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
+    LoadGlobal,
+    ObjectSet {
+        object: InstrVar,
+        key: InstrVar,
+        value: InstrVar,
+    },
+    ObjectGet {
+        object: InstrVar,
+        key: InstrVar,
+    },
     Move {
         operand: InstrVar,
     },

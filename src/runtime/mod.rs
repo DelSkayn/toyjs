@@ -146,6 +146,11 @@ impl<'a> Runtime<'a> {
         loop {
             let op = self.read_u8();
             match op {
+                op::LGB => {
+                    let op_a = self.read_u8();
+                    let _ = self.read_u16();
+                    *self.get(op_a) = JSValue::from(self.global);
+                }
                 op::OSET => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();

@@ -14,6 +14,16 @@ impl<'a> Parser<'a> {
             unexpected!(self => "primary expression expected found EOF");
         };
         match peek {
+            TokenKind::Ident(x) => {
+                self.next()?;
+                let obj = self.builder.push_instruction(Instruction::LoadGlobal);
+                let key = self.builder.load_constant(x);
+                let res = self.builder.push_instruction(Instruction::ObjectGet {
+                    key: key.into(),
+                    object: obj.into(),
+                });
+                return Ok(res);
+            }
             t!("true") => {
                 self.next()?;
                 Ok(self.builder.load_constant(true))
