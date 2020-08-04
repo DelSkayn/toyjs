@@ -189,6 +189,15 @@ op_code!(
         /// Strict Not Equal
         SNEQ(dst, op, op),
 
+        /// Greater
+        G(dst, op, op),
+        /// Greater or equal
+        GE(dst, op, op),
+        /// Less
+        L(dst, op, op),
+        /// Less or equal
+        LE(dst, op, op),
+
         /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
         JCO(cond, neg),
         /// jump to the index at the next instruction slot
