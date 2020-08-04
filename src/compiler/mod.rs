@@ -1,7 +1,7 @@
 use crate::{
     interner::Interner,
     runtime::{self, bc::Bytecode},
-    ssa::{Instruction, Ssa},
+    ssa::{InstrVar, Instruction, Ssa},
 };
 mod gen;
 
@@ -194,7 +194,9 @@ impl Compiler {
                         .is_none());
                 }
                 Instruction::Return { value } => {
-                    vars[value.as_u32() as usize].live = idx as u32;
+                    if value != InstrVar::null() {
+                        vars[value.as_u32() as usize].live = idx as u32;
+                    }
                 }
                 Instruction::Jump { target: _ } => {}
                 Instruction::LoadGlobal => {}

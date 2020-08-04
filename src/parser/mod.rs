@@ -162,10 +162,10 @@ impl<'a> Parser<'a> {
     /// Parse a js script.
     /// One of the 2 entry points into parsing
     pub fn parse_script(&mut self) -> PResult<()> {
-        trace!("parse: script");
+        trace_log!("script");
         let mut last = None;
         while self.peek()?.is_some() {
-            last = self.parse_stmt()?;
+            last = dbg!(self.parse_stmt()?);
             eat!(self, ";");
         }
         let value = last.map(|e| e.into()).unwrap_or(InstrVar::null());
@@ -176,7 +176,7 @@ impl<'a> Parser<'a> {
     /// Parse a js module.
     /// One of the 2 entry points into parsing
     pub fn parse_module(&mut self) -> PResult<()> {
-        trace!("parse: module");
+        trace_log!("module");
         to_do!(self)
     }
 }

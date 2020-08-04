@@ -8,6 +8,7 @@ use crate::{
 
 impl<'a> Parser<'a> {
     pub fn parse_expr(&mut self) -> PResult<SsaVar> {
+        trace_log!("expression");
         let mut res = self.parse_ops()?;
         while eat!(self, ",") {
             res = self.parse_ops()?;
