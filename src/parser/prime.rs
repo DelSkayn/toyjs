@@ -1,47 +1,49 @@
 use crate::{
+    interner::StringId,
     lexer::Lexer,
+    parser::ops::Expr,
     parser::*,
     source::{Source, Span},
     ssa::{Null, SsaVar},
     token::{LitToken, NumberKind, Token, TokenKind},
 };
 
+pub enum PrimeExpr {
+    Ident(StringId),
+    Variable(SsaVar),
+}
+
 impl<'a> Parser<'a> {
-    pub fn parse_prime_expr(&mut self) -> PResult<SsaVar> {
+    pub fn parse_prime_expr(&mut self) -> PResult<PrimeExpr> {
         let peek = if let Some(x) = self.peek_kind()? {
             x
         } else {
             unexpected!(self => "primary expression expected found EOF");
         };
-        match peek {
+        let value = match peek {
             TokenKind::Ident(x) => {
                 self.next()?;
-                let obj = self.builder.push_instruction(Instruction::LoadGlobal);
-                let key = self.builder.load_constant(x);
-                let res = self.builder.push_instruction(Instruction::ObjectGet {
-                    key: key.into(),
-                    object: obj.into(),
-                });
-                return Ok(res);
+                return Ok(PrimeExpr::Ident(x));
             }
             t!("true") => {
                 self.next()?;
-                Ok(self.builder.load_constant(true))
+                self.builder.load_constant(true)
             }
             t!("false") => {
                 self.next()?;
-                Ok(self.builder.load_constant(false))
+                self.builder.load_constant(false)
             }
             t!("null") => {
                 self.next()?;
-                Ok(self.builder.load_constant(Null))
+                self.builder.load_constant(Null)
             }
-            t!("literal") => self.parse_literal(),
-            t!("[") => self.parse_array_expr(),
-            t!("{") => self.parse_object_expr(),
-            t!("class") => self.parse_class(false),
+            t!("literal") => self.parse_literal()?,
+            t!("[") => self.parse_array_expr()?,
+            t!("{") => self.parse_object_expr()?,
+            t!("class") => self.parse_class(false)?,
             _ => to_do!(self),
-        }
+        };
+        Ok(PrimeExpr::Variable(value))
     }
 
     fn parse_literal(&mut self) -> PResult<SsaVar> {

@@ -12,10 +12,7 @@ impl<'a> Parser<'a> {
         println!("{:?}", t!("{"));
         let peek = match self.peek()? {
             Some(x) => x,
-            None => {
-                to_do!(self);
-                //return Ok(None);
-            }
+            None => return Ok(None),
         };
         match peek.kind {
             t!("var") | t!("let") | t!("const") => {

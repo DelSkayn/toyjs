@@ -19,7 +19,7 @@ mod ops;
 mod prime;
 mod stmt;
 
-type PResult<'a, T> = Result<T, ParseError>;
+type PResult<T> = Result<T, ParseError>;
 
 #[derive(Clone, Copy)]
 pub struct StateFlags {
