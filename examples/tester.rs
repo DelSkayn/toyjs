@@ -1,13 +1,51 @@
 use js::{
     compiler::Compiler, interner::Interner, lexer::Lexer, parser::Parser, runtime, source::Source,
 };
-use std::io::{self, BufRead};
+use std::io::{self, Result, Write};
 
-fn main() {
+fn main() -> Result<()> {
     let mut interner = Interner::with_capacity(2048);
     let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line.unwrap();
+
+    let mut buffer = String::new();
+    let mut pending_parrens = Vec::new();
+    loop {
+        let mut line = String::new();
+        stdin.read_line(&mut line)?;
+        for b in line.as_bytes() {
+            match *b {
+                x @ b'{' | x @ b'(' | x @ b'[' => pending_parrens.push(x),
+                b'}' => {
+                    if pending_parrens.pop() != Some(b'{') {
+                        println!("mismatched paren!");
+                        buffer.clear();
+                        continue;
+                    }
+                }
+                b')' => {
+                    if pending_parrens.pop() != Some(b'(') {
+                        println!("mismatched paren!");
+                        buffer.clear();
+                        continue;
+                    }
+                }
+                b']' => {
+                    if pending_parrens.pop() != Some(b'[') {
+                        println!("mismatched paren!");
+                        buffer.clear();
+                        continue;
+                    }
+                }
+                _ => {}
+            }
+        }
+        buffer.push_str(&line);
+        if pending_parrens.len() != 0 {
+            print!("...");
+            io::stdout().flush()?;
+            continue;
+        }
+
         let lexer = Lexer::new(line.as_bytes(), &mut interner);
         let mut parser = Parser::new(lexer);
         match parser.parse_script() {

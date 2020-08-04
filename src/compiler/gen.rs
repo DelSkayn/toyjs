@@ -33,6 +33,22 @@ impl Compiler {
                     break;
                 }
                 match *instr {
+                    Instruction::LoadGlobal => {
+                        let dst = register_alloc[idx];
+                        instructions.push(bc::type_d(bc::Op::LGB, dst, 0));
+                    }
+                    Instruction::ObjectSet { object, key, value } => {
+                        let obj = register_alloc[object.as_u32() as usize];
+                        let val = register_alloc[value.as_u32() as usize];
+                        let key = register_alloc[key.as_u32() as usize];
+                        instructions.push(bc::type_a(bc::Op::OSET, obj, key, val));
+                    }
+                    Instruction::ObjectGet { object, key } => {
+                        let key = register_alloc[key.as_u32() as usize];
+                        let obj = register_alloc[object.as_u32() as usize];
+                        let dst = register_alloc[idx];
+                        instructions.push(bc::type_a(bc::Op::OGET, dst, obj, key));
+                    }
                     Instruction::Move { operand } => {
                         let src = register_alloc[operand.as_u32() as usize];
                         let dst = register_alloc[idx];

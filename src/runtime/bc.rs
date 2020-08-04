@@ -135,6 +135,8 @@ op_code!(
         /// if the idx is u16::max the index for the constant is in in the next instruction slot
         CLD(dst, idx),
 
+        /// Load the global object in the destination register.
+        LGB(dst, null),
         /// set the entry from the key in reg D to the value from reg A in the global object
         OSET(obj, key, val),
         /// set reg A to value int the global object with the key in reg D.

@@ -34,6 +34,13 @@ impl Default for VarInfo {
 impl Compiler {
     pub fn needs_register(instruction: Instruction) -> bool {
         match instruction {
+            Instruction::LoadGlobal => true,
+            Instruction::ObjectGet { object: _, key: _ } => true,
+            Instruction::ObjectSet {
+                object: _,
+                key: _,
+                value: _,
+            } => false,
             Instruction::Move { operand: _ } => true,
             Instruction::Unary {
                 kind: _,
@@ -144,9 +151,13 @@ impl Compiler {
         ssa.instructions
             .iter()
             .enumerate()
-            .for_each(|(idx, instr)| match instr {
+            .for_each(|(idx, instr)| match *instr {
                 Instruction::Move { operand } => {
                     vars[operand.as_u32() as usize].live = idx as u32;
+                }
+                Instruction::ObjectGet { object, key } => {
+                    vars[object.as_u32() as usize].live = idx as u32;
+                    vars[key.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::Unary { kind: _, operand } => {
                     vars[operand.as_u32() as usize].live = idx as u32;
@@ -186,6 +197,12 @@ impl Compiler {
                     vars[value.as_u32() as usize].live = idx as u32;
                 }
                 Instruction::Jump { target: _ } => {}
+                Instruction::LoadGlobal => {}
+                Instruction::ObjectSet { object, key, value } => {
+                    vars[value.as_u32() as usize].live = idx as u32;
+                    vars[object.as_u32() as usize].live = idx as u32;
+                    vars[key.as_u32() as usize].live = idx as u32;
+                }
                 Instruction::LoadConstant { constant: _ } => {
                     vars[idx].rematerializable = true;
                 }

@@ -13,6 +13,9 @@ impl<'a> Parser<'a> {
             None => return Ok(None),
         };
         match peek.kind {
+            t!("var") | t!("let") | t!("const") => {
+                return self.alter_state(|x| x._in = true, |this| this.parse_decl());
+            }
             t!("if") => self.parse_if()?,
             t!("{") => return self.parse_block(),
             _ => return Ok(Some(self.parse_expr()?)),
