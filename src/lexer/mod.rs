@@ -69,6 +69,9 @@ impl<'a> Lexer<'a> {
     /// Returns the next byte
     fn peek_byte(&self) -> Option<u8> {
         if self.cur < self.bytes.len() {
+            dbg!(self.cur);
+            dbg!(self.bytes);
+            dbg!(char::from(self.bytes[self.cur]));
             Some(self.bytes[self.cur])
         } else {
             None
@@ -124,11 +127,9 @@ impl<'a> Lexer<'a> {
     fn eat_line_terminator(&mut self, c: u8) -> bool {
         match c {
             chars::LF => {
-                self.next_byte();
                 return true;
             }
             chars::CR => {
-                self.next_byte();
                 if self.peek_byte() == Some(chars::LF) {
                     self.next_byte();
                 }
@@ -222,11 +223,12 @@ impl<'a> Lexer<'a> {
 
     /// Returns the next token from the source if there is one.
     pub fn next(&mut self) -> Result<Option<Token>> {
+        trace!("lex: next");
         let next = self.next_skip_whitespace()?;
         if next.is_none() {
             return Ok(None);
         }
-        let next = next.unwrap();
+        let next = dbg!(next.unwrap());
         match next {
             b';' => self.token(t!(";")),
             b':' => self.token(t!(":")),

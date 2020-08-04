@@ -418,6 +418,11 @@ impl<'a> Runtime<'a> {
                     self.read_u16();
                     return Some(val);
                 }
+                op::RETU => {
+                    self.read_u8();
+                    self.read_u16();
+                    return Some(JSValue::undefined());
+                }
                 _ => panic!("invalid instruction"),
             }
         }

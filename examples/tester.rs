@@ -4,6 +4,7 @@ use js::{
 use std::io::{self, Result, Write};
 
 fn main() -> Result<()> {
+    env_logger::init();
     let mut interner = Interner::with_capacity(2048);
     let stdin = io::stdin();
 
@@ -41,17 +42,18 @@ fn main() -> Result<()> {
         }
         buffer.push_str(&line);
         if pending_parrens.len() != 0 {
-            print!("...");
+            print!("... ");
             io::stdout().flush()?;
             continue;
         }
+        println!("script {}", buffer);
 
-        let lexer = Lexer::new(line.as_bytes(), &mut interner);
+        let lexer = Lexer::new(buffer.as_bytes(), &mut interner);
         let mut parser = Parser::new(lexer);
         match parser.parse_script() {
             Ok(_) => {}
             Err(e) => {
-                let s = Source::new(line, None);
+                let s = Source::new(buffer.clone(), None);
                 println!("PARSE ERROR: {}", s.wrap(e));
                 continue;
             }
