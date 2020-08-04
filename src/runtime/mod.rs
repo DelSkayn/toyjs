@@ -62,7 +62,7 @@ impl<'a> Runtime<'a> {
     }
 
     unsafe fn push(&mut self, js_value: JSValue) {
-        if dbg!(self.stack.add(self.size)) == dbg!(self.frame) {
+        if self.stack.add(self.size) == self.frame {
             let offset = self.size;
             let layout = alloc::Layout::from_size_align(
                 self.size * mem::size_of::<JSValue>(),
@@ -148,7 +148,7 @@ impl<'a> Runtime<'a> {
             match op {
                 op::LGB => {
                     let op_a = self.read_u8();
-                    let _ = self.read_u16();
+                    self.read_u16();
                     *self.get(op_a) = JSValue::from(self.global);
                 }
                 op::OSET => {
@@ -414,7 +414,6 @@ impl<'a> Runtime<'a> {
                     let val = self.read_u8();
                     let val = *self.get(val);
                     val.incr();
-                    // Just to be correct
                     self.read_u16();
                     return Some(val);
                 }

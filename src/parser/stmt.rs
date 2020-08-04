@@ -22,6 +22,7 @@ impl<'a> Parser<'a> {
                 return self.alter_state(|x| x._in = true, |this| this.parse_decl());
             }
             t!("if") => self.parse_if()?,
+            t!("while") => self.parse_while()?,
             t!("{") => return self.parse_block(),
             _ => return Ok(Some(self.parse_expr()?)),
         }
@@ -60,14 +61,38 @@ impl<'a> Parser<'a> {
             });
             let jump_cond_target = self.builder.next_id();
             self.parse_stmt()?;
-            self.builder
-                .patch_jump_target(jump, self.builder.next_id().into());
+            self.builder.patch_jump_target_next(jump);
             jump_cond_target
         } else {
             self.builder.next_id()
         };
         self.builder
             .patch_jump_target(jump_cond, jump_cond_target.into());
+        Ok(())
+    }
+
+    fn parse_while(&mut self) -> PResult<()> {
+        expect!(self, "while");
+        expect!(self, "(");
+        let again = self.builder.next_id();
+        let expr = self.parse_expr()?;
+        expect!(self, ")");
+        let cond_jump = self.builder.push_instruction(Instruction::CondJump {
+            negative: true,
+            condition: expr.into(),
+            target: InstrVar::null(),
+        });
+        self.alter_state(
+            |s| {
+                s._break = true;
+                s._continue = true;
+            },
+            |this| this.parse_stmt(),
+        )?;
+        self.builder.push_instruction(Instruction::Jump {
+            target: again.into(),
+        });
+        self.builder.patch_jump_target_next(cond_jump);
         Ok(())
     }
 }

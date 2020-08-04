@@ -69,9 +69,6 @@ impl<'a> Lexer<'a> {
     /// Returns the next byte
     fn peek_byte(&self) -> Option<u8> {
         if self.cur < self.bytes.len() {
-            dbg!(self.cur);
-            dbg!(self.bytes);
-            dbg!(char::from(self.bytes[self.cur]));
             Some(self.bytes[self.cur])
         } else {
             None
@@ -228,7 +225,7 @@ impl<'a> Lexer<'a> {
         if next.is_none() {
             return Ok(None);
         }
-        let next = dbg!(next.unwrap());
+        let next = next.unwrap();
         match next {
             b';' => self.token(t!(";")),
             b':' => self.token(t!(":")),
