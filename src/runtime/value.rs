@@ -1,7 +1,7 @@
 //! Javascript runtime value definition
 //!
 use crate::runtime::{object::ObjectRc, rc::RcCount, string::StringRc};
-use std::{cmp, fmt, hash, mem, ops};
+use std::{cell::UnsafeCell, cmp, fmt, hash, mem, ops};
 
 const MAX_DOUBLE: u64 = (0xfff8_0000) << 32;
 pub const TAG_INT: u64 = (0xfff9_0000) << 32;
@@ -277,7 +277,9 @@ impl JSValue {
         }
         let ptr = self.into_raw_ptr();
         match tag {
-            TAG_OBJECT => JSValue::from(ObjectRc::from_raw(ptr).deep_clone()),
+            TAG_OBJECT => JSValue::from(ObjectRc::new(UnsafeCell::new(
+                (*ObjectRc::from_raw(ptr).value().get()).clone(),
+            ))),
             TAG_STRING => JSValue::from(StringRc::from_raw(ptr).deep_clone()),
             TAG_AVAILABLE_5 => panic!("found unused tag"),
             _ => unreachable!(),

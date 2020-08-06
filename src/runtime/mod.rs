@@ -6,33 +6,31 @@ use bc::Bytecode;
 pub mod object;
 use object::Object;
 pub mod rc;
-use rc::Rc;
+use rc::ManualRc;
 pub mod string;
+use crate::util::{Offset, OffsetExt};
 use bc::{op, DataValue, Instruction};
-use std::{alloc, f64, mem, num, ptr};
+use std::{alloc, cell::UnsafeCell, f64, mem, num, ptr};
 use string::StringRc;
 
-const INITIAL_STACK_SIZE: usize = 8;
 pub const NUM_REGISTERS: usize = 8;
 
 pub struct Runtime<'a> {
-    stack: *mut JSValue,
-    size: usize,
+    stack: ptr::NonNull<JSValue>,
+    size: Offset<JSValue>,
     code: &'a [Instruction],
     data: &'a [DataValue],
-    pc: *const u8,
-    frame: *mut JSValue,
+    code_ptr: *const u8,
+    frame_ptr: *mut JSValue,
+    stack_ptr: *mut JSValue,
     regs: [JSValue; NUM_REGISTERS],
-    global: rc::Rc<Object>,
+    global: object::ObjectRc,
 }
 
 impl<'a> Drop for Runtime<'a> {
     fn drop(&mut self) {
-        let val_size = mem::align_of::<JSValue>();
-        let layout =
-            alloc::Layout::from_size_align(self.size * mem::size_of::<JSValue>(), val_size)
-                .unwrap();
-        unsafe { alloc::dealloc(self.stack as *mut _, layout) }
+        let layout = self.size.to_layout();
+        unsafe { alloc::dealloc(self.stack.as_ptr().cast(), layout) }
     }
 }
 
@@ -41,85 +39,63 @@ impl<'a> Runtime<'a> {
         debug_assert_eq!(mem::size_of::<u64>(), mem::size_of::<JSValue>());
         let data = &code.data;
         let code = &code.instructions;
-        let val_size = mem::size_of::<JSValue>();
-        let layout = alloc::Layout::from_size_align(
-            INITIAL_STACK_SIZE * mem::size_of::<JSValue>(),
-            val_size,
-        )
-        .unwrap();
-        let stack = alloc::alloc(layout) as *mut _;
+        let stack = ptr::NonNull::dangling();
         let regs = mem::zeroed();
         Runtime {
-            stack,
-            size: INITIAL_STACK_SIZE,
-            frame: stack,
-            pc: code.as_ptr() as *const _,
+            size: Offset::zero(),
             code,
             data,
+            code_ptr: code.as_ptr() as *const _,
+            frame_ptr: stack.as_ptr(),
+            stack_ptr: stack.as_ptr(),
+            stack,
             regs,
-            global: rc::Rc::new(Object::new()),
+            global: rc::ManualRc::new(UnsafeCell::new(Object::new())),
         }
-    }
-
-    unsafe fn push(&mut self, js_value: JSValue) {
-        if self.stack.add(self.size) == self.frame {
-            let offset = self.size;
-            let layout = alloc::Layout::from_size_align(
-                self.size * mem::size_of::<JSValue>(),
-                mem::align_of::<JSValue>(),
-            )
-            .unwrap();
-            self.size = self.size.next_power_of_two() << 1;
-            self.stack = alloc::realloc(
-                self.stack as *mut _,
-                layout,
-                self.size * mem::size_of::<JSValue>(),
-            ) as *mut _;
-            self.frame = self.stack.add(offset);
-        }
-        self.frame.write(js_value);
-        self.frame = self.frame.add(1);
     }
 
     #[cfg(debug_assertions)]
-    fn check_bounds(&self) {
-        let last = unsafe { self.code.as_ptr().add(self.code.len() - 1) };
-        // + 3 for the last 3 bytes in the 4 wide u32
-        assert!(self.pc as usize <= last as usize + 3);
+    fn check_bounds<T>(&self) {
+        assert!(
+            self.code.as_ptr().cast::<u8>().offset_to(self.code_ptr)
+                < Offset::<u8>::new(self.code.len() - mem::size_of::<T>())
+        )
     }
 
     #[inline(always)]
     unsafe fn read_u8(&mut self) -> u8 {
         #[cfg(debug_assertions)]
-        self.check_bounds();
-        let res = self.pc.read();
-        self.pc = self.pc.add(mem::size_of::<u8>());
+        self.check_bounds::<u8>();
+        let res = self.code_ptr.read();
+        self.code_ptr = self.code_ptr.add(mem::size_of::<u8>());
         res
     }
 
     #[inline(always)]
     unsafe fn read_u16(&mut self) -> u16 {
-        debug_assert_eq!(self.pc.align_offset(mem::align_of::<u16>()), 0);
+        debug_assert_eq!(self.code_ptr.align_offset(mem::align_of::<u16>()), 0);
         #[cfg(debug_assertions)]
-        self.check_bounds();
-        let res = (self.pc as *const u16).read();
-        self.pc = self.pc.add(mem::size_of::<u16>());
+        self.check_bounds::<u16>();
+        let res = (self.code_ptr as *const u16).read();
+        self.code_ptr = self.code_ptr.add(mem::size_of::<u16>());
         res
     }
 
     #[inline(always)]
     unsafe fn read_u32(&mut self) -> u32 {
-        debug_assert_eq!(self.pc.align_offset(mem::align_of::<u32>()), 0);
+        debug_assert_eq!(self.code_ptr.align_offset(mem::align_of::<u32>()), 0);
         #[cfg(debug_assertions)]
-        self.check_bounds();
-        let res = (self.pc as *const u32).read();
-        self.pc = self.pc.add(mem::size_of::<u32>());
+        self.check_bounds::<u32>();
+        let res = (self.code_ptr as *const u32).read();
+        self.code_ptr = self.code_ptr.add(mem::size_of::<u32>());
         res
     }
 
     #[inline(always)]
     unsafe fn jump(&mut self, pc: u32) {
-        self.pc = self.code.as_ptr().add(pc as usize) as *const u8;
+        self.code_ptr = Offset::<Instruction>::new(pc as usize)
+            .apply_to_const(self.code.as_ptr())
+            .cast::<u8>();
     }
 
     #[inline(always)]
@@ -135,11 +111,61 @@ impl<'a> Runtime<'a> {
     }
 
     unsafe fn unwind(&mut self) {
-        self.frame = self.frame.sub(1);
-        while self.frame >= self.stack {
-            (*self.frame).drop();
-            self.frame = self.frame.sub(1);
+        self.stack_ptr = self.stack_ptr.sub(1);
+        while self.frame_ptr >= self.stack.as_ptr() {
+            (*self.frame_ptr).drop();
+            self.frame_ptr = self.frame_ptr.sub(1);
         }
+    }
+
+    unsafe fn alloc(&mut self, size: usize) {
+        let offset = self.stack_ptr.offset_to(self.stack.as_ptr()) + Offset::new(size);
+        if offset.next_power_of_two() <= self.size {
+            return;
+        }
+        if self.size == Offset::zero() {
+            let new_size = offset.next_power_of_two();
+            let layout = new_size.to_layout();
+            self.stack = ptr::NonNull::new_unchecked(alloc::alloc(layout).cast());
+            self.stack_ptr = self.stack.as_ptr();
+            self.frame_ptr = self.stack.as_ptr();
+            return;
+        }
+        let layout = self.size.to_layout();
+        let new_size = offset.next_power_of_two();
+        let ptr =
+            alloc::realloc(self.stack.as_ptr().cast(), layout, new_size.as_size_bytes()).cast();
+        self.stack_ptr = self.stack.as_ptr().offset_to(self.stack_ptr).apply_to(ptr);
+        self.frame_ptr = self.stack.as_ptr().offset_to(self.frame_ptr).apply_to(ptr);
+        self.stack = ptr::NonNull::new_unchecked(ptr.cast());
+        self.size = new_size;
+    }
+
+    unsafe fn push(&mut self, size: usize) {
+        debug_assert!(size > 1);
+        self.alloc(size);
+        self.stack_ptr.write(JSValue {
+            bits: self.stack_ptr as u64 - self.frame_ptr as u64,
+        });
+        self.frame_ptr = self.stack_ptr;
+        self.stack_ptr = self.stack_ptr.add(1);
+        self.stack_ptr = self.stack_ptr.add(size);
+    }
+
+    unsafe fn pop(&mut self) {
+        debug_assert!(self.stack_ptr as usize != self.frame_ptr as usize);
+        self.stack_ptr = self.stack_ptr.sub(1);
+        while self.frame_ptr < self.stack_ptr {
+            self.stack_ptr.read().drop();
+            self.stack_ptr = self.stack_ptr.sub(1);
+        }
+        let val = self.stack_ptr.read().bits;
+        self.frame_ptr = (self.frame_ptr as u64 - val) as *mut _;
+    }
+
+    unsafe fn stack(&mut self, idx: usize) -> &mut JSValue {
+        debug_assert!(Offset::new(idx) < self.frame_ptr.offset_to(self.stack_ptr) - Offset::new(1));
+        &mut *self.stack_ptr.sub(idx + 1)
     }
 
     unsafe fn run_loop(&mut self) -> Option<JSValue> {
@@ -150,6 +176,42 @@ impl<'a> Runtime<'a> {
                     let op_a = self.read_u8();
                     self.read_u16();
                     *self.get(op_a) = JSValue::from(self.global);
+                }
+
+                op::LD => {
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let idx = if op_d == 0xfff {
+                        self.read_u32() as usize
+                    } else {
+                        op_d as usize
+                    };
+                    *self.get(op_a) = *self.stack(idx);
+                }
+                op::ST => {
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let idx = if op_d == 0xfff {
+                        self.read_u32() as usize
+                    } else {
+                        op_d as usize
+                    };
+                    *self.stack(idx) = *self.get(op_a);
+                }
+                op::PUSH => {
+                    self.read_u8();
+                    let op_d = self.read_u16();
+                    let idx = if op_d == 0xfff {
+                        self.read_u32() as usize
+                    } else {
+                        op_d as usize
+                    };
+                    self.push(idx)
+                }
+                op::POP => {
+                    self.read_u8();
+                    self.read_u16();
+                    self.pop();
                 }
                 op::OSET => {
                     let op_a = self.read_u8();
@@ -163,8 +225,7 @@ impl<'a> Runtime<'a> {
                         *self.get(op_a)
                     };
                     let key = Self::as_string(key);
-                    obj.into_object()
-                        .value()
+                    (*obj.into_object().value().get())
                         .set(key, val.clone())
                         .map(|x| x.drop());
                 }
@@ -178,7 +239,7 @@ impl<'a> Runtime<'a> {
                         *self.get(op_b)
                     };
                     let key = *self.get(op_c);
-                    let val = obj.into_object().value().get(&Self::as_string(key));
+                    let val = (*obj.into_object().value().get()).get(&Self::as_string(key));
                     *self.get(op_a) = val;
                 }
                 op::CLD => {
@@ -190,11 +251,7 @@ impl<'a> Runtime<'a> {
                         self.read_u32() as usize
                     };
                     let data = match self.data[idx].clone() {
-                        DataValue::String(x) => {
-                            let value = JSValue::from(Rc::new(x));
-                            self.push(value);
-                            value
-                        }
+                        DataValue::String(x) => JSValue::from(ManualRc::new(x)),
                         DataValue::Direct(x) => x,
                     };
                     (*self.get(dst)) = data;
@@ -488,11 +545,12 @@ impl<'a> Runtime<'a> {
         match val.tag() {
             value::TAG_INT => val.into_int() as f64,
             value::TAG_STRING => {
-                let s = val.into_string().value().trim();
+                let val = val.into_string();
+                let s = val.value().trim();
                 if s.len() == 0 {
                     0.0
                 } else {
-                    val.into_string().value().parse::<f64>().unwrap_or(f64::NAN)
+                    val.value().parse::<f64>().unwrap_or(f64::NAN)
                 }
             }
             value::TAG_UNDEFINED => f64::NAN,

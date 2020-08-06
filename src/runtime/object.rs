@@ -1,10 +1,10 @@
 //! Javascript runtime object functionality
 
-use crate::runtime::{rc::Rc, JSValue};
+use crate::runtime::{rc::ManualRc, JSValue};
 use fxhash::FxHashMap;
-use std::hash;
+use std::{cell::UnsafeCell, hash};
 
-pub type ObjectRc = Rc<Object>;
+pub type ObjectRc = ManualRc<UnsafeCell<Object>>;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Object {

@@ -1,3 +1,3 @@
-use crate::runtime::rc::Rc;
+use crate::runtime::rc::ManualRc;
 
-pub type StringRc = Rc<String>;
+pub type StringRc = ManualRc<String>;
