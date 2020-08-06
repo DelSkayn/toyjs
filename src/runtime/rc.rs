@@ -9,7 +9,7 @@ use std::{
 /// any Rc object regardless of the contained value.
 #[repr(C)]
 pub struct RcCount {
-    count: u64,
+    count: Cell<usize>,
 }
 
 impl RcCount {
@@ -18,7 +18,7 @@ impl RcCount {
     /// Pointer must be a valid pointer as obtained from `Rc::to_raw`.
     pub unsafe fn incr_raw(ptr: *mut ()) {
         let ptr = ptr as *mut RcCount;
-        (*ptr).count += 1;
+        (*ptr).count.set((*ptr).count.get() + 1);
     }
 }
 
