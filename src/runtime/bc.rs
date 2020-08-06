@@ -7,19 +7,10 @@ mod macros;
 
 pub type Instruction = u32;
 
-/// The primitive value for the boolean 'false' in the CLP instruction
-pub const PRIM_VAL_FALSE: u16 = 0;
-/// The primitive value for the boolean 'true' in the CLP instruction
-pub const PRIM_VAL_TRUE: u16 = 1;
-/// The primitive value for 'null' in the CLP instruction
-pub const PRIM_VAL_NULL: u16 = 2;
-/// The primitive value for 'undefined' in the CLP instruction
-pub const PRIM_VAL_UNDEFINED: u16 = 3;
-
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DataValue {
     String(String),
-    Object(Object),
+    Direct(JSValue),
 }
 
 pub struct Bytecode {
@@ -29,22 +20,37 @@ pub struct Bytecode {
 
 impl fmt::Display for Bytecode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut cur = 0;
         writeln!(f, "DATA:")?;
         for (idx, x) in self.data.iter().enumerate() {
             writeln!(f, "{}:{:?}", idx, x)?;
         }
+        let mut cur = 0;
         writeln!(f, "\nINSTRUCTIONS:")?;
+        let n_chars = (self.instructions.len() as f64).log10() as u64 + 1;
         while cur != self.instructions.len() {
             let instr = self.instructions[cur];
+            let cur_n_chars = (cur as f64).log10() as u64 + 1;
+            for _ in 0..n_chars - cur_n_chars {
+                write!(f, " ")?;
+            }
+            write!(f, "{}: ", cur)?;
             format_instr(instr, f)?;
-            writeln!(f, "")?;
             match op_op(instr) {
-                op::CLF => {
-                    cur += 3;
+                op::CLD => {
+                    if op_d(instr) == 0xffff {
+                        cur += 1;
+                        write!(f, " const:{}", self.instructions[cur])?;
+                    }
+                    cur += 1;
+                }
+                op::J | op::JCO => {
+                    cur += 1;
+                    write!(f, "  target:{}", self.instructions[cur])?;
+                    cur += 1;
                 }
                 _ => cur += 1,
             }
+            writeln!(f, "")?;
         }
         Ok(())
     }
@@ -125,18 +131,19 @@ pub fn op_d(instr: Instruction) -> u16 {
 
 op_code!(
     enum Op {
-        /// store value from operand D into the lower bits of reg A
-        CLH(dst, val),
-        /// store value from operand D into the higher bits of reg A
-        CLL(dst, val),
-        /// load constant float value from the next two register values to reg A
-        CLF(dst, null),
-        /// load constant primitive value operand D and store them into reg A
-        CLP(dst, prim),
         /// load data constant with index operand D into reg A
-        /// if the last bit of the idx is set the value is not a direct index but a register for and offset;
+        /// if the idx is u16::max the index for the constant is in in the next instruction slot
         CLD(dst, idx),
 
+        PUSH(null, size),
+        POP(null, null),
+        /// Load a value from the stack
+        LD(dst, idx),
+        /// Push a value to the stack
+        ST(src, idx),
+
+        /// Load the global object in the destination register.
+        LGB(dst, null),
         /// set the entry from the key in reg D to the value from reg A in the global object
         OSET(obj, key, val),
         /// set reg A to value int the global object with the key in reg D.
@@ -168,16 +175,44 @@ op_code!(
         /// Bitwise exclusive or
         BXOR(dst, op, op),
 
+        /// Convert the value to a boolean
+        BOOL(dst, src),
+        /// Convert the value to a boolean
+        ISNUL(dst, src),
+
+        /// Shift left
         SHL(dst, op, op),
+        /// Shift right
         SHR(dst, op, op),
+        /// Shift right unsigned
         USR(dst, op, op),
 
+        /// Equal
         EQ(dst, op, op),
+        /// Strict Equal
         SEQ(dst, op, op),
+        /// Not Equal
         NEQ(dst, op, op),
+        /// Strict Not Equal
         SNEQ(dst, op, op),
+
+        /// Greater
+        G(dst, op, op),
+        /// Greater or equal
+        GE(dst, op, op),
+        /// Less
+        L(dst, op, op),
+        /// Less or equal
+        LE(dst, op, op),
+
+        /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
+        JCO(cond, neg),
+        /// jump to the index at the next instruction slot
+        J(null, null),
 
         /// return
         RET(src, null),
+        /// return undefined
+        RETU(null, null),
     }
 );

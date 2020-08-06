@@ -1,20 +1,28 @@
-use js::{lexer, parser, parser::ParseErrorKind};
+use js::{interner::Interner, lexer};
 use std::{fs::File, io::Read, path::Path};
 use walkdir::WalkDir;
 
-fn run_file(path: &Path) -> bool {
+fn run_file(path: &Path, interner: &mut Interner) -> bool {
     let mut file = File::open(path).unwrap();
     let mut buffer = String::new();
     file.read_to_string(&mut buffer).unwrap();
-    let l = lexer::Lexer::new(&buffer, Some(path.to_path_buf()));
-    let mut p = parser::Parser::new(l);
-    match p.parse_script() {
-        Ok(_) => true,
-        Err(e) => {
-            println!("{}", e);
-            //panic!();
-            false
+    let mut l = lexer::Lexer::new(buffer.as_bytes(), interner);
+    let mut tokens = Vec::new();
+    loop {
+        match l.next() {
+            Ok(Some(e)) => tokens.push(e),
+            Err(e) => {
+                println!("error in file: {}\n{:?}", path.display(), e);
+                println!("source: {}", buffer);
+                for b in tokens.iter() {
+                    println!("{:?}", b);
+                }
+                panic!();
+                return false;
+            }
+            Ok(None) => return true,
         }
+        tokens.clear();
     }
 }
 
@@ -22,6 +30,7 @@ fn main() {
     env_logger::init();
     let mut count = 0;
     let mut finished = 0;
+    let mut interner = Interner::with_capacity(2048);
     for e in WalkDir::new("test262/test")
         .into_iter()
         .filter_map(|e| e.ok())
@@ -35,7 +44,7 @@ fn main() {
     {
         count += 1;
 
-        if run_file(e.path()) {
+        if run_file(e.path(), &mut interner) {
             finished += 1;
         }
     }

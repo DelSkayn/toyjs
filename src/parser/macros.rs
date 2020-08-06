@@ -9,7 +9,7 @@ macro_rules! is {
 
 macro_rules! eat {
     ($p:expr,$t:tt) => {
-        $p.eat(tok!($t))
+        $p.eat(t!($t))?
     };
 }
 
@@ -37,7 +37,7 @@ macro_rules! syntax_error {
 macro_rules! unexpected{
     ($s:expr$(,$t:tt)*  $(=> $r:tt)*) => {
         syntax_error!($s,crate::parser::ParseErrorKind::UnexpectedToken{
-            found: $s.peek(),
+            found: $s.peek()?,
             expected: &[$($t,)*],
             reason: unexpected!(=> $($r)*)
         });
@@ -68,10 +68,10 @@ macro_rules! no_lt {
 
 macro_rules! expect{
     ($s:expr$(,$t:tt)* $(=> $r:tt)*) => {{
-        let p = $s.peek();
+        let p = $s.peek()?;
         match p.map(|e| e.kind){
-            $(Some(tok!($t)) => {
-                $s.next().unwrap()
+            $(Some(t!($t)) => {
+                $s.next()?.unwrap()
             })*
             _ => {
                 unexpected!($s $(,$t)* $(=> $r)*)

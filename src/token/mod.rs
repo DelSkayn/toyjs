@@ -1,4 +1,4 @@
-use crate::source::Span;
+use crate::{interner::StringId, source::Span};
 
 mod display;
 mod kw;
@@ -8,11 +8,10 @@ pub use kw::*;
 pub use op::{BinOpToken, RelationToken, UnaryOpToken};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum NumberKind<'a> {
-    Invalid(&'static str),
+pub enum NumberKind {
     Integer(i32),
     Float(f64),
-    Big(&'a str),
+    Big(StringId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -25,16 +24,16 @@ pub enum DelimToken {
     Brace,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum LitToken<'a> {
-    String(String),
-    Number(NumberKind<'a>),
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum LitToken {
+    String(StringId),
+    Number(NumberKind),
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum TokenKind<'a> {
-    Ident(&'a str),
-    Lit(LitToken<'a>),
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum TokenKind {
+    Ident(StringId),
+    Lit(LitToken),
     Kw(Kw),
     /// `;`
     SemiColon,
@@ -71,8 +70,8 @@ pub enum TokenKind<'a> {
     Unknown,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Token<'a> {
-    pub kind: TokenKind<'a>,
+#[derive(Clone, Debug)]
+pub struct Token {
+    pub kind: TokenKind,
     pub span: Span,
 }

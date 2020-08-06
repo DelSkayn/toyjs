@@ -55,10 +55,10 @@ impl fmt::Display for RelationToken {
     }
 }
 
-impl fmt::Display for TokenKind<'_> {
+impl fmt::Display for TokenKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            TokenKind::Ident(x) => write!(f, "{}", x),
+            TokenKind::Ident(_) => write!(f, "ident"),
             TokenKind::Lit(LitToken::String(_)) => write!(f, "String"),
             TokenKind::Kw(x) => write!(f, "{}", x),
             TokenKind::Lit(LitToken::Number(_)) => write!(f, "number"),
