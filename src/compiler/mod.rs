@@ -199,7 +199,9 @@ impl Compiler {
                     }
                 }
                 Instruction::Jump { target: _ } => {}
-                Instruction::LoadGlobal => {}
+                Instruction::LoadGlobal => {
+                    vars[idx].rematerializable = true;
+                }
                 Instruction::ObjectSet { object, key, value } => {
                     vars[value.as_u32() as usize].live = idx as u32;
                     vars[object.as_u32() as usize].live = idx as u32;

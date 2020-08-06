@@ -135,6 +135,13 @@ op_code!(
         /// if the idx is u16::max the index for the constant is in in the next instruction slot
         CLD(dst, idx),
 
+        PUSH(null, size),
+        POP(null, null),
+        /// Load a value from the stack
+        LD(dst, idx),
+        /// Push a value to the stack
+        ST(src, idx),
+
         /// Load the global object in the destination register.
         LGB(dst, null),
         /// set the entry from the key in reg D to the value from reg A in the global object
