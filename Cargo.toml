@@ -8,6 +8,7 @@ version = "0.1.0"
 unicode-xid = "0.2.0"
 log = "0.4.8"
 fxhash = "0.2.1"
+lexical-core = "0.7.4"
 
 [[example]]
 name = "ecma"

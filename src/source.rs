@@ -1,3 +1,10 @@
+/// A location of a collection of characters in a source as an offset in a slice of bytes
+#[derive(Clone, Copy, Debug)]
+pub struct Span {
+    pub lo: u32,
+    pub hi: u32,
+}
+
 use std::{
     convert::TryInto,
     fmt,
@@ -11,12 +18,6 @@ pub struct Sourced<'a, T> {
     pub value: T,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Span {
-    pub lo: u32,
-    pub hi: u32,
-}
-
 /// A source location
 pub struct Pos {
     pub line: u32,
@@ -28,7 +29,7 @@ pub struct Source {
     /// Line offsets
     base_offset: usize,
     lines: Arc<Vec<Span>>,
-    pub src: String,
+    src: String,
     path: Option<PathBuf>,
 }
 
@@ -87,6 +88,10 @@ impl Source {
 
     pub fn str(&self, span: Span) -> &str {
         &self.src[span.lo as usize..span.hi as usize]
+    }
+
+    pub fn source(&self) -> &str {
+        &self.src
     }
 
     pub fn path(&self) -> Option<&Path> {

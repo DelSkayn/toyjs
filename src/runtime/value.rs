@@ -1,7 +1,7 @@
 //! Javascript runtime value definition
 //!
 use crate::runtime::{object::ObjectRc, rc::RcCount, string::StringRc};
-use std::{cmp, fmt, hash, mem, ops};
+use std::{cell::UnsafeCell, cmp, fmt, hash, mem, ops};
 
 const MAX_DOUBLE: u64 = (0xfff8_0000) << 32;
 pub const TAG_INT: u64 = (0xfff9_0000) << 32;
@@ -39,9 +39,28 @@ impl hash::Hash for JSValue {
 
 impl fmt::Debug for JSValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("JSValue")
-            .field(unsafe { &self.bits })
-            .finish()
+        if self.is_float() {
+            return f
+                .debug_struct("JSValue")
+                .field("float", &self.into_float())
+                .finish();
+        }
+        match self.tag() {
+            TAG_INT => f
+                .debug_struct("JSValue")
+                .field("int", &self.into_int())
+                .finish(),
+            TAG_BOOL => f
+                .debug_struct("JSValue")
+                .field("bool", &self.into_bool())
+                .finish(),
+            TAG_NULL => write!(f, "JSValue::Null"),
+            TAG_UNDEFINED => write!(f, "JSValue::Undefined"),
+            _ => f
+                .debug_struct("JSValue")
+                .field("ptr", &self.into_raw_ptr())
+                .finish(),
+        }
     }
 }
 
@@ -258,7 +277,9 @@ impl JSValue {
         }
         let ptr = self.into_raw_ptr();
         match tag {
-            TAG_OBJECT => JSValue::from(ObjectRc::from_raw(ptr).deep_clone()),
+            TAG_OBJECT => JSValue::from(ObjectRc::new(UnsafeCell::new(
+                (*ObjectRc::from_raw(ptr).value().get()).clone(),
+            ))),
             TAG_STRING => JSValue::from(StringRc::from_raw(ptr).deep_clone()),
             TAG_AVAILABLE_5 => panic!("found unused tag"),
             _ => unreachable!(),

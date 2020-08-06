@@ -1,4 +1,5 @@
 use crate::{
+    lexer::LexerError,
     source::{Source, Sourced, Span},
     token::Token,
 };
@@ -19,28 +20,29 @@ impl fmt::Display for NumberParseErrorKind {
     }
 }
 
-pub enum ParseErrorKind<'a> {
+pub enum ParseErrorKind {
     UnexpectedLineTerminator,
     Todo {
         file: &'static str,
         line: u32,
     },
     UnexpectedToken {
-        found: Option<Token<'a>>,
+        found: Option<Token>,
         expected: &'static [&'static str],
         reason: Option<&'static str>,
     },
     NumberParseError(&'static str),
+    InvalidToken {
+        error: LexerError,
+    },
 }
 
-pub struct ParseError<'a> {
-    pub kind: ParseErrorKind<'a>,
+pub struct ParseError {
+    pub kind: ParseErrorKind,
     pub origin: Span,
 }
 
-impl<'a> ParseError<'a> {}
-
-impl<'a> fmt::Display for Sourced<'a, ParseError<'a>> {
+impl<'a> fmt::Display for Sourced<'a, ParseError> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "error: ")?;
         match self.value.kind {
@@ -91,6 +93,11 @@ impl<'a> fmt::Display for Sourced<'a, ParseError<'a>> {
                 writeln!(f, "")?;
                 self.source.fmt_span(f, self.value.origin)?;
                 self.source.fmt_span_src(f, self.value.origin, reason)
+            }
+            //TODO better lexer error formatting
+            ParseErrorKind::InvalidToken { ref error } => {
+                writeln!(f, "invalid token: {:?}", error)?;
+                self.source.fmt_span(f, self.value.origin)
             }
         }
     }

@@ -1,792 +1,440 @@
 use crate::{
-    source::{Source, Span},
-    tok,
-    token::*,
+    interner::Interner,
+    source::Span,
+    token::{LitToken, Token, TokenKind},
 };
-use std::{
-    convert::TryInto,
-    path::{Path, PathBuf},
-    str::Chars,
-};
+use std::{char, result::Result as StdResult};
+
+pub type Result<T> = StdResult<T, LexerError>;
+
 mod chars;
-pub use crate::token::Kw;
-use unicode_xid::UnicodeXID;
+mod ident;
+mod number;
+mod string;
+mod utf;
 
-pub struct CharStream<'a> {
-    chars: Chars<'a>,
-    peek: Option<char>,
-    peek_str: Option<&'a str>,
+#[derive(Debug)]
+pub enum LexerErrorKind {
+    InvalidUtf8,
+    UnknownToken,
+    UnClosedMultiLineComment,
+    UnClosedString,
+    InvalidNumber,
+    InvalidEscapeCode,
+    NotYetSupported,
 }
 
-impl<'a> CharStream<'a> {
-    pub fn new(s: &'a str) -> CharStream {
-        CharStream {
-            chars: s.chars(),
-            peek: None,
-            peek_str: None,
-        }
-    }
-
-    pub fn peek(&mut self) -> Option<char> {
-        if self.peek.is_none() {
-            self.peek_str = Some(self.chars.as_str());
-            self.peek = self.chars.next();
-        }
-        return self.peek;
-    }
-
-    pub fn as_str(&self) -> &'a str {
-        match self.peek_str {
-            Some(x) => x,
-            None => self.chars.as_str(),
-        }
-    }
-
-    pub fn next(&mut self) -> Option<char> {
-        if self.peek.is_some() {
-            self.peek_str = None;
-            return self.peek.take();
-        }
-        self.chars.next()
-    }
-}
-
+#[derive(Debug)]
 pub struct LexerError {
-    column: u64,
-    line: u64,
-    msg: String,
+    pub span: Span,
+    pub kind: LexerErrorKind,
 }
 
 pub struct Lexer<'a> {
-    pub line: u64,
-    pub column: u64,
-    pub str_offset_start: usize,
-    pub chars: CharStream<'a>,
-    pub errors: Vec<LexerError>,
-}
+    pub interner: &'a mut Interner,
+    bytes: &'a [u8],
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Token<'a>;
+    pending_char: Option<(char, u8)>,
 
-    fn next(&mut self) -> Option<Token<'a>> {
-        (*self).next()
-    }
+    last: usize,
+    cur: usize,
+
+    buffer: String,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a Source) -> Self {
+    pub fn new(bytes: &'a [u8], interner: &'a mut Interner) -> Self {
         Lexer {
-            line: 0,
-            column: 0,
-            str_offset_start: source.src.as_ptr() as usize,
-            chars: CharStream::new(&source.src),
-            errors: Vec::new(),
+            interner,
+            bytes,
+            last: 0,
+            cur: 0,
+            buffer: String::new(),
+            pending_char: None,
         }
     }
 
-    pub fn next(&mut self) -> Option<Token<'a>> {
-        let (c, span) = self.next_char()?;
-        let t = match c {
-            ';' => self.token(span, tok!(";")),
-            ',' => self.token(span, tok!(",")),
-            '(' => self.token(span, tok!("(")),
-            ')' => self.token(span, tok!(")")),
-            '{' => self.token(span, tok!("{")),
-            '}' => self.token(span, tok!("}")),
-            '[' => self.token(span, tok!("[")),
-            ']' => self.token(span, tok!("]")),
-            '+' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::Plus))
-                }
-                Some('+') => {
-                    self.next_char();
-                    self.token(span, tok!("++"))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::Plus)),
-            },
-            '-' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::Minus))
-                }
-                Some('-') => {
-                    self.next_char();
-                    self.token(span, tok!("--"))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::Minus)),
-            },
-            '*' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::Mul))
-                }
-                Some('*') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, tok!("**="))
-                        }
-                        _ => self.token(span, tok!("**")),
-                    }
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::Mul)),
-            },
-            '/' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::Div))
-                }
-                Some('/') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, TokenKind::BinOpAssign(BinOpToken::IntegerDiv))
-                        }
-                        _ => self.token(span, TokenKind::BinOp(BinOpToken::IntegerDiv)),
-                    }
-                }
-                _ => self.token(span, tok!("/")),
-            },
-            '~' => self.token(span, tok!("~")),
-            '%' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::Remainder))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::Remainder)),
-            },
-            '<' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, tok!("<="))
-                }
-                Some('<') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, TokenKind::BinOpAssign(BinOpToken::LeftShift))
-                        }
-                        _ => self.token(span, TokenKind::BinOp(BinOpToken::LeftShift)),
-                    }
-                }
-                _ => self.token(span, tok!("<")),
-            },
-            '>' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, tok!(">="))
-                }
-                Some('>') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, TokenKind::BinOpAssign(BinOpToken::RightShift))
-                        }
-                        Some('>') => {
-                            self.next_char();
-                            match self.chars.peek() {
-                                Some('=') => {
-                                    self.next_char();
-                                    self.token(
-                                        span,
-                                        TokenKind::BinOpAssign(BinOpToken::UnsignedRightShift),
-                                    )
-                                }
-                                _ => self
-                                    .token(span, TokenKind::BinOp(BinOpToken::UnsignedRightShift)),
-                            }
-                        }
-                        _ => self.token(span, TokenKind::BinOp(BinOpToken::RightShift)),
-                    }
-                }
-                _ => self.token(span, tok!(">")),
-            },
-            '=' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, tok!("==="))
-                        }
-                        _ => self.token(span, tok!("==")),
-                    }
-                }
-                _ => self.token(span, TokenKind::Assign),
-            },
-            '!' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('=') => {
-                            self.next_char();
-                            self.token(span, tok!("!=="))
-                        }
-                        _ => self.token(span, tok!("!=")),
-                    }
-                }
-                _ => self.token(span, tok!("!")),
-            },
-            '&' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::BitwiseAnd))
-                }
-                Some('&') => {
-                    self.next_char();
-                    self.token(span, tok!("&&"))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::BitwiseAnd)),
-            },
-            '|' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::BitwiseOr))
-                }
-                Some('|') => {
-                    self.next_char();
-                    self.token(span, tok!("||"))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::BitwiseOr)),
-            },
-            '^' => match self.chars.peek() {
-                Some('=') => {
-                    self.next_char();
-                    self.token(span, TokenKind::BinOpAssign(BinOpToken::BitwiseXor))
-                }
-                _ => self.token(span, TokenKind::BinOp(BinOpToken::BitwiseXor)),
-            },
-            '.' => match self.chars.peek() {
-                Some('.') => {
-                    self.next_char();
-                    match self.chars.peek() {
-                        Some('.') => {
-                            self.next_char();
-                            self.token(span, TokenKind::DotDotDot)
-                        }
-                        _ => self.token(span, TokenKind::DotDot),
-                    }
-                }
-                Some(x) if x.is_digit(10) => self.parse_number(span, '.'),
-                _ => self.token(span, TokenKind::Dot),
-            },
-            ':' => match self.chars.peek() {
-                Some(':') => {
-                    self.next_char();
-                    self.token(span, TokenKind::DoubleColon)
-                }
-                _ => self.token(span, TokenKind::Colon),
-            },
-            '"' => self.parse_string(span, '"'),
-            '\'' => self.parse_string(span, '\''),
-            x if Lexer::is_line_terminator(x) => {
-                self.consume_line_terminator(x);
-                self.column = 0;
-                self.line += 1;
-                self.token(span, tok!("\n"))
-            }
-            x if Lexer::is_whitespace(x) => self.parse_ident(span, x),
-            x if x.is_digit(10) => self.parse_number(span, x),
-            x if Lexer::is_token_start(x) => self.parse_ident(span, x),
-            _ => {
-                self.error("unknown token");
-                self.token(span, TokenKind::Unknown)
-            }
-        };
-        Some(t)
+    /// Returns the next byte and consumes it.
+    fn next_byte(&mut self) -> Option<u8> {
+        if self.cur < self.bytes.len() {
+            self.pending_char = None;
+            let res = self.bytes[self.cur];
+            self.cur += 1;
+            Some(res)
+        } else {
+            None
+        }
     }
 
-    fn token(&self, start: &'a str, kind: TokenKind<'a>) -> Token<'a> {
-        let lo = (start.as_ptr() as usize - self.str_offset_start)
-            .try_into()
-            .unwrap();
-        let hi = (self.chars.as_str().as_ptr() as usize - self.str_offset_start)
-            .try_into()
-            .unwrap();
-        let span = Span { lo, hi };
-        Token { kind, span }
+    /// Returns the next byte
+    fn peek_byte(&self) -> Option<u8> {
+        if self.cur < self.bytes.len() {
+            Some(self.bytes[self.cur])
+        } else {
+            None
+        }
     }
 
-    fn next_char(&mut self) -> Option<(char, &'a str)> {
-        let mut c;
+    /// Returns the next byte skipping any whitespace characters.
+    /// Will error on invalid utf-8 characters.
+    fn next_skip_whitespace(&mut self) -> Result<Option<u8>> {
         loop {
-            let span = self.chars.as_str();
-            c = self.chars.next()?;
-            self.column += 1;
-            if Lexer::is_whitespace(c) {
-                continue;
-            }
-            if c == '/' {
-                match self.chars.peek() {
-                    Some('/') => {
-                        self.chars.next();
-                        self.consume_line_comment();
-                        continue;
-                    }
-                    Some('*') => {
-                        self.chars.next();
-                        self.consume_multi_line_comment();
-                        continue;
-                    }
-                    _ => {}
-                }
-            }
-            return Some((c, span));
-        }
-    }
-
-    fn consume_line_comment(&mut self) {
-        while let Some(x) = self.chars.peek() {
-            if Lexer::is_line_terminator(x) {
-                return;
-            }
-            self.column += 1;
-            self.chars.next();
-        }
-    }
-
-    fn consume_multi_line_comment(&mut self) {
-        while let Some(x) = self.chars.next() {
-            self.column += 1;
-            if Lexer::is_line_terminator(x) {
-                self.column = 0;
-                self.line += 1;
-            }
-            if x == '*' {
-                match self.chars.peek() {
-                    Some('/') => {
-                        self.chars.next();
-                        self.column += 1;
-                        return;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    // TODO handle unicode escape codes
-    fn is_token_start(c: char) -> bool {
-        if c.is_xid_start() || c == '$' || c == '_' {
-            return true;
-        }
-        return false;
-    }
-
-    // TODO handle unicode escape codes
-    fn is_token_cont(c: char) -> bool {
-        if c.is_xid_continue() || c == '$' || c == chars::ZWNJ || c == chars::ZWJ {
-            return true;
-        }
-        return false;
-    }
-
-    fn is_whitespace(c: char) -> bool {
-        c == chars::HT
-            || c == chars::VT
-            || c == chars::FF
-            || c == chars::SP
-            || c == chars::NBSP
-            || c == chars::ZWNBSP
-            || chars::USP.contains(&c)
-    }
-
-    fn is_line_terminator(c: char) -> bool {
-        c == chars::LF || c == chars::CR || c == chars::LS || c == chars::PS
-    }
-
-    fn consume_line_terminator(&mut self, prev: char) {
-        // Consume windows style newline
-        if prev == chars::CR && self.chars.peek().map(|x| x == chars::LF).unwrap_or(false) {
-            self.chars.next();
-        }
-    }
-
-    fn parse_ident(&mut self, span: &'a str, start: char) -> Token<'a> {
-        let mut t = self.parse_ident_raw(span, start);
-        let kw = match t.kind {
-            TokenKind::Ident(x) => match x {
-                "await" => Kw::Await,
-                "break" => Kw::Break,
-                "case" => Kw::Case,
-                "catch" => Kw::Catch,
-                "class" => Kw::Class,
-                "let" => Kw::Let,
-                "const" => Kw::Const,
-                "continue" => Kw::Continue,
-                "debugger" => Kw::Debugger,
-                "default" => Kw::Default,
-                "delete" => Kw::Delete,
-                "do" => Kw::Do,
-                "else" => Kw::Else,
-                "enum" => Kw::Enum,
-                "export" => Kw::Export,
-                "extends" => Kw::Extends,
-                "false" => Kw::False,
-                "finally" => Kw::Finally,
-                "for" => Kw::For,
-                "function" => Kw::Function,
-                "if" => Kw::If,
-                "import" => Kw::Import,
-                "in" => Kw::In,
-                "instanceof" => Kw::Instanceof,
-                "new" => Kw::New,
-                "null" => Kw::Null,
-                "return" => Kw::Return,
-                "super" => Kw::Super,
-                "switch" => Kw::Switch,
-                "this" => Kw::This,
-                "throw" => Kw::Throw,
-                "true" => Kw::True,
-                "try" => Kw::Try,
-                "typeof" => Kw::Typeof,
-                "var" => Kw::Var,
-                "void" => Kw::Void,
-                "while" => Kw::While,
-                "with" => Kw::With,
-                _ => return t,
-            },
-            _ => return t,
-        };
-        t.kind = TokenKind::Kw(kw);
-        t
-    }
-
-    fn parse_ident_raw(&mut self, span: &'a str, start: char) -> Token<'a> {
-        debug_assert!(Lexer::is_token_start(start));
-        let mut next = self.chars.peek();
-        while let Some(x) = next {
-            if !Lexer::is_token_cont(x) {
-                break;
+            let peek = if let Some(x) = self.peek_byte() {
+                x
             } else {
-                self.chars.next();
+                return Ok(None);
+            };
+            match peek {
+                chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => {
+                    self.next_byte();
+                    self.last = self.cur;
+                }
+                x if Self::is_non_ascii(x) => match self.peek_char()?.unwrap() {
+                    // These are all the unicode whitespace characters
+                    chars::ZWNBSP
+                    | chars::USP_1
+                    | chars::USP_2
+                    | chars::USP_3
+                    | chars::USP_4
+                    | chars::USP_5
+                    | chars::USP_6
+                    | chars::USP_7
+                    | chars::USP_8
+                    | chars::USP_9
+                    | chars::USP_10
+                    | chars::USP_11
+                    | chars::USP_12
+                    | chars::USP_13
+                    | chars::USP_14
+                    | chars::USP_15 => {
+                        self.last = self.cur;
+                        self.next_byte();
+                    }
+                    _ => {
+                        return Ok(self.next_byte());
+                    }
+                },
+                _ => return Ok(self.next_byte()),
             }
-            next = self.chars.peek();
         }
-        let lo = span.as_ptr() as usize;
-        let hi = self.chars.as_str().as_ptr() as usize;
-        let string = &span[..hi - lo];
-        self.token(span, TokenKind::Ident(string))
     }
 
-    fn cur_str(&self, span: &'a str) -> &'a str {
-        let lo = span.as_ptr() as usize;
-        let hi = self.chars.as_str().as_ptr() as usize;
-        &span[..hi - lo]
+    /// Will eat the next line terminator if there is one
+    /// returns true if a line terminator was eaten.
+    fn eat_line_terminator(&mut self, c: u8) -> bool {
+        match c {
+            chars::LF => {
+                return true;
+            }
+            chars::CR => {
+                if self.peek_byte() == Some(chars::LF) {
+                    self.next_byte();
+                }
+                return true;
+            }
+            x if Self::is_non_ascii(x) => {
+                self.cur -= 1;
+                match self.peek_char() {
+                    Ok(Some(chars::LS)) | Ok(Some(chars::PS)) => {
+                        self.next_char().unwrap();
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        return false;
     }
 
-    fn parse_number(&mut self, span: &'a str, start: char) -> Token<'a> {
-        if start == '0' {
-            match self.chars.peek() {
-                None => {
-                    return self.token(
-                        span,
-                        TokenKind::Lit(LitToken::Number(NumberKind::Integer(0))),
-                    )
-                }
-                Some('n') => {
-                    self.chars.next();
-                    return self
-                        .token(span, TokenKind::Lit(LitToken::Number(NumberKind::Big("0"))));
-                }
-                Some('b') | Some('B') => {
-                    self.chars.next();
-                    return self.parse_non_decimal(span, 2);
-                }
-                Some('o') | Some('O') => {
-                    self.chars.next();
-                    return self.parse_non_decimal(span, 8);
-                }
-                Some('x') | Some('X') => {
-                    self.chars.next();
-                    return self.parse_non_decimal(span, 16);
-                }
+    fn error(&mut self, error: LexerErrorKind) -> LexerError {
+        let cur = self.cur;
+        let start = self.last;
+        self.last = self.cur;
+        assert!(
+            cur <= u32::MAX as usize,
+            "span index larger then u32::MAX, source file possibly to big to handle!"
+        );
+        assert!(
+            start <= u32::MAX as usize,
+            "span index larger then u32::MAX, source file possibly to big to handle!"
+        );
+        let span = Span {
+            lo: start as u32,
+            hi: cur as u32,
+        };
+        LexerError { span, kind: error }
+    }
+
+    fn token(&mut self, kind: TokenKind) -> Result<Option<Token>> {
+        let cur = self.cur;
+        let start = self.last;
+        self.last = self.cur;
+        assert!(
+            cur <= u32::MAX as usize,
+            "span index larger then u32::MAX, source file possibly to big to handle!"
+        );
+        assert!(
+            start <= u32::MAX as usize,
+            "span index larger then u32::MAX, source file possibly to big to handle!"
+        );
+        let span = Span {
+            lo: start as u32,
+            hi: cur as u32,
+        };
+        Ok(Some(Token { span, kind }))
+    }
+
+    fn lex_line_comment(&mut self) -> Result<()> {
+        loop {
+            let next = if let Some(x) = self.next_byte() {
+                x
+            } else {
+                break;
+            };
+            if self.eat_line_terminator(next) {
+                break;
+            }
+            self.next_byte();
+        }
+        Ok(())
+    }
+
+    fn lex_multi_line_comment(&mut self) -> Result<()> {
+        loop {
+            match self
+                .next_byte()
+                .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?
+            {
+                b'*' => match self.peek_byte() {
+                    Some(b'/') => {
+                        self.next_byte();
+                        return Ok(());
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
-        if start == '.' {
-            debug_assert!(self.chars.peek().map(|x| x.is_digit(10)).unwrap_or(false));
-            return self.parse_number_mantissa(span);
-        }
-        while self.chars.peek().map(|x| x.is_digit(10)).unwrap_or(false) {
-            self.chars.next();
-        }
-        let mut big = false;
-        match self.chars.peek() {
-            Some('.') => {
-                self.chars.next();
-                return self.parse_number_mantissa(span);
-            }
-            Some('e') | Some('E') => {
-                self.chars.next();
-                return self.parse_number_exponent(span);
-            }
-            Some('n') => {
-                self.chars.next();
-                big = true;
-            }
-            _ => {}
-        }
-        if big {
-            let cur_str = self.cur_str(span);
-            self.token(
-                span,
-                TokenKind::Lit(LitToken::Number(NumberKind::Big(cur_str))),
-            )
-        } else {
-            self.token(span, self.parse_number_string(span))
-        }
     }
 
-    fn parse_number_string(&self, span: &'a str) -> TokenKind<'a> {
-        let num = self.cur_str(span).parse::<f64>().unwrap();
-        if (num as i32) as f64 == num {
-            return TokenKind::Lit(LitToken::Number(NumberKind::Integer(num as i32)));
+    /// Returns the next token from the source if there is one.
+    pub fn next(&mut self) -> Result<Option<Token>> {
+        trace!("lex: next");
+        let next = self.next_skip_whitespace()?;
+        if next.is_none() {
+            return Ok(None);
         }
-        TokenKind::Lit(LitToken::Number(NumberKind::Float(num)))
-    }
-
-    fn parse_number_mantissa(&mut self, span: &'a str) -> Token<'a> {
-        while self.chars.peek().map(|x| x.is_digit(10)).unwrap_or(false) {
-            self.chars.next();
-        }
-        match self.chars.peek() {
-            Some('e') | Some('E') => {
-                self.chars.next();
-                return self.parse_number_exponent(span);
-            }
-            _ => {}
-        }
-        self.token(span, self.parse_number_string(span))
-    }
-
-    fn invalid_number(&self, reason: &'static str) -> TokenKind<'a> {
-        TokenKind::Lit(LitToken::Number(NumberKind::Invalid(reason)))
-    }
-
-    // TODO techically exponent must only be parsed if there is  a number following it.
-    fn parse_number_exponent(&mut self, span: &'a str) -> Token<'a> {
-        let start = self.chars.peek();
-        if start.is_none() {
-            return self.token(span, self.invalid_number("missing exponent integer"));
-        }
-        let start = start.unwrap();
-        if start == '-' || start == '+' || !start.is_digit(10) {
-            self.chars.next();
-            while self.chars.peek().map(|x| x.is_digit(10)).unwrap_or(false) {
-                self.chars.next();
-            }
-            return self.token(span, self.parse_number_string(span));
-        }
-        self.token(span, self.invalid_number("invalid exponent integer"))
-    }
-
-    fn parse_non_decimal(&mut self, span: &'a str, radix: u32) -> Token<'a> {
-        while self
-            .chars
-            .peek()
-            .map(|c| c.is_digit(radix))
-            .unwrap_or(false)
-        {
-            self.chars.next();
-        }
-        let mut big = false;
-        if let Some('n') = self.chars.peek() {
-            self.chars.next();
-            big = true;
-        }
-        let cur_str = self.cur_str(span);
-        if big {
-            self.token(
-                span,
-                TokenKind::Lit(LitToken::Number(NumberKind::Big(&cur_str[2..]))),
-            )
-        } else {
-            // TODO handle failure
-            let num = u64::from_str_radix(&cur_str[2..], radix).unwrap();
-            if num as i32 as u64 == num {
-                self.token(
-                    span,
-                    TokenKind::Lit(LitToken::Number(NumberKind::Integer(num as i32))),
-                )
-            } else {
-                self.token(
-                    span,
-                    TokenKind::Lit(LitToken::Number(NumberKind::Float(num as f64))),
-                )
-            }
-        }
-    }
-
-    fn parse_string(&mut self, span: &'a str, start: char) -> Token<'a> {
-        let mut buff = String::new();
-        loop {
-            let c = self.chars.next();
-            if c.is_none() || Lexer::is_line_terminator(c.unwrap()) {
-                self.error("unterminated string");
-                return self.token(span, TokenKind::Lit(LitToken::String(buff)));
-            }
-            let c = c.unwrap();
-            if c == start {
-                return self.token(span, TokenKind::Lit(LitToken::String(buff)));
-            }
-            // Parse escape codes
-            if c == '\\' {
-                let peek = self.chars.peek();
-                if peek.is_none() {
-                    self.error("unfinished escape sequence");
-                };
-                let peek = peek.unwrap();
-                match peek {
-                    '\'' => {
-                        buff.push('\'');
-                        self.chars.next();
-                    }
-                    '\"' => {
-                        buff.push('\"');
-                        self.chars.next();
-                    }
-                    '\\' => {
-                        buff.push('\\');
-                        self.chars.next();
-                    }
-                    'b' => {
-                        buff.push(chars::BS);
-                        self.chars.next();
-                    }
-                    't' => {
-                        buff.push(chars::HT);
-                        self.chars.next();
-                    }
-                    'f' => {
-                        buff.push(chars::FF);
-                        self.chars.next();
-                    }
-                    'n' => {
-                        buff.push(chars::LF);
-                        self.chars.next();
-                    }
-                    'v' => {
-                        buff.push(chars::VT);
-                        self.chars.next();
-                    }
-                    'r' => {
-                        buff.push(chars::CR);
-                        self.chars.next();
-                    }
-                    '0' => {
-                        buff.push('\0');
-                        self.chars.next();
-                    }
-                    'x' => {
-                        self.chars.next();
-                        let mut val = 0;
-                        for _ in 0..2 {
-                            match self.chars.peek() {
-                                Some(x) => {
-                                    if let Some(x) = x.to_digit(16) {
-                                        val <<= 4;
-                                        val |= x as u8;
-                                        self.chars.next();
-                                    }
-                                }
-                                None => {
-                                    self.error("unfinished hex escape sequence");
-                                    break;
-                                }
-                            }
-                        }
-                        buff.push(val.into());
-                    }
-                    'u' => {
-                        self.chars.next();
-                        if let Some('{') = self.chars.peek() {
-                            self.chars.next();
-                            let mut val = 0u32;
-                            let mut finished = false;
-                            for _ in 0..6 {
-                                match self.chars.peek() {
-                                    Some('}') => {
-                                        self.chars.next();
-                                        finished = true;
-                                        break;
-                                    }
-                                    Some(x) => {
-                                        if let Some(x) = x.to_digit(16) {
-                                            self.chars.next();
-                                            val <<= 4;
-                                            val |= x as u32;
-                                        } else {
-                                            self.error("invalid unicode escape sequence");
-                                            break;
-                                        }
-                                    }
-                                    None => {
-                                        self.error("unfinished unicode escape sequence");
-                                        break;
-                                    }
-                                }
-                            }
-                            if !finished {
-                                if self.chars.next() != Some('}') {
-                                    self.error("expected end of unicode code point");
-                                }
-                            }
-
-                            if let Ok(val) = val.try_into() {
-                                buff.push(val);
-                            } else {
-                                self.error("invalid unicode code point");
-                            }
-                        } else {
-                            let mut val = 0u32;
-                            for _ in 0..4 {
-                                match self.chars.peek() {
-                                    Some(x) => {
-                                        if let Some(x) = x.to_digit(16) {
-                                            self.chars.next();
-                                            val <<= 4;
-                                            val |= x;
-                                        } else {
-                                            self.error("invalid unicode escape sequence");
-                                            break;
-                                        }
-                                    }
-                                    None => self.error("unfinished unicode escape sequence"),
-                                }
-                            }
-                            if let Ok(val) = val.try_into() {
-                                buff.push(val);
-                            } else {
-                                self.error("invalid unicode code point");
-                            }
-                        }
-                    }
-                    x if Lexer::is_line_terminator(x) => {
-                        self.chars.next();
-                        self.consume_line_terminator(x);
-                    }
-                    _ => {
-                        self.error("invalid escape code");
+        let next = next.unwrap();
+        match next {
+            b';' => self.token(t!(";")),
+            b':' => self.token(t!(":")),
+            b',' => self.token(t!(",")),
+            b'(' => self.token(t!("(")),
+            b')' => self.token(t!(")")),
+            b'{' => self.token(t!("{")),
+            b'}' => self.token(t!("}")),
+            b'[' => self.token(t!("[")),
+            b']' => self.token(t!("]")),
+            b'?' => match self.peek_byte() {
+                Some(b'?') => {
+                    self.next_byte();
+                    self.token(t!("??"))
+                }
+                Some(b'.') => {
+                    self.next_byte();
+                    if self.peek_byte().map(Self::is_digit).unwrap_or(false) {
+                        self.cur -= 1;
+                        self.token(t!("?"))
+                    } else {
+                        self.token(t!("?."))
                     }
                 }
-            } else {
-                buff.push(c)
-            }
-        }
-    }
+                _ => self.token(t!("?")),
+            },
+            b'+' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("+="))
+                }
+                Some(b'+') => {
+                    self.next_byte();
+                    self.token(t!("++"))
+                }
+                _ => self.token(t!("+")),
+            },
+            b'-' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("-="))
+                }
+                Some(b'-') => {
+                    self.next_byte();
+                    self.token(t!("--"))
+                }
+                _ => self.token(t!("-")),
+            },
 
-    fn error<S: Into<String>>(&mut self, msg: S) {
-        self.errors.push(LexerError {
-            line: self.line,
-            column: self.column,
-            msg: msg.into(),
-        });
+            b'*' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("*"))
+                }
+                Some(b'*') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'=') => {
+                            self.next_byte();
+                            self.token(t!("**="))
+                        }
+                        _ => self.token(t!("**")),
+                    }
+                }
+                _ => self.token(t!("*")),
+            },
+
+            b'/' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("/="))
+                }
+                Some(b'/') => {
+                    self.lex_line_comment()?;
+                    self.next()
+                }
+                Some(b'*') => {
+                    self.lex_multi_line_comment()?;
+                    self.next()
+                }
+                _ => self.token(t!("/")),
+            },
+            b'~' => self.token(t!("~")),
+            b'%' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("%="))
+                }
+                _ => self.token(t!("%")),
+            },
+            b'<' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("<="))
+                }
+                Some(b'<') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'=') => {
+                            self.next_byte();
+                            self.token(t!("<<="))
+                        }
+                        _ => self.token(t!("<<")),
+                    }
+                }
+                _ => self.token(t!("<")),
+            },
+            b'>' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!(">="))
+                }
+                Some(b'>') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'=') => {
+                            self.next_byte();
+                            self.token(t!(">>="))
+                        }
+                        Some(b'>') => {
+                            self.next_byte();
+                            match self.peek_byte() {
+                                Some(b'=') => {
+                                    self.next_byte();
+                                    self.token(t!(">>>="))
+                                }
+                                _ => self.token(t!(">>>")),
+                            }
+                        }
+                        _ => self.token(t!(">>")),
+                    }
+                }
+                _ => self.token(t!(">")),
+            },
+            b'=' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'=') => {
+                            self.next_byte();
+                            self.token(t!("==="))
+                        }
+                        _ => self.token(t!("==")),
+                    }
+                }
+                _ => self.token(t!("=")),
+            },
+            b'!' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'=') => {
+                            self.next_byte();
+                            self.token(t!("!=="))
+                        }
+                        _ => self.token(t!("!=")),
+                    }
+                }
+                _ => self.token(t!("!")),
+            },
+            b'&' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("&="))
+                }
+                Some(b'&') => {
+                    self.next_byte();
+                    self.token(t!("&&"))
+                }
+                _ => self.token(t!("&")),
+            },
+            b'|' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("|="))
+                }
+                Some(b'|') => {
+                    self.next_byte();
+                    self.token(t!("||"))
+                }
+                _ => self.token(t!("|")),
+            },
+            b'^' => match self.peek_byte() {
+                Some(b'=') => {
+                    self.next_byte();
+                    self.token(t!("^="))
+                }
+                _ => self.token(t!("^")),
+            },
+            b'.' => match self.peek_byte() {
+                Some(b'.') => {
+                    self.next_byte();
+                    match self.peek_byte() {
+                        Some(b'.') => {
+                            self.next_byte();
+                            self.token(t!("..."))
+                        }
+                        _ => self.token(t!("..")),
+                    }
+                }
+                Some(x) if Self::is_digit(x) => self.lex_number(b'.'),
+                _ => self.token(TokenKind::Dot),
+            },
+            x if self.eat_line_terminator(x) => self.token(t!("\n")),
+            b'`' => return Err(self.error(LexerErrorKind::NotYetSupported)),
+            b'"' => self.lex_string(b'"'),
+            b'\'' => self.lex_string(b'\''),
+            x if Self::is_digit(x) => self.lex_number(x),
+            _ => self.lex_ident(),
+        }
     }
 }
