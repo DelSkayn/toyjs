@@ -44,7 +44,9 @@ impl<'a> Parser<'a> {
     fn parse_if(&mut self) -> PResult<()> {
         expect!(self, "if");
         expect!(self, "(");
+        self.builder.clear_jump_context();
         let expr = self.alter_state(|s| s._in = true, |this| this.parse_expr())?;
+        let jump_context = self.builder.take_jump_context();
         expect!(self, ")");
         let jump_cond = self.builder.push_instruction(Instruction::CondJump {
             negative: true,
@@ -65,6 +67,8 @@ impl<'a> Parser<'a> {
         };
         self.builder
             .patch_jump_target(jump_cond, jump_cond_target.into());
+        self.builder
+            .patch_context_jump_target(jump_cond_target, &jump_context, false);
         Ok(())
     }
 
@@ -72,7 +76,9 @@ impl<'a> Parser<'a> {
         expect!(self, "while");
         expect!(self, "(");
         let again = self.builder.next_id();
+        self.builder.clear_jump_context();
         let expr = self.parse_expr()?;
+        let jump_context = self.builder.take_jump_context();
         expect!(self, ")");
         let cond_jump = self.builder.push_instruction(Instruction::CondJump {
             negative: true,
@@ -90,6 +96,8 @@ impl<'a> Parser<'a> {
             target: again.into(),
         });
         self.builder.patch_jump_target_next(cond_jump);
+        self.builder
+            .patch_context_jump_target(self.builder.next_id(), &jump_context, false);
         Ok(())
     }
 }
