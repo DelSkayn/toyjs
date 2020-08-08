@@ -112,10 +112,11 @@ impl Compiler {
                             BinOp::StrictEqual => bc::Op::SEQ,
                             BinOp::NotEqual => bc::Op::NEQ,
                             BinOp::StrictNotEqual => bc::Op::SNEQ,
-                            x => {
-                                println!("{:?}", x);
-                                todo!()
-                            }
+                            BinOp::Less => bc::Op::LE,
+                            BinOp::LessEqual => bc::Op::LEQ,
+                            BinOp::Greater => bc::Op::GE,
+                            BinOp::GreaterEqual => bc::Op::GEQ,
+                            _ => todo!(),
                         };
                         let left = register_alloc[left.as_u32() as usize];
                         let right = register_alloc[right.as_u32() as usize];
