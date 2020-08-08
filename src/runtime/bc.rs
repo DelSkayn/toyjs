@@ -1,5 +1,5 @@
 //! Bytecode format definition.
-use super::{JSValue, Object};
+use super::{rc::RcVal, JSValue, Object};
 use std::{fmt, mem};
 
 #[macro_use]
@@ -7,15 +7,10 @@ mod macros;
 
 pub type Instruction = u32;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DataValue {
-    String(String),
-    Direct(JSValue),
-}
-
 pub struct Bytecode {
     pub instructions: Box<[Instruction]>,
-    pub data: Box<[DataValue]>,
+    pub data: Box<[JSValue]>,
+    pub strings: Box<[RcVal<String>]>,
 }
 
 impl fmt::Display for Bytecode {
@@ -23,6 +18,10 @@ impl fmt::Display for Bytecode {
         writeln!(f, "DATA:")?;
         for (idx, x) in self.data.iter().enumerate() {
             writeln!(f, "{}:{:?}", idx, x)?;
+        }
+        writeln!(f, "\nSTRINGS:")?;
+        for (idx, x) in self.strings.iter().enumerate() {
+            writeln!(f, "{}:{:?}", idx, x.value)?;
         }
         let mut cur = 0;
         writeln!(f, "\nINSTRUCTIONS:")?;
@@ -134,6 +133,9 @@ op_code!(
         /// load data constant with index operand D into reg A
         /// if the idx is u16::max the index for the constant is in in the next instruction slot
         CLD(dst, idx),
+        /// load string constant with index operand D into reg A
+        /// if the idx is u16::max the index for the constant is in in the next instruction slot
+        CLS(dst, idx),
 
         PUSH(null, size),
         POP(null, null),

@@ -23,9 +23,9 @@ impl RcCount {
 }
 
 #[repr(C)]
-pub(crate) struct RcVal<T> {
-    count: Cell<usize>,
-    value: T,
+pub struct RcVal<T> {
+    pub count: Cell<usize>,
+    pub value: T,
 }
 
 /// A struct for manual reference counting, it is the users responsibility to
@@ -71,16 +71,24 @@ impl<T> ManualRc<T> {
     }
 
     #[inline(always)]
+    pub fn from_raw_val(ptr: &RcVal<T>) -> Self {
+        ManualRc {
+            ptr: NonNull::from(ptr),
+        }
+    }
+
+    #[inline(always)]
     pub fn to_raw(self) -> *mut () {
         self.ptr.as_ptr().cast()
     }
 
     #[inline(always)]
     pub unsafe fn incr(&self) {
-        self.ptr
-            .as_ref()
-            .count
-            .set(self.ptr.as_ref().count.get() + 1);
+        let val = self.ptr.as_ref().count.get();
+        if val == usize::MAX - 1 {
+            panic!("to many references to a reference counted value!")
+        }
+        self.ptr.as_ref().count.set(val + 1);
     }
 
     #[inline(always)]
@@ -91,13 +99,18 @@ impl<T> ManualRc<T> {
     #[inline]
     pub unsafe fn drop(self) {
         let val = self.ptr.as_ref();
+        let count = val.count.get();
         debug_assert_ne!(val.count.get(), 0);
-        val.count.set(val.count.get() - 1);
-        if val.count.get() == 0 {
+        if count == usize::MAX {
+            return;
+        }
+        if count == 1 {
             ptr::drop_in_place(&mut (*self.ptr.as_ptr()).value);
             let layout = alloc::Layout::new::<ManualRc<T>>();
-            std::alloc::dealloc(self.ptr.as_ptr().cast(), layout)
+            std::alloc::dealloc(self.ptr.as_ptr().cast(), layout);
+            return;
         }
+        val.count.set(count - 1);
     }
 }
 

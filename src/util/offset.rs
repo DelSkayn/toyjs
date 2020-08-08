@@ -10,7 +10,7 @@ pub trait OffsetExt {
     type Out;
     fn offset_to(self, other: Self) -> Offset<Self::Out>;
 
-    fn apply(self, offset: Offset<Self::Out>) -> Self;
+    unsafe fn apply(self, offset: Offset<Self::Out>) -> Self;
 }
 
 impl<T> OffsetExt for *mut T {
@@ -20,16 +20,16 @@ impl<T> OffsetExt for *mut T {
     fn offset_to(self, other: Self) -> Offset<Self::Out> {
         let s = self as usize;
         let o = other as usize;
-        debug_assert!(s < o);
+        debug_assert!(s <= o);
         Offset {
-            offset: o - s,
+            offset: (o - s) / mem::size_of::<T>(),
             _marker: marker::PhantomData,
         }
     }
 
     #[inline(always)]
-    fn apply(self, offset: Offset<Self::Out>) -> Self {
-        (self as usize + offset.offset) as *mut _
+    unsafe fn apply(self, offset: Offset<Self::Out>) -> Self {
+        self.add(offset.offset)
     }
 }
 
@@ -40,20 +40,20 @@ impl<T> OffsetExt for *const T {
     fn offset_to(self, other: Self) -> Offset<Self::Out> {
         let s = self as usize;
         let o = other as usize;
-        debug_assert!(s < o);
+        debug_assert!(s <= o);
         Offset {
-            offset: o - s,
+            offset: (o - s) / mem::size_of::<T>(),
             _marker: marker::PhantomData,
         }
     }
 
     #[inline(always)]
-    fn apply(self, offset: Offset<Self::Out>) -> Self {
-        (self as usize + offset.offset) as *const _
+    unsafe fn apply(self, offset: Offset<Self::Out>) -> Self {
+        self.add(offset.offset)
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Hash)]
 pub struct Offset<T> {
     offset: usize,
     _marker: marker::PhantomData<T>,
@@ -107,12 +107,27 @@ impl<T> Offset<T> {
         }
     }
 
+    pub const fn single() -> Offset<T> {
+        Offset {
+            offset: 1,
+            _marker: marker::PhantomData,
+        }
+    }
+
+    pub const fn last(slice: &[T]) -> Offset<T> {
+        Offset {
+            offset: slice.len() - 1,
+            _marker: marker::PhantomData,
+        }
+    }
+
     /// Cast the offset to a different type
     /// Offsets are stored as a number of values.
     /// Casting between types thus can changes the number values that fit in this size.
     #[inline(always)]
     pub const fn cast<U>(self) -> Offset<U> {
-        let offset = self.offset / mem::size_of::<T>() * mem::size_of::<U>();
+        let offset =
+            (self.offset + 1) * mem::size_of::<T>() / mem::size_of::<U>() - mem::size_of::<U>();
         Offset {
             offset,
             _marker: marker::PhantomData,
@@ -121,14 +136,20 @@ impl<T> Offset<T> {
 
     /// Apply the offset to a pointer
     #[inline(always)]
-    pub fn apply_to(self, ptr: *mut T) -> *mut T {
-        (ptr as usize + self.offset) as *mut T
+    pub unsafe fn apply_to(self, ptr: *mut T) -> *mut T {
+        ptr.add(self.offset)
+    }
+
+    /// Remove the offset to a pointer
+    #[inline(always)]
+    pub unsafe fn remove_from(self, ptr: *mut T) -> *mut T {
+        ptr.sub(self.offset)
     }
 
     /// Apply the offset to a const pointer
     #[inline(always)]
-    pub fn apply_to_const(self, ptr: *const T) -> *const T {
-        (ptr as usize + self.offset) as *const T
+    pub unsafe fn apply_to_const(self, ptr: *const T) -> *const T {
+        ptr.add(self.offset)
     }
 
     /// Returns an offset of with an offset with the next power of two as a size.

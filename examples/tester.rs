@@ -5,7 +5,7 @@ use std::io::{self, Result, Write};
 
 fn main() -> Result<()> {
     env_logger::init();
-    let mut interner = Interner::with_capacity(2048);
+    let mut interner = Interner::new();
     let stdin = io::stdin();
 
     let mut buffer = String::new();
