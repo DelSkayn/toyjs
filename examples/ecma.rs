@@ -30,7 +30,7 @@ fn main() {
     env_logger::init();
     let mut count = 0;
     let mut finished = 0;
-    let mut interner = Interner::with_capacity(2048);
+    let mut interner = Interner::new();
     for e in WalkDir::new("test262/test")
         .into_iter()
         .filter_map(|e| e.ok())

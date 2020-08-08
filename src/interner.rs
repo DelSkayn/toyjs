@@ -24,20 +24,23 @@ pub mod consts {
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct StringId(u32);
 
+pub enum InternValue {
+    Present { string: String, count: usize },
+    Free(u32),
+}
+
 pub struct Interner {
-    map: FxHashMap<&'static str, u32>,
-    strings: Vec<&'static str>,
-    buf: String,
-    full: Vec<String>,
+    map: FxHashMap<String, u32>,
+    values: Vec<InternValue>,
+    top_free: u32,
 }
 
 impl Interner {
-    pub fn with_capacity(cap: usize) -> Self {
+    pub fn new() -> Self {
         let mut res = Interner {
             map: FxHashMap::default(),
-            strings: Vec::new(),
-            buf: String::with_capacity(cap),
-            full: Vec::new(),
+            values: Vec::new(),
+            top_free: u32::MAX,
         };
         for (i, p) in consts::PRELOAD.iter().enumerate() {
             let id = res.intern(p);
@@ -46,37 +49,107 @@ impl Interner {
         res
     }
 
+    fn preallocate(&mut self, name: &str) -> StringId {
+        let idx = self.values.len();
+        self.values.push(InternValue::Present {
+            string: name.to_string(),
+            count: usize::MAX,
+        });
+        self.map.insert(name.to_string(), idx as u32);
+        StringId(idx as u32)
+    }
+
     pub fn intern(&mut self, name: &str) -> StringId {
         if let Some(&id) = self.map.get(name) {
             return StringId(id);
         }
-        let name = unsafe { self.alloc(name) };
-        let id = self.map.len() as u32;
-        self.map.insert(name, id);
-        self.strings.push(name);
-
+        let id = self.allocate(name.to_string());
+        self.map.insert(name.to_string(), id);
         StringId(id)
     }
 
-    pub fn lookup(&self, id: StringId) -> &str {
-        self.strings[id.0 as usize]
+    fn allocate(&mut self, s: String) -> u32 {
+        if let Some(x) = self.remove_free() {
+            self.values[x as usize] = InternValue::Present {
+                string: s,
+                count: 1,
+            };
+            return x;
+        }
+        let res = self.values.len();
+        assert!(res < u32::MAX as usize, "too many interned strings");
+        self.values.push(InternValue::Present {
+            string: s,
+            count: 1,
+        });
+        return res as u32;
     }
 
-    unsafe fn alloc(&mut self, name: &str) -> &'static str {
-        let cap = self.buf.capacity();
-        if cap < self.buf.len() + name.len() {
-            let new_cap = (cap.max(name.len()) + 1).next_power_of_two();
-            let new_buf = String::with_capacity(new_cap);
-            let old_buf = mem::replace(&mut self.buf, new_buf);
-            self.full.push(old_buf);
+    pub fn increment(&mut self, id: StringId) {
+        match self.values[id.0 as usize] {
+            InternValue::Present {
+                string: _,
+                ref mut count,
+            } => {
+                if *count != usize::MAX {
+                    *count += 1;
+                }
+            }
+            InternValue::Free(_) => {}
         }
+    }
 
-        let interned = {
-            let start = self.buf.len();
-            self.buf.push_str(name);
-            &self.buf[start..]
+    pub fn free(&mut self, id: StringId) {
+        match self.values[id.0 as usize] {
+            InternValue::Present {
+                string: _,
+                ref mut count,
+            } => {
+                if *count == usize::MAX {
+                    return;
+                }
+                if *count > 1 {
+                    *count -= 1;
+                    return;
+                }
+            }
+            _ => return,
         };
+        self.insert_free(id.0);
+    }
 
-        &*(interned as *const str)
+    fn insert_free(&mut self, idx: u32) {
+        self.map.remove(match self.values[idx as usize] {
+            InternValue::Present {
+                ref string,
+                count: _,
+            } => string,
+            _ => unreachable!(),
+        });
+        self.values[idx as usize] = InternValue::Free(self.top_free);
+        self.top_free = idx;
+    }
+
+    fn remove_free(&mut self) -> Option<u32> {
+        if self.top_free == u32::MAX {
+            return None;
+        }
+        let val = match self.values[self.top_free as usize] {
+            InternValue::Free(x) => x,
+            _ => unreachable!(),
+        };
+        let res = self.top_free;
+        self.top_free = val;
+        return Some(res);
+    }
+
+    pub fn lookup(&self, id: StringId) -> Option<&str> {
+        match self.values.get(id.0 as usize)? {
+            InternValue::Present {
+                ref string,
+                count: _,
+            } => Some(string.as_str()),
+            _ => None,
+        }
     }
 }

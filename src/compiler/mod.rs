@@ -92,9 +92,6 @@ impl Compiler {
                             break;
                         }
                     }
-                    println!("{}", i);
-                    println!("{:?}", active);
-                    println!("{:?}", next);
                     assert!(
                         next != runtime::NUM_REGISTERS as u8,
                         "aliased register not present!"

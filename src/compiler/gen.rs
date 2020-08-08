@@ -4,19 +4,59 @@ use crate::{
     runtime::{
         self,
         bc::{self, Bytecode},
+        rc::RcVal,
         JSValue,
     },
     ssa::{BinOp, Constant, InstrVar, Instruction, Ssa, UnaryOp},
 };
-use std::collections::VecDeque;
+use fxhash::FxHashMap;
+use std::{cell::Cell, collections::VecDeque};
 
 impl Compiler {
     pub fn generate_bytecode(ssa: &Ssa, register_alloc: &Vec<u8>, interner: &Interner) -> Bytecode {
         let mut pending_targets = VecDeque::<(u32, usize)>::new();
         let mut ssa_to_bytecode = Vec::new();
 
+        let mut data_idx = FxHashMap::default();
+        let mut string_idx = FxHashMap::default();
+
+        let mut data = Vec::new();
+        let mut strings = Vec::new();
+
+        enum StringOrData {
+            String(u32),
+            Data(u32),
+        }
+
+        let mut load_constant = |constant| {
+            let js_value = match ssa.constants[constant as usize] {
+                Constant::String(x) => {
+                    let res = string_idx.entry(x).or_insert_with(|| {
+                        let idx = strings.len();
+                        let string_value = RcVal {
+                            count: Cell::new(usize::MAX),
+                            value: interner.lookup(x).unwrap().to_string(),
+                        };
+                        strings.push(string_value);
+                        idx as u32
+                    });
+                    return StringOrData::String(*res);
+                }
+                Constant::Float(x) => JSValue::from(x),
+                Constant::Integer(x) => JSValue::from(x),
+                Constant::Boolean(x) => JSValue::from(x),
+                Constant::Undefined => JSValue::undefined(),
+                Constant::Null => JSValue::null(),
+            };
+            let res = data_idx.entry(js_value).or_insert_with(|| {
+                let res = data.len();
+                data.push(js_value);
+                res as u32
+            });
+            StringOrData::Data(*res)
+        };
+
         let mut instructions = Vec::with_capacity(ssa.instructions.len());
-        let constants = Self::generate_constants(ssa, interner);
         ssa.instructions
             .iter()
             .enumerate()
@@ -72,7 +112,10 @@ impl Compiler {
                             BinOp::StrictEqual => bc::Op::SEQ,
                             BinOp::NotEqual => bc::Op::NEQ,
                             BinOp::StrictNotEqual => bc::Op::SNEQ,
-                            _ => todo!(),
+                            x => {
+                                println!("{:?}", x);
+                                todo!()
+                            }
                         };
                         let left = register_alloc[left.as_u32() as usize];
                         let right = register_alloc[right.as_u32() as usize];
@@ -100,10 +143,13 @@ impl Compiler {
                         }
                     }
                     Instruction::LoadConstant { constant } => {
-                        let const_id = constant.0;
+                        let (op, const_id) = match load_constant(constant.0) {
+                            StringOrData::Data(x) => (bc::Op::CLD, x),
+                            StringOrData::String(x) => (bc::Op::CLS, x),
+                        };
                         let const_idx = const_id.min(u16::max_value() as u32) as u16;
                         let dest = register_alloc[idx];
-                        instructions.push(bc::type_d(bc::Op::CLD, dest, const_idx));
+                        instructions.push(bc::type_d(op, dest, const_idx));
                         if const_idx == u16::max_value() {
                             instructions.push(const_id);
                         }
@@ -138,21 +184,8 @@ impl Compiler {
             });
         Bytecode {
             instructions: instructions.into_boxed_slice(),
-            data: constants.into_boxed_slice(),
+            data: data.into_boxed_slice(),
+            strings: strings.into_boxed_slice(),
         }
-    }
-
-    fn generate_constants(ssa: &Ssa, interner: &Interner) -> Vec<bc::DataValue> {
-        ssa.constants
-            .iter()
-            .map(|c| match *c {
-                Constant::Null => bc::DataValue::Direct(JSValue::null()),
-                Constant::Undefined => bc::DataValue::Direct(JSValue::undefined()),
-                Constant::Float(x) => bc::DataValue::Direct(JSValue::from(x)),
-                Constant::Integer(x) => bc::DataValue::Direct(JSValue::from(x)),
-                Constant::Boolean(x) => bc::DataValue::Direct(JSValue::from(x)),
-                Constant::String(x) => bc::DataValue::String(interner.lookup(x).to_string()),
-            })
-            .collect()
     }
 }

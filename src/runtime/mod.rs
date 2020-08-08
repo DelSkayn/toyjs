@@ -6,10 +6,10 @@ use bc::Bytecode;
 pub mod object;
 use object::Object;
 pub mod rc;
-use rc::ManualRc;
+use rc::{ManualRc, RcVal};
 pub mod string;
 use crate::util::{Offset, OffsetExt};
-use bc::{op, DataValue, Instruction};
+use bc::{op, Instruction};
 use std::{alloc, cell::UnsafeCell, f64, mem, num, ptr};
 use string::StringRc;
 
@@ -19,7 +19,8 @@ pub struct Runtime<'a> {
     stack: ptr::NonNull<JSValue>,
     size: Offset<JSValue>,
     code: &'a [Instruction],
-    data: &'a [DataValue],
+    data: &'a [JSValue],
+    strings: &'a [RcVal<String>],
     code_ptr: *const u8,
     frame_ptr: *mut JSValue,
     stack_ptr: *mut JSValue,
@@ -30,7 +31,9 @@ pub struct Runtime<'a> {
 impl<'a> Drop for Runtime<'a> {
     fn drop(&mut self) {
         let layout = self.size.to_layout();
-        unsafe { alloc::dealloc(self.stack.as_ptr().cast(), layout) }
+        if self.size > Offset::new(0) {
+            unsafe { alloc::dealloc(self.stack.as_ptr().cast(), layout) }
+        }
     }
 }
 
@@ -38,6 +41,7 @@ impl<'a> Runtime<'a> {
     pub unsafe fn new(code: &'a Bytecode) -> Self {
         debug_assert_eq!(mem::size_of::<u64>(), mem::size_of::<JSValue>());
         let data = &code.data;
+        let strings = &code.strings;
         let code = &code.instructions;
         let stack = ptr::NonNull::dangling();
         let regs = mem::zeroed();
@@ -45,6 +49,7 @@ impl<'a> Runtime<'a> {
             size: Offset::zero(),
             code,
             data,
+            strings,
             code_ptr: code.as_ptr() as *const _,
             frame_ptr: stack.as_ptr(),
             stack_ptr: stack.as_ptr(),
@@ -56,10 +61,15 @@ impl<'a> Runtime<'a> {
 
     #[cfg(debug_assertions)]
     fn check_bounds<T>(&self) {
+        let offset = self.code.as_ptr().cast::<u8>().offset_to(self.code_ptr);
+        let last_value =
+            Offset::last(self.code).cast::<u8>() - Offset::new(mem::size_of::<T>() - 1);
         assert!(
-            self.code.as_ptr().cast::<u8>().offset_to(self.code_ptr)
-                < Offset::<u8>::new(self.code.len() - mem::size_of::<T>())
-        )
+            offset <= last_value,
+            "offset: {:?}, last_value:{:?}",
+            offset,
+            last_value
+        );
     }
 
     #[inline(always)]
@@ -111,10 +121,16 @@ impl<'a> Runtime<'a> {
     }
 
     unsafe fn unwind(&mut self) {
-        self.stack_ptr = self.stack_ptr.sub(1);
-        while self.frame_ptr >= self.stack.as_ptr() {
-            (*self.frame_ptr).drop();
-            self.frame_ptr = self.frame_ptr.sub(1);
+        let mut ptr = self.stack_ptr.sub(1);
+        while ptr >= self.stack.as_ptr() {
+            if ptr == self.frame_ptr && ptr != self.stack.as_ptr() {
+                self.frame_ptr =
+                    Offset::new(self.frame_ptr.read().bits as usize).remove_from(self.frame_ptr);
+                ptr = ptr.sub(1);
+                continue;
+            }
+            ptr.read().drop();
+            ptr = ptr.sub(1);
         }
     }
 
@@ -145,7 +161,7 @@ impl<'a> Runtime<'a> {
         debug_assert!(size > 1);
         self.alloc(size);
         self.stack_ptr.write(JSValue {
-            bits: self.stack_ptr as u64 - self.frame_ptr as u64,
+            bits: self.frame_ptr.offset_to(self.stack_ptr).as_number() as u64,
         });
         self.frame_ptr = self.stack_ptr;
         self.stack_ptr = self.stack_ptr.add(1);
@@ -159,8 +175,8 @@ impl<'a> Runtime<'a> {
             self.stack_ptr.read().drop();
             self.stack_ptr = self.stack_ptr.sub(1);
         }
-        let val = self.stack_ptr.read().bits;
-        self.frame_ptr = (self.frame_ptr as u64 - val) as *mut _;
+        self.frame_ptr =
+            Offset::new(self.stack_ptr.read().bits as usize).remove_from(self.frame_ptr);
     }
 
     unsafe fn stack(&mut self, idx: usize) -> &mut JSValue {
@@ -170,6 +186,13 @@ impl<'a> Runtime<'a> {
 
     unsafe fn run_loop(&mut self) -> Option<JSValue> {
         loop {
+            /*println!(
+                "instruction: {:?}",
+                self.code
+                    .as_ptr()
+                    .offset_to(self.code_ptr.cast::<Instruction>())
+            );
+            */
             let op = self.read_u8();
             match op {
                 op::LGB => {
@@ -250,11 +273,17 @@ impl<'a> Runtime<'a> {
                     } else {
                         self.read_u32() as usize
                     };
-                    let data = match self.data[idx].clone() {
-                        DataValue::String(x) => JSValue::from(ManualRc::new(x)),
-                        DataValue::Direct(x) => x,
+                    (*self.get(dst)) = self.data[idx];
+                }
+                op::CLS => {
+                    let dst = self.read_u8();
+                    let val = self.read_u16();
+                    let idx = if val != 0xffff {
+                        val as usize
+                    } else {
+                        self.read_u32() as usize
                     };
-                    (*self.get(dst)) = data;
+                    (*self.get(dst)) = JSValue::from(ManualRc::from_raw_val(&self.strings[idx]));
                 }
                 op::MOV => {
                     let dst = self.read_u8();
