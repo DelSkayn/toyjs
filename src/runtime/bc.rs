@@ -199,13 +199,13 @@ op_code!(
         SNEQ(dst, op, op),
 
         /// Greater
-        G(dst, op, op),
-        /// Greater or equal
         GE(dst, op, op),
+        /// Greater or equal
+        GEQ(dst, op, op),
         /// Less
-        L(dst, op, op),
-        /// Less or equal
         LE(dst, op, op),
+        /// Less or equal
+        LEQ(dst, op, op),
 
         /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
         JCO(cond, neg),

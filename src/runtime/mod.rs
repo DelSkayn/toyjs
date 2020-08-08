@@ -479,6 +479,59 @@ impl<'a> Runtime<'a> {
                     let c = *self.get(op_c);
                     *self.get(op_a) = JSValue::from(!Self::eq(b, c))
                 }
+
+                op::LE => {
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    if Self::both_int(b, c) {
+                        *self.get(op_a) = JSValue::from(b.into_int() < c.into_int());
+                    } else {
+                        *self.get(op_a) = JSValue::from(Self::less(b, c));
+                    }
+                }
+
+                op::GE => {
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    if Self::both_int(b, c) {
+                        *self.get(op_a) = JSValue::from(b.into_int() > c.into_int());
+                    } else {
+                        *self.get(op_a) = JSValue::from(Self::less(c, b));
+                    }
+                }
+
+                op::LEQ => {
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    if Self::both_int(b, c) {
+                        *self.get(op_a) = JSValue::from(b.into_int() <= c.into_int());
+                    } else {
+                        *self.get(op_a) = JSValue::from(!Self::less(c, b));
+                    }
+                }
+
+                op::GEQ => {
+                    let op_a = self.read_u8();
+                    let op_b = self.read_u8();
+                    let op_c = self.read_u8();
+                    let b = *self.get(op_b);
+                    let c = *self.get(op_c);
+                    if Self::both_int(b, c) {
+                        *self.get(op_a) = JSValue::from(b.into_int() >= c.into_int());
+                    } else {
+                        *self.get(op_a) = JSValue::from(!Self::less(b, c));
+                    }
+                }
+
                 op::JCO => {
                     let op_cond = self.read_u8();
                     let cond = *self.get(op_cond);
@@ -655,6 +708,30 @@ impl<'a> Runtime<'a> {
             value::TAG_STRING => Self::as_float(b) == Self::as_float(c),
             _ => panic!(),
         }
+    }
+
+    unsafe fn less(a: JSValue, b: JSValue) -> bool {
+        if a.is_string() && b.is_string() {
+            let a_str = a.into_string();
+            let b_str = b.into_string();
+            if a_str.value().len() != b_str.value().len() {
+                if a_str.value().starts_with(b_str.value()) {
+                    return false;
+                }
+                if b_str.value().starts_with(a_str.value()) {
+                    return true;
+                }
+            }
+            for (a, b) in a_str.value().chars().zip(b_str.value().chars()) {
+                if a != b {
+                    return u32::from(a) < u32::from(b);
+                }
+            }
+            return false;
+        }
+        let a_num = Self::as_float(a);
+        let b_num = Self::as_float(b);
+        a_num < b_num
     }
 
     unsafe fn bin_addition(a: JSValue, b: JSValue) -> JSValue {
