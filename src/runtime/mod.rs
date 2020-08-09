@@ -107,10 +107,19 @@ impl<'a> Runtime<'a> {
     }
 
     #[inline(always)]
-    unsafe fn jump(&mut self, pc: u32) {
-        self.code_ptr = Offset::<Instruction>::new(pc as usize)
-            .apply_to_const(self.code.as_ptr())
-            .cast::<u8>();
+    unsafe fn read_i32(&mut self) -> i32 {
+        debug_assert_eq!(self.code_ptr.align_offset(mem::align_of::<i32>()), 0);
+        #[cfg(debug_assertions)]
+        self.check_bounds::<i32>();
+        let res = (self.code_ptr as *const i32).read();
+        self.code_ptr = self.code_ptr.add(mem::size_of::<i32>());
+        res
+    }
+
+    #[inline(always)]
+    unsafe fn jump(&mut self, pc: i32) {
+        let offset_bytes = (pc - 2) as isize * mem::size_of::<Instruction>() as isize;
+        self.code_ptr = self.code_ptr.offset(dbg!(offset_bytes));
     }
 
     #[inline(always)]
@@ -585,7 +594,7 @@ impl<'a> Runtime<'a> {
                     let cond = self.get(op_cond);
                     let neg = self.read_u16();
                     if Self::as_bool(cond) as u16 != neg {
-                        let tar = self.read_u32();
+                        let tar = self.read_i32();
                         self.jump(tar);
                     } else {
                         self.read_u32();
@@ -594,7 +603,7 @@ impl<'a> Runtime<'a> {
                 op::J => {
                     self.read_u8();
                     self.read_u16();
-                    let tar = self.read_u32();
+                    let tar = self.read_i32();
                     self.jump(tar);
                 }
                 op::RET => {

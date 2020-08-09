@@ -65,7 +65,8 @@ impl Compiler {
                 loop {
                     if let Some(x) = pending_targets.front() {
                         if x.0 <= idx as u32 {
-                            instructions[x.1] = ssa_to_bytecode[x.0 as usize];
+                            instructions[x.1] =
+                                ssa_to_bytecode[x.0 as usize] - ssa_to_bytecode[x.1 - 1 as usize];
                             pending_targets.pop_front();
                             continue;
                         }
@@ -164,7 +165,10 @@ impl Compiler {
                             pending_targets.push_back((target.as_u32(), instructions.len()));
                             instructions.push(0);
                         } else {
-                            instructions.push(ssa_to_bytecode[target.as_u32() as usize]);
+                            let target = (ssa_to_bytecode[idx] as i32)
+                                .checked_sub(ssa_to_bytecode[target.as_u32() as usize] as i32)
+                                .expect("jump_target to big!");
+                            instructions.push(target as u32);
                         }
                     }
                     Instruction::Alias { left: _, right: _ } => {}
@@ -180,7 +184,10 @@ impl Compiler {
                             pending_targets.push_back((target.as_u32(), instructions.len()));
                             instructions.push(0);
                         } else {
-                            instructions.push(ssa_to_bytecode[target.as_u32() as usize]);
+                            let target = (ssa_to_bytecode[target.as_u32() as usize] as i32)
+                                .checked_sub(ssa_to_bytecode[idx] as i32)
+                                .expect("jump_target to big!");
+                            instructions.push(target as u32);
                         }
                     }
                 }

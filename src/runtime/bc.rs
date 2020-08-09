@@ -44,7 +44,7 @@ impl fmt::Display for Bytecode {
                 }
                 op::J | op::JCO => {
                     cur += 1;
-                    write!(f, "  target:{}", self.instructions[cur])?;
+                    write!(f, "  offset:{}", self.instructions[cur] as i32)?;
                     cur += 1;
                 }
                 _ => cur += 1,
