@@ -127,6 +127,8 @@ impl Compiler {
                         let op = match kind {
                             UnaryOp::Postive => bc::Op::POS,
                             UnaryOp::Negative => bc::Op::NEG,
+                            UnaryOp::AddOne => bc::Op::ADD1,
+                            UnaryOp::SubtractOne => bc::Op::SUB1,
                             UnaryOp::ToBool => bc::Op::BOOL,
                             UnaryOp::IsNullish => bc::Op::ISNUL,
                             _ => todo!(),
