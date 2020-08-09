@@ -20,7 +20,9 @@ impl<'a> Parser<'a> {
             }
             t!("if") => self.parse_if()?,
             t!("while") => self.parse_while()?,
+            t!("do") => self.parse_do_while()?,
             t!("{") => return self.parse_block(),
+            t!("break") => self.parse_break()?,
             _ => return Ok(Some(self.parse_expr()?)),
         }
         Ok(None)
@@ -44,9 +46,9 @@ impl<'a> Parser<'a> {
     fn parse_if(&mut self) -> PResult<()> {
         expect!(self, "if");
         expect!(self, "(");
-        self.builder.clear_jump_context();
+        self.builder.clear_expr_jump_context();
         let expr = self.alter_state(|s| s._in = true, |this| this.parse_expr())?;
-        let jump_context = self.builder.take_jump_context();
+        let jump_context = self.builder.take_expr_jump_context();
         expect!(self, ")");
         let jump_cond = self.builder.push_instruction(Instruction::CondJump {
             negative: true,
@@ -60,7 +62,7 @@ impl<'a> Parser<'a> {
             });
             let jump_cond_target = self.builder.next_id();
             self.parse_stmt()?;
-            self.builder.patch_jump_target_next(jump);
+            self.builder.patch_jump_next(jump);
             jump_cond_target
         } else {
             self.builder.next_id()
@@ -68,23 +70,14 @@ impl<'a> Parser<'a> {
         self.builder
             .patch_jump_target(jump_cond, jump_cond_target.into());
         self.builder
-            .patch_context_jump_target(jump_cond_target, &jump_context, false);
+            .patch_context_jump(jump_cond_target, &jump_context, false);
         Ok(())
     }
 
-    fn parse_while(&mut self) -> PResult<()> {
-        expect!(self, "while");
-        expect!(self, "(");
-        let again = self.builder.next_id();
-        self.builder.clear_jump_context();
-        let expr = self.parse_expr()?;
-        let jump_context = self.builder.take_jump_context();
-        expect!(self, ")");
-        let cond_jump = self.builder.push_instruction(Instruction::CondJump {
-            negative: true,
-            condition: expr.into(),
-            target: InstrVar::null(),
-        });
+    fn parse_do_while(&mut self) -> PResult<()> {
+        expect!(self, "do");
+        let loop_target = self.builder.next_id();
+        self.builder.clear_stmt_jump_context();
         self.alter_state(
             |s| {
                 s._break = true;
@@ -92,12 +85,85 @@ impl<'a> Parser<'a> {
             },
             |this| this.parse_stmt(),
         )?;
+        let stmt_context = self.builder.take_stmt_jump_context();
+        expect!(self, "while");
+        expect!(self, "(");
+        self.builder.clear_expr_jump_context();
+        let cond = self.parse_expr()?;
+        let jump_context = self.builder.take_expr_jump_context();
+        expect!(self, ")");
+        self.builder.push_instruction(Instruction::CondJump {
+            target: loop_target.into(),
+            negative: false,
+            condition: cond.into(),
+        });
+        self.builder
+            .patch_context_jump(loop_target, &jump_context, true);
+        self.builder.patch_continue_jump(loop_target, &stmt_context);
+        self.builder
+            .patch_break_jump(self.builder.next_id(), &stmt_context);
+        Ok(())
+    }
+
+    fn parse_while(&mut self) -> PResult<()> {
+        expect!(self, "while");
+        expect!(self, "(");
+        let again = self.builder.next_id();
+        self.builder.clear_expr_jump_context();
+        let expr = self.parse_expr()?;
+        let jump_context = self.builder.take_expr_jump_context();
+        expect!(self, ")");
+        let cond_jump = self.builder.push_instruction(Instruction::CondJump {
+            negative: true,
+            condition: expr.into(),
+            target: InstrVar::null(),
+        });
+        self.builder.clear_stmt_jump_context();
+        self.alter_state(
+            |s| {
+                s._break = true;
+                s._continue = true;
+            },
+            |this| this.parse_stmt(),
+        )?;
+        let stmt_context = self.builder.take_stmt_jump_context();
         self.builder.push_instruction(Instruction::Jump {
             target: again.into(),
         });
-        self.builder.patch_jump_target_next(cond_jump);
+
         self.builder
-            .patch_context_jump_target(self.builder.next_id(), &jump_context, false);
+            .patch_continue_jump(again.into(), &stmt_context);
+        self.builder
+            .patch_break_jump(self.builder.next_id(), &stmt_context);
+        self.builder.patch_jump_next(cond_jump);
+        self.builder
+            .patch_context_jump(self.builder.next_id(), &jump_context, false);
+        Ok(())
+    }
+
+    fn parse_break(&mut self) -> PResult<()> {
+        if !self.state._break {
+            unexpected!(self => "break is not allowed in this context");
+        }
+        expect!(self, "break");
+        if let Some(t!("ident")) = self.peek_with_lt()?.map(|e| e.kind) {
+            to_do!(self)
+        }
+        eat!(self, ";");
+        self.builder.push_break();
+        Ok(())
+    }
+
+    fn parse_continue(&mut self) -> PResult<()> {
+        if !self.state._continue {
+            unexpected!(self => "is not allowed in this context");
+        }
+        expect!(self, "continue");
+        if let Some(t!("ident")) = self.peek_with_lt()?.map(|e| e.kind) {
+            to_do!(self)
+        }
+        eat!(self, ";");
+        self.builder.push_continue();
         Ok(())
     }
 }
