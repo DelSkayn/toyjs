@@ -87,7 +87,7 @@ impl<'a> Parser<'a> {
         let res = match self.peek.clone() {
             Some(x) => Some(x),
             None => {
-                self.peek = self.lexer.next().map_err(|error| ParseError {
+                self.peek = self.lexer.next_token().map_err(|error| ParseError {
                     kind: ParseErrorKind::InvalidToken { error },
                     origin: self.cur_span(),
                 })?;
@@ -102,11 +102,13 @@ impl<'a> Parser<'a> {
         if let Some(x) = self.peek.take() {
             return Ok(Some(x));
         }
-        let res = self.lexer.next().map_err(|error| ParseError {
+        let res = self.lexer.next_token().map_err(|error| ParseError {
             kind: ParseErrorKind::InvalidToken { error },
             origin: self.cur_span(),
         })?;
-        res.as_ref().map(|e| self.pref_span = e.span);
+        if let Some(x) = res.as_ref() {
+            self.pref_span = x.span;
+        }
         Ok(res)
     }
 
@@ -133,6 +135,8 @@ impl<'a> Parser<'a> {
         Ok(self.peek()?.map(|t| t.kind))
     }
 
+    // Should this be renamed, next is nice and short and it is used a lot
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> PResult<Option<Token>> {
         while let Some(x) = self.next_with_lt()? {
             if x.kind != t!("\n") {
@@ -156,7 +160,7 @@ impl<'a> Parser<'a> {
         if let Ok(Some(x)) = self.peek() {
             return x.span;
         }
-        return self.pref_span;
+        self.pref_span
     }
 
     /// Parse a js script.
@@ -165,10 +169,10 @@ impl<'a> Parser<'a> {
         trace_log!("script");
         let mut last = None;
         while self.peek()?.is_some() {
-            last = dbg!(self.parse_stmt()?);
+            last = self.parse_stmt()?;
             eat!(self, ";");
         }
-        let value = last.map(|e| e.into()).unwrap_or(InstrVar::null());
+        let value = last.map(|e| e.into()).unwrap_or_else(InstrVar::null);
         self.builder.push_instruction(Instruction::Return { value });
         Ok(())
     }

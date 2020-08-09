@@ -144,7 +144,7 @@ impl<'a> Lexer<'a> {
             }
             _ => {}
         }
-        return false;
+        false
     }
 
     fn error(&mut self, error: LexerErrorKind) -> LexerError {
@@ -186,40 +186,30 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_line_comment(&mut self) -> Result<()> {
-        loop {
-            let next = if let Some(x) = self.next_byte() {
-                x
-            } else {
-                break;
-            };
-            if self.eat_line_terminator(next) {
+        while let Some(x) = self.next_byte() {
+            if self.eat_line_terminator(x) {
                 break;
             }
-            self.next_byte();
         }
         Ok(())
     }
 
     fn lex_multi_line_comment(&mut self) -> Result<()> {
         loop {
-            match self
+            let next_byte = self
                 .next_byte()
-                .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?
-            {
-                b'*' => match self.peek_byte() {
-                    Some(b'/') => {
-                        self.next_byte();
-                        return Ok(());
-                    }
-                    _ => {}
-                },
-                _ => {}
+                .ok_or_else(|| self.error(LexerErrorKind::UnClosedMultiLineComment))?;
+            if b'*' == next_byte {
+                if let Some(b'/') = self.peek_byte() {
+                    self.next_byte();
+                    return Ok(());
+                }
             }
         }
     }
 
     /// Returns the next token from the source if there is one.
-    pub fn next(&mut self) -> Result<Option<Token>> {
+    pub fn next_token(&mut self) -> Result<Option<Token>> {
         trace!("lex: next");
         let next = self.next_skip_whitespace()?;
         if next.is_none() {
@@ -300,11 +290,11 @@ impl<'a> Lexer<'a> {
                 }
                 Some(b'/') => {
                     self.lex_line_comment()?;
-                    self.next()
+                    self.next_token()
                 }
                 Some(b'*') => {
                     self.lex_multi_line_comment()?;
-                    self.next()
+                    self.next_token()
                 }
                 _ => self.token(t!("/")),
             },
@@ -430,7 +420,7 @@ impl<'a> Lexer<'a> {
                 _ => self.token(TokenKind::Dot),
             },
             x if self.eat_line_terminator(x) => self.token(t!("\n")),
-            b'`' => return Err(self.error(LexerErrorKind::NotYetSupported)),
+            b'`' => Err(self.error(LexerErrorKind::NotYetSupported)),
             b'"' => self.lex_string(b'"'),
             b'\'' => self.lex_string(b'\''),
             x if Self::is_digit(x) => self.lex_number(x),

@@ -3,6 +3,7 @@
 use std::{
     alloc::Layout,
     cmp::{Ord, Ordering, PartialEq, PartialOrd},
+    hash::{Hash, Hasher},
     marker, mem, ops,
 };
 
@@ -53,12 +54,18 @@ impl<T> OffsetExt for *const T {
     }
 }
 
-#[derive(Clone, Copy, Debug, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub struct Offset<T> {
     offset: usize,
     _marker: marker::PhantomData<T>,
 }
 impl<T> Eq for Offset<T> {}
+
+impl<T> Hash for Offset<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.offset.hash(state)
+    }
+}
 
 impl<T> PartialEq for Offset<T> {
     #[inline(always)]
@@ -162,19 +169,19 @@ impl<T> Offset<T> {
     }
 
     /// Returns a layout from the offset aligned by its type.
-    pub fn to_layout(self) -> Layout {
+    pub fn into_layout(self) -> Layout {
         Layout::from_size_align(self.offset * mem::size_of::<T>(), mem::align_of::<T>()).unwrap()
     }
 
     /// The returns the number of values that fit in the offset.
     #[inline(always)]
-    pub const fn as_number(self) -> usize {
+    pub const fn into_number(self) -> usize {
         self.offset
     }
 
     /// Returns the number of bytes that fit in the offset.
     #[inline(always)]
-    pub const fn as_size_bytes(self) -> usize {
+    pub const fn into_size_bytes(self) -> usize {
         self.offset * mem::size_of::<T>()
     }
 }

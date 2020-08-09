@@ -118,16 +118,16 @@ impl Compiler {
                     continue;
                 }
             }
-            for j in 0..runtime::NUM_REGISTERS {
-                if active[j] == u32::max_value() {
+            for (j, a) in active.iter_mut().enumerate() {
+                if *a == u32::max_value() {
                     next = j as u8;
                     free += 1;
                     break;
                 }
-                if live.vars[active[j] as usize].live <= i as u32 {
+                if live.vars[*a as usize].live <= i as u32 {
                     next = j as u8;
                     free += 1;
-                    active[j] = u32::max_value();
+                    *a = u32::max_value();
                     break;
                 }
             }

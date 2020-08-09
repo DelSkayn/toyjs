@@ -9,7 +9,7 @@ fn run_file(path: &Path, interner: &mut Interner) -> bool {
     let mut l = lexer::Lexer::new(buffer.as_bytes(), interner);
     let mut tokens = Vec::new();
     loop {
-        match l.next() {
+        match l.next_token() {
             Ok(Some(e)) => tokens.push(e),
             Err(e) => {
                 println!("error in file: {}\n{:?}", path.display(), e);

@@ -8,7 +8,7 @@ impl<'a> Lexer<'a> {
         if c.is_xid_start() || c == '$' || c == '_' {
             return true;
         }
-        return false;
+        false
     }
 
     // TODO handle unicode escape codes
@@ -16,10 +16,10 @@ impl<'a> Lexer<'a> {
         if c.is_xid_continue() || c == '$' || c == chars::ZWNJ || c == chars::ZWJ {
             return true;
         }
-        return false;
+        false
     }
 
-    fn to_keyword(x: &str) -> Option<Kw> {
+    fn is_keyword(x: &str) -> Option<Kw> {
         match x {
             "await" => Some(Kw::Await),
             "break" => Some(Kw::Break),
@@ -79,10 +79,10 @@ impl<'a> Lexer<'a> {
             self.buffer.push(x);
             self.next_char().ok();
         }
-        if let Some(x) = Self::to_keyword(&self.buffer) {
+        if let Some(x) = Self::is_keyword(&self.buffer) {
             return self.token(TokenKind::Kw(x));
         }
         let s = self.interner.intern(&self.buffer);
-        return self.token(TokenKind::Ident(s));
+        self.token(TokenKind::Ident(s))
     }
 }

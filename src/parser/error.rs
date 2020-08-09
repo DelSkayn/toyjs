@@ -75,22 +75,26 @@ impl<'a> fmt::Display for Sourced<'a, ParseError> {
                 if let Some(x) = found {
                     write!(f, ": found '{}'", x.kind)?;
                 }
-                if expected.len() > 1 {
-                    write!(f, " expected one of: [")?;
-                    let mut first = true;
-                    for e in expected.iter() {
-                        if !first {
-                            write!(f, ",")?;
-                        } else {
-                            first = false;
-                        }
-                        write!(f, "{}", e)?;
+                match expected.len() {
+                    0 => {}
+                    1 => {
+                        write!(f, " expected '{}'", expected[0])?;
                     }
-                    write!(f, "]")?;
-                } else if expected.len() == 1 {
-                    write!(f, " expected '{}'", expected[0])?;
+                    _ => {
+                        write!(f, " expected one of: [")?;
+                        let mut first = true;
+                        for e in expected.iter() {
+                            if !first {
+                                write!(f, ",")?;
+                            } else {
+                                first = false;
+                            }
+                            write!(f, "{}", e)?;
+                        }
+                        write!(f, "]")?;
+                    }
                 }
-                writeln!(f, "")?;
+                writeln!(f)?;
                 self.source.fmt_span(f, self.value.origin)?;
                 self.source.fmt_span_src(f, self.value.origin, reason)
             }

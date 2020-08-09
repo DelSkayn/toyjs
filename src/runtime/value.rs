@@ -15,6 +15,8 @@ pub const TAG_MASK: u64 = 0xffff_0000 << 32;
 
 const PTR_MASK: u64 = 0x0000_ffff_ffff_fff8;
 
+pub struct JSValueConst(pub JSValue);
+
 /// A NaN-tagged javascript value.
 #[derive(Copy, Clone)]
 pub union JSValue {

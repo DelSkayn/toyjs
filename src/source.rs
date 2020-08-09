@@ -61,8 +61,7 @@ impl Source {
             .lines
             .iter()
             .enumerate()
-            .filter(|(_, line)| line.hi >= span.lo)
-            .next()?;
+            .find(|(_, line)| line.hi >= span.lo)?;
         let start = Pos {
             line: line as u32 + 1,
             column: span.lo - line_span.lo,
@@ -71,8 +70,7 @@ impl Source {
         let (end_line, line_span) = self.lines[line..]
             .iter()
             .enumerate()
-            .filter(|(_, line)| line.hi >= span.hi)
-            .next()?;
+            .find(|(_, line)| line.hi >= span.hi)?;
 
         let end = Pos {
             line: end_line as u32 + 1,
@@ -95,7 +93,7 @@ impl Source {
     }
 
     pub fn path(&self) -> Option<&Path> {
-        self.path.as_ref().map(|x| x.as_path())
+        self.path.as_deref()
     }
 
     pub fn wrap<T>(&self, value: T) -> Sourced<T> {
@@ -139,7 +137,7 @@ impl Source {
             if let Some(m) = message {
                 writeln!(f, " {}", m)?;
             } else {
-                writeln!(f, "")?;
+                writeln!(f)?;
             }
             writeln!(f, "\t | ")?;
         }
