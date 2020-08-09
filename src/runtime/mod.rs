@@ -34,6 +34,9 @@ impl<'a> Drop for Runtime<'a> {
         if self.size > Offset::new(0) {
             unsafe { alloc::dealloc(self.stack.as_ptr().cast(), layout) }
         }
+        for x in self.regs.iter() {
+            unsafe { x.drop() }
+        }
     }
 }
 
@@ -109,9 +112,17 @@ impl<'a> Runtime<'a> {
     }
 
     #[inline(always)]
-    unsafe fn get(&mut self, idx: u8) -> &mut JSValue {
+    unsafe fn get(&mut self, idx: u8) -> JSValue {
         debug_assert!(idx < NUM_REGISTERS as u8);
-        self.regs.get_unchecked_mut(idx as usize)
+        *self.regs.get_unchecked_mut(idx as usize)
+    }
+
+    #[inline(always)]
+    unsafe fn set(&mut self, idx: u8, value: JSValue) {
+        debug_assert!(idx < NUM_REGISTERS as u8);
+        let res = self.regs.get_unchecked_mut(idx as usize);
+        res.drop();
+        *res = value;
     }
 
     pub unsafe fn run_unsafe(&mut self) -> Option<JSValue> {
@@ -198,7 +209,7 @@ impl<'a> Runtime<'a> {
                 op::LGB => {
                     let op_a = self.read_u8();
                     self.read_u16();
-                    *self.get(op_a) = JSValue::from(self.global);
+                    self.set(op_a, JSValue::from(self.global));
                 }
 
                 op::LD => {
@@ -209,7 +220,8 @@ impl<'a> Runtime<'a> {
                     } else {
                         op_d as usize
                     };
-                    *self.get(op_a) = *self.stack(idx);
+                    let val = *self.stack(idx);
+                    self.set(op_a, val);
                 }
                 op::ST => {
                     let op_a = self.read_u8();
@@ -219,7 +231,7 @@ impl<'a> Runtime<'a> {
                     } else {
                         op_d as usize
                     };
-                    *self.stack(idx) = *self.get(op_a);
+                    *self.stack(idx) = self.get(op_a);
                 }
                 op::PUSH => {
                     self.read_u8();
@@ -240,12 +252,12 @@ impl<'a> Runtime<'a> {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let key = *self.get(op_b);
-                    let val = *self.get(op_c);
+                    let key = self.get(op_b);
+                    let val = self.get(op_c);
                     let obj = if op_a == 0xff {
                         JSValue::from(self.global)
                     } else {
-                        *self.get(op_a)
+                        self.get(op_a)
                     };
                     let key = Self::as_string(key);
                     (*obj.into_object().value().get())
@@ -259,11 +271,11 @@ impl<'a> Runtime<'a> {
                     let obj = if op_b == 0xff {
                         JSValue::from(self.global)
                     } else {
-                        *self.get(op_b)
+                        self.get(op_b)
                     };
-                    let key = *self.get(op_c);
+                    let key = self.get(op_c);
                     let val = (*obj.into_object().value().get()).get(&Self::as_string(key));
-                    *self.get(op_a) = val;
+                    self.set(op_a, val);
                 }
                 op::CLD => {
                     let dst = self.read_u8();
@@ -273,7 +285,7 @@ impl<'a> Runtime<'a> {
                     } else {
                         self.read_u32() as usize
                     };
-                    (*self.get(dst)) = self.data[idx];
+                    self.set(dst, self.data[idx]);
                 }
                 op::CLS => {
                     let dst = self.read_u8();
@@ -283,19 +295,24 @@ impl<'a> Runtime<'a> {
                     } else {
                         self.read_u32() as usize
                     };
-                    (*self.get(dst)) = JSValue::from(ManualRc::from_raw_val(&self.strings[idx]));
+                    self.set(
+                        dst,
+                        JSValue::from(ManualRc::from_raw_val(&self.strings[idx])),
+                    );
                 }
                 op::MOV => {
                     let dst = self.read_u8();
                     let src = self.read_u16();
-                    *self.get(dst) = *self.get(src as u8);
+                    let val = self.get(src as u8);
+                    val.incr();
+                    self.set(dst, val)
                 }
                 op::ADD => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     if Self::both_int(val1, val2) {
                         let val1 = val1.into_int() as i64;
                         let val2 = val2.into_int() as i64;
@@ -305,18 +322,18 @@ impl<'a> Runtime<'a> {
                         } else {
                             JSValue::from(res as i32)
                         };
-                        *self.get(op_a) = res;
+                        self.set(op_a, res);
                     } else {
                         let res = Self::bin_addition(val1, val2);
-                        *self.get(op_a) = res;
+                        self.set(op_a, res);
                     }
                 }
                 op::SUB => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     if Self::both_int(val1, val2) {
                         let val1 = val1.into_int() as i64;
                         let val2 = val2.into_int() as i64;
@@ -326,170 +343,170 @@ impl<'a> Runtime<'a> {
                         } else {
                             JSValue::from(res as i32)
                         };
-                        *self.get(op_a) = res;
+                        self.set(op_a, res);
                     } else {
                         let res = Self::bin_arithmatic(val1, val2, op::SUB);
-                        *self.get(op_a) = res;
+                        self.set(op_a, res);
                     }
                 }
                 op::MUL => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::MUL);
-                    *self.get(op_a) = res;
+                    self.set(op_a, res);
                 }
                 op::DIV => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::DIV);
-                    *self.get(op_a) = res;
+                    self.set(op_a, res);
                 }
                 op::POW => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::POW);
-                    *self.get(op_a) = res;
+                    self.set(op_a, res);
                 }
                 op::MOD => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let val1 = *self.get(op_b);
-                    let val2 = *self.get(op_c);
+                    let val1 = self.get(op_b);
+                    let val2 = self.get(op_c);
                     let res = Self::bin_arithmatic(val1, val2, op::MOD);
-                    *self.get(op_a) = res;
+                    self.set(op_a, res);
                 }
                 op::BAND => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b));
-                    let c = Self::as_i32(*self.get(op_c));
-                    *self.get(op_a) = JSValue::from(b & c);
+                    let b = Self::as_i32(self.get(op_b));
+                    let c = Self::as_i32(self.get(op_c));
+                    self.set(op_a, JSValue::from(b & c));
                 }
                 op::BOR => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b));
-                    let c = Self::as_i32(*self.get(op_c));
-                    *self.get(op_a) = JSValue::from(b | c);
+                    let b = Self::as_i32(self.get(op_b));
+                    let c = Self::as_i32(self.get(op_c));
+                    self.set(op_a, JSValue::from(b | c));
                 }
                 op::BXOR => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b));
-                    let c = Self::as_i32(*self.get(op_c));
-                    *self.get(op_a) = JSValue::from(b ^ c);
+                    let b = Self::as_i32(self.get(op_b));
+                    let c = Self::as_i32(self.get(op_c));
+                    self.set(op_a, JSValue::from(b ^ c));
                 }
                 op::POS => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
-                    let val = *self.get(op_d as u8);
+                    let val = self.get(op_d as u8);
                     let val = Self::float_to_val(Self::as_float(val));
-                    *self.get(op_a) = val;
+                    self.set(op_a, val);
                 }
                 op::NEG => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
-                    let val = *self.get(op_d as u8);
+                    let val = self.get(op_d as u8);
                     let val = Self::float_to_val(-Self::as_float(val));
-                    *self.get(op_a) = val;
+                    self.set(op_a, val);
                 }
                 op::BOOL => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
-                    let val = *self.get(op_d as u8);
+                    let val = self.get(op_d as u8);
                     let val = Self::as_bool(val);
-                    *self.get(op_a) = JSValue::from(val);
+                    self.set(op_a, JSValue::from(val));
                 }
                 op::ISNUL => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
-                    let val = *self.get(op_d as u8);
+                    let val = self.get(op_d as u8);
                     let val = val.is_null() || val.is_undefined();
-                    *self.get(op_a) = JSValue::from(val);
+                    self.set(op_a, JSValue::from(val));
                 }
                 op::SHL => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b));
-                    let c = Self::as_u32(*self.get(op_c));
+                    let b = Self::as_i32(self.get(op_b));
+                    let c = Self::as_u32(self.get(op_c));
                     let c = (c & 0x1f) as i32;
-                    *self.get(op_a) = JSValue::from(b << c);
+                    self.set(op_a, JSValue::from(b << c));
                 }
                 op::SHR => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b));
-                    let c = Self::as_u32(*self.get(op_c));
+                    let b = Self::as_i32(self.get(op_b));
+                    let c = Self::as_u32(self.get(op_c));
                     let c = (c & 0x1f) as i32;
-                    *self.get(op_a) = JSValue::from((b >> c) as i32);
+                    self.set(op_a, JSValue::from((b >> c) as i32));
                 }
                 op::USR => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = Self::as_i32(*self.get(op_b)) as u32;
-                    let mut c = Self::as_u32(*self.get(op_c));
+                    let b = Self::as_i32(self.get(op_b)) as u32;
+                    let mut c = Self::as_u32(self.get(op_c));
                     c &= 0x1f;
-                    *self.get(op_a) = JSValue::from((b >> c) as i32);
+                    self.set(op_a, JSValue::from((b >> c) as i32));
                 }
                 op::SEQ => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
-                    *self.get(op_a) = JSValue::from(Self::strict_eq(b, c))
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
+                    self.set(op_a, JSValue::from(Self::strict_eq(b, c)));
                 }
                 op::EQ => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
-                    *self.get(op_a) = JSValue::from(Self::eq(b, c))
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
+                    self.set(op_a, JSValue::from(Self::eq(b, c)));
                 }
                 op::SNEQ => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
-                    *self.get(op_a) = JSValue::from(!Self::strict_eq(b, c))
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
+                    self.set(op_a, JSValue::from(!Self::strict_eq(b, c)));
                 }
                 op::NEQ => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
-                    *self.get(op_a) = JSValue::from(!Self::eq(b, c))
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
+                    self.set(op_a, JSValue::from(!Self::eq(b, c)));
                 }
 
                 op::LE => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
                     if Self::both_int(b, c) {
-                        *self.get(op_a) = JSValue::from(b.into_int() < c.into_int());
+                        self.set(op_a, JSValue::from(b.into_int() < c.into_int()));
                     } else {
-                        *self.get(op_a) = JSValue::from(Self::less(b, c));
+                        self.set(op_a, JSValue::from(Self::less(b, c)));
                     }
                 }
 
@@ -497,12 +514,12 @@ impl<'a> Runtime<'a> {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
                     if Self::both_int(b, c) {
-                        *self.get(op_a) = JSValue::from(b.into_int() > c.into_int());
+                        self.set(op_a, JSValue::from(b.into_int() > c.into_int()));
                     } else {
-                        *self.get(op_a) = JSValue::from(Self::less(c, b));
+                        self.set(op_a, JSValue::from(Self::less(c, b)));
                     }
                 }
 
@@ -510,12 +527,12 @@ impl<'a> Runtime<'a> {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
                     if Self::both_int(b, c) {
-                        *self.get(op_a) = JSValue::from(b.into_int() <= c.into_int());
+                        self.set(op_a, JSValue::from(b.into_int() <= c.into_int()));
                     } else {
-                        *self.get(op_a) = JSValue::from(!Self::less(c, b));
+                        self.set(op_a, JSValue::from(!Self::less(c, b)));
                     }
                 }
 
@@ -523,18 +540,18 @@ impl<'a> Runtime<'a> {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
-                    let b = *self.get(op_b);
-                    let c = *self.get(op_c);
+                    let b = self.get(op_b);
+                    let c = self.get(op_c);
                     if Self::both_int(b, c) {
-                        *self.get(op_a) = JSValue::from(b.into_int() >= c.into_int());
+                        self.set(op_a, JSValue::from(b.into_int() >= c.into_int()));
                     } else {
-                        *self.get(op_a) = JSValue::from(!Self::less(b, c));
+                        self.set(op_a, JSValue::from(!Self::less(b, c)));
                     }
                 }
 
                 op::JCO => {
                     let op_cond = self.read_u8();
-                    let cond = *self.get(op_cond);
+                    let cond = self.get(op_cond);
                     let neg = self.read_u16();
                     if Self::as_bool(cond) as u16 != neg {
                         let tar = self.read_u32();
@@ -551,7 +568,7 @@ impl<'a> Runtime<'a> {
                 }
                 op::RET => {
                     let val = self.read_u8();
-                    let val = *self.get(val);
+                    let val = self.get(val);
                     val.incr();
                     self.read_u16();
                     return Some(val);

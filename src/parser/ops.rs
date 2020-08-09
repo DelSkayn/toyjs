@@ -233,7 +233,7 @@ impl<'a> Parser<'a> {
         let kind = match self.next()?.unwrap().kind {
             t!("?") => {
                 let condition = lhs.to_value(self).into();
-                let jump_targets = self.builder.take_jump_context();
+                let jump_targets = self.builder.take_expr_jump_context();
                 let cond_jump_instr = self.builder.push_instruction(Instruction::CondJump {
                     negative: true,
                     condition,
@@ -252,9 +252,9 @@ impl<'a> Parser<'a> {
 
                 expect!(self, ":");
 
-                self.builder.patch_jump_target_next(cond_jump_instr);
+                self.builder.patch_jump_next(cond_jump_instr);
                 self.builder
-                    .patch_context_jump_target(cond_jump_instr, &jump_targets, true);
+                    .patch_context_jump(cond_jump_instr, &jump_targets, true);
 
                 let next_id = self.builder.next_id();
                 let mut rhs = self.parse_ops_rec(r_bp)?.to_value(self);
@@ -263,7 +263,7 @@ impl<'a> Parser<'a> {
                         operand: rhs.into(),
                     });
                 }
-                self.builder.patch_jump_target_next(jump_instr);
+                self.builder.patch_jump_next(jump_instr);
                 let res = self.builder.push_instruction(Instruction::Alias {
                     left: mhs.into(),
                     right: rhs.into(),
@@ -297,7 +297,7 @@ impl<'a> Parser<'a> {
             }
             t!("??") => {
                 let operand = lhs.to_value(self).into();
-                self.builder.clear_jump_context();
+                self.builder.clear_expr_jump_context();
                 let cond = self.builder.push_instruction(Instruction::Unary {
                     kind: UnaryOp::IsNullish,
                     operand,

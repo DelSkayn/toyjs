@@ -2,9 +2,14 @@ use crate::ssa::{Constant, ConstantId, InstrVar, Instruction, Ssa, SsaVar};
 use fxhash::FxHashMap;
 use std::mem;
 
-pub struct JumpContext {
+pub struct ExprJumpContext {
     true_list: Vec<SsaVar>,
     false_list: Vec<SsaVar>,
+}
+
+pub struct StmtJumpContext {
+    breaks: Vec<SsaVar>,
+    continues: Vec<SsaVar>,
 }
 
 pub struct SsaBuilder {
@@ -13,6 +18,8 @@ pub struct SsaBuilder {
     constant_location: FxHashMap<Constant, usize>,
     true_list: Vec<SsaVar>,
     false_list: Vec<SsaVar>,
+    breaks: Vec<SsaVar>,
+    continues: Vec<SsaVar>,
 }
 
 impl SsaBuilder {
@@ -23,6 +30,8 @@ impl SsaBuilder {
             constant_location: FxHashMap::default(),
             true_list: Vec::new(),
             false_list: Vec::new(),
+            breaks: Vec::new(),
+            continues: Vec::new(),
         }
     }
 
@@ -44,6 +53,22 @@ impl SsaBuilder {
         SsaVar(id)
     }
 
+    pub fn push_break(&mut self) -> SsaVar {
+        let id = self.push_instruction(Instruction::Jump {
+            target: InstrVar::null(),
+        });
+        self.breaks.push(id);
+        id
+    }
+
+    pub fn push_continue(&mut self) -> SsaVar {
+        let id = self.push_instruction(Instruction::Jump {
+            target: InstrVar::null(),
+        });
+        self.continues.push(id);
+        id
+    }
+
     pub fn patch_jump_target(&mut self, instr: SsaVar, target: InstrVar) {
         let t = target;
         match self.instructions[instr.0 as usize] {
@@ -57,7 +82,7 @@ impl SsaBuilder {
         }
     }
 
-    pub fn patch_jump_target_next(&mut self, instr: SsaVar) {
+    pub fn patch_jump_next(&mut self, instr: SsaVar) {
         self.patch_jump_target(instr, self.next_id().into())
     }
 
@@ -65,16 +90,28 @@ impl SsaBuilder {
         self.load_constant_inner(t.into())
     }
 
-    pub fn take_jump_context(&mut self) -> JumpContext {
-        JumpContext {
+    pub fn take_expr_jump_context(&mut self) -> ExprJumpContext {
+        ExprJumpContext {
             true_list: mem::replace(&mut self.true_list, Vec::new()),
             false_list: mem::replace(&mut self.false_list, Vec::new()),
         }
     }
 
-    pub fn clear_jump_context(&mut self) {
+    pub fn take_stmt_jump_context(&mut self) -> StmtJumpContext {
+        StmtJumpContext {
+            breaks: mem::replace(&mut self.breaks, Vec::new()),
+            continues: mem::replace(&mut self.continues, Vec::new()),
+        }
+    }
+
+    pub fn clear_expr_jump_context(&mut self) {
         self.true_list.clear();
         self.false_list.clear();
+    }
+
+    pub fn clear_stmt_jump_context(&mut self) {
+        self.breaks.clear();
+        self.continues.clear();
     }
 
     pub fn push_context_jump(&mut self, cond: SsaVar, truthy: bool) -> SsaVar {
@@ -91,7 +128,7 @@ impl SsaBuilder {
         instr
     }
 
-    pub fn patch_context_jump_target(&mut self, instr: SsaVar, ctx: &JumpContext, thruthy: bool) {
+    pub fn patch_context_jump(&mut self, instr: SsaVar, ctx: &ExprJumpContext, thruthy: bool) {
         let targets = if thruthy {
             &ctx.true_list
         } else {
@@ -99,6 +136,18 @@ impl SsaBuilder {
         };
         for x in targets.iter().copied() {
             self.patch_jump_target(x, instr.into());
+        }
+    }
+
+    pub fn patch_break_jump(&mut self, target: SsaVar, ctx: &StmtJumpContext) {
+        for b in ctx.breaks.iter() {
+            self.patch_jump_target(*b, target.into())
+        }
+    }
+
+    pub fn patch_continue_jump(&mut self, target: SsaVar, ctx: &StmtJumpContext) {
+        for b in ctx.continues.iter() {
+            self.patch_jump_target(*b, target.into())
         }
     }
 
