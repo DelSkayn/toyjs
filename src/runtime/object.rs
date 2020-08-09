@@ -42,17 +42,19 @@ impl Object {
         }
     }
 
-    pub fn get(&self, name: &str) -> JSValue {
+    pub unsafe fn get(&self, name: &str) -> JSValue {
         if let Some(x) = self.map.get(name) {
+            x.incr();
             return *x;
         }
         JSValue::undefined()
     }
 
-    pub fn set(&mut self, name: String, value: JSValue) -> Option<JSValue> {
+    pub unsafe fn set(&mut self, name: String, value: JSValue) -> Option<JSValue> {
         if value.is_undefined() {
             return self.map.remove(&name);
         }
+        value.incr();
         self.map.insert(name, value)
     }
 }
