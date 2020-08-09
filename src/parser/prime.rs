@@ -40,6 +40,12 @@ impl<'a> Parser<'a> {
             t!("literal") => self.parse_literal()?,
             t!("[") => self.parse_array_expr()?,
             t!("{") => self.parse_object_expr()?,
+            t!("(") => {
+                self.next()?;
+                let res = self.parse_expr()?;
+                expect!(self, ")");
+                return Ok(PrimeExpr::Variable(res));
+            }
             t!("class") => self.parse_class(false)?,
             _ => to_do!(self),
         };
