@@ -22,6 +22,12 @@ pub struct SsaBuilder {
     continues: Vec<SsaVar>,
 }
 
+impl Default for SsaBuilder {
+    fn default() -> Self {
+        SsaBuilder::new()
+    }
+}
+
 impl SsaBuilder {
     pub fn new() -> Self {
         SsaBuilder {
@@ -164,10 +170,9 @@ impl SsaBuilder {
             self.constants.len() < (u32::max_value() - 2) as usize,
             "to many constants!"
         );
-        let res = self.push_instruction(Instruction::LoadConstant {
+        self.push_instruction(Instruction::LoadConstant {
             constant: ConstantId(const_id as u32),
-        });
-        res
+        })
     }
 
     pub fn build(self) -> Ssa {

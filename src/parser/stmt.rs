@@ -9,7 +9,6 @@ use crate::{
 impl<'a> Parser<'a> {
     pub fn parse_stmt(&mut self) -> PResult<Option<SsaVar>> {
         trace_log!("statement");
-        println!("{:?}", t!("{"));
         let peek = match self.peek()? {
             Some(x) => x,
             None => return Ok(None),
@@ -31,7 +30,6 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self) -> PResult<Option<SsaVar>> {
         trace_log!("block");
         expect!(self, "{");
-        println!("block");
         let mut last = None;
         while !eat!(self, "}") {
             let res = self.parse_stmt()?;
@@ -131,8 +129,7 @@ impl<'a> Parser<'a> {
             target: again.into(),
         });
 
-        self.builder
-            .patch_continue_jump(again.into(), &stmt_context);
+        self.builder.patch_continue_jump(again, &stmt_context);
         self.builder
             .patch_break_jump(self.builder.next_id(), &stmt_context);
         self.builder.patch_jump_next(cond_jump);

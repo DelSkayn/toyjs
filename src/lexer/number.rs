@@ -23,7 +23,7 @@ impl<'a> Lexer<'a> {
         if c >= b'A' && c < b'A' + radix - 10 {
             return true;
         }
-        return false;
+        false
     }
 
     pub fn from_digit(c: u8) -> u8 {
@@ -67,7 +67,7 @@ impl<'a> Lexer<'a> {
         if start == b'.' {
             return self.lex_number_mantissa(str_start);
         }
-        while self.peek_byte().map(|x| Self::is_digit(x)).unwrap_or(false) {
+        while self.peek_byte().map(Self::is_digit).unwrap_or(false) {
             self.next_byte();
         }
         let mut big = false;
@@ -97,6 +97,7 @@ impl<'a> Lexer<'a> {
 
     fn lex_number_string(&mut self, str_start: usize) -> Result<Option<Token>> {
         let num: f64 = lexical_core::parse(&self.bytes[str_start..self.cur]).unwrap();
+        #[allow(clippy::float_cmp)]
         if (num as i32) as f64 == num {
             self.token_num(NumberKind::Integer(num as i32))
         } else {

@@ -42,7 +42,7 @@ impl<'a> Lexer<'a> {
             b'\'' => self.buffer.push('\''),
             b'\"' => self.buffer.push('\"'),
             b'0' => self.buffer.push('\0'),
-            b'b' => self.buffer.push(chars::BS.into()),
+            b'b' => self.buffer.push(chars::BS),
             b't' => self.buffer.push(chars::HT.into()),
             b'f' => self.buffer.push(chars::FF.into()),
             b'n' => self.buffer.push(chars::LF.into()),
@@ -93,10 +93,8 @@ impl<'a> Lexer<'a> {
                             _ => return Err(self.error(LexerErrorKind::InvalidEscapeCode)),
                         }
                     }
-                    if !finished {
-                        if self.next_byte() != Some(b'}') {
-                            return Err(self.error(LexerErrorKind::InvalidEscapeCode));
-                        }
+                    if !finished && self.next_byte() != Some(b'}') {
+                        return Err(self.error(LexerErrorKind::InvalidEscapeCode));
                     }
                     let val: char = val
                         .try_into()

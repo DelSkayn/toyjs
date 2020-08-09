@@ -70,9 +70,9 @@ impl<'a> Parser<'a> {
                             key: key.into(),
                             value: init.into(),
                         });
-                        return Ok(Some(init));
+                        Ok(Some(init))
                     } else {
-                        return Ok(None);
+                        Ok(None)
                     }
                 }
                 _ => to_do!(self),

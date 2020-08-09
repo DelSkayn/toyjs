@@ -49,7 +49,7 @@ impl fmt::Display for Bytecode {
                 }
                 _ => cur += 1,
             }
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
         Ok(())
     }

@@ -6,12 +6,13 @@ use std::{cell::UnsafeCell, hash};
 
 pub type ObjectRc = ManualRc<UnsafeCell<Object>>;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub struct Object {
     prototype: JSValue,
     map: FxHashMap<String, JSValue>,
 }
 
+/*
 impl hash::Hash for Object {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         for (k, v) in self.map.iter() {
@@ -20,6 +21,7 @@ impl hash::Hash for Object {
         }
     }
 }
+*/
 
 impl Clone for Object {
     fn clone(&self) -> Self {
@@ -31,6 +33,12 @@ impl Clone for Object {
             prototype: unsafe { self.prototype.deep_clone() },
             map,
         }
+    }
+}
+
+impl Default for Object {
+    fn default() -> Self {
+        Object::new()
     }
 }
 

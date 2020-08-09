@@ -13,7 +13,7 @@ use fxhash::FxHashMap;
 use std::{cell::Cell, collections::VecDeque};
 
 impl Compiler {
-    pub fn generate_bytecode(ssa: &Ssa, register_alloc: &Vec<u8>, interner: &Interner) -> Bytecode {
+    pub fn generate_bytecode(ssa: &Ssa, register_alloc: &[u8], interner: &Interner) -> Bytecode {
         let mut pending_targets = VecDeque::<(u32, usize)>::new();
         let mut ssa_to_bytecode = Vec::new();
 

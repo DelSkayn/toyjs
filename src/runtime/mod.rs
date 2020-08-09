@@ -1,3 +1,5 @@
+#![allow(clippy::wrong_self_convention)]
+
 //! The runtime executing the code.
 pub mod value;
 pub use value::JSValue;
@@ -30,7 +32,7 @@ pub struct Runtime<'a> {
 
 impl<'a> Drop for Runtime<'a> {
     fn drop(&mut self) {
-        let layout = self.size.to_layout();
+        let layout = self.size.into_layout();
         if self.size > Offset::new(0) {
             unsafe { alloc::dealloc(self.stack.as_ptr().cast(), layout) }
         }
@@ -152,16 +154,20 @@ impl<'a> Runtime<'a> {
         }
         if self.size == Offset::zero() {
             let new_size = offset.next_power_of_two();
-            let layout = new_size.to_layout();
+            let layout = new_size.into_layout();
             self.stack = ptr::NonNull::new_unchecked(alloc::alloc(layout).cast());
             self.stack_ptr = self.stack.as_ptr();
             self.frame_ptr = self.stack.as_ptr();
             return;
         }
-        let layout = self.size.to_layout();
+        let layout = self.size.into_layout();
         let new_size = offset.next_power_of_two();
-        let ptr =
-            alloc::realloc(self.stack.as_ptr().cast(), layout, new_size.as_size_bytes()).cast();
+        let ptr = alloc::realloc(
+            self.stack.as_ptr().cast(),
+            layout,
+            new_size.into_size_bytes(),
+        )
+        .cast();
         self.stack_ptr = self.stack.as_ptr().offset_to(self.stack_ptr).apply_to(ptr);
         self.frame_ptr = self.stack.as_ptr().offset_to(self.frame_ptr).apply_to(ptr);
         self.stack = ptr::NonNull::new_unchecked(ptr.cast());
@@ -172,7 +178,7 @@ impl<'a> Runtime<'a> {
         debug_assert!(size > 1);
         self.alloc(size);
         self.stack_ptr.write(JSValue {
-            bits: self.frame_ptr.offset_to(self.stack_ptr).as_number() as u64,
+            bits: self.frame_ptr.offset_to(self.stack_ptr).into_number() as u64,
         });
         self.frame_ptr = self.stack_ptr;
         self.stack_ptr = self.stack_ptr.add(1);
@@ -260,9 +266,9 @@ impl<'a> Runtime<'a> {
                         self.get(op_a)
                     };
                     let key = Self::as_string(key);
-                    (*obj.into_object().value().get())
-                        .set(key, val)
-                        .map(|x| x.drop());
+                    if let Some(x) = (*obj.into_object().value().get()).set(key, val) {
+                        x.drop()
+                    };
                 }
                 op::OGET => {
                     let op_a = self.read_u8();
@@ -603,6 +609,7 @@ impl<'a> Runtime<'a> {
 
     #[inline]
     fn float_to_val(val: f64) -> JSValue {
+        #[allow(clippy::float_cmp)]
         if val as i32 as f64 == val {
             JSValue::from(val as i32)
         } else {
@@ -610,9 +617,10 @@ impl<'a> Runtime<'a> {
         }
     }
 
+    #[allow(clippy::double_comparisons)]
     unsafe fn as_bool(val: JSValue) -> bool {
         match val.tag() {
-            value::TAG_STRING => val.into_string().value().len() != 0,
+            value::TAG_STRING => !val.into_string().value().is_empty(),
             value::TAG_INT => val.into_int() != 0,
             value::TAG_BOOL => val.into_bool(),
             value::TAG_OBJECT => true,
@@ -621,7 +629,8 @@ impl<'a> Runtime<'a> {
             value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
             _ => {
                 let v = val.into_float();
-                // comparison is done this way to handle NaN correctly.
+                // Comparison is done this way to handle NaN correctly.
+                // as NaN != 0.0 returns true but NaN > 0.0 || NaN < 0.0 returns false
                 v > 0.0 || v < 0.0
             }
         }
@@ -646,7 +655,7 @@ impl<'a> Runtime<'a> {
             value::TAG_STRING => {
                 let val = val.into_string();
                 let s = val.value().trim();
-                if s.len() == 0 {
+                if s.is_empty() {
                     0.0
                 } else {
                     val.value().parse::<f64>().unwrap_or(f64::NAN)
@@ -773,7 +782,7 @@ impl<'a> Runtime<'a> {
             op::POW => a.powf(b),
             _ => panic!("invalid op"),
         };
-        return Self::float_to_val(res);
+        Self::float_to_val(res)
     }
 
     #[inline]

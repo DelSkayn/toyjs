@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 #![allow(unused_macros)]
+#![allow(clippy::missing_safety_doc)]
 
 #[macro_use]
 mod macros;

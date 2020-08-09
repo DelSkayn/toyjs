@@ -223,7 +223,7 @@ impl<'a> Parser<'a> {
                     right: one.into(),
                 });
                 lhs.assign(self, post_value)?;
-                return Ok(Expr::from_value(value));
+                Ok(Expr::from_value(value))
             }
             _ => to_do!(self),
         }
@@ -271,7 +271,7 @@ impl<'a> Parser<'a> {
                 return Ok(Expr::from_value(res));
             }
             x @ t!("||") | x @ t!("&&") => {
-                let condition = lhs.to_value(self).into();
+                let condition = lhs.to_value(self);
                 let cond_jump = self.builder.push_context_jump(condition, x == t!("||"));
                 /*
                 let cond_jump = self.builder.push_instruction(Instruction::CondJump {
@@ -408,19 +408,13 @@ impl<'a> Parser<'a> {
 
     fn parse_ops_rec(&mut self, min_bp: u8) -> PResult<Expr> {
         trace_log!("assign expr");
-        let mut lhs =
-            if let Some(((), r_bp)) = self.peek_kind()?.and_then(|x| prefix_binding_power(x)) {
-                self.parse_prefix_op(r_bp)?
-            } else {
-                Expr::from_prime(self.parse_prime_expr()?)
-            };
+        let mut lhs = if let Some(((), r_bp)) = self.peek_kind()?.and_then(prefix_binding_power) {
+            self.parse_prefix_op(r_bp)?
+        } else {
+            Expr::from_prime(self.parse_prime_expr()?)
+        };
 
-        loop {
-            let op = match self.peek_kind()? {
-                Some(x) => x,
-                None => break,
-            };
-
+        while let Some(op) = self.peek_kind()? {
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;

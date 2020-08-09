@@ -9,7 +9,7 @@ use std::mem;
 pub mod consts {
     use super::StringId;
 
-    pub(crate) const PRELOAD: [&'static str; 7] =
+    pub(crate) const PRELOAD: [&str; 7] =
         ["target", "get", "set", "static", "of", "import", "meta"];
 
     pub const TARGET: StringId = StringId(0);
@@ -33,6 +33,12 @@ pub struct Interner {
     map: FxHashMap<String, u32>,
     values: Vec<InternValue>,
     top_free: u32,
+}
+
+impl Default for Interner {
+    fn default() -> Self {
+        Interner::new()
+    }
 }
 
 impl Interner {
@@ -82,7 +88,7 @@ impl Interner {
             string: s,
             count: 1,
         });
-        return res as u32;
+        res as u32
     }
 
     pub fn increment(&mut self, id: StringId) {
@@ -140,7 +146,7 @@ impl Interner {
         };
         let res = self.top_free;
         self.top_free = val;
-        return Some(res);
+        Some(res)
     }
 
     pub fn lookup(&self, id: StringId) -> Option<&str> {
