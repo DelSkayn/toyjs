@@ -58,7 +58,7 @@ impl<'a> Runtime<'a> {
             stack_ptr: stack.as_ptr(),
             stack,
             regs,
-            global: rc::ManualRc::new(UnsafeCell::new(Object::new())),
+            global: rc::ManualRc::constant(UnsafeCell::new(Object::new())),
         }
     }
 
@@ -261,7 +261,7 @@ impl<'a> Runtime<'a> {
                     };
                     let key = Self::as_string(key);
                     (*obj.into_object().value().get())
-                        .set(key, val.clone())
+                        .set(key, val)
                         .map(|x| x.drop());
                 }
                 op::OGET => {

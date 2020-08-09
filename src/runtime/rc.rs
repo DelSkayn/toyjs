@@ -18,7 +18,10 @@ impl RcCount {
     /// Pointer must be a valid pointer as obtained from `Rc::to_raw`.
     pub unsafe fn incr_raw(ptr: *mut ()) {
         let ptr = ptr as *mut RcCount;
-        (*ptr).count.set((*ptr).count.get() + 1);
+        let cnt = (*ptr).count.get();
+        if cnt != usize::MAX {
+            (*ptr).count.set(cnt + 1);
+        }
     }
 }
 
@@ -55,6 +58,20 @@ impl<T> ManualRc<T> {
             let alloc = alloc::alloc(layout) as *mut RcVal<T>;
             alloc.write(RcVal {
                 count: Cell::new(1),
+                value,
+            });
+            ManualRc {
+                ptr: NonNull::new_unchecked(alloc),
+            }
+        }
+    }
+
+    pub fn constant(value: T) -> Self {
+        unsafe {
+            let layout = alloc::Layout::new::<RcVal<T>>();
+            let alloc = alloc::alloc(layout) as *mut RcVal<T>;
+            alloc.write(RcVal {
+                count: Cell::new(usize::MAX),
                 value,
             });
             ManualRc {
