@@ -177,6 +177,9 @@ op_code!(
         /// Bitwise exclusive or
         BXOR(dst, op, op),
 
+        ADD1(dst, op),
+        SUB1(dst, op),
+
         /// Convert the value to a boolean
         BOOL(dst, src),
         /// Convert the value to a boolean

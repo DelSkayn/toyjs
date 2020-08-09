@@ -415,6 +415,31 @@ impl<'a> Runtime<'a> {
                     let c = Self::as_i32(self.get(op_c));
                     self.set(op_a, JSValue::from(b ^ c));
                 }
+
+                op::ADD1 => {
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let val = self.get(op_d as u8);
+                    let val = Self::as_float(val) + 1.0;
+                    if (val as i32) as f64 == val {
+                        self.set(op_a, JSValue::from(val as i32))
+                    } else {
+                        self.set(op_a, JSValue::from(val))
+                    }
+                }
+
+                op::SUB1 => {
+                    let op_a = self.read_u8();
+                    let op_d = self.read_u16();
+                    let val = self.get(op_d as u8);
+                    let val = Self::as_float(val) - 1.0;
+                    if (val as i32) as f64 == val {
+                        self.set(op_a, JSValue::from(val as i32))
+                    } else {
+                        self.set(op_a, JSValue::from(val))
+                    }
+                }
+
                 op::POS => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();

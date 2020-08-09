@@ -45,6 +45,8 @@ pub enum UnaryOp {
     Void,
     ToBool,
     IsNullish,
+    AddOne,
+    SubtractOne,
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -184,17 +184,14 @@ impl<'a> Parser<'a> {
             x @ t!("++") | x @ t!("--") => {
                 let right = self.parse_ops_rec(r_bp)?;
                 let kind = if let t!("++") = x {
-                    BinOp::Add
+                    UnaryOp::AddOne
                 } else {
-                    BinOp::Subtract
+                    UnaryOp::SubtractOne
                 };
-                let one = self.builder.load_constant(1);
-                let left = right.to_value(self).into();
-                let val = self.builder.push_instruction(Instruction::Binary {
-                    kind,
-                    left,
-                    right: one.into(),
-                });
+                let operand = right.to_value(self).into();
+                let val = self
+                    .builder
+                    .push_instruction(Instruction::Unary { kind, operand });
                 right.assign(self, val)?;
                 return Ok(Expr::from_value(val));
             }
@@ -212,15 +209,13 @@ impl<'a> Parser<'a> {
             x @ t!("++") | x @ t!("--") => {
                 let value = lhs.to_value(self);
                 let kind = if let t!("++") = x {
-                    BinOp::Add
+                    UnaryOp::AddOne
                 } else {
-                    BinOp::Subtract
+                    UnaryOp::SubtractOne
                 };
-                let one = self.builder.load_constant(1);
-                let post_value = self.builder.push_instruction(Instruction::Binary {
+                let post_value = self.builder.push_instruction(Instruction::Unary {
                     kind,
-                    left: value.into(),
-                    right: one.into(),
+                    operand: value.into(),
                 });
                 lhs.assign(self, post_value)?;
                 Ok(Expr::from_value(value))
