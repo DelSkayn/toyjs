@@ -6,7 +6,6 @@ macro_rules! op_code{
         )*
     }) => {
         /// All the possible instruction OP codes
-        #[allow(non_camel_case_types)]
         #[derive(Clone, Copy, Debug)]
         #[repr(u8)]
         pub enum Op{
@@ -21,6 +20,7 @@ macro_rules! op_code{
         pub mod op{
             use super::Op;
             $(
+                #[allow(non_upper_case_globals)]
                 $(#[doc = $com])*
                 pub const $name: u8 = Op::$name as u8;
             )*
@@ -57,7 +57,7 @@ macro_rules! op_code{
     };
 
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $B:ident, $C:ident)) => {
-        write!($w,"{:5}  {:>4}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
+        write!($w,"{:15}  {:>4}:0x{:<2x}  {:>3}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             op_a($i),
@@ -68,7 +68,7 @@ macro_rules! op_code{
             )
     };
     (@format $n:ident, $w:expr, $i:expr, ($A:ident, $D:ident)) => {
-        write!($w,"{:5}  {:>4}:0x{:<2x}    _:_     {:>4}:{:#x}",
+        write!($w,"{:15}  {:>4}:0x{:<2x}   __:__    {:>4}:{:#x}",
             stringify!($n),
             stringify!($A),
             op_a($i),

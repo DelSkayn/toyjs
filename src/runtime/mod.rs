@@ -118,8 +118,8 @@ impl<'a> Runtime<'a> {
 
     #[inline(always)]
     unsafe fn jump(&mut self, pc: i32) {
-        let offset_bytes = (pc - 2) as isize * mem::size_of::<Instruction>() as isize;
-        self.code_ptr = self.code_ptr.offset(dbg!(offset_bytes));
+        let offset_bytes = pc as isize * mem::size_of::<Instruction>() as isize;
+        self.code_ptr = self.code_ptr.offset(offset_bytes);
     }
 
     #[inline(always)]
@@ -221,7 +221,7 @@ impl<'a> Runtime<'a> {
             */
             let op = self.read_u8();
             match op {
-                op::LGB => {
+                op::LoadGlobal => {
                     let op_a = self.read_u8();
                     self.read_u16();
                     self.set(op_a, JSValue::from(self.global));
@@ -263,7 +263,7 @@ impl<'a> Runtime<'a> {
                     self.read_u16();
                     self.pop();
                 }
-                op::OSET => {
+                op::ObjectSet => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -279,7 +279,7 @@ impl<'a> Runtime<'a> {
                         x.drop()
                     };
                 }
-                op::OGET => {
+                op::ObjectGet => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -292,7 +292,7 @@ impl<'a> Runtime<'a> {
                     let val = (*obj.into_object().value().get()).get(&Self::as_string(key));
                     self.set(op_a, val);
                 }
-                op::CLD => {
+                op::LoadData => {
                     let dst = self.read_u8();
                     let val = self.read_u16();
                     let idx = if val != 0xffff {
@@ -302,7 +302,7 @@ impl<'a> Runtime<'a> {
                     };
                     self.set(dst, self.data[idx]);
                 }
-                op::CLS => {
+                op::LoadString => {
                     let dst = self.read_u8();
                     let val = self.read_u16();
                     let idx = if val != 0xffff {
@@ -315,14 +315,14 @@ impl<'a> Runtime<'a> {
                         JSValue::from(ManualRc::from_raw_val(&self.strings[idx])),
                     );
                 }
-                op::MOV => {
+                op::Move => {
                     let dst = self.read_u8();
                     let src = self.read_u16();
                     let val = self.get(src as u8);
                     val.incr();
                     self.set(dst, val)
                 }
-                op::ADD => {
+                op::Add => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -343,7 +343,7 @@ impl<'a> Runtime<'a> {
                         self.set(op_a, res);
                     }
                 }
-                op::SUB => {
+                op::Sub => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -360,47 +360,47 @@ impl<'a> Runtime<'a> {
                         };
                         self.set(op_a, res);
                     } else {
-                        let res = Self::bin_arithmatic(val1, val2, op::SUB);
+                        let res = Self::bin_arithmatic(val1, val2, op::Sub);
                         self.set(op_a, res);
                     }
                 }
-                op::MUL => {
+                op::Mul => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
                     let val1 = self.get(op_b);
                     let val2 = self.get(op_c);
-                    let res = Self::bin_arithmatic(val1, val2, op::MUL);
+                    let res = Self::bin_arithmatic(val1, val2, op::Mul);
                     self.set(op_a, res);
                 }
-                op::DIV => {
+                op::Div => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
                     let val1 = self.get(op_b);
                     let val2 = self.get(op_c);
-                    let res = Self::bin_arithmatic(val1, val2, op::DIV);
+                    let res = Self::bin_arithmatic(val1, val2, op::Div);
                     self.set(op_a, res);
                 }
-                op::POW => {
+                op::Pow => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
                     let val1 = self.get(op_b);
                     let val2 = self.get(op_c);
-                    let res = Self::bin_arithmatic(val1, val2, op::POW);
+                    let res = Self::bin_arithmatic(val1, val2, op::Pow);
                     self.set(op_a, res);
                 }
-                op::MOD => {
+                op::Mod => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
                     let val1 = self.get(op_b);
                     let val2 = self.get(op_c);
-                    let res = Self::bin_arithmatic(val1, val2, op::MOD);
+                    let res = Self::bin_arithmatic(val1, val2, op::Mod);
                     self.set(op_a, res);
                 }
-                op::BAND => {
+                op::BinaryAnd => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -408,7 +408,7 @@ impl<'a> Runtime<'a> {
                     let c = Self::as_i32(self.get(op_c));
                     self.set(op_a, JSValue::from(b & c));
                 }
-                op::BOR => {
+                op::BinaryOr => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -416,7 +416,7 @@ impl<'a> Runtime<'a> {
                     let c = Self::as_i32(self.get(op_c));
                     self.set(op_a, JSValue::from(b | c));
                 }
-                op::BXOR => {
+                op::BinaryXor => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -425,7 +425,7 @@ impl<'a> Runtime<'a> {
                     self.set(op_a, JSValue::from(b ^ c));
                 }
 
-                op::ADD1 => {
+                op::AddOne => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
@@ -437,7 +437,7 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::SUB1 => {
+                op::SubOne => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
@@ -449,35 +449,35 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::POS => {
+                op::Positive => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
                     let val = Self::float_to_val(Self::as_float(val));
                     self.set(op_a, val);
                 }
-                op::NEG => {
+                op::Negative => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
                     let val = Self::float_to_val(-Self::as_float(val));
                     self.set(op_a, val);
                 }
-                op::BOOL => {
+                op::ToBool => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
                     let val = Self::as_bool(val);
                     self.set(op_a, JSValue::from(val));
                 }
-                op::ISNUL => {
+                op::IsNullish => {
                     let op_a = self.read_u8();
                     let op_d = self.read_u16();
                     let val = self.get(op_d as u8);
                     let val = val.is_null() || val.is_undefined();
                     self.set(op_a, JSValue::from(val));
                 }
-                op::SHL => {
+                op::ShiftLeft => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -486,7 +486,7 @@ impl<'a> Runtime<'a> {
                     let c = (c & 0x1f) as i32;
                     self.set(op_a, JSValue::from(b << c));
                 }
-                op::SHR => {
+                op::ShiftRight => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -495,7 +495,7 @@ impl<'a> Runtime<'a> {
                     let c = (c & 0x1f) as i32;
                     self.set(op_a, JSValue::from((b >> c) as i32));
                 }
-                op::USR => {
+                op::ShiftUnsigned => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -504,7 +504,7 @@ impl<'a> Runtime<'a> {
                     c &= 0x1f;
                     self.set(op_a, JSValue::from((b >> c) as i32));
                 }
-                op::SEQ => {
+                op::StrictEqual => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -512,7 +512,7 @@ impl<'a> Runtime<'a> {
                     let c = self.get(op_c);
                     self.set(op_a, JSValue::from(Self::strict_eq(b, c)));
                 }
-                op::EQ => {
+                op::Equal => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -520,7 +520,7 @@ impl<'a> Runtime<'a> {
                     let c = self.get(op_c);
                     self.set(op_a, JSValue::from(Self::eq(b, c)));
                 }
-                op::SNEQ => {
+                op::StrictNotEqual => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -528,7 +528,7 @@ impl<'a> Runtime<'a> {
                     let c = self.get(op_c);
                     self.set(op_a, JSValue::from(!Self::strict_eq(b, c)));
                 }
-                op::NEQ => {
+                op::NotEqual => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -537,7 +537,7 @@ impl<'a> Runtime<'a> {
                     self.set(op_a, JSValue::from(!Self::eq(b, c)));
                 }
 
-                op::LE => {
+                op::Less => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -550,7 +550,7 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::GE => {
+                op::Greater => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -563,7 +563,7 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::LEQ => {
+                op::LessEqual => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -576,7 +576,7 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::GEQ => {
+                op::GreaterEqual => {
                     let op_a = self.read_u8();
                     let op_b = self.read_u8();
                     let op_c = self.read_u8();
@@ -589,7 +589,7 @@ impl<'a> Runtime<'a> {
                     }
                 }
 
-                op::JCO => {
+                op::ConditionalJump => {
                     let op_cond = self.read_u8();
                     let cond = self.get(op_cond);
                     let neg = self.read_u16();
@@ -600,20 +600,20 @@ impl<'a> Runtime<'a> {
                         self.read_u32();
                     }
                 }
-                op::J => {
+                op::Jump => {
                     self.read_u8();
                     self.read_u16();
                     let tar = self.read_i32();
                     self.jump(tar);
                 }
-                op::RET => {
+                op::Return => {
                     let val = self.read_u8();
                     let val = self.get(val);
                     val.incr();
                     self.read_u16();
                     return Some(val);
                 }
-                op::RETU => {
+                op::ReturnUndefined => {
                     self.read_u8();
                     self.read_u16();
                     return Some(JSValue::undefined());
@@ -800,7 +800,7 @@ impl<'a> Runtime<'a> {
             s.push_str(&Self::as_string(b));
             return JSValue::from(StringRc::new(s));
         }
-        Self::bin_arithmatic(a, b, op::ADD)
+        Self::bin_arithmatic(a, b, op::Add)
     }
 
     pub unsafe fn bin_arithmatic(a: JSValue, b: JSValue, op: u8) -> JSValue {
@@ -808,12 +808,12 @@ impl<'a> Runtime<'a> {
         let b = Runtime::as_float(b);
 
         let res = match op {
-            op::ADD => a + b,
-            op::SUB => a + (-b),
-            op::MUL => a * b,
-            op::DIV => a / b,
-            op::MOD => a % b,
-            op::POW => a.powf(b),
+            op::Add => a + b,
+            op::Sub => a + (-b),
+            op::Mul => a * b,
+            op::Div => a / b,
+            op::Mod => a % b,
+            op::Pow => a.powf(b),
             _ => panic!("invalid op"),
         };
         Self::float_to_val(res)

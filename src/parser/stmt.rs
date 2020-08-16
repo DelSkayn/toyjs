@@ -2,37 +2,45 @@ use crate::{
     lexer::Lexer,
     parser::*,
     source::{Source, Span},
-    ssa::{InstrVar, Instruction, SsaVar},
+    ssa::{Instruction, SsaBuilder, SsaId},
     token::{DelimToken, Token, TokenKind},
 };
 
 impl<'a> Parser<'a> {
-    pub fn parse_stmt(&mut self) -> PResult<Option<SsaVar>> {
+    pub fn parse_stmt(&mut self, builder: &mut SsaBuilder, first: bool) -> PResult<Option<SsaId>> {
         trace_log!("statement");
         let peek = match self.peek()? {
             Some(x) => x,
             None => return Ok(None),
         };
+        if first {
+            if let t!("strict_directive") = peek.kind {
+                self.set_strict(true);
+                return Ok(None);
+            }
+        }
         match peek.kind {
             t!("var") | t!("let") | t!("const") => {
-                return self.alter_state(|x| x._in = true, |this| this.parse_decl());
+                return self.alter_state(|x| x._in = true, |this| this.parse_decl(builder));
             }
-            t!("if") => self.parse_if()?,
-            t!("while") => self.parse_while()?,
-            t!("do") => self.parse_do_while()?,
-            t!("{") => return self.parse_block(),
-            t!("break") => self.parse_break()?,
-            _ => return Ok(Some(self.parse_expr()?)),
+            t!("if") => self.parse_if(builder)?,
+            t!("while") => self.parse_while(builder)?,
+            t!("do") => self.parse_do_while(builder)?,
+            t!("{") => return self.parse_block(builder),
+            t!("break") => self.parse_break(builder)?,
+            t!("continue") => self.parse_continue(builder)?,
+            _ => return Ok(Some(self.parse_expr(builder)?)),
         }
         Ok(None)
     }
 
-    fn parse_block(&mut self) -> PResult<Option<SsaVar>> {
+    fn parse_block(&mut self, builder: &mut SsaBuilder) -> PResult<Option<SsaId>> {
         trace_log!("block");
         expect!(self, "{");
         let mut last = None;
         while !eat!(self, "}") {
-            let res = self.parse_stmt()?;
+            //TODO figure out if opening a block no longers allows a strict directive
+            let res = self.parse_stmt(builder, false)?;
             if res.is_some() {
                 last = res;
             }
@@ -41,104 +49,89 @@ impl<'a> Parser<'a> {
         Ok(last)
     }
 
-    fn parse_if(&mut self) -> PResult<()> {
+    fn parse_if(&mut self, builder: &mut SsaBuilder) -> PResult<()> {
         expect!(self, "if");
         expect!(self, "(");
-        self.builder.clear_expr_jump_context();
-        let expr = self.alter_state(|s| s._in = true, |this| this.parse_expr())?;
-        let jump_context = self.builder.take_expr_jump_context();
+        builder.take_expr_context();
+        let expr = self.alter_state(|s| s._in = true, |this| this.parse_expr(builder))?;
+        let jump_context = builder.take_expr_context();
         expect!(self, ")");
-        let jump_cond = self.builder.push_instruction(Instruction::CondJump {
-            negative: true,
-            condition: expr.into(),
-            target: InstrVar::null(),
-        });
-        self.parse_stmt()?;
+        let jump_cond = builder.next();
+        builder.jump_cond(SsaId::null(), expr.into(), false);
+        self.parse_stmt(builder, false)?;
+
         let jump_cond_target = if eat!(self, "else") {
-            let jump = self.builder.push_instruction(Instruction::Jump {
-                target: InstrVar::null(),
-            });
-            let jump_cond_target = self.builder.next_id();
-            self.parse_stmt()?;
-            self.builder.patch_jump_next(jump);
+            //parse else
+            let jump = builder.next();
+            builder.jump(SsaId::null());
+            let jump_cond_target = builder.next();
+            self.parse_stmt(builder, false)?;
+            builder.patch_jump(jump, builder.next());
             jump_cond_target
         } else {
-            self.builder.next_id()
+            builder.next()
         };
-        self.builder
-            .patch_jump_target(jump_cond, jump_cond_target.into());
-        self.builder
-            .patch_context_jump(jump_cond_target, &jump_context, false);
+
+        //Patch the jumps in the expression and the if.
+        builder.patch_jump(jump_cond, jump_cond_target);
+        builder.patch_expr_jump(&jump_context, jump_cond_target, false);
         Ok(())
     }
 
-    fn parse_do_while(&mut self) -> PResult<()> {
+    fn parse_do_while(&mut self, builder: &mut SsaBuilder) -> PResult<()> {
         expect!(self, "do");
-        let loop_target = self.builder.next_id();
-        self.builder.clear_stmt_jump_context();
+        let loop_target = builder.next();
+        builder.take_stmt_context();
         self.alter_state(
             |s| {
                 s._break = true;
                 s._continue = true;
             },
-            |this| this.parse_stmt(),
+            |this| this.parse_stmt(builder, false),
         )?;
-        let stmt_context = self.builder.take_stmt_jump_context();
+        let stmt_context = builder.take_stmt_context();
         expect!(self, "while");
         expect!(self, "(");
-        self.builder.clear_expr_jump_context();
-        let cond = self.parse_expr()?;
-        let jump_context = self.builder.take_expr_jump_context();
+        builder.take_expr_context();
+        let cond = self.parse_expr(builder)?;
+        let jump_context = builder.take_expr_context();
         expect!(self, ")");
-        self.builder.push_instruction(Instruction::CondJump {
-            target: loop_target.into(),
-            negative: false,
-            condition: cond.into(),
-        });
-        self.builder
-            .patch_context_jump(loop_target, &jump_context, true);
-        self.builder.patch_continue_jump(loop_target, &stmt_context);
-        self.builder
-            .patch_break_jump(self.builder.next_id(), &stmt_context);
+        builder.jump_cond(loop_target, cond.into(), true);
+        builder.patch_expr_jump(&jump_context, loop_target, true);
+        builder.patch_continue_jump(&stmt_context, loop_target);
+        builder.patch_break_jump(&stmt_context, builder.next());
         Ok(())
     }
 
-    fn parse_while(&mut self) -> PResult<()> {
+    fn parse_while(&mut self, builder: &mut SsaBuilder) -> PResult<()> {
         expect!(self, "while");
         expect!(self, "(");
-        let again = self.builder.next_id();
-        self.builder.clear_expr_jump_context();
-        let expr = self.parse_expr()?;
-        let jump_context = self.builder.take_expr_jump_context();
+        let again = builder.next();
+        builder.take_expr_context();
+        let expr = self.parse_expr(builder)?;
+        let jump_context = builder.take_expr_context();
         expect!(self, ")");
-        let cond_jump = self.builder.push_instruction(Instruction::CondJump {
-            negative: true,
-            condition: expr.into(),
-            target: InstrVar::null(),
-        });
-        self.builder.clear_stmt_jump_context();
+        let cond_jump = builder.next();
+        builder.jump_cond(SsaId::null(), expr.into(), false);
+        builder.take_stmt_context();
         self.alter_state(
             |s| {
                 s._break = true;
                 s._continue = true;
             },
-            |this| this.parse_stmt(),
+            |this| this.parse_stmt(builder, false),
         )?;
-        let stmt_context = self.builder.take_stmt_jump_context();
-        self.builder.push_instruction(Instruction::Jump {
-            target: again.into(),
-        });
+        let stmt_context = builder.take_stmt_context();
+        builder.jump(again);
 
-        self.builder.patch_continue_jump(again, &stmt_context);
-        self.builder
-            .patch_break_jump(self.builder.next_id(), &stmt_context);
-        self.builder.patch_jump_next(cond_jump);
-        self.builder
-            .patch_context_jump(self.builder.next_id(), &jump_context, false);
+        builder.patch_continue_jump(&stmt_context, again);
+        builder.patch_break_jump(&stmt_context, builder.next());
+        builder.patch_jump(cond_jump, builder.next());
+        builder.patch_expr_jump(&jump_context, builder.next(), false);
         Ok(())
     }
 
-    fn parse_break(&mut self) -> PResult<()> {
+    fn parse_break(&mut self, builder: &mut SsaBuilder) -> PResult<()> {
         if !self.state._break {
             unexpected!(self => "break is not allowed in this context");
         }
@@ -147,20 +140,20 @@ impl<'a> Parser<'a> {
             to_do!(self)
         }
         eat!(self, ";");
-        self.builder.push_break();
+        builder.jump_break();
         Ok(())
     }
 
-    fn parse_continue(&mut self) -> PResult<()> {
+    fn parse_continue(&mut self, builder: &mut SsaBuilder) -> PResult<()> {
         if !self.state._continue {
-            unexpected!(self => "is not allowed in this context");
+            unexpected!(self => "continue is not allowed in this context");
         }
         expect!(self, "continue");
         if let Some(t!("ident")) = self.peek_with_lt()?.map(|e| e.kind) {
             to_do!(self)
         }
         eat!(self, ";");
-        self.builder.push_continue();
+        builder.jump_continue();
         Ok(())
     }
 }

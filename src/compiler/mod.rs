@@ -1,7 +1,7 @@
 use crate::{
     interner::Interner,
     runtime::{self, bc::Bytecode},
-    ssa::{InstrVar, Instruction, Ssa},
+    ssa::{Instruction, Ssa},
 };
 mod gen;
 

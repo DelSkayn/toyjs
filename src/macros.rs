@@ -1,6 +1,9 @@
 /// A short hand for writing token kinds
 #[macro_export]
 macro_rules! t {
+    ("strict_directive") => {
+        crate::token::TokenKind::Ident(crate::interner::consts::STRICT_DIRECTIVE)
+    };
     ("target") => {
         crate::token::TokenKind::Ident(crate::interner::consts::TARGET)
     };
@@ -333,5 +336,46 @@ macro_rules! t {
     };
     ("yield") => {
         crate::token::TokenKind::Kw(crate::token::Kw::Yield)
+    };
+}
+
+macro_rules! shrinkwrap_index {
+    ($name:ident) => {
+        #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
+        pub struct $name(pub(crate) crate::util::Index);
+
+        impl $name {
+            pub const fn invalid() -> Self {
+                Self(crate::util::Index::invalid())
+            }
+
+            pub fn into_usize(self) -> usize {
+                self.0.into_usize()
+            }
+        }
+
+        impl From<u8> for $name {
+            fn from(v: u8) -> Self {
+                Self(v.into())
+            }
+        }
+
+        impl From<u16> for $name {
+            fn from(v: u16) -> Self {
+                Self(v.into())
+            }
+        }
+
+        impl From<u32> for $name {
+            fn from(v: u32) -> Self {
+                Self(v.into())
+            }
+        }
+
+        impl From<usize> for $name {
+            fn from(v: usize) -> Self {
+                Self(v.into())
+            }
+        }
     };
 }

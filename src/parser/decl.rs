@@ -1,16 +1,9 @@
 use super::*;
 use crate::{
     interner::StringId,
-    ssa::{InstrVar, Instruction, SsaVar},
+    ssa::{BindingType, Expr, Instruction, SsaBuilder, SsaId},
     token::{LitToken, NumberKind},
 };
-
-#[derive(Clone, Copy)]
-enum LexicalKind {
-    Var,
-    Let,
-    Const,
-}
 
 enum Binding {
     Ident(StringId),
@@ -19,73 +12,53 @@ enum Binding {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_decl(&mut self) -> PResult<Option<SsaVar>> {
+    pub fn parse_decl(&mut self, builder: &mut SsaBuilder) -> PResult<Option<SsaId>> {
         let kind = match self.peek_kind()? {
-            Some(t!("var")) => LexicalKind::Var,
-            Some(t!("let")) => LexicalKind::Let,
-            Some(t!("const")) => LexicalKind::Const,
+            Some(t!("var")) => BindingType::Var,
+            Some(t!("let")) => BindingType::Let,
+            Some(t!("const")) => BindingType::Const,
             _ => unexpected!(self, "var", "let", "const"),
         };
         self.next()?;
         loop {
-            let binding = self.parse_binding()?;
+            let binding = self.parse_binding(builder)?;
             let expr = match binding {
                 Binding::Array => {
                     expect!(self, "=" => "array bindings need to be initialized");
-                    Some(self.parse_ops()?)
+                    Some(self.parse_ops(builder)?)
                 }
                 Binding::Object => {
                     expect!(self, "=" => "object bindings need to be initialized");
-                    Some(self.parse_ops()?)
+                    Some(self.parse_ops(builder)?)
                 }
-                Binding::Ident(_) => {
+                Binding::Ident(x) => {
+                    let var = if let Some(x) = builder.declare(x, kind) {
+                        x
+                    } else {
+                        syntax_error!(self, ParseErrorKind::RedeclaredVariable)
+                    };
                     if eat!(self, "=") {
-                        Some(self.parse_ops()?)
+                        let expr = self.parse_ops(builder)?;
+                        builder.assign(var, expr.into());
+                        Some(expr)
+                    } else if kind == BindingType::Const {
+                        unexpected!(self => "const variables must be initialized");
                     } else {
                         None
                     }
                 }
             };
-            let last = self.compile_decl(kind, binding, expr)?;
             if !eat!(self, ",") {
-                break Ok(last);
+                break Ok(expr);
             }
         }
     }
 
-    fn compile_decl(
-        &mut self,
-        kind: LexicalKind,
-        binding: Binding,
-        initializer: Option<SsaVar>,
-    ) -> PResult<Option<SsaVar>> {
-        match kind {
-            LexicalKind::Var => match binding {
-                Binding::Ident(ident) => {
-                    if let Some(init) = initializer {
-                        let glob = self.builder.push_instruction(Instruction::LoadGlobal);
-                        let key = self.builder.load_constant(ident);
-                        self.builder.push_instruction(Instruction::ObjectSet {
-                            object: glob.into(),
-                            key: key.into(),
-                            value: init.into(),
-                        });
-                        Ok(Some(init))
-                    } else {
-                        Ok(None)
-                    }
-                }
-                _ => to_do!(self),
-            },
-            _ => to_do!(self),
-        }
-    }
-
-    fn parse_binding(&mut self) -> PResult<Binding> {
+    fn parse_binding(&mut self, builder: &mut SsaBuilder) -> PResult<Binding> {
         trace_log!("binding");
         match self.peek_kind()? {
-            Some(t!("[")) => self.parse_array_binding(),
-            Some(t!("{")) => self.parse_object_binding(),
+            Some(t!("[")) => self.parse_array_binding(builder),
+            Some(t!("{")) => self.parse_object_binding(builder),
             Some(TokenKind::Ident(x)) => {
                 self.next()?;
                 Ok(Binding::Ident(x))
@@ -94,11 +67,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_binding(&mut self) -> PResult<Binding> {
+    fn parse_array_binding(&mut self, _builder: &mut SsaBuilder) -> PResult<Binding> {
         to_do!(self)
     }
 
-    fn parse_object_binding(&mut self) -> PResult<Binding> {
+    fn parse_object_binding(&mut self, _builder: &mut SsaBuilder) -> PResult<Binding> {
         to_do!(self)
     }
 }
