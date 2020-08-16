@@ -8,7 +8,7 @@ mod macros;
 #[macro_use]
 extern crate log;
 
-pub mod compiler;
+//pub mod compiler;
 pub mod interner;
 pub mod lexer;
 pub mod parser;

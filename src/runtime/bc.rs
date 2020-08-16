@@ -35,14 +35,14 @@ impl fmt::Display for Bytecode {
             write!(f, "{}: ", cur)?;
             format_instr(instr, f)?;
             match op_op(instr) {
-                op::CLD => {
+                op::LoadData => {
                     if op_d(instr) == 0xffff {
                         cur += 1;
                         write!(f, " const:{}", self.instructions[cur])?;
                     }
                     cur += 1;
                 }
-                op::J | op::JCO => {
+                op::Jump | op::ConditionalJump => {
                     cur += 1;
                     write!(f, "  offset:{}", self.instructions[cur] as i32)?;
                     cur += 1;
@@ -132,10 +132,10 @@ op_code!(
     enum Op {
         /// load data constant with index operand D into reg A
         /// if the idx is u16::max the index for the constant is in in the next instruction slot
-        CLD(dst, idx),
+        LoadData(dst, idx),
         /// load string constant with index operand D into reg A
         /// if the idx is u16::max the index for the constant is in in the next instruction slot
-        CLS(dst, idx),
+        LoadString(dst, idx),
 
         PUSH(null, size),
         POP(null, null),
@@ -145,79 +145,79 @@ op_code!(
         ST(src, idx),
 
         /// Load the global object in the destination register.
-        LGB(dst, null),
+        LoadGlobal(dst, null),
         /// set the entry from the key in reg D to the value from reg A in the global object
-        OSET(obj, key, val),
+        ObjectSet(obj, key, val),
         /// set reg A to value int the global object with the key in reg D.
-        OGET(dst, obj, key),
+        ObjectGet(dst, obj, key),
 
         /// copy a value from one register to an other
-        MOV(dst, src),
+        Move(dst, src),
 
         /// Add the values from reg B and reg C and store them into reg A
-        ADD(dst, op, op),
+        Add(dst, op, op),
         /// Subtract the values from reg B and reg C and store them into reg A
-        SUB(dst, op, op),
+        Sub(dst, op, op),
         /// Multiply the values from reg B and reg C and store them into reg A
-        MUL(dst, op, op),
+        Mul(dst, op, op),
         /// Divide the values from reg B and reg C and store them into reg A
-        DIV(dst, op, op),
+        Div(dst, op, op),
         /// Modulo the values from reg B and reg C and store them into reg A
-        MOD(dst, op, op),
+        Mod(dst, op, op),
         /// Power the values from reg B and reg C and store them into reg A
-        POW(dst, op, op),
+        Pow(dst, op, op),
         /// Negate the value from the reg B and store in reg A
-        NEG(dst, src),
+        Negative(dst, src),
         /// do the unaryPos operation on the value from the reg B and store in reg A
-        POS(dst, src),
+        Positive(dst, src),
         /// Bitwise and
-        BAND(dst, op, op),
+        BinaryAnd(dst, op, op),
         /// Bitwise or
-        BOR(dst, op, op),
+        BinaryOr(dst, op, op),
         /// Bitwise exclusive or
-        BXOR(dst, op, op),
+        BinaryXor(dst, op, op),
 
-        ADD1(dst, op),
-        SUB1(dst, op),
+        AddOne(dst, op),
+        SubOne(dst, op),
 
         /// Convert the value to a boolean
-        BOOL(dst, src),
+        ToBool(dst, src),
         /// Convert the value to a boolean
-        ISNUL(dst, src),
+        IsNullish(dst, src),
 
         /// Shift left
-        SHL(dst, op, op),
+        ShiftLeft(dst, op, op),
         /// Shift right
-        SHR(dst, op, op),
+        ShiftRight(dst, op, op),
         /// Shift right unsigned
-        USR(dst, op, op),
+        ShiftUnsigned(dst, op, op),
 
         /// Equal
-        EQ(dst, op, op),
+        Equal(dst, op, op),
         /// Strict Equal
-        SEQ(dst, op, op),
+        StrictEqual(dst, op, op),
         /// Not Equal
-        NEQ(dst, op, op),
+        NotEqual(dst, op, op),
         /// Strict Not Equal
-        SNEQ(dst, op, op),
+        StrictNotEqual(dst, op, op),
 
         /// Greater
-        GE(dst, op, op),
+        Greater(dst, op, op),
         /// Greater or equal
-        GEQ(dst, op, op),
+        GreaterEqual(dst, op, op),
         /// Less
-        LE(dst, op, op),
+        Less(dst, op, op),
         /// Less or equal
-        LEQ(dst, op, op),
+        LessEqual(dst, op, op),
 
         /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
-        JCO(cond, neg),
+        ConditionalJump(cond, neg),
         /// jump to the index at the next instruction slot
-        J(null, null),
+        Jump(null, null),
 
         /// return
-        RET(src, null),
+        Return(src, null),
         /// return undefined
-        RETU(null, null),
+        ReturnUndefined(null, null),
     }
 );

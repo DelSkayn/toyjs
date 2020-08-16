@@ -31,6 +31,7 @@ pub enum ParseErrorKind {
         expected: &'static [&'static str],
         reason: Option<&'static str>,
     },
+    RedeclaredVariable,
     NumberParseError(&'static str),
     InvalidToken {
         error: LexerError,
@@ -65,6 +66,12 @@ impl<'a> fmt::Display for Sourced<'a, ParseError> {
             }
             ParseErrorKind::NumberParseError(reason) => {
                 writeln!(f, "encountered invalid number: {}", reason)
+            }
+            ParseErrorKind::RedeclaredVariable => {
+                writeln!(f, "redeclared variable")?;
+                self.source.fmt_span(f, self.value.origin)?;
+                self.source
+                    .fmt_span_src(f, self.value.origin, Some("variable redeclared here"))
             }
             ParseErrorKind::UnexpectedToken {
                 ref found,

@@ -1,7 +1,7 @@
 use crate::{
     lexer::Lexer,
     source::{Source, Span},
-    ssa::{InstrVar, Instruction, SsaBuilder},
+    ssa::{Instruction, SsaFactory, SsaId, VariableId},
     token::{DelimToken, Token, TokenKind},
 };
 
@@ -29,6 +29,7 @@ pub struct StateFlags {
     pub _break: bool,
     pub _continue: bool,
     pub _return: bool,
+    pub _strict: bool,
 }
 
 impl Default for StateFlags {
@@ -40,6 +41,7 @@ impl Default for StateFlags {
             _break: false,
             _continue: false,
             _return: false,
+            _strict: false,
         }
     }
 }
@@ -49,7 +51,6 @@ pub struct Parser<'a> {
     peek: Option<Token>,
     pref_span: Span,
     state: StateFlags,
-    pub builder: SsaBuilder,
 }
 
 impl<'a> Parser<'a> {
@@ -59,8 +60,11 @@ impl<'a> Parser<'a> {
             peek: None,
             pref_span: Span { lo: 0, hi: 0 },
             state: StateFlags::default(),
-            builder: SsaBuilder::new(),
         }
+    }
+
+    pub fn set_strict(&mut self, strict: bool) {
+        self.state._strict = strict;
     }
 
     #[must_use]
@@ -165,16 +169,21 @@ impl<'a> Parser<'a> {
 
     /// Parse a js script.
     /// One of the 2 entry points into parsing
-    pub fn parse_script(&mut self) -> PResult<()> {
+    pub fn parse_script(&mut self) -> PResult<SsaFactory> {
         trace_log!("script");
+        let mut factory = SsaFactory::new();
+
+        let mut builder = factory.create_builder();
         let mut last = None;
+        let mut first = true;
         while self.peek()?.is_some() {
-            last = self.parse_stmt()?;
+            last = self.parse_stmt(&mut builder, first)?;
+            first = false;
             eat!(self, ";");
         }
-        let value = last.map(|e| e.into()).unwrap_or_else(InstrVar::null);
-        self.builder.push_instruction(Instruction::Return { value });
-        Ok(())
+        let value = last.unwrap_or_else(SsaId::null);
+        builder.push_return(value);
+        Ok(factory)
     }
 
     /// Parse a js module.

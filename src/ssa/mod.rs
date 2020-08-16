@@ -1,35 +1,15 @@
 mod constant;
 pub use constant::{Constant, Null, Undefined};
 mod builder;
-pub use builder::SsaBuilder;
+use crate::util::{Index, Integer};
+pub use builder::{BindingType, Expr, SsaBuilder, SsaFactory, VariableId};
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-pub struct ConstantId(pub u32);
+shrinkwrap_index!(ConstantId);
+shrinkwrap_index!(SsaId);
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-pub struct InstrVar(u32);
-
-impl InstrVar {
-    pub fn null() -> Self {
-        InstrVar(u32::max_value())
-    }
-
-    pub fn as_u32(self) -> u32 {
-        assert!(self != Self::null());
-        self.0
-    }
-}
-
-impl From<u32> for InstrVar {
-    fn from(v: u32) -> Self {
-        assert!(v != u32::max_value());
-        InstrVar(v)
-    }
-}
-
-impl From<SsaVar> for InstrVar {
-    fn from(v: SsaVar) -> Self {
-        InstrVar(v.0)
+impl SsaId {
+    pub const fn null() -> Self {
+        SsaId::invalid()
     }
 }
 
@@ -81,39 +61,47 @@ pub enum BinOp {
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
     LoadGlobal,
+    CreateEnv,
+    GetVariable {
+        variable: VariableId,
+    },
+    SetVariable {
+        variable: VariableId,
+        value: SsaId,
+    },
     ObjectSet {
-        object: InstrVar,
-        key: InstrVar,
-        value: InstrVar,
+        object: SsaId,
+        key: SsaId,
+        value: SsaId,
     },
     ObjectGet {
-        object: InstrVar,
-        key: InstrVar,
+        object: SsaId,
+        key: SsaId,
     },
     Move {
-        operand: InstrVar,
+        operand: SsaId,
     },
     /// Do a unary operations on an operand.
     Unary {
         kind: UnaryOp,
-        operand: InstrVar,
+        operand: SsaId,
     },
     /// Do a binary operations on the 2 operands.
     Binary {
         kind: BinOp,
-        left: InstrVar,
-        right: InstrVar,
+        left: SsaId,
+        right: SsaId,
     },
     /// Jump to target if the value at condition is thruthy,
     /// if negative is true jump if the condition is falsey
     CondJump {
-        negative: bool,
-        condition: InstrVar,
-        target: InstrVar,
+        thruthy: bool,
+        condition: SsaId,
+        target: SsaId,
     },
     /// Jump to the target instruction
     Jump {
-        target: InstrVar,
+        target: SsaId,
     },
     /// load a constant
     LoadConstant {
@@ -121,18 +109,15 @@ pub enum Instruction {
     },
     /// Declare to ssa instruction declarations to be the same instruction.
     Alias {
-        left: InstrVar,
-        right: InstrVar,
+        left: SsaId,
+        right: SsaId,
     },
     /// Return from the current stack the value
     /// Can be null in which case undefined is returned
     Return {
-        value: InstrVar,
+        value: SsaId,
     },
 }
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub struct SsaVar(u32);
 
 #[derive(Debug)]
 pub struct Ssa {

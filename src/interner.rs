@@ -2,37 +2,47 @@
 //!
 //! based on the blog post: https://matklad.github.io/2020/03/22/fast-simple-rust-interner.html
 
+use crate::util::Index;
 use fxhash::FxHashMap;
 use std::mem;
 
 /// Some preloaded strings in the interner often used
 pub mod consts {
     use super::StringId;
+    use crate::util::Index;
 
-    pub(crate) const PRELOAD: [&str; 7] =
-        ["target", "get", "set", "static", "of", "import", "meta"];
+    pub(crate) const PRELOAD: [&str; 8] = [
+        "target",
+        "get",
+        "set",
+        "static",
+        "of",
+        "import",
+        "meta",
+        "use strict",
+    ];
 
-    pub const TARGET: StringId = StringId(0);
-    pub const GET: StringId = StringId(1);
-    pub const SET: StringId = StringId(2);
-    pub const STATIC: StringId = StringId(3);
-    pub const OF: StringId = StringId(4);
-    pub const IMPORT: StringId = StringId(5);
-    pub const META: StringId = StringId(6);
+    pub const TARGET: StringId = StringId(Index(0));
+    pub const GET: StringId = StringId(Index(1));
+    pub const SET: StringId = StringId(Index(2));
+    pub const STATIC: StringId = StringId(Index(3));
+    pub const OF: StringId = StringId(Index(4));
+    pub const IMPORT: StringId = StringId(Index(5));
+    pub const META: StringId = StringId(Index(6));
+    pub const STRICT_DIRECTIVE: StringId = StringId(Index(7));
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-pub struct StringId(u32);
+shrinkwrap_index!(StringId);
 
 pub enum InternValue {
     Present { string: String, count: usize },
-    Free(u32),
+    Free(Index),
 }
 
 pub struct Interner {
-    map: FxHashMap<String, u32>,
+    map: FxHashMap<String, Index>,
     values: Vec<InternValue>,
-    top_free: u32,
+    top_free: Index,
 }
 
 impl Default for Interner {
@@ -46,23 +56,23 @@ impl Interner {
         let mut res = Interner {
             map: FxHashMap::default(),
             values: Vec::new(),
-            top_free: u32::MAX,
+            top_free: Index::invalid(),
         };
         for (i, p) in consts::PRELOAD.iter().enumerate() {
             let id = res.intern(p);
-            debug_assert_eq!(id.0, i as u32);
+            debug_assert_eq!(id.0.into_usize(), i);
         }
         res
     }
 
     fn preallocate(&mut self, name: &str) -> StringId {
-        let idx = self.values.len();
+        let idx = Index::from(self.values.len());
         self.values.push(InternValue::Present {
             string: name.to_string(),
             count: usize::MAX,
         });
-        self.map.insert(name.to_string(), idx as u32);
-        StringId(idx as u32)
+        self.map.insert(name.to_string(), idx);
+        StringId(Index::from(idx))
     }
 
     pub fn intern(&mut self, name: &str) -> StringId {
@@ -74,25 +84,24 @@ impl Interner {
         StringId(id)
     }
 
-    fn allocate(&mut self, s: String) -> u32 {
+    fn allocate(&mut self, s: String) -> Index {
         if let Some(x) = self.remove_free() {
-            self.values[x as usize] = InternValue::Present {
+            self.values[x.into_usize()] = InternValue::Present {
                 string: s,
                 count: 1,
             };
             return x;
         }
-        let res = self.values.len();
-        assert!(res < u32::MAX as usize, "too many interned strings");
+        let res = Index::from(self.values.len());
         self.values.push(InternValue::Present {
             string: s,
             count: 1,
         });
-        res as u32
+        res
     }
 
     pub fn increment(&mut self, id: StringId) {
-        match self.values[id.0 as usize] {
+        match self.values[id.0.into_usize()] {
             InternValue::Present {
                 string: _,
                 ref mut count,
@@ -106,7 +115,7 @@ impl Interner {
     }
 
     pub fn free(&mut self, id: StringId) {
-        match self.values[id.0 as usize] {
+        match self.values[id.0.into_usize()] {
             InternValue::Present {
                 string: _,
                 ref mut count,
@@ -124,23 +133,23 @@ impl Interner {
         self.insert_free(id.0);
     }
 
-    fn insert_free(&mut self, idx: u32) {
-        self.map.remove(match self.values[idx as usize] {
+    fn insert_free(&mut self, idx: Index) {
+        self.map.remove(match self.values[idx.into_usize()] {
             InternValue::Present {
                 ref string,
                 count: _,
             } => string,
             _ => unreachable!(),
         });
-        self.values[idx as usize] = InternValue::Free(self.top_free);
+        self.values[idx.into_usize()] = InternValue::Free(self.top_free);
         self.top_free = idx;
     }
 
-    fn remove_free(&mut self) -> Option<u32> {
-        if self.top_free == u32::MAX {
+    fn remove_free(&mut self) -> Option<Index> {
+        if self.top_free == Index::invalid() {
             return None;
         }
-        let val = match self.values[self.top_free as usize] {
+        let val = match self.values[self.top_free.into_usize()] {
             InternValue::Free(x) => x,
             _ => unreachable!(),
         };
@@ -150,7 +159,7 @@ impl Interner {
     }
 
     pub fn lookup(&self, id: StringId) -> Option<&str> {
-        match self.values.get(id.0 as usize)? {
+        match self.values.get(id.0.into_usize())? {
             InternValue::Present {
                 ref string,
                 count: _,

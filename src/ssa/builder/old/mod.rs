@@ -1,6 +1,25 @@
-use crate::ssa::{Constant, ConstantId, InstrVar, Instruction, Ssa, SsaVar};
+use crate::{
+    interner::StringId,
+    ssa::{BinOp, Constant, ConstantId, InstrVar, Instruction, Ssa, SsaVar, UnaryOp},
+};
 use fxhash::FxHashMap;
 use std::mem;
+mod variable;
+pub use variable::VariableId;
+use variable::VariableTable;
+
+#[derive(Clone, Copy)]
+pub enum Expr {
+    Index {
+        object: SsaVar,
+        index: SsaVar,
+    },
+    Ident {
+        object: Option<SsaVar>,
+        ident: StringId,
+    },
+    Expr(SsaVar),
+}
 
 pub struct ExprJumpContext {
     true_list: Vec<SsaVar>,
@@ -12,25 +31,32 @@ pub struct StmtJumpContext {
     continues: Vec<SsaVar>,
 }
 
-pub struct SsaBuilder {
+pub struct SsaFactory {
+    variables: VariableTable,
+
     instructions: Vec<Instruction>,
+    instruction_variables: Vec<VariableId>,
+
     constants: Vec<Constant>,
     constant_location: FxHashMap<Constant, usize>,
+
     true_list: Vec<SsaVar>,
     false_list: Vec<SsaVar>,
     breaks: Vec<SsaVar>,
     continues: Vec<SsaVar>,
 }
 
-impl Default for SsaBuilder {
+impl Default for SsaFactory {
     fn default() -> Self {
-        SsaBuilder::new()
+        SsaFactory::new()
     }
 }
 
-impl SsaBuilder {
+impl SsaFactory {
     pub fn new() -> Self {
-        SsaBuilder {
+        let mut res = SsaFactory {
+            variables: VariableTable::new(),
+
             instructions: Vec::new(),
             constants: Vec::new(),
             constant_location: FxHashMap::default(),
@@ -38,39 +64,56 @@ impl SsaBuilder {
             false_list: Vec::new(),
             breaks: Vec::new(),
             continues: Vec::new(),
-        }
-    }
-
-    pub fn get_mut(&mut self, var: SsaVar) -> &mut Instruction {
-        &mut self.instructions[var.0 as usize]
+        };
+        res.push(VariableId::temporary(),Instruction::LoadGlobal);
+        res.push(VariableId::temporary(),Instruction::CreateEnv);
     }
 
     pub fn next_id(&self) -> SsaVar {
         SsaVar(self.instructions.len() as u32)
     }
 
-    pub fn push_instruction(&mut self, instr: Instruction) -> SsaVar {
+
+    pub fn push_temp(&mut self, instr: Instruction) -> SsaVar {
         assert!(
             self.instructions.len() < (u32::max_value() - 2) as usize,
             "to many instructions!"
         );
         let id = self.instructions.len() as u32;
         self.instructions.push(instr);
+        self.instruction_variables.push(VariableId::temporary());
+        SsaVar(id)
+    }
+
+    pub fn push(&mut self, variable: VariableId, instr: Instruction) -> SsaVar {
+        assert!(
+            self.instructions.len() < (u32::max_value() - 2) as usize,
+            "to many instructions!"
+        );
+        let id = self.instructions.len() as u32;
+        self.instructions.push(instr);
+        self.instruction_variables.push(variable);
         SsaVar(id)
     }
 
     pub fn push_break(&mut self) -> SsaVar {
-        let id = self.push_instruction(Instruction::Jump {
-            target: InstrVar::null(),
-        });
+        let id = self.push(
+            VariableId::temporary(),
+            Instruction::Jump {
+                target: InstrVar::null(),
+            },
+        );
         self.breaks.push(id);
         id
     }
 
     pub fn push_continue(&mut self) -> SsaVar {
-        let id = self.push_instruction(Instruction::Jump {
-            target: InstrVar::null(),
-        });
+        let id = self.push(
+            VariableId::temporary(),
+            Instruction::Jump {
+                target: InstrVar::null(),
+            },
+        );
         self.continues.push(id);
         id
     }
@@ -92,8 +135,37 @@ impl SsaBuilder {
         self.patch_jump_target(instr, self.next_id().into())
     }
 
-    pub fn load_constant<T: Into<Constant>>(&mut self, t: T) -> SsaVar {
-        self.load_constant_inner(t.into())
+    pub fn push_constant<T: Into<Constant>>(&mut self, variable: VariableId, t: T) -> Expr {
+        Expr::Expr(self.load_constant_inner(variable, t.into()))
+    }
+
+    pub fn push_binop(
+        &mut self,
+        variable: VariableId,
+        kind: BinOp,
+        left: Expr,
+        right: Expr,
+    ) -> Expr {
+        let left = match left{
+            Expr::Expr(x) => x,
+            Expr::Index
+        }
+        self.push(variable, Instruction::Binary{
+            kind,
+        })
+    }
+
+    fn expr_into_ssa_var(&mut self, expr: Expr) -> SsaVar{
+        match expr{
+            Expr::Expr(x) => x,
+            Expr::Ident{
+                object,
+                ident,
+            } => {
+                let id = self.push_constant(VariableId::temporary(), ident);
+                let  res = self.push_temp(
+            }
+        }
     }
 
     pub fn take_expr_jump_context(&mut self) -> ExprJumpContext {
@@ -121,11 +193,14 @@ impl SsaBuilder {
     }
 
     pub fn push_context_jump(&mut self, cond: SsaVar, truthy: bool) -> SsaVar {
-        let instr = self.push_instruction(Instruction::CondJump {
-            negative: !truthy,
-            condition: cond.into(),
-            target: InstrVar::null(),
-        });
+        let instr = self.push(
+            VariableId::temporary(),
+            Instruction::CondJump {
+                negative: !truthy,
+                condition: cond.into(),
+                target: InstrVar::null(),
+            },
+        );
         if truthy {
             self.true_list.push(instr);
         } else {
@@ -157,7 +232,7 @@ impl SsaBuilder {
         }
     }
 
-    fn load_constant_inner(&mut self, c: Constant) -> SsaVar {
+    fn load_constant_inner(&mut self, variable: VariableId, c: Constant) -> SsaVar {
         let const_id = if let Some(x) = self.constant_location.get(&c) {
             *x
         } else {
@@ -170,9 +245,12 @@ impl SsaBuilder {
             self.constants.len() < (u32::max_value() - 2) as usize,
             "to many constants!"
         );
-        self.push_instruction(Instruction::LoadConstant {
-            constant: ConstantId(const_id as u32),
-        })
+        self.push(
+            variable,
+            Instruction::LoadConstant {
+                constant: ConstantId(const_id as u32),
+            },
+        )
     }
 
     pub fn build(self) -> Ssa {
