@@ -1,7 +1,7 @@
 use crate::{
     lexer::Lexer,
     source::{Source, Span},
-    ssa::{Instruction, SsaFactory, SsaId, VariableId},
+    ssa::{Instruction, OptionSsaId, SsaFactory, SsaId, VariableId},
     token::{DelimToken, Token, TokenKind},
 };
 
@@ -174,15 +174,14 @@ impl<'a> Parser<'a> {
         let mut factory = SsaFactory::new();
 
         let mut builder = factory.create_builder();
-        let mut last = None;
+        let mut last = OptionSsaId::none();
         let mut first = true;
         while self.peek()?.is_some() {
             last = self.parse_stmt(&mut builder, first)?;
             first = false;
             eat!(self, ";");
         }
-        let value = last.unwrap_or_else(SsaId::null);
-        builder.push_return(value);
+        builder.push_return(last);
         Ok(factory)
     }
 

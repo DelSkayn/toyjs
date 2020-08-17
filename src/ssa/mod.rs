@@ -1,15 +1,20 @@
 mod constant;
 pub use constant::{Constant, Null, Undefined};
 mod builder;
-use crate::util::{Index, Integer};
-pub use builder::{BindingType, Expr, SsaBuilder, SsaFactory, VariableId};
+use crate::{
+    interner::StringId,
+    util::{Index, Integer},
+};
+pub use builder::{
+    BindingType, Expr, SsaBuilder, SsaFactory, VariableId, VariableTable, Variables,
+};
 
 shrinkwrap_index!(ConstantId);
-shrinkwrap_index!(SsaId);
+shrinkwrap_index!(SsaId, OptionSsaId);
 
-impl SsaId {
+impl OptionSsaId {
     pub const fn null() -> Self {
-        SsaId::invalid()
+        OptionSsaId::none()
     }
 }
 
@@ -97,11 +102,13 @@ pub enum Instruction {
     CondJump {
         thruthy: bool,
         condition: SsaId,
-        target: SsaId,
+        // Should only be null during building
+        target: OptionSsaId,
     },
     /// Jump to the target instruction
     Jump {
-        target: SsaId,
+        // Should only be null during building
+        target: OptionSsaId,
     },
     /// load a constant
     LoadConstant {
@@ -115,12 +122,30 @@ pub enum Instruction {
     /// Return from the current stack the value
     /// Can be null in which case undefined is returned
     Return {
-        value: SsaId,
+        value: OptionSsaId,
     },
 }
 
 #[derive(Debug)]
-pub struct Ssa {
+pub struct SsaFunction {
     pub instructions: Vec<Instruction>,
+    pub name: Option<StringId>,
+    pub strict: bool,
+}
+
+impl SsaFunction {
+    fn new(name: Option<StringId>) -> SsaFunction {
+        SsaFunction {
+            instructions: vec![Instruction::LoadGlobal, Instruction::CreateEnv],
+            name,
+            strict: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Ssa {
+    pub functions: Vec<SsaFunction>,
+    pub variables: Variables,
     pub constants: Vec<Constant>,
 }

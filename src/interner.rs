@@ -2,7 +2,7 @@
 //!
 //! based on the blog post: https://matklad.github.io/2020/03/22/fast-simple-rust-interner.html
 
-use crate::util::Index;
+use crate::util::{Index, OptionIndex};
 use fxhash::FxHashMap;
 use std::mem;
 
@@ -32,17 +32,17 @@ pub mod consts {
     pub const STRICT_DIRECTIVE: StringId = StringId(Index(7));
 }
 
-shrinkwrap_index!(StringId);
+shrinkwrap_index!(StringId, OptionStringId);
 
 pub enum InternValue {
     Present { string: String, count: usize },
-    Free(Index),
+    Free(OptionIndex),
 }
 
 pub struct Interner {
     map: FxHashMap<String, Index>,
     values: Vec<InternValue>,
-    top_free: Index,
+    top_free: OptionIndex,
 }
 
 impl Default for Interner {
@@ -56,11 +56,11 @@ impl Interner {
         let mut res = Interner {
             map: FxHashMap::default(),
             values: Vec::new(),
-            top_free: Index::invalid(),
+            top_free: OptionIndex::none(),
         };
         for (i, p) in consts::PRELOAD.iter().enumerate() {
             let id = res.intern(p);
-            debug_assert_eq!(id.0.into_usize(), i);
+            debug_assert_eq!(usize::from(id.0), i);
         }
         res
     }
@@ -142,20 +142,17 @@ impl Interner {
             _ => unreachable!(),
         });
         self.values[idx.into_usize()] = InternValue::Free(self.top_free);
-        self.top_free = idx;
+        self.top_free = OptionIndex::some(idx);
     }
 
     fn remove_free(&mut self) -> Option<Index> {
-        if self.top_free == Index::invalid() {
-            return None;
-        }
-        let val = match self.values[self.top_free.into_usize()] {
+        let free = self.top_free.into_option()?;
+        let val = match self.values[free.into_usize()] {
             InternValue::Free(x) => x,
             _ => unreachable!(),
         };
-        let res = self.top_free;
         self.top_free = val;
-        Some(res)
+        Some(free)
     }
 
     pub fn lookup(&self, id: StringId) -> Option<&str> {

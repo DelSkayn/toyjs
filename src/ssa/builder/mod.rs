@@ -1,11 +1,14 @@
 use crate::{
     interner::StringId,
-    ssa::{BinOp, Constant, Instruction, SsaId, UnaryOp},
+    ssa::{
+        BinOp, Constant, ConstantId, Instruction, OptionSsaId, Ssa, SsaFunction, SsaId, UnaryOp,
+    },
+    util::Integer,
 };
 use std::mem;
 mod variable;
 use fxhash::FxHashMap;
-pub use variable::{BindingType, VariableId, VariableTable};
+pub use variable::{BindingType, VariableId, VariableTable, Variables};
 
 #[derive(Clone, Copy)]
 pub enum Expr {
@@ -43,29 +46,11 @@ impl From<SsaId> for Expr {
     }
 }
 
-pub struct SsaFunction {
-    instructions: Vec<Instruction>,
-    instruction_variables: Vec<VariableId>,
-    variable_values: FxHashMap<VariableId, SsaId>,
-    name: Option<StringId>,
-    strict: bool,
-}
-
-impl SsaFunction {
-    fn new(name: Option<StringId>) -> SsaFunction {
-        SsaFunction {
-            instructions: vec![Instruction::LoadGlobal, Instruction::CreateEnv],
-            instruction_variables: Vec::new(),
-            variable_values: FxHashMap::default(),
-            name,
-            strict: false,
-        }
-    }
-}
-
 pub struct SsaFactory {
     variables: VariableTable,
     functions: Vec<SsaFunction>,
+    constant_id: FxHashMap<Constant, ConstantId>,
+    constants: Vec<Constant>,
 }
 
 impl SsaFactory {
@@ -73,6 +58,8 @@ impl SsaFactory {
         SsaFactory {
             variables: VariableTable::new(),
             functions: vec![SsaFunction::new(None)],
+            constant_id: FxHashMap::default(),
+            constants: Vec::new(),
         }
     }
 
@@ -83,6 +70,14 @@ impl SsaFactory {
             instruction_buffer: &mut self.functions,
             expr_ctx: ExprContext::default(),
             stmt_ctx: StmtContext::default(),
+        }
+    }
+
+    pub fn finish(self) -> Ssa {
+        Ssa {
+            variables: self.variables.into_variables(),
+            functions: self.functions,
+            constants: self.constants,
         }
     }
 }
@@ -131,7 +126,10 @@ impl<'a> SsaBuilder<'a> {
     /// Declare a variable.
     /// Returns None if the variable could not be redeclared
     pub fn declare(&mut self, name: StringId, ty: BindingType) -> Option<Expr> {
-        self.variables.declare(name, ty).map(Expr::Variable)
+        self.variables
+            .declare(name, ty)
+            .into_option()
+            .map(Expr::Variable)
     }
 
     pub fn alias(&mut self, left: Expr, right: Expr) -> Expr {
@@ -151,7 +149,7 @@ impl<'a> SsaBuilder<'a> {
         Expr::Expr(self.push(Instruction::Unary { kind, operand }))
     }
 
-    pub fn push_return(&mut self, value: SsaId) {
+    pub fn push_return(&mut self, value: OptionSsaId) {
         self.push(Instruction::Return { value });
     }
 
@@ -182,11 +180,11 @@ impl<'a> SsaBuilder<'a> {
         }
     }
 
-    pub fn jump(&mut self, target: SsaId) -> SsaId {
+    pub fn jump(&mut self, target: OptionSsaId) -> SsaId {
         self.push(Instruction::Jump { target })
     }
 
-    pub fn jump_cond(&mut self, target: SsaId, condition: Expr, jump_on_true: bool) -> SsaId {
+    pub fn jump_cond(&mut self, target: OptionSsaId, condition: Expr, jump_on_true: bool) -> SsaId {
         let condition = self.evaluate(condition);
         self.push(Instruction::CondJump {
             target,
@@ -195,7 +193,7 @@ impl<'a> SsaBuilder<'a> {
         })
     }
 
-    pub fn jump_context(&mut self, target: SsaId, thruthy: bool) -> SsaId {
+    pub fn jump_context(&mut self, target: OptionSsaId, thruthy: bool) -> SsaId {
         let res = self.push(Instruction::Jump { target });
         if thruthy {
             self.expr_ctx.true_jumps.push(res);
@@ -207,7 +205,7 @@ impl<'a> SsaBuilder<'a> {
 
     pub fn jump_cond_context(
         &mut self,
-        target: SsaId,
+        target: OptionSsaId,
         condition: Expr,
         jump_on_true: bool,
         thruthy: bool,
@@ -228,13 +226,13 @@ impl<'a> SsaBuilder<'a> {
 
     pub fn jump_break(&mut self) {
         let id = self.next();
-        self.jump(SsaId::null());
+        self.jump(OptionSsaId::none());
         self.stmt_ctx.breaks.push(id);
     }
 
     pub fn jump_continue(&mut self) {
         let id = self.next();
-        self.jump(SsaId::null());
+        self.jump(OptionSsaId::none());
         self.stmt_ctx.continues.push(id);
     }
 
@@ -245,8 +243,8 @@ impl<'a> SsaBuilder<'a> {
                 thruthy: _,
                 condition: _,
                 ref mut target,
-            } => *target = new_target,
-            Instruction::Jump { ref mut target } => *target = new_target,
+            } => *target = OptionSsaId::some(new_target),
+            Instruction::Jump { ref mut target } => *target = OptionSsaId::some(new_target),
             _ => panic!("ssa instruction not a jump"),
         }
     }
@@ -299,11 +297,18 @@ impl<'a> SsaBuilder<'a> {
         }
     }
 
+    pub fn push_scope(&mut self) {
+        self.variables.push_scope();
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.variables.pop_scope();
+    }
+
     fn push(&mut self, instr: Instruction) -> SsaId {
         let f = self.function();
         let idx = f.instructions.len();
         f.instructions.push(instr);
-        f.instruction_variables.push(VariableId::temporary());
         SsaId::from(idx)
     }
 

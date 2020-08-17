@@ -12,7 +12,7 @@ enum Binding {
 }
 
 impl<'a> Parser<'a> {
-    pub fn parse_decl(&mut self, builder: &mut SsaBuilder) -> PResult<Option<SsaId>> {
+    pub fn parse_decl(&mut self, builder: &mut SsaBuilder) -> PResult<OptionSsaId> {
         let kind = match self.peek_kind()? {
             Some(t!("var")) => BindingType::Var,
             Some(t!("let")) => BindingType::Let,
@@ -25,11 +25,11 @@ impl<'a> Parser<'a> {
             let expr = match binding {
                 Binding::Array => {
                     expect!(self, "=" => "array bindings need to be initialized");
-                    Some(self.parse_ops(builder)?)
+                    OptionSsaId::some(self.parse_ops(builder)?)
                 }
                 Binding::Object => {
                     expect!(self, "=" => "object bindings need to be initialized");
-                    Some(self.parse_ops(builder)?)
+                    OptionSsaId::some(self.parse_ops(builder)?)
                 }
                 Binding::Ident(x) => {
                     let var = if let Some(x) = builder.declare(x, kind) {
@@ -40,11 +40,11 @@ impl<'a> Parser<'a> {
                     if eat!(self, "=") {
                         let expr = self.parse_ops(builder)?;
                         builder.assign(var, expr.into());
-                        Some(expr)
+                        OptionSsaId::some(expr)
                     } else if kind == BindingType::Const {
                         unexpected!(self => "const variables must be initialized");
                     } else {
-                        None
+                        OptionSsaId::none()
                     }
                 }
             };
