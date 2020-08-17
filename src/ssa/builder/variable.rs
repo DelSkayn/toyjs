@@ -1,4 +1,7 @@
-use crate::{interner::StringId, util::Index};
+use crate::{
+    interner::StringId,
+    util::{Index, OptionIndex},
+};
 use fxhash::FxHashMap;
 use std::collections::hash_map::Entry;
 
@@ -12,45 +15,44 @@ pub enum BindingType {
     Const,
 }
 
+#[derive(Debug)]
 pub struct Variable {
     name: StringId,
     /// Whether the variable is captured in a closure.
     captured: bool,
     implicit: bool,
-    scope: usize,
+    scope: Index,
     binding: BindingType,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ImplicitVariable {
     id: Index,
-    top_function_scope: usize,
+    top_function_scope: Index,
 }
 
+#[derive(Debug)]
 pub struct VariableTable {
     scopes: Vec<ScopeData>,
     variable: Vec<Variable>,
-    current_scope: usize,
-    top_function_scope: usize,
+    current_scope: Index,
+    top_function_scope: Index,
     implicits: FxHashMap<StringId, Vec<ImplicitVariable>>,
 }
 
-shrinkwrap_index!(VariableId);
-
-impl VariableId {
-    pub const fn temporary() -> Self {
-        VariableId::invalid()
-    }
-
-    pub fn is_temporary(self) -> bool {
-        self == VariableId::invalid()
-    }
+#[derive(Debug)]
+pub struct Variables {
+    scopes: Vec<ScopeData>,
+    variable: Vec<Variable>,
 }
 
+shrinkwrap_index!(VariableId, OptionVariableId);
+
+#[derive(Debug)]
 pub struct ScopeData {
     table: FxHashMap<StringId, Index>,
     function_boundry: bool,
-    parent: Index,
+    parent: OptionIndex,
     children: Vec<Index>,
 }
 
@@ -60,13 +62,20 @@ impl VariableTable {
             scopes: vec![ScopeData {
                 table: FxHashMap::default(),
                 function_boundry: true,
-                parent: Index::invalid(),
+                parent: OptionIndex::none(),
                 children: Vec::new(),
             }],
-            current_scope: 0,
-            top_function_scope: 0,
+            current_scope: Index(0),
+            top_function_scope: Index(0),
             variable: Vec::new(),
             implicits: FxHashMap::default(),
+        }
+    }
+
+    pub fn into_variables(self) -> Variables {
+        Variables {
+            scopes: self.scopes,
+            variable: self.variable,
         }
     }
 
@@ -74,18 +83,22 @@ impl VariableTable {
         let mut cur_scope = self.current_scope;
         let mut crossed_function_boundery = false;
         loop {
-            if let Some(x) = self.scopes[cur_scope].table.get(&ident).copied() {
+            if let Some(x) = self.scopes[cur_scope.into_usize()]
+                .table
+                .get(&ident)
+                .copied()
+            {
                 self.variable[x.into_usize()].captured =
                     self.variable[x.into_usize()].captured | crossed_function_boundery;
                 return VariableId(x);
             }
-            let n_scope = self.scopes[cur_scope].parent;
+            let n_scope = self.scopes[cur_scope.into_usize()].parent;
             crossed_function_boundery =
-                crossed_function_boundery | self.scopes[cur_scope].function_boundry;
-            if n_scope == Index::invalid() {
+                crossed_function_boundery | self.scopes[cur_scope.into_usize()].function_boundry;
+            if n_scope == OptionIndex::none() {
                 return self.declare_implicit(ident);
             }
-            cur_scope = n_scope.into_usize();
+            cur_scope = n_scope.unwrap();
         }
     }
 
@@ -93,7 +106,7 @@ impl VariableTable {
         let variable = Variable {
             name: ident,
             captured: false,
-            scope: 0,
+            scope: Index(0),
             implicit: true,
             binding: BindingType::Var,
         };
@@ -110,7 +123,7 @@ impl VariableTable {
         VariableId(id)
     }
 
-    pub fn declare(&mut self, name: StringId, binding: BindingType) -> Option<VariableId> {
+    pub fn declare(&mut self, name: StringId, binding: BindingType) -> OptionVariableId {
         let scope = match binding {
             BindingType::Let | BindingType::Const => self.current_scope,
             BindingType::Var => self.top_function_scope,
@@ -131,23 +144,23 @@ impl VariableTable {
                     self.scopes[0].table.remove(&name);
                     self.variable[v.id.into_usize()].implicit = false;
                     self.variable[v.id.into_usize()].scope = self.top_function_scope;
-                    self.scopes[self.top_function_scope]
+                    self.scopes[self.top_function_scope.into_usize()]
                         .table
                         .insert(name, v.id);
-                    return Some(VariableId(v.id));
+                    return OptionVariableId::some(VariableId(v.id));
                 }
             }
         }
         let index = Index::from(self.variable.len());
-        match self.scopes[scope].table.entry(name) {
+        match self.scopes[scope.into_usize()].table.entry(name) {
             Entry::Vacant(x) => {
                 x.insert(index);
             }
             Entry::Occupied(x) => {
                 if binding == BindingType::Var {
-                    return Some(VariableId(*x.get()));
+                    return OptionVariableId::some(VariableId(*x.get()));
                 }
-                return None;
+                return OptionVariableId::none();
             }
         }
         let variable = Variable {
@@ -158,19 +171,19 @@ impl VariableTable {
             captured: false,
         };
         self.variable.push(variable);
-        self.scopes[scope].table.insert(name, index);
-        Some(VariableId(index))
+        self.scopes[scope.into_usize()].table.insert(name, index);
+        OptionVariableId::some(VariableId(index))
     }
 
     pub fn push_scope(&mut self) {
         let new_scope = ScopeData {
             table: FxHashMap::default(),
             function_boundry: true,
-            parent: self.current_scope.into(),
+            parent: OptionIndex::some(self.current_scope),
             children: Vec::new(),
         };
-        let new_index = self.scopes.len();
-        self.scopes[self.current_scope]
+        let new_index = Index::from(self.scopes.len());
+        self.scopes[self.current_scope.into_usize()]
             .children
             .push(Index::from(new_index));
         self.scopes.push(new_scope);
@@ -181,11 +194,11 @@ impl VariableTable {
         let new_scope = ScopeData {
             table: FxHashMap::default(),
             function_boundry: true,
-            parent: self.current_scope.into(),
+            parent: OptionIndex::some(self.current_scope),
             children: Vec::new(),
         };
-        let new_index = self.scopes.len();
-        self.scopes[self.current_scope]
+        let new_index = Index::from(self.scopes.len());
+        self.scopes[self.current_scope.into_usize()]
             .children
             .push(Index::from(new_index));
         self.scopes.push(new_scope);
@@ -194,12 +207,14 @@ impl VariableTable {
     }
 
     pub fn pop_scope(&mut self) {
-        let parent = self.scopes[self.current_scope].parent;
-        assert_ne!(parent, Index::invalid());
-        self.current_scope = parent.into_usize();
+        let parent = self.scopes[self.current_scope.into_usize()].parent;
+        assert_ne!(parent, OptionIndex::none(), "tried to pop root scope");
+        self.current_scope = parent.unwrap();
         self.top_function_scope = self.current_scope;
-        while !self.scopes[self.top_function_scope].function_boundry {
-            self.top_function_scope = self.scopes[self.top_function_scope].parent.into_usize()
+        while !self.scopes[self.top_function_scope.into_usize()].function_boundry {
+            self.top_function_scope = self.scopes[self.top_function_scope.into_usize()]
+                .parent
+                .unwrap()
         }
     }
 }

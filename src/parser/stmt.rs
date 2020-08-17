@@ -2,21 +2,21 @@ use crate::{
     lexer::Lexer,
     parser::*,
     source::{Source, Span},
-    ssa::{Instruction, SsaBuilder, SsaId},
+    ssa::{Instruction, OptionSsaId, SsaBuilder, SsaId},
     token::{DelimToken, Token, TokenKind},
 };
 
 impl<'a> Parser<'a> {
-    pub fn parse_stmt(&mut self, builder: &mut SsaBuilder, first: bool) -> PResult<Option<SsaId>> {
+    pub fn parse_stmt(&mut self, builder: &mut SsaBuilder, first: bool) -> PResult<OptionSsaId> {
         trace_log!("statement");
         let peek = match self.peek()? {
             Some(x) => x,
-            None => return Ok(None),
+            None => return Ok(OptionSsaId::none()),
         };
         if first {
             if let t!("strict_directive") = peek.kind {
                 self.set_strict(true);
-                return Ok(None);
+                return Ok(OptionSsaId::none());
             }
         }
         match peek.kind {
@@ -29,23 +29,22 @@ impl<'a> Parser<'a> {
             t!("{") => return self.parse_block(builder),
             t!("break") => self.parse_break(builder)?,
             t!("continue") => self.parse_continue(builder)?,
-            _ => return Ok(Some(self.parse_expr(builder)?)),
+            _ => return Ok(OptionSsaId::some(self.parse_expr(builder)?)),
         }
-        Ok(None)
+        Ok(OptionSsaId::none())
     }
 
-    fn parse_block(&mut self, builder: &mut SsaBuilder) -> PResult<Option<SsaId>> {
+    fn parse_block(&mut self, builder: &mut SsaBuilder) -> PResult<OptionSsaId> {
         trace_log!("block");
         expect!(self, "{");
-        let mut last = None;
+        builder.push_scope();
+        let mut last = OptionSsaId::none();
         while !eat!(self, "}") {
             //TODO figure out if opening a block no longers allows a strict directive
-            let res = self.parse_stmt(builder, false)?;
-            if res.is_some() {
-                last = res;
-            }
+            last = self.parse_stmt(builder, false)?;
             eat!(self, ";");
         }
+        builder.pop_scope();
         Ok(last)
     }
 
@@ -57,13 +56,13 @@ impl<'a> Parser<'a> {
         let jump_context = builder.take_expr_context();
         expect!(self, ")");
         let jump_cond = builder.next();
-        builder.jump_cond(SsaId::null(), expr.into(), false);
+        builder.jump_cond(OptionSsaId::none(), expr.into(), false);
         self.parse_stmt(builder, false)?;
 
         let jump_cond_target = if eat!(self, "else") {
             //parse else
             let jump = builder.next();
-            builder.jump(SsaId::null());
+            builder.jump(OptionSsaId::none());
             let jump_cond_target = builder.next();
             self.parse_stmt(builder, false)?;
             builder.patch_jump(jump, builder.next());
@@ -96,7 +95,7 @@ impl<'a> Parser<'a> {
         let cond = self.parse_expr(builder)?;
         let jump_context = builder.take_expr_context();
         expect!(self, ")");
-        builder.jump_cond(loop_target, cond.into(), true);
+        builder.jump_cond(OptionSsaId::some(loop_target), cond.into(), true);
         builder.patch_expr_jump(&jump_context, loop_target, true);
         builder.patch_continue_jump(&stmt_context, loop_target);
         builder.patch_break_jump(&stmt_context, builder.next());
@@ -112,7 +111,7 @@ impl<'a> Parser<'a> {
         let jump_context = builder.take_expr_context();
         expect!(self, ")");
         let cond_jump = builder.next();
-        builder.jump_cond(SsaId::null(), expr.into(), false);
+        builder.jump_cond(OptionSsaId::none(), expr.into(), false);
         builder.take_stmt_context();
         self.alter_state(
             |s| {
@@ -122,7 +121,7 @@ impl<'a> Parser<'a> {
             |this| this.parse_stmt(builder, false),
         )?;
         let stmt_context = builder.take_stmt_context();
-        builder.jump(again);
+        builder.jump(OptionSsaId::some(again));
 
         builder.patch_continue_jump(&stmt_context, again);
         builder.patch_break_jump(&stmt_context, builder.next());

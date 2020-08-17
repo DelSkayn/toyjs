@@ -340,17 +340,25 @@ macro_rules! t {
 }
 
 macro_rules! shrinkwrap_index {
-    ($name:ident) => {
+    (@main $name:ident) => {
         #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
-        pub struct $name(pub(crate) crate::util::Index);
+        pub struct $name(pub crate::util::Index);
 
-        impl $name {
-            pub const fn invalid() -> Self {
-                Self(crate::util::Index::invalid())
-            }
-
-            pub fn into_usize(self) -> usize {
+        impl $name{
+            pub fn into_usize(self) -> usize{
                 self.0.into_usize()
+            }
+        }
+
+        impl From<$name> for crate::util::Integer {
+            fn from(v: $name) -> Self {
+                (v.0).0
+            }
+        }
+
+        impl From<$name> for usize {
+            fn from(v: $name) -> Self {
+                (v.0).0 as usize
             }
         }
 
@@ -375,6 +383,48 @@ macro_rules! shrinkwrap_index {
         impl From<usize> for $name {
             fn from(v: usize) -> Self {
                 Self(v.into())
+            }
+        }
+    };
+
+
+    ($name:ident) => {
+        shrinkwrap_index!(@main $name);
+    };
+    ($name:ident, $option_name:ident) => {
+        shrinkwrap_index!(@main $name);
+
+        #[derive(Eq, PartialEq, Debug, Clone, Copy, Hash)]
+        pub struct $option_name(crate::util::OptionIndex);
+
+        impl $option_name {
+            pub const fn none() -> Self {
+                Self(crate::util::OptionIndex::none())
+            }
+
+            pub fn some(v: $name) -> Self {
+                Self(crate::util::OptionIndex::some(v.0))
+            }
+
+
+            pub fn is_some(&self) -> bool {
+                self.0.is_some()
+            }
+
+            pub fn is_none(&self) -> bool {
+                self.0.is_none()
+            }
+
+            pub fn unwrap(self) -> $name {
+                $name(self.0.unwrap())
+            }
+
+            pub fn unwrap_or(self, v: $name) -> $name {
+                $name(self.0.unwrap_or(v.0))
+            }
+
+            pub fn into_option(self) -> Option<$name>{
+                self.0.into_option().map($name)
             }
         }
     };

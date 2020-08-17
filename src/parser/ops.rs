@@ -126,10 +126,10 @@ impl<'a> Parser<'a> {
         let kind = match self.next()?.unwrap().kind {
             t!("?") => {
                 let jump_targets = builder.take_expr_context();
-                let cond_jump_instr = builder.jump_cond(SsaId::null(), lhs, false);
+                let cond_jump_instr = builder.jump_cond(OptionSsaId::none(), lhs, false);
                 let mhs = self.parse_ops_rec(0, builder)?;
                 let mhs = builder.evaluate(mhs);
-                let jump_instr = builder.jump(SsaId::null());
+                let jump_instr = builder.jump(OptionSsaId::none());
 
                 expect!(self, ":");
 
@@ -144,7 +144,7 @@ impl<'a> Parser<'a> {
             x @ t!("||") | x @ t!("&&") => {
                 let lhs = builder.evaluate(lhs);
                 let cond_jump =
-                    builder.jump_cond_context(SsaId::null(), lhs.into(), x == t!("||"), true);
+                    builder.jump_cond_context(OptionSsaId::none(), lhs.into(), x == t!("||"), true);
 
                 let rhs = self.parse_ops_rec(r_bp, builder)?;
                 let rhs = builder.evaluate(rhs);
@@ -158,7 +158,7 @@ impl<'a> Parser<'a> {
                 let lhs = builder.evaluate(lhs);
                 builder.take_expr_context();
                 let cond = builder.unary_op(UnaryOp::IsNullish, lhs.into());
-                let cond_jump = builder.jump_cond(SsaId::null(), cond, false);
+                let cond_jump = builder.jump_cond(OptionSsaId::none(), cond, false);
                 let rhs = self.parse_ops_rec(r_bp, builder)?;
                 let rhs = builder.evaluate(rhs);
                 let target = builder.next();
