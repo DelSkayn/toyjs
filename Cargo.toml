@@ -1,20 +1,14 @@
-[package]
-authors = ["delskayn <mees.delzenne@gmail.com>"]
-edition = "2018"
-name = "js"
-version = "0.1.0"
+[workspace]
+members = [
+    "crates/token",
+    "crates/lexer",
+    "crates/common",
+    "crates/compiler",
+    "crates/parser",
+    "crates/ast",
+    "crates/runtime",
+    "toyjs"
+]
 
-[dependencies]
-unicode-xid = "0.2.0"
-log = "0.4.8"
-fxhash = "0.2.1"
-lexical-core = "0.7.4"
-gc = "0.3.6"
-
-[[example]]
-name = "ecma"
-path = "examples/ecma.rs"
-
-[dev-dependencies]
-walkdir = "2.3.1"
-env_logger = "0.7.1"
+[profile.release]
+debug = true

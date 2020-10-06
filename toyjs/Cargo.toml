@@ -1,0 +1,25 @@
+[package]
+name = "toyjs"
+version = "0.1.0"
+authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+common = { package="toyjs_common",path = "../crates/common/" }
+token = { package="toyjs_token",path = "../crates/token/" }
+lexer = { package="toyjs_lexer",path = "../crates/lexer/" }
+ast = { package="toyjs_ast",path = "../crates/ast/" }
+parser = { package="toyjs_parser",path = "../crates/parser/" }
+compiler = { package="toyjs_compiler",path = "../crates/compiler/" }
+runtime = { package="toyjs_runtime",path = "../crates/runtime/" }
+bumpalo = { version = "3.4.0", features = ["boxed","collections"]}
+gc = "0.3.6"
+
+[dev-dependencies]
+criterion = "0.3.3"
+
+[[bench]]
+name = "expr"
+harness = false
