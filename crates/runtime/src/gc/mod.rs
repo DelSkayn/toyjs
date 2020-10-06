@@ -1,3 +1,4 @@
+/// A garbage collector based the gc-arena crate.
 use std::{
     cell::{Cell, UnsafeCell},
     fmt, mem,
