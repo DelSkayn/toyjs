@@ -23,10 +23,14 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
                 | Ssa::CreateObject
                 | Ssa::GetEnvironment { depth: _ }
                 | Ssa::LoadConstant { constant: _ }
-                | Ssa::IndexEnvironment { slot: _ }
                 | Ssa::Jump { to: _ } => {}
                 Ssa::Binary { op: _, left, right }
                 | Ssa::Alias { left, right }
+                | Ssa::AssignEnvironment {
+                    slot: _,
+                    value: left,
+                    env: right,
+                }
                 | Ssa::Index {
                     object: left,
                     key: right,
@@ -41,11 +45,11 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
                     lifetimes[value] = idx;
                 }
                 Ssa::Unary { op: _, operand: v }
+                | Ssa::IndexEnvironment { env: v, slot: _ }
                 | Ssa::ConditionalJump {
                     condition: v,
                     to: _,
-                }
-                | Ssa::AssignEnvironment { slot: _, value: v } => {
+                } => {
                     lifetimes[idx] = idx;
                     lifetimes[v] = idx;
                 }
@@ -70,23 +74,14 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
     fn is_never_killed(ssa: Ssa) -> bool {
         match ssa {
             Ssa::GetGlobal
-            | Ssa::GetEnvironment { depth: _ }
-            | Ssa::LoadConstant { constant: _ }
-            | Ssa::IndexEnvironment { slot: _ } => true,
-            Ssa::Binary {
-                op: _,
-                left: _,
-                right: _,
-            }
-            | Ssa::Unary { op: _, operand: _ }
-            | Ssa::Alias { left: _, right: _ } => false,
-            Ssa::ConditionalJump {
-                condition: _,
-                to: _,
-            }
-            | Ssa::Jump { to: _ }
-            | Ssa::Return { expr: _ }
-            | Ssa::AssignEnvironment { slot: _, value: _ } => panic!("not a value ssa instruction"),
+            | Ssa::GetEnvironment { .. }
+            | Ssa::LoadConstant { .. }
+            | Ssa::IndexEnvironment { .. } => true,
+            Ssa::Binary { .. } | Ssa::Unary { .. } | Ssa::Alias { .. } => false,
+            Ssa::ConditionalJump { .. }
+            | Ssa::Jump { .. }
+            | Ssa::Return { .. }
+            | Ssa::AssignEnvironment { .. } => panic!("not a value ssa instruction"),
             _ => todo!(),
         }
     }

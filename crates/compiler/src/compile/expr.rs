@@ -29,8 +29,28 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     let object = self.compile_expr(expr);
                     self.ssa.insert(Ssa::Index { object, key })
                 }
-                PostfixOperator::AddOne => todo!(),
-                PostfixOperator::SubtractOne => todo!(),
+                ref x @ PostfixOperator::AddOne | ref x @ PostfixOperator::SubtractOne => {
+                    let place = self.compile_place(expr);
+                    let value = self.compile_place_use(place);
+                    let value = self.ssa.push(Ssa::Unary {
+                        op: UnaryOperation::ToNumber,
+                        operand: value,
+                    });
+                    let constant = self.constants.add(Constant::Integer(1));
+                    let one = self.ssa.push(Ssa::LoadConstant { constant });
+                    let op = if *x == PostfixOperator::AddOne {
+                        BinaryOperation::Add
+                    } else {
+                        BinaryOperation::Subtract
+                    };
+                    let added = self.ssa.push(Ssa::Binary {
+                        op,
+                        left: value,
+                        right: one,
+                    });
+                    self.compile_assignment(place, added);
+                    value
+                }
             },
             Expr::Binary(left, op, right) => {
                 let op = match op {
@@ -61,12 +81,34 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 self.ssa.insert(Ssa::Binary { op, left, right })
             }
             Expr::UnaryPrefix(op, right) => {
-                let op = match op {
+                let op = match *op {
                     PrefixOperator::Not => UnaryOperation::Not,
                     PrefixOperator::Positive => UnaryOperation::ToNumber,
                     PrefixOperator::Negative => UnaryOperation::Negative,
                     PrefixOperator::BinaryNot => UnaryOperation::BinaryNot,
                     PrefixOperator::TypeOf => UnaryOperation::Typeof,
+                    ref x @ PrefixOperator::AddOne | ref x @ PrefixOperator::SubtractOne => {
+                        let place = self.compile_place(right);
+                        let value = self.compile_place_use(place);
+                        let value = self.ssa.push(Ssa::Unary {
+                            op: UnaryOperation::ToNumber,
+                            operand: value,
+                        });
+                        let constant = self.constants.add(Constant::Integer(1));
+                        let one = self.ssa.push(Ssa::LoadConstant { constant });
+                        let op = if *x == PrefixOperator::AddOne {
+                            BinaryOperation::Add
+                        } else {
+                            BinaryOperation::Subtract
+                        };
+                        let added = self.ssa.push(Ssa::Binary {
+                            op,
+                            left: value,
+                            right: one,
+                        });
+                        self.compile_assignment(place, added);
+                        return added;
+                    }
                     _ => todo!(),
                 };
                 let right = self.compile_expr(right);

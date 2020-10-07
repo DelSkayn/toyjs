@@ -93,15 +93,29 @@ pub enum UnaryOperation {
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Ssa {
-    CreateEnvironment,
-    CreateObject,
     GetGlobal,
+    CreateEnvironment,
     GetEnvironment {
-        depth: usize,
+        depth: u16,
     },
-    Alias {
-        left: SsaId,
-        right: SsaId,
+    IndexEnvironment {
+        env: SsaId,
+        slot: u16,
+    },
+    AssignEnvironment {
+        value: SsaId,
+        env: SsaId,
+        slot: u16,
+    },
+    CreateObject,
+    Index {
+        object: SsaId,
+        key: SsaId,
+    },
+    Assign {
+        object: SsaId,
+        key: SsaId,
+        value: SsaId,
     },
     ConditionalJump {
         condition: SsaId,
@@ -122,23 +136,11 @@ pub enum Ssa {
         op: UnaryOperation,
         operand: SsaId,
     },
-    Index {
-        object: SsaId,
-        key: SsaId,
-    },
-    Assign {
-        object: SsaId,
-        key: SsaId,
-        value: SsaId,
-    },
-    IndexEnvironment {
-        slot: usize,
-    },
-    AssignEnvironment {
-        slot: usize,
-        value: SsaId,
-    },
     Return {
         expr: Option<SsaId>,
+    },
+    Alias {
+        left: SsaId,
+        right: SsaId,
     },
 }

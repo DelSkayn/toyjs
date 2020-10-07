@@ -10,6 +10,7 @@ use std::{cell::RefCell, mem, num, rc::Rc};
 mod macros;
 
 pub mod bytecode;
+pub mod environment;
 pub mod object;
 mod stack;
 pub mod value;
