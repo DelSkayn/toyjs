@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
-use toyjs::{ToyJs, Value};
+use criterion::{criterion_group, criterion_main, Criterion};
+use toyjs::ToyJs;
 
 fn expression(c: &mut Criterion) {
     const EXPRESSION: &str = "((2 + 2) ** 3 / 100 - 5 ** 3 * -1000) ** 2 + 100 - 8;";
