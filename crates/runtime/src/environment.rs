@@ -1,4 +1,4 @@
 pub struct Environment {
-    parent: Gc<Environment>,
+    parent: Option<Gc<Environment>>,
     slots: Box<[JSValue]>,
 }

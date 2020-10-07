@@ -22,7 +22,7 @@ use value::JSValue;
 pub struct Root<'a> {
     stack: &'a Stack,
     global: Gc<Object>,
-    pub ret: Option<JSValue>,
+    ret: Option<JSValue>,
 }
 
 unsafe impl<'a> gc::Trace for Root<'a> {

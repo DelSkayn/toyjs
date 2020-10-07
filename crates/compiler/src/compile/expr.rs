@@ -14,6 +14,24 @@ pub enum Place {
 impl<'a, 'alloc> Compiler<'a, 'alloc> {
     pub(crate) fn compile_expr(&mut self, expr: &Expr<'alloc>) -> SsaId {
         match expr {
+            Expr::UnaryPostfix(expr, op) => match *op {
+                PostfixOperator::Dot(x) => {
+                    let expr = self.compile_expr(expr);
+                    let constant = self.constants.add(Constant::String(x));
+                    let constant = self.ssa.insert(Ssa::LoadConstant { constant });
+                    self.ssa.insert(Ssa::Index {
+                        object: expr,
+                        key: constant,
+                    })
+                }
+                PostfixOperator::Index(ref key) => {
+                    let key = self.compile_expr(key);
+                    let object = self.compile_expr(expr);
+                    self.ssa.insert(Ssa::Index { object, key })
+                }
+                PostfixOperator::AddOne => todo!(),
+                PostfixOperator::SubtractOne => todo!(),
+            },
             Expr::Binary(left, op, right) => {
                 let op = match op {
                     BinaryOperator::Add => BinaryOperation::Add,
@@ -88,7 +106,6 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 self.compile_assignment(place, value);
                 value
             }
-            _ => todo!(),
         }
     }
 
