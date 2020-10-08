@@ -80,19 +80,19 @@ impl<'a, 'b> Parser<'a, 'b> {
         expect!(self, "var");
         expect_bind!(self, let id = "ident");
         expect!(self, "=" => "constant needs to be initialized");
-        let expr = self.parse_expr()?;
+        let expr = self.parse_single_expr()?;
         let var = self.variables.define_local(id, true);
         Ok(ast::Stmt::Const(var, expr))
     }
 
     fn parse_block(&mut self) -> Result<ast::Stmt<'b>> {
         expect!(self, "{");
-        self.variables.push_scope();
+        let scope = self.variables.push_scope();
         let mut stmts = Vec::new_in(self.bump);
         while !self.eat(t!("}"))? {
             stmts.push(self.parse_stmt()?)
         }
         self.variables.pop();
-        Ok(ast::Stmt::Block(stmts))
+        Ok(ast::Stmt::Block(scope, stmts))
     }
 }

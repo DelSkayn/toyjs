@@ -1,6 +1,6 @@
 use bumpalo::{collections::Vec, Bump};
 use common::{collections::HashMap, interner::StringId, newtype_index, newtype_slice, newtype_vec};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 #[derive(Clone, Debug, Copy)]
 pub enum VariableKind {
@@ -37,6 +37,7 @@ pub struct Scope<'alloc> {
     parent: Option<&'alloc Scope<'alloc>>,
     parent_function: Option<&'alloc Scope<'alloc>>,
     is_function: bool,
+    has_captured_variable: Cell<bool>,
     children: RefCell<Vec<'alloc, &'alloc Scope<'alloc>>>,
 }
 
@@ -61,6 +62,7 @@ impl<'alloc> Variables<'alloc> {
             parent: None,
             parent_function: None,
             is_function: true,
+            has_captured_variable: Cell::new(true),
             children: RefCell::new(Vec::new_in(alloc)),
         });
         Variables {
@@ -91,9 +93,19 @@ impl<'alloc> Variables<'alloc> {
                     // so some variable kinds should be changed to reflect that.
                     match self.variables[x].kind {
                         VariableKind::Local => {
+                            if let Some(x) = self.variables[x].scope.parent_function {
+                                x.has_captured_variable.set(true);
+                            } else {
+                                self.variables[x].scope.has_captured_variable.set(true);
+                            }
                             self.variables[x].kind = VariableKind::Captured;
                         }
                         VariableKind::LocalConstant => {
+                            if let Some(x) = self.variables[x].scope.parent_function {
+                                x.has_captured_variable.set(true);
+                            } else {
+                                self.variables[x].scope.has_captured_variable.set(true);
+                            }
                             self.variables[x].kind = VariableKind::CapturedConstant;
                         }
                         _ => {}
@@ -157,29 +169,33 @@ impl<'alloc> Variables<'alloc> {
         id
     }
 
-    pub fn push_scope(&mut self) {
+    pub fn push_scope(&mut self) -> &'alloc Scope<'alloc> {
         let scope = Scope {
             parent: Some(self.current),
             parent_function: Some(self.current_function),
             is_function: false,
+            has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
         };
         let scope_ref = self.alloc.alloc(scope);
         self.current.children.borrow_mut().push(scope_ref);
         self.current = scope_ref;
+        scope_ref
     }
 
-    pub fn push_function(&mut self) {
+    pub fn push_function(&mut self) -> &'alloc Scope<'alloc> {
         let scope = Scope {
             parent: Some(self.current),
             parent_function: Some(self.current_function),
             is_function: true,
+            has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
         };
         let scope_ref = self.alloc.alloc(scope) as &_;
         self.current.children.borrow_mut().push(scope_ref);
         self.current = scope_ref;
         self.current_function = scope_ref;
+        scope_ref
     }
 
     pub fn pop(&mut self) {
