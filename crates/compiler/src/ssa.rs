@@ -2,6 +2,7 @@
 use crate::constants::ConstantId;
 use bumpalo::{collections::Vec, Bump};
 use common::{index::Index, newtype_index, newtype_vec};
+
 newtype_index! ( #[derive(Ord,PartialOrd)]
     pub struct SsaId
 );

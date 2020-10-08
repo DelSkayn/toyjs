@@ -11,7 +11,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
     pub(crate) fn compile_stmt(&mut self, stmt: &Stmt<'alloc>) -> Option<SsaId> {
         let mut stmt_expr = None;
         match *stmt {
-            Stmt::Block(ref stmts) => {
+            Stmt::Block(_scope, ref stmts) => {
                 for stmt in stmts.iter() {
                     stmt_expr = self.compile_stmt(stmt);
                 }

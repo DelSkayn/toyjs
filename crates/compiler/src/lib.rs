@@ -1,5 +1,7 @@
 #![allow(dead_code, unused_imports)]
 
+use bumpalo::{collections::Vec, Bump};
+
 use ast::{Script, Variables};
 use common::interner::Interner;
 use runtime::bytecode::Bytecode;
@@ -15,7 +17,6 @@ use generate::Generator;
 
 mod compile;
 
-use bumpalo::{collections::Vec, Bump};
 struct ExprRes<'alloc> {
     pub value: SsaId,
     pub true_list: Vec<'alloc, SsaId>,
