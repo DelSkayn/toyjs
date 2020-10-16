@@ -12,6 +12,18 @@ pub enum VariableKind {
     CapturedConstant,
 }
 
+impl VariableKind {
+    pub fn is_local(&self) -> bool {
+        match self {
+            VariableKind::Global | VariableKind::Implicit => true,
+            VariableKind::Local
+            | VariableKind::LocalConstant
+            | VariableKind::Captured
+            | VariableKind::CapturedConstant => false,
+        }
+    }
+}
+
 newtype_index! (
     pub struct VariableId
 );
@@ -36,9 +48,49 @@ pub struct Variable<'alloc> {
 pub struct Scope<'alloc> {
     parent: Option<&'alloc Scope<'alloc>>,
     parent_function: Option<&'alloc Scope<'alloc>>,
-    is_function: bool,
+    pub is_function: bool,
     has_captured_variable: Cell<bool>,
     children: RefCell<Vec<'alloc, &'alloc Scope<'alloc>>>,
+    variables: RefCell<Vec<'alloc, VariableId>>,
+}
+
+impl<'alloc> Scope<'alloc> {
+    pub fn map_variables<C, F>(&self, mut func: F, mut cont: C)
+    where
+        F: FnMut(VariableId),
+        C: FnMut(&Scope) -> bool,
+    {
+        self.variables
+            .borrow()
+            .iter()
+            .copied()
+            .for_each(|v| func(v));
+        self.children
+            .borrow()
+            .iter()
+            .copied()
+            .for_each(|s| s.map_variables_rec(&mut func, &mut cont));
+    }
+
+    pub fn map_variables_rec<C, F>(&self, func: &mut F, cont: &mut C)
+    where
+        F: FnMut(VariableId),
+        C: FnMut(&Scope) -> bool,
+    {
+        if !cont(self) {
+            return;
+        }
+        self.variables
+            .borrow()
+            .iter()
+            .copied()
+            .for_each(|v| func(v));
+        self.children
+            .borrow()
+            .iter()
+            .copied()
+            .for_each(|s| s.map_variables_rec(func, cont));
+    }
 }
 
 #[derive(Debug)]
@@ -64,6 +116,7 @@ impl<'alloc> Variables<'alloc> {
             is_function: true,
             has_captured_variable: Cell::new(true),
             children: RefCell::new(Vec::new_in(alloc)),
+            variables: RefCell::new(Vec::new_in(alloc)),
         });
         Variables {
             root,
@@ -144,6 +197,7 @@ impl<'alloc> Variables<'alloc> {
             scope: self.current_function,
         });
         self.variable_ids.insert(key, id);
+        self.current_function.variables.borrow_mut().push(id);
         id
     }
 
@@ -166,6 +220,7 @@ impl<'alloc> Variables<'alloc> {
             name,
             scope: self.current,
         });
+        self.current.variables.borrow_mut().push(id);
         id
     }
 
@@ -176,6 +231,7 @@ impl<'alloc> Variables<'alloc> {
             is_function: false,
             has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
+            variables: RefCell::new(Vec::new_in(self.alloc)),
         };
         let scope_ref = self.alloc.alloc(scope);
         self.current.children.borrow_mut().push(scope_ref);
@@ -190,6 +246,7 @@ impl<'alloc> Variables<'alloc> {
             is_function: true,
             has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
+            variables: RefCell::new(Vec::new_in(self.alloc)),
         };
         let scope_ref = self.alloc.alloc(scope) as &_;
         self.current.children.borrow_mut().push(scope_ref);

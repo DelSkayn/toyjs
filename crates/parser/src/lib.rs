@@ -139,7 +139,7 @@ impl<'source, 'alloc> Parser<'source, 'alloc> {
         while self.peek()?.is_some() {
             stmts.push(self.parse_stmt()?);
         }
-        Ok(ast::Script(stmts))
+        Ok(ast::Script(self.variables.root(), stmts))
     }
 
     pub fn parse_module(&mut self) -> Result<()> {

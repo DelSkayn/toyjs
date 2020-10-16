@@ -90,7 +90,7 @@ impl<'a> BytecodeBuilder<'a> {
         }
     }
 
-    pub fn finish(mut self, used_registers: u8) -> Bytecode {
+    pub fn finish(mut self, used_registers: u8, used_environment_slots: u32) -> Bytecode {
         self.instructions[0] = type_d(Op::StackPush, used_registers, 0);
         for s in self.returns {
             let instr = self.instructions[s];
@@ -106,6 +106,7 @@ impl<'a> BytecodeBuilder<'a> {
             }
         }
         Bytecode {
+            slots: used_environment_slots,
             instructions: self.instructions.into_boxed_slice(),
             data: self.data.into_boxed_slice(),
             strings: self.strings.into_boxed_slice(),

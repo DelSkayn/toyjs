@@ -4,10 +4,12 @@ use compiler::Compiler;
 use parser::{Parser, Result};
 use runtime::{
     bytecode::Bytecode,
+    environment::Environment,
     gc::{Gc, GcArena},
     object::Object,
     ExecutionContext, Stack,
 };
+use std::rc::Rc;
 
 mod value;
 pub use value::Value;
@@ -52,8 +54,9 @@ impl ToyJs {
     }
 
     pub fn exec_bytecode(&mut self, bc: &Bytecode) -> Result<Value> {
+        let env = Rc::new(Environment::new(bc.slots, None));
         let mut execution_ctx =
-            ExecutionContext::new(&self.gc, self.global.clone(), bc, &mut self.stack);
+            ExecutionContext::new(&self.gc, self.global.clone(), env, bc, &mut self.stack);
         unsafe { Ok(Value::from_js_value(execution_ctx.run())) }
     }
 }

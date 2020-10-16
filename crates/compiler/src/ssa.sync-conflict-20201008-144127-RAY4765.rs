@@ -2,7 +2,6 @@
 use crate::constants::ConstantId;
 use bumpalo::{collections::Vec, Bump};
 use common::{index::Index, newtype_index, newtype_vec};
-
 newtype_index! ( #[derive(Ord,PartialOrd)]
     pub struct SsaId
 );
@@ -101,12 +100,12 @@ pub enum Ssa {
     },
     IndexEnvironment {
         env: SsaId,
-        slot: u32,
+        slot: u16,
     },
     AssignEnvironment {
         value: SsaId,
         env: SsaId,
-        slot: u32,
+        slot: u16,
     },
     CreateObject,
     Index {

@@ -1,26 +1,35 @@
 use super::{gc::Trace, Ctx, Gc, JSValue};
+use std::{cell::Cell, rc::Rc};
 
 pub struct Environment {
-    parent: Option<Gc<Environment>>,
-    slots: Box<[JSValue]>,
+    parent: Option<Rc<Environment>>,
+    slots: Box<[Cell<JSValue>]>,
 }
 
 impl Environment {
-    pub fn new(slots: u16, parent: Option<Gc<Environment>>) -> Self {
+    pub fn new(slots: u32, parent: Option<Rc<Environment>>) -> Self {
         Environment {
             parent,
-            slots: vec![JSValue::undefined(); slots as usize].into_boxed_slice(),
+            slots: vec![Cell::new(JSValue::undefined()); slots as usize].into_boxed_slice(),
         }
     }
 
     #[inline]
-    pub fn get(&self, slot: u16) -> JSValue {
-        self.slots[slot as usize]
+    pub fn get(&self, slot: u32) -> JSValue {
+        self.slots[slot as usize].get()
     }
 
     #[inline]
-    pub fn set(&mut self, slot: u16, v: JSValue) {
-        self.slots[slot as usize] = v
+    pub fn set(&self, slot: u32, v: JSValue) {
+        self.slots[slot as usize].set(v)
+    }
+
+    pub fn lookup_parent(self: &Rc<Self>, depth: u16) -> Rc<Environment> {
+        let mut parent = self;
+        for _ in 0..depth {
+            parent = parent.parent.as_ref().unwrap()
+        }
+        parent.clone()
     }
 }
 
@@ -33,7 +42,7 @@ unsafe impl Trace for Environment {
     }
 
     fn trace(&self, ctx: Ctx) {
-        self.parent.map(|x| x.trace(ctx));
-        self.slots.iter().for_each(|x| x.trace(ctx))
+        self.parent.as_ref().map(|x| x.trace(ctx));
+        self.slots.iter().for_each(|x| x.get().trace(ctx))
     }
 }

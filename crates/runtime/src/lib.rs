@@ -16,6 +16,7 @@ mod stack;
 pub mod value;
 
 use bytecode::{op, Bytecode};
+use environment::Environment;
 use object::Object;
 pub use stack::Stack;
 use value::JSValue;
@@ -23,6 +24,7 @@ use value::JSValue;
 pub struct Root<'a> {
     stack: &'a Stack,
     global: Gc<Object>,
+    environment: Rc<Environment>,
     ret: Option<JSValue>,
 }
 
@@ -37,6 +39,7 @@ unsafe impl<'a> gc::Trace for Root<'a> {
     fn trace(&self, ctx: Ctx) {
         ctx.mark(self.global);
         self.stack.trace(ctx);
+        self.environment.trace(ctx);
         self.ret.as_ref().map(|x| x.trace(ctx));
     }
 }
@@ -44,6 +47,7 @@ unsafe impl<'a> gc::Trace for Root<'a> {
 pub struct ExecutionContext<'a> {
     gc: &'a GcArena,
     global: Gc<Object>,
+    environment: Rc<Environment>,
     instructions: &'a [bytecode::Instruction],
     instr_ptr: *const u8,
     data: &'a [JSValue],
@@ -55,12 +59,14 @@ impl<'a> ExecutionContext<'a> {
     pub fn new(
         gc: &'a GcArena,
         global: Gc<Object>,
+        environment: Rc<Environment>,
         data: &'a Bytecode,
         stack: &'a mut Stack,
     ) -> Self {
         ExecutionContext {
             gc,
             global,
+            environment,
             instructions: &data.instructions,
             instr_ptr: data.instructions.as_ptr() as *mut _,
             data: &data.data,
@@ -73,6 +79,7 @@ impl<'a> ExecutionContext<'a> {
         let root = Root {
             stack: &self.stack,
             global: self.global,
+            environment: self.environment.clone(),
             ret,
         };
         unsafe {
@@ -202,6 +209,29 @@ impl<'a> ExecutionContext<'a> {
                         let mut borrow = a.into_object().get_ptr(self.gc);
                         (*borrow).set(b, c);
                     }
+                }
+
+                op::GetEnv => {
+                    let a = self.read_u8();
+                    let d = self.read_u16();
+                    let parent = self.environment.lookup_parent(d);
+                    self.write(a, JSValue::from_const_ptr(Rc::into_raw(parent) as *const _))
+                }
+                op::EnvIndexAssign => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let env = self.read(a).into_const_ptr() as *const Environment;
+                    let b = self.read(b);
+                    (*env).set(c as u32, b);
+                }
+                op::EnvIndex => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let env = self.read(b).into_const_ptr() as *const Environment;
+                    let v = (*env).get(c as u32);
+                    self.write(a, v);
                 }
 
                 op::Add => {
@@ -407,20 +437,20 @@ impl<'a> ExecutionContext<'a> {
                 if s.is_empty() {
                     0.0
                 } else {
-                    val.into_string().parse::<f64>().unwrap_or(f64::NAN)
+                    s.parse::<f64>().unwrap_or(f64::NAN)
                 }
             }
-            value::TAG_UNDEFINED => f64::NAN,
-            value::TAG_NULL => 0.0,
             value::TAG_OBJECT => f64::NAN,
-            value::TAG_BOOL => {
-                if val.into_bool() {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
+            value::TAG_BASE => match val.0.bits {
+                value::VALUE_TRUE => 1.0,
+                value::VALUE_FALSE => 0.0,
+                value::VALUE_UNDEFINED => f64::NAN,
+                value::VALUE_NULL => f64::NAN,
+                _ => panic!("invalid js value!"),
+            },
+            value::TAG_BIGINT => todo!(),
+            value::TAG_SYMBOL => todo!(),
+            value::TAG_FUNCTION => todo!(),
             _ => val.into_float(),
         }
     }
@@ -429,11 +459,17 @@ impl<'a> ExecutionContext<'a> {
         match val.tag() {
             value::TAG_STRING => (*val.into_string()).clone(),
             value::TAG_INT => val.into_int().to_string(),
-            value::TAG_BOOL => val.into_bool().to_string(),
+            value::TAG_BASE => match val.0.bits {
+                value::VALUE_NULL => "null".to_string(),
+                value::VALUE_TRUE => "true".to_string(),
+                value::VALUE_FALSE => "false".to_string(),
+                value::VALUE_UNDEFINED => "undefined".to_string(),
+                _ => panic!("invalid jsvalue"),
+            },
             value::TAG_OBJECT => "[object Object]".to_string(),
-            value::TAG_UNDEFINED => "undefined".to_string(),
-            value::TAG_NULL => "null".to_string(),
-            value::TAG_AVAILABLE_5 => panic!("invalid value tag"),
+            value::TAG_SYMBOL => todo!(),
+            value::TAG_BIGINT => todo!(),
+            value::TAG_FUNCTION => todo!(),
             _ => val.into_float().to_string(),
         }
     }

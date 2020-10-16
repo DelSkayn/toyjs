@@ -10,7 +10,6 @@ fn main() -> io::Result<()> {
     let mut delims = Vec::new();
     let mut last_length = 0;
     'main: loop {
-        buffer.clear();
         if handle.read_line(&mut buffer)? == 0 {
             break;
         }
@@ -27,6 +26,7 @@ fn main() -> io::Result<()> {
                     }
                     println!("mismatched deliminator");
                     delims.clear();
+                    buffer.clear();
                     continue 'main;
                 }
                 ']' => {
@@ -37,6 +37,7 @@ fn main() -> io::Result<()> {
                     }
                     println!("mismatched deliminator");
                     delims.clear();
+                    buffer.clear();
                     continue 'main;
                 }
                 ')' => {
@@ -47,6 +48,7 @@ fn main() -> io::Result<()> {
                     }
                     println!("mismatched deliminator");
                     delims.clear();
+                    buffer.clear();
                     continue 'main;
                 }
                 _ => {}
@@ -58,6 +60,7 @@ fn main() -> io::Result<()> {
         }
         last_length = 0;
         println!("value: {:?}", js.exec(&buffer));
+        buffer.clear();
     }
     Ok(())
 }

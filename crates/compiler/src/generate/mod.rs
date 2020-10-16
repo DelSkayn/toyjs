@@ -1,10 +1,12 @@
 use crate::{
     constants::Constants,
     ssa::{BinaryOperation, Ssa, SsaId, SsaVec, UnaryOperation},
+    StackInfo,
 };
 use bumpalo::{collections::Vec, Bump};
 use common::interner::Interner;
 use runtime::bytecode::{op, type_a, type_d, Bytecode, Op};
+use std::convert::TryFrom;
 
 mod register_allocator;
 use register_allocator::RegisterAllocator;
@@ -13,6 +15,7 @@ mod bytecode_builder;
 use bytecode_builder::BytecodeBuilder;
 
 pub struct Generator<'a, 'alloc> {
+    stack_info: StackInfo,
     alloc: &'alloc Bump,
     interner: &'a Interner,
     ssa: &'a SsaVec<'alloc>,
@@ -25,12 +28,14 @@ pub struct Generator<'a, 'alloc> {
 impl<'a, 'alloc> Generator<'a, 'alloc> {
     pub fn new(
         alloc: &'alloc Bump,
+        stack_info: StackInfo,
         ssa: &'a SsaVec<'alloc>,
         constants: &'a Constants,
         interner: &'a Interner,
     ) -> Self {
         Generator {
             allocator: RegisterAllocator::new(alloc, ssa),
+            stack_info,
             interner,
             pending_jumps: Vec::new_in(alloc),
             ssa,
@@ -45,7 +50,10 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
             let id = SsaId::from(i);
             self.generate_instruction(id);
         }
-        self.builder.finish(self.allocator.used_registers())
+        self.builder.finish(
+            self.allocator.used_registers(),
+            u32::try_from(self.stack_info.variable_slots.len()).unwrap(),
+        )
     }
 
     fn generate_instruction(&mut self, ssa: SsaId) -> Option<u8> {
