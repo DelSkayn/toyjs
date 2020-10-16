@@ -7,6 +7,7 @@ pub type Instruction = u32;
 
 #[derive(Debug)]
 pub struct Bytecode {
+    pub slots: u32,
     pub instructions: Box<[Instruction]>,
     pub data: Box<[JSValue]>,
     pub strings: Box<[String]>,
@@ -149,6 +150,13 @@ op_code!(
         IndexAssign(obj, key, val),
         /// set reg A to value int the global object with the key in reg D.
         Index(dst, obj, key),
+
+        /// Lookup an enviroment at a certain depth.
+        GetEnv(dst, depth),
+        /// set the entry from the key in reg D to the value from reg A in the global object
+        EnvIndexAssign(env, val, slot),
+        /// set the entry from the key in reg D to the value from reg A in the global object
+        EnvIndex(dst, env, slot),
 
         //// copy a value from one register to an other
         //Move(dst, src),

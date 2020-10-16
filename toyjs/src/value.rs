@@ -1,4 +1,4 @@
-use runtime::value::{self, JSValue};
+use runtime::value::JSValue;
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -6,20 +6,30 @@ pub enum Value {
     Undefined,
     Int(i32),
     Float(f64),
-    String,
+    String(String),
     Object,
 }
 
 impl Value {
     pub(crate) unsafe fn from_js_value(value: JSValue) -> Self {
-        match value.tag() {
-            value::TAG_NULL => Value::Null,
-            value::TAG_UNDEFINED => Value::Undefined,
-            value::TAG_STRING => Value::String,
-            value::TAG_INT => Value::Int(value.into_int()),
-            value::TAG_OBJECT => Value::Object,
-            value::TAG_AVAILABLE_5 => panic!(),
-            _ => Value::Float(value.into_float()),
+        if value.is_null() {
+            return Value::Null;
         }
+        if value.is_undefined() {
+            return Value::Undefined;
+        }
+        if value.is_string() {
+            return Value::String((*value.into_string()).clone());
+        }
+        if value.is_int() {
+            return Value::Int(value.into_int());
+        }
+        if value.is_float() {
+            return Value::Float(value.into_float());
+        }
+        if value.is_object() {
+            return Value::Object;
+        }
+        todo!()
     }
 }

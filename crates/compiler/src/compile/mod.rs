@@ -4,6 +4,8 @@ use ast::*;
 use bumpalo::{collections::Vec, Bump};
 use common::interner::StringId;
 
+mod flow;
+
 mod expr;
 use expr::Place;
 

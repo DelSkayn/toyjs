@@ -5,8 +5,13 @@ use std::{cmp::PartialEq, ptr};
 mod variables;
 pub use variables::*;
 
-#[derive(Debug, PartialEq)]
-pub struct Script<'a>(pub Vec<'a, Stmt<'a>>);
+#[derive(Debug)]
+pub struct Script<'a>(pub &'a Scope<'a>, pub Vec<'a, Stmt<'a>>);
+impl<'a> PartialEq for Script<'a> {
+    fn eq(&self, other: &Script<'a>) -> bool {
+        ptr::eq(self.0, other.0) && self.1.eq(&other.1)
+    }
+}
 
 #[derive(Debug)]
 pub enum Stmt<'a> {

@@ -37,14 +37,17 @@ impl<T: fmt::Debug + Trace> fmt::Debug for Gc<T> {
 }
 
 impl<T: Trace + 'static> Gc<T> {
-    pub fn into_raw(self) -> *mut () {
-        self.0.as_ptr() as *mut _
+    #[inline]
+    pub fn into_raw(this: Self) -> *mut () {
+        this.0.as_ptr() as *mut _
     }
 
+    #[inline]
     pub fn from_raw(this: *mut ()) -> Self {
         Gc(NonNull::new(this as *mut GcBox<T>).unwrap())
     }
 
+    #[inline]
     pub fn get_ptr(self, context: &GcArena) -> *mut T {
         unsafe {
             context.write_barrier(self);
