@@ -217,7 +217,7 @@ impl<'a> ExecutionContext<'a> {
                     let parent = self.environment.lookup_parent(d);
                     self.write(a, JSValue::from_const_ptr(Rc::into_raw(parent) as *const _))
                 }
-                op::EnvIndexAssign => {
+                op::EnvAssign => {
                     let a = self.read_u8();
                     let b = self.read_u8();
                     let c = self.read_u8();

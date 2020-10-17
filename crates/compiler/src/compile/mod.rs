@@ -30,6 +30,16 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     self.compile_assignment(Place::Variable(var), stmt_expr.unwrap());
                 }
             }
+            Stmt::Let(var, ref exprs) => {
+                if let Some(x) = exprs.as_ref() {
+                    stmt_expr = Some(self.compile_expr(x));
+                    self.compile_assignment(Place::Variable(var), stmt_expr.unwrap());
+                } else {
+                    let constant = self.constants.add(Constant::Undefined);
+                    let expr = self.ssa.insert(Ssa::LoadConstant { constant });
+                    self.compile_assignment(Place::Variable(var), expr);
+                }
+            }
             _ => todo!(),
         }
         stmt_expr

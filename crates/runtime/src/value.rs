@@ -148,7 +148,6 @@ impl JSValue {
     pub fn into_float(mut self) -> f64 {
         unsafe {
             debug_assert!(self.is_float());
-            dbg!(self.0.bits);
             self.0.bits -= MIN_FLOAT;
             self.0.float
         }

@@ -73,7 +73,7 @@ impl Stack {
             let layout = Layout::array::<JSValue>(self.size).unwrap();
             alloc::dealloc(self.data.as_ptr() as *mut _, layout);
             self.size = 0;
-        } else if dbg!(used).next_power_of_two() < self.size {
+        } else if used.next_power_of_two() < self.size {
             let layout = Layout::array::<JSValue>(self.size).unwrap();
             let ptr = alloc::realloc(
                 self.data.as_ptr() as *mut _,

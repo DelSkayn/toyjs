@@ -166,7 +166,13 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             todo!()
                         }
                     }
-                    _ => todo!(),
+                    _ => {
+                        let slot = self.variables[x].slot.unwrap();
+                        let depth = self.scope.as_ref().unwrap().stack_depth
+                            - self.variables[x].define_depth;
+                        let env = self.ssa.environment(depth);
+                        self.ssa.insert(Ssa::IndexEnvironment { env, slot })
+                    }
                 }
             }
             Place::Object { object, key } => self.ssa.insert(Ssa::Index { object, key }),
@@ -212,7 +218,13 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             todo!()
                         }
                     }
-                    _ => todo!(),
+                    _ => {
+                        let slot = self.variables[x].slot.unwrap();
+                        let depth = self.scope.as_ref().unwrap().stack_depth
+                            - self.variables[x].define_depth;
+                        let env = self.ssa.environment(depth);
+                        self.ssa.insert(Ssa::AssignEnvironment { value, env, slot })
+                    }
                 }
             }
             Place::Object { object, key } => self.ssa.insert(Ssa::Assign { object, key, value }),
@@ -248,7 +260,13 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             todo!()
                         }
                     }
-                    _ => todo!(),
+                    _ => {
+                        let slot = dbg!(&self.variables[x]).slot.unwrap();
+                        let depth = self.scope.as_ref().unwrap().stack_depth
+                            - self.variables[x].define_depth;
+                        let env = self.ssa.environment(depth);
+                        self.ssa.insert(Ssa::IndexEnvironment { env, slot })
+                    }
                 }
             }
         }
