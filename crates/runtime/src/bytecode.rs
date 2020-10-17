@@ -2,7 +2,6 @@
 
 use crate::value::JSValue;
 use std::{fmt, rc::Rc};
-
 pub type Instruction = u32;
 
 #[derive(Debug)]
@@ -32,8 +31,6 @@ impl fmt::Display for Bytecode {
             for _ in 0..n_chars - cur_n_chars {
                 write!(f, " ")?;
             }
-            write!(f, "{}: ", cur)?;
-            format_instr(instr, f)?;
             match op_op(instr) {
                 op::LoadData => {
                     if op_d(instr) == 0xffff {
@@ -154,7 +151,7 @@ op_code!(
         /// Lookup an enviroment at a certain depth.
         GetEnv(dst, depth),
         /// set the entry from the key in reg D to the value from reg A in the global object
-        EnvIndexAssign(env, val, slot),
+        EnvAssign(env, val, slot),
         /// set the entry from the key in reg D to the value from reg A in the global object
         EnvIndex(dst, env, slot),
 

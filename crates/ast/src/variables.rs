@@ -1,6 +1,9 @@
 use bumpalo::{collections::Vec, Bump};
 use common::{collections::HashMap, interner::StringId, newtype_index, newtype_slice, newtype_vec};
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    ptr,
+};
 
 #[derive(Clone, Debug, Copy)]
 pub enum VariableKind {
@@ -15,11 +18,11 @@ pub enum VariableKind {
 impl VariableKind {
     pub fn is_local(&self) -> bool {
         match self {
-            VariableKind::Global | VariableKind::Implicit => true,
+            VariableKind::Global | VariableKind::Implicit => false,
             VariableKind::Local
             | VariableKind::LocalConstant
             | VariableKind::Captured
-            | VariableKind::CapturedConstant => false,
+            | VariableKind::CapturedConstant => true,
         }
     }
 }
@@ -41,55 +44,42 @@ newtype_vec! (
 pub struct Variable<'alloc> {
     pub kind: VariableKind,
     pub name: StringId,
+    /// The stack depth the variable was defined at.
+    /// So for example variable foo in the following code is defined in stack depth 2:
+    /// ```javascript
+    /// function(){
+    ///     if (bar){
+    ///         function(){
+    ///             let foo = 3;
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    pub define_depth: u32,
+    pub slot: Option<u32>,
     pub scope: &'alloc Scope<'alloc>,
 }
 
 #[derive(Debug)]
 pub struct Scope<'alloc> {
-    parent: Option<&'alloc Scope<'alloc>>,
-    parent_function: Option<&'alloc Scope<'alloc>>,
+    pub parent: Option<&'alloc Scope<'alloc>>,
+    pub parent_function: Option<&'alloc Scope<'alloc>>,
     pub is_function: bool,
-    has_captured_variable: Cell<bool>,
-    children: RefCell<Vec<'alloc, &'alloc Scope<'alloc>>>,
-    variables: RefCell<Vec<'alloc, VariableId>>,
+    pub has_captured_variable: Cell<bool>,
+    pub children: RefCell<Vec<'alloc, &'alloc Scope<'alloc>>>,
+    pub variables: RefCell<Vec<'alloc, VariableId>>,
+    pub captures: RefCell<Vec<'alloc, VariableId>>,
+    pub stack_depth: u32,
+    pub next_slot: Cell<u32>,
 }
 
 impl<'alloc> Scope<'alloc> {
-    pub fn map_variables<C, F>(&self, mut func: F, mut cont: C)
-    where
-        F: FnMut(VariableId),
-        C: FnMut(&Scope) -> bool,
-    {
-        self.variables
-            .borrow()
-            .iter()
-            .copied()
-            .for_each(|v| func(v));
-        self.children
-            .borrow()
-            .iter()
-            .copied()
-            .for_each(|s| s.map_variables_rec(&mut func, &mut cont));
-    }
-
-    pub fn map_variables_rec<C, F>(&self, func: &mut F, cont: &mut C)
-    where
-        F: FnMut(VariableId),
-        C: FnMut(&Scope) -> bool,
-    {
-        if !cont(self) {
-            return;
-        }
-        self.variables
-            .borrow()
-            .iter()
-            .copied()
-            .for_each(|v| func(v));
-        self.children
-            .borrow()
-            .iter()
-            .copied()
-            .for_each(|s| s.map_variables_rec(func, cont));
+    pub fn traverse_childeren<F: FnMut(&Self) -> bool>(&self, f: &mut F) {
+        self.children.borrow().iter().copied().for_each(|c| {
+            if f(c) {
+                c.traverse_childeren(f)
+            }
+        });
     }
 }
 
@@ -102,6 +92,7 @@ pub struct Variables<'alloc> {
     alloc: &'alloc Bump,
     variables: VariableVec<'alloc>,
     variable_ids: HashMap<(*const Scope<'alloc>, StringId), VariableId>,
+    cur_depth: u32,
 }
 
 newtype_slice! (
@@ -117,6 +108,9 @@ impl<'alloc> Variables<'alloc> {
             has_captured_variable: Cell::new(true),
             children: RefCell::new(Vec::new_in(alloc)),
             variables: RefCell::new(Vec::new_in(alloc)),
+            captures: RefCell::new(Vec::new_in(alloc)),
+            stack_depth: 0,
+            next_slot: Cell::new(0),
         });
         Variables {
             root,
@@ -128,6 +122,7 @@ impl<'alloc> Variables<'alloc> {
             },
             alloc,
             variable_ids: HashMap::default(),
+            cur_depth: 0,
         }
     }
 
@@ -164,6 +159,9 @@ impl<'alloc> Variables<'alloc> {
                         _ => {}
                     }
                 }
+                if crossed_function {
+                    self.current.captures.borrow_mut().push(x);
+                }
                 return x;
             }
             crossed_function |= current.is_function;
@@ -177,8 +175,13 @@ impl<'alloc> Variables<'alloc> {
         let variable = self.variables.push(Variable {
             name,
             kind: VariableKind::Implicit,
+            define_depth: 0,
+            slot: None,
             scope: self.current_function,
         });
+        if !ptr::eq(self.current, self.root) {
+            self.current.captures.borrow_mut().push(variable);
+        }
         self.implicits.insert(name, variable);
         variable
     }
@@ -188,16 +191,20 @@ impl<'alloc> Variables<'alloc> {
         let key = (self.current_function as *const _, name);
         if let Some(id) = self.implicits.remove(&name) {
             self.variables[id].kind = VariableKind::Global;
+            self.variables[id].define_depth = self.cur_depth;
             self.variable_ids.insert(key, id);
             return id;
         }
         let id = self.variables.push(Variable {
             kind: VariableKind::Global,
             name,
+            define_depth: self.cur_depth,
+            slot: None,
             scope: self.current_function,
         });
         self.variable_ids.insert(key, id);
         self.current_function.variables.borrow_mut().push(id);
+        self.variable_ids.insert((self.current_function, name), id);
         id
     }
 
@@ -215,12 +222,17 @@ impl<'alloc> Variables<'alloc> {
             return id;
         }
 
+        let slot = self.current_function.next_slot.get();
+        self.current_function.next_slot.set(slot + 1);
         let id = self.variables.push(Variable {
             kind: ty,
             name,
+            define_depth: self.cur_depth,
+            slot: Some(slot),
             scope: self.current,
         });
         self.current.variables.borrow_mut().push(id);
+        self.variable_ids.insert((self.current, name), id);
         id
     }
 
@@ -232,6 +244,9 @@ impl<'alloc> Variables<'alloc> {
             has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
             variables: RefCell::new(Vec::new_in(self.alloc)),
+            captures: RefCell::new(Vec::new_in(self.alloc)),
+            stack_depth: self.cur_depth,
+            next_slot: Cell::new(0),
         };
         let scope_ref = self.alloc.alloc(scope);
         self.current.children.borrow_mut().push(scope_ref);
@@ -240,6 +255,7 @@ impl<'alloc> Variables<'alloc> {
     }
 
     pub fn push_function(&mut self) -> &'alloc Scope<'alloc> {
+        self.cur_depth.checked_add(1).expect("scope depth to great");
         let scope = Scope {
             parent: Some(self.current),
             parent_function: Some(self.current_function),
@@ -247,6 +263,9 @@ impl<'alloc> Variables<'alloc> {
             has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
             variables: RefCell::new(Vec::new_in(self.alloc)),
+            captures: RefCell::new(Vec::new_in(self.alloc)),
+            stack_depth: self.cur_depth,
+            next_slot: Cell::new(0),
         };
         let scope_ref = self.alloc.alloc(scope) as &_;
         self.current.children.borrow_mut().push(scope_ref);
@@ -263,5 +282,6 @@ impl<'alloc> Variables<'alloc> {
                 .expect("tried to pop root scope")
         }
         self.current = self.current.parent.expect("tried to pop root scope");
+        self.cur_depth -= 1;
     }
 }

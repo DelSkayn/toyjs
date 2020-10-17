@@ -1,7 +1,7 @@
 //use crate::constant::ConstantId;
 use crate::constants::ConstantId;
 use bumpalo::{collections::Vec, Bump};
-use common::{index::Index, newtype_index, newtype_vec};
+use common::{collections::HashMap, index::Index, newtype_index, newtype_vec};
 
 newtype_index! ( #[derive(Ord,PartialOrd)]
     pub struct SsaId
@@ -19,20 +19,41 @@ impl SsaId {
 }
 
 #[derive(Debug)]
-pub struct SsaVec<'alloc>(pub Vec<'alloc, Ssa>);
+pub struct SsaVec<'alloc> {
+    instructions: Vec<'alloc, Ssa>,
+    envs: HashMap<u32, SsaId>,
+    global: Option<SsaId>,
+}
 
 newtype_vec!(
-    struct SsaVec<'alloc,>[SsaId] -> Ssa
+    struct SsaVec<'alloc,>.instructions[SsaId] -> Ssa
 );
 
 impl<'alloc> SsaVec<'alloc> {
     pub fn new_in(bump: &'alloc Bump) -> Self {
-        SsaVec(bumpalo::vec![in bump; Ssa::GetGlobal, Ssa::CreateEnvironment])
+        SsaVec {
+            instructions: Vec::new_in(bump),
+            envs: HashMap::default(),
+            global: None,
+        }
+    }
+
+    pub fn push_env(&mut self, depth: u32) {
+        assert!(self.envs.len() == self.instructions.len());
+        if !self.envs.contains_key(&dbg!(depth)) {
+            let id = self.insert(Ssa::GetEnvironment { depth });
+            self.envs.insert(depth, id);
+        }
+    }
+
+    pub fn push_global(&mut self) {
+        assert!(self.global.is_none());
+        self.global = Some(self.insert(Ssa::GetGlobal));
     }
 
     pub fn insert(&mut self, instruction: Ssa) -> SsaId {
-        let id = SsaId::from(self.0.len());
-        self.0.push(instruction);
+        let id = SsaId::from(self.instructions.len());
+        self.instructions.push(instruction);
         id
     }
 
@@ -53,8 +74,8 @@ impl<'alloc> SsaVec<'alloc> {
         SsaId::from(0u32)
     }
 
-    pub fn environment(&self) -> SsaId {
-        SsaId::from(1u32)
+    pub fn environment(&self, depth: u32) -> SsaId {
+        self.envs.get(&dbg!(depth)).copied().unwrap()
     }
 }
 
@@ -97,7 +118,7 @@ pub enum Ssa {
     GetGlobal,
     CreateEnvironment,
     GetEnvironment {
-        depth: u16,
+        depth: u32,
     },
     IndexEnvironment {
         env: SsaId,

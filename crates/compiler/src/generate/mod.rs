@@ -1,7 +1,6 @@
 use crate::{
     constants::Constants,
     ssa::{BinaryOperation, Ssa, SsaId, SsaVec, UnaryOperation},
-    StackInfo,
 };
 use bumpalo::{collections::Vec, Bump};
 use common::interner::Interner;
@@ -15,7 +14,6 @@ mod bytecode_builder;
 use bytecode_builder::BytecodeBuilder;
 
 pub struct Generator<'a, 'alloc> {
-    stack_info: StackInfo,
     alloc: &'alloc Bump,
     interner: &'a Interner,
     ssa: &'a SsaVec<'alloc>,
@@ -23,25 +21,26 @@ pub struct Generator<'a, 'alloc> {
     allocator: RegisterAllocator<'a, 'alloc>,
     pending_jumps: Vec<'alloc, usize>,
     builder: BytecodeBuilder<'a>,
+    num_slots: u32,
 }
 
 impl<'a, 'alloc> Generator<'a, 'alloc> {
     pub fn new(
         alloc: &'alloc Bump,
-        stack_info: StackInfo,
         ssa: &'a SsaVec<'alloc>,
         constants: &'a Constants,
         interner: &'a Interner,
+        num_slots: u32,
     ) -> Self {
         Generator {
             allocator: RegisterAllocator::new(alloc, ssa),
-            stack_info,
             interner,
             pending_jumps: Vec::new_in(alloc),
             ssa,
             constants,
             alloc,
             builder: BytecodeBuilder::new(constants, interner),
+            num_slots,
         }
     }
 
@@ -50,10 +49,8 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
             let id = SsaId::from(i);
             self.generate_instruction(id);
         }
-        self.builder.finish(
-            self.allocator.used_registers(),
-            u32::try_from(self.stack_info.variable_slots.len()).unwrap(),
-        )
+        self.builder
+            .finish(self.allocator.used_registers(), self.num_slots)
     }
 
     fn generate_instruction(&mut self, ssa: SsaId) -> Option<u8> {
@@ -149,6 +146,36 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
                 let value = self.allocator.retrieve_register(value);
                 self.builder
                     .push(ssa, type_a(Op::IndexAssign, object, key, value));
+                None
+            }
+            Ssa::IndexEnvironment { env, slot } => {
+                let env = self.allocator.retrieve_register(env);
+                let dst = self.allocator.allocate(ssa);
+                if slot >= u8::MAX as u32 {
+                    todo!();
+                }
+                self.builder
+                    .push(ssa, type_a(Op::EnvIndex, dst, env, slot as u8));
+                Some(dst)
+            }
+            Ssa::AssignEnvironment { value, env, slot } => {
+                let value = self.allocator.retrieve_register(value);
+                let env = self.allocator.retrieve_register(env);
+                let dst = self.allocator.allocate(ssa);
+                if slot >= u8::MAX as u32 {
+                    todo!();
+                }
+                self.builder
+                    .push(ssa, type_a(Op::EnvAssign, env, value, slot as u8));
+                Some(dst)
+            }
+            Ssa::GetEnvironment { depth } => {
+                let dst = self.allocator.allocate(ssa);
+                if depth >= u16::MAX as u32 {
+                    todo!()
+                }
+                self.builder
+                    .push(ssa, type_d(Op::GetEnv, dst, depth as u16));
                 None
             }
             _ => todo!(),

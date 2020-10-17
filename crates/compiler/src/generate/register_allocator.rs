@@ -15,7 +15,7 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
     pub fn new(alloc: &'alloc Bump, ssa: &'a SsaVec<'alloc>) -> Self {
         let mut lifetimes =
             Lifetimes(alloc.alloc_slice_fill_copy(ssa.len(), SsaId::from(Index::MAX)));
-        for (idx, s) in ssa.0.iter().enumerate() {
+        for (idx, s) in ssa.iter().enumerate() {
             let idx = SsaId::from(idx);
             match *s {
                 Ssa::GetGlobal
