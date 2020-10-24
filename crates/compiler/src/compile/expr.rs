@@ -53,7 +53,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 }
             },
             Expr::Binary(left, op, right) => {
-                let op = match op {
+                let op = match *op {
                     BinaryOperator::Add => BinaryOperation::Add,
                     BinaryOperator::Subtract => BinaryOperation::Subtract,
                     BinaryOperator::Multiply => BinaryOperation::Multiply,
@@ -74,6 +74,22 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     BinaryOperator::ShiftLeft => BinaryOperation::LeftShift,
                     BinaryOperator::ShiftRight => BinaryOperation::RightShift,
                     BinaryOperator::ShiftRightUnsigned => BinaryOperation::UnsignedRightShift,
+                    BinaryOperator::Ternary(ref middle) => {
+                        let left = self.compile_expr(left);
+                        let jump_before = self.ssa.insert(Ssa::ConditionalJump {
+                            condition: left,
+                            to: None,
+                        });
+                        let right = self.compile_expr(right);
+                        let jump_after = self.ssa.insert(Ssa::Jump { to: None });
+                        self.ssa.patch_jump(jump_before, jump_after.next());
+                        let middle = self.compile_expr(middle);
+                        self.ssa.patch_jump(jump_after, middle.next());
+                        return self.ssa.push(Ssa::Alias {
+                            left: right,
+                            right: middle,
+                        });
+                    }
                     _ => todo!(),
                 };
                 let left = self.compile_expr(left);
@@ -261,7 +277,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                         }
                     }
                     _ => {
-                        let slot = dbg!(&self.variables[x]).slot.unwrap();
+                        let slot = self.variables[x].slot.unwrap();
                         let depth = self.scope.as_ref().unwrap().stack_depth
                             - self.variables[x].define_depth;
                         let env = self.ssa.environment(depth);

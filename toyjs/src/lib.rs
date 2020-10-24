@@ -49,12 +49,11 @@ impl ToyJs {
         }
         let source = Source::from_string(script.to_string());
         let parser = Parser::from_source(&source, &mut self.interner, &alloc, &mut variables);
-        let script = dbg!(parser.parse_script()?);
+        let script = parser.parse_script()?;
         Ok(Compiler::new(&alloc, &self.interner, &variables).compile_script(script))
     }
 
     pub fn exec_bytecode(&mut self, bc: &Bytecode) -> Result<Value> {
-        println!("{}", bc);
         let env = Rc::new(Environment::new(bc.slots, None));
         let mut execution_ctx =
             ExecutionContext::new(&self.gc, self.global.clone(), env, bc, &mut self.stack);

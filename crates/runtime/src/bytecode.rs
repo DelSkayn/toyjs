@@ -27,6 +27,7 @@ impl fmt::Display for Bytecode {
         let n_chars = (self.instructions.len() as f64).log10() as u64 + 1;
         while cur != self.instructions.len() {
             let instr = self.instructions[cur];
+            format_instr(instr, f);
             let cur_n_chars = (cur as f64).log10() as u64 + 1;
             for _ in 0..n_chars - cur_n_chars {
                 write!(f, " ")?;
@@ -37,11 +38,6 @@ impl fmt::Display for Bytecode {
                         cur += 1;
                         write!(f, " const:{}", self.instructions[cur])?;
                     }
-                    cur += 1;
-                }
-                op::Jump | op::ConditionalJump => {
-                    cur += 1;
-                    write!(f, "  offset:{}", self.instructions[cur] as i32)?;
                     cur += 1;
                 }
                 _ => cur += 1,
@@ -211,9 +207,9 @@ op_code!(
         LessEqual(dst, op, op),
 
         /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
-        ConditionalJump(cond, neg),
+        ConditionalJump(cond, tgt),
         /// jump to the index at the next instruction slot
-        Jump(null, null),
+        Jump(null, tgt),
 
         /// return
         Return(regs, val),

@@ -39,7 +39,7 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
             ssa,
             constants,
             alloc,
-            builder: BytecodeBuilder::new(constants, interner),
+            builder: BytecodeBuilder::new(alloc, constants, interner),
             num_slots,
         }
     }
@@ -178,7 +178,19 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
                     .push(ssa, type_d(Op::GetEnv, dst, depth as u16));
                 None
             }
-            _ => todo!(),
+            Ssa::Jump { to } => {
+                let to = to.unwrap();
+                self.builder.jump(ssa, to, None);
+                None
+            }
+            Ssa::ConditionalJump { condition, to } => {
+                let to = to.unwrap();
+                let cond = self.allocator.retrieve_register(condition);
+                self.builder.jump(ssa, to, Some(cond));
+                None
+            }
+
+            Ssa::Alias { .. } => None,
         }
     }
 }

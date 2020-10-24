@@ -5,7 +5,7 @@ pub const MAX_REGISTERS: u8 = 255;
 pub mod gc;
 use gc::{Ctx, Gc, GcArena};
 
-use std::{cell::RefCell, mem, num, rc::Rc};
+use std::{cell::RefCell, mem, num, ptr, rc::Rc};
 #[macro_use]
 mod macros;
 
@@ -15,7 +15,7 @@ pub mod object;
 mod stack;
 pub mod value;
 
-use bytecode::{op, Bytecode};
+use bytecode::{op, Bytecode, Instruction};
 use environment::Environment;
 use object::Object;
 pub use stack::Stack;
@@ -129,6 +129,11 @@ impl<'a> ExecutionContext<'a> {
         let res = (self.instr_ptr as *mut u32).read();
         self.instr_ptr = self.instr_ptr.add(mem::size_of::<u32>());
         res
+    }
+
+    unsafe fn jump(&mut self, jump: i32) {
+        let target = jump as isize * mem::size_of::<Instruction>() as isize;
+        self.instr_ptr = self.instr_ptr.offset(target);
     }
 
     pub unsafe fn run(&mut self) -> JSValue {
@@ -368,6 +373,39 @@ impl<'a> ExecutionContext<'a> {
                     self.write(a, JSValue::from((b >> c) as i32))
                 }
 
+                op::Equal => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    self.write(a, JSValue::from(Self::eq(b, c)))
+                }
+                op::NotEqual => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    self.write(a, JSValue::from(!Self::eq(b, c)))
+                }
+                op::StrictEqual => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    self.write(a, JSValue::from(Self::strict_eq(b, c)))
+                }
+                op::StrictNotEqual => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    self.write(a, JSValue::from(!Self::strict_eq(b, c)))
+                }
+
                 op::ToNumber => {
                     let a = self.read_u8();
                     let d = self.read_u16();
@@ -381,6 +419,19 @@ impl<'a> ExecutionContext<'a> {
                     let d = self.read(d as u8);
                     let d = Self::float_to_val(-Self::convert_float(d));
                     self.write(a, d);
+                }
+                op::Jump => {
+                    self.read_u8();
+                    let jump = self.read_u16() as i16;
+                    self.jump(jump as i32);
+                }
+                op::ConditionalJump => {
+                    let cond = self.read_u8();
+                    let jump = self.read_u16() as i16;
+                    let cond = self.read(cond);
+                    if Self::convert_bool(cond) {
+                        self.jump(jump as i32);
+                    }
                 }
 
                 op::Return => {
@@ -397,7 +448,7 @@ impl<'a> ExecutionContext<'a> {
                     self.gc_collect(None);
                     return JSValue::undefined();
                 }
-                _ => panic!("invalid op code"),
+                x => panic!("invalid op code: {:?}", x),
             }
         }
     }
@@ -474,6 +525,30 @@ impl<'a> ExecutionContext<'a> {
         }
     }
 
+    unsafe fn convert_bool(val: JSValue) -> bool {
+        match val.tag() {
+            value::TAG_STRING => !val.into_string().is_empty(),
+            value::TAG_INT => val.into_int() != 0,
+            value::TAG_OBJECT => true,
+            value::TAG_BASE => match val.0.bits {
+                value::VALUE_NULL => false,
+                value::VALUE_TRUE => true,
+                value::VALUE_FALSE => false,
+                value::VALUE_UNDEFINED => false,
+                _ => panic!("invalid jsvalue"),
+            },
+            value::TAG_SYMBOL => todo!(),
+            value::TAG_BIGINT => todo!(),
+            value::TAG_FUNCTION => todo!(),
+            _ => {
+                let v = val.into_float();
+                // Comparison is done this way to handle NaN correctly.
+                // as NaN != 0.0 returns true but NaN > 0.0 || NaN < 0.0 returns false
+                v > 0.0 || v < 0.0
+            }
+        }
+    }
+
     unsafe fn bin_addition(&self, a: JSValue, b: JSValue) -> JSValue {
         if a.is_string() || b.is_string() {
             let mut s = a.into_string().to_string();
@@ -497,5 +572,63 @@ impl<'a> ExecutionContext<'a> {
             _ => panic!("invalid op"),
         };
         Self::float_to_val(res)
+    }
+
+    unsafe fn eq(a: JSValue, b: JSValue) -> bool {
+        if a.is_float() {
+            return a.into_float() == Self::convert_float(b);
+        }
+        if a.is_nullish() && b.is_nullish() {
+            return true;
+        }
+
+        let a_tag = a.tag();
+        let b_tag = b.tag();
+        if a_tag == b_tag {
+            match a_tag {
+                value::TAG_INT => return a.0.bits == b.0.bits,
+                value::TAG_BASE => {
+                    if a.0.bits == b.0.bits {
+                        return true;
+                    }
+                    if a.is_bool() {
+                        let a_bool = a.into_bool();
+                        let b_num = Self::convert_float(b);
+                        return if a_bool { b_num == 1.0 } else { b_num == 0.0 };
+                    }
+                    panic!("invalid tag recieved");
+                }
+                value::TAG_STRING => return *a.into_string() == *b.into_string(),
+                value::TAG_OBJECT => {
+                    return ptr::eq(Gc::into_raw(a.into_object()), Gc::into_raw(b.into_object()))
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        match a_tag {
+            value::TAG_INT => a.into_int() as f64 == Self::convert_float(b),
+            value::TAG_OBJECT => todo!(),
+            value::TAG_STRING => Self::convert_float(a) == Self::convert_float(b),
+            _ => panic!(),
+        }
+    }
+
+    unsafe fn strict_eq(a: JSValue, b: JSValue) -> bool {
+        if a.is_float() && b.is_float() {
+            return a.into_float() == b.into_float();
+        }
+        let a_tag = a.tag();
+        if a_tag != b.tag() {
+            return false;
+        }
+        match a_tag {
+            value::TAG_INT | value::TAG_BASE => a.0.bits == b.0.bits,
+            value::TAG_STRING => *a.into_string() == *b.into_string(),
+            value::TAG_OBJECT => {
+                ptr::eq(Gc::into_raw(a.into_object()), Gc::into_raw(b.into_object()))
+            }
+            _ => todo!(),
+        }
     }
 }
