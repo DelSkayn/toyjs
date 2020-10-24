@@ -1,4 +1,4 @@
-/// A garbage collector based the gc-arena crate.
+//! A garbage collector based on the gc-arena crate.
 use std::{
     cell::{Cell, UnsafeCell},
     fmt, mem,
@@ -108,12 +108,26 @@ impl GcArena {
         }
     }
 
+    /// Run Collection till all objects not reachable from the root are collected.
+    /// Very unsafe, if not used correctly will cause undefined behaviour.
+    ///
+    /// # Safety
+    /// All gc pointers held by the programm allocated with the current GcArena must be reachable
+    /// from the root handed as an argument to this function.
+    /// Any gc pointers which where not reachable from the program will be freed.
     pub unsafe fn collect_all<T: Trace>(&self, root: &T) {
         self.allocation_debt.set(f64::INFINITY);
         self.phase.set(Phase::Wake);
         self.collect_debt(root);
     }
 
+    /// Run Collection for some time.
+    /// Very unsafe, if not used correctly will cause undefined behaviour.
+    ///
+    /// # Safety
+    /// All gc pointers held by the programm allocated with the current GcArena must be reachable
+    /// from the root handed as an argument to this function.
+    /// Any gc pointers which where not reachable from the program will be freed.
     pub unsafe fn collect_debt<T: Trace>(&self, root: &T) {
         let work = self.allocation_debt.get();
         let mut work_done = 0usize;
