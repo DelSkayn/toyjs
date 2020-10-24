@@ -1,5 +1,11 @@
 use super::Ctx;
 
+/// Objects which can be contained in a gc pointer.
+/// Must be implemented correctly or else will cause undefined behaviour.
+///
+/// # Safety
+/// the function trace must both call trace on objects which require a trace
+/// and mark all gc pointers directly contained by the structure.
 pub unsafe trait Trace {
     fn needs_trace() -> bool
     where
@@ -49,6 +55,26 @@ unsafe impl<T: Trace> Trace for Vec<T> {
 
     fn trace(&self, ctx: Ctx) {
         self.iter().for_each(|x| x.trace(ctx))
+    }
+}
+
+unsafe impl<K: Trace, V: Trace> Trace for std::collections::HashMap<K, V> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        K::needs_trace() || V::needs_trace()
+    }
+
+    fn trace(&self, ctx: Ctx) {
+        self.iter().for_each(|(k, v)| {
+            if K::needs_trace() {
+                k.trace(ctx)
+            }
+            if V::needs_trace() {
+                v.trace(ctx)
+            }
+        })
     }
 }
 
