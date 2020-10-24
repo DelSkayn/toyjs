@@ -79,9 +79,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         let ssa = &mut self.ssa;
         let variables = self.variables;
         for v in scope.variables.borrow().iter().copied() {
-            dbg!(v);
-            if dbg!(&variables[v]).kind.is_local() {
-                dbg!(v);
+            if variables[v].kind.is_local() {
                 ssa.push_env(0);
                 break;
             }

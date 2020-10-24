@@ -116,6 +116,7 @@ impl<'a, 'b> Parser<'a, 'b> {
         let kind = match self.next()?.unwrap().kind {
             t!("?") => {
                 let expr = self.parse_ops_rec(r_bp)?;
+                expect!(self, ":");
                 let expr = Box::new_in(expr, self.bump);
                 BinaryOperator::Ternary(expr)
             }

@@ -7,6 +7,7 @@ pub enum Value {
     Int(i32),
     Float(f64),
     String(String),
+    Bool(bool),
     Object,
 }
 
@@ -29,6 +30,9 @@ impl Value {
         }
         if value.is_object() {
             return Value::Object;
+        }
+        if value.is_bool() {
+            return Value::Bool(value.into_bool());
         }
         todo!()
     }

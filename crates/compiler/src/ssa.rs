@@ -2,6 +2,7 @@
 use crate::constants::ConstantId;
 use bumpalo::{collections::Vec, Bump};
 use common::{collections::HashMap, index::Index, newtype_index, newtype_vec};
+use std::fmt;
 
 newtype_index! ( #[derive(Ord,PartialOrd)]
     pub struct SsaId
@@ -18,7 +19,6 @@ impl SsaId {
     }
 }
 
-#[derive(Debug)]
 pub struct SsaVec<'alloc> {
     instructions: Vec<'alloc, Ssa>,
     envs: HashMap<u32, SsaId>,
@@ -28,6 +28,25 @@ pub struct SsaVec<'alloc> {
 newtype_vec!(
     struct SsaVec<'alloc,>.instructions[SsaId] -> Ssa
 );
+
+impl<'alloc> fmt::Debug for SsaVec<'alloc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let white_space = (self.instructions.len() as f64).log10() as usize + 1;
+        writeln!(f, "SSA:")?;
+        self.instructions
+            .iter()
+            .enumerate()
+            .try_for_each(|(idx, v)| {
+                let string_len = (idx as f64).log10() as usize + 1;
+                for _ in string_len..white_space {
+                    write!(f, " ")?;
+                }
+                write!(f, "{}: ", idx)?;
+                writeln!(f, "{:?}", v)
+            })?;
+        Ok(())
+    }
+}
 
 impl<'alloc> SsaVec<'alloc> {
     pub fn new_in(bump: &'alloc Bump) -> Self {
@@ -40,7 +59,7 @@ impl<'alloc> SsaVec<'alloc> {
 
     pub fn push_env(&mut self, depth: u32) {
         assert!(self.envs.len() == self.instructions.len());
-        if !self.envs.contains_key(&dbg!(depth)) {
+        if !self.envs.contains_key(&depth) {
             let id = self.insert(Ssa::GetEnvironment { depth });
             self.envs.insert(depth, id);
         }
@@ -75,7 +94,7 @@ impl<'alloc> SsaVec<'alloc> {
     }
 
     pub fn environment(&self, depth: u32) -> SsaId {
-        self.envs.get(&dbg!(depth)).copied().unwrap()
+        self.envs.get(&depth).copied().unwrap()
     }
 }
 
