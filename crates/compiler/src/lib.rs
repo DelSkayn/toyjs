@@ -49,7 +49,6 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         interner: &'a Interner,
         variables: &'a Variables<'alloc>,
     ) -> Self {
-        dbg!(variables);
         Compiler {
             ssa: SsaVec::new_in(alloc),
             interner,
