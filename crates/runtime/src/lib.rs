@@ -407,6 +407,55 @@ impl<'a> ExecutionContext<'a> {
                     self.write(a, JSValue::from(!Self::strict_eq(b, c)))
                 }
 
+                op::Less => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    if Self::both_int(b, c) {
+                        self.write(a, JSValue::from(b.into_int() < c.into_int()))
+                    } else {
+                        self.write(a, JSValue::from(Self::less(b, c)))
+                    }
+                }
+                op::LessEqual => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    if Self::both_int(b, c) {
+                        self.write(a, JSValue::from(b.into_int() < c.into_int()))
+                    } else {
+                        self.write(a, JSValue::from(!Self::less(c, b)))
+                    }
+                }
+                op::Greater => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    if Self::both_int(b, c) {
+                        self.write(a, JSValue::from(b.into_int() < c.into_int()))
+                    } else {
+                        self.write(a, JSValue::from(Self::less(c, b)))
+                    }
+                }
+                op::GreaterEqual => {
+                    let a = self.read_u8();
+                    let b = self.read_u8();
+                    let c = self.read_u8();
+                    let b = self.read(b);
+                    let c = self.read(c);
+                    if Self::both_int(b, c) {
+                        self.write(a, JSValue::from(b.into_int() < c.into_int()))
+                    } else {
+                        self.write(a, JSValue::from(!Self::less(b, c)))
+                    }
+                }
+
                 op::ToNumber => {
                     let a = self.read_u8();
                     let d = self.read_u16();
@@ -638,5 +687,29 @@ impl<'a> ExecutionContext<'a> {
             }
             _ => todo!(),
         }
+    }
+
+    unsafe fn less(a: JSValue, b: JSValue) -> bool {
+        if a.is_string() && b.is_string() {
+            let a_str = a.into_string();
+            let b_str = b.into_string();
+            if a_str.len() != b_str.len() {
+                if a_str.starts_with(&*b_str) {
+                    return false;
+                }
+                if b_str.starts_with(&*a_str) {
+                    return true;
+                }
+            }
+            for (a, b) in a_str.chars().zip(b_str.chars()) {
+                if a != b {
+                    return a < b;
+                }
+            }
+            return false;
+        }
+        let a_num = Self::convert_float(a);
+        let b_num = Self::convert_float(b);
+        a_num < b_num
     }
 }
