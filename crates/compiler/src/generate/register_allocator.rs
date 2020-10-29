@@ -100,12 +100,9 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
                     lifetimes[key] = idx;
                     lifetimes[value] = idx;
                 }
-                Ssa::Unary { op: _, operand: v }
-                | Ssa::IndexEnvironment { env: v, slot: _ }
-                | Ssa::ConditionalJump {
-                    condition: v,
-                    to: _,
-                } => {
+                Ssa::Unary { operand: v, .. }
+                | Ssa::IndexEnvironment { env: v, .. }
+                | Ssa::ConditionalJump { condition: v, .. } => {
                     lifetimes[idx] = idx;
                     lifetimes[v] = idx;
                 }

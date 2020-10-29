@@ -22,7 +22,11 @@ pub enum Stmt<'a> {
     Expr(Vec<'a, Expr<'a>>),
     Break,
     Continue,
-    If(Vec<'a, Expr<'a>>, Box<'a, Stmt<'a>>),
+    If(
+        Vec<'a, Expr<'a>>,
+        Box<'a, Stmt<'a>>,
+        Option<Box<'a, Stmt<'a>>>,
+    ),
     While(Vec<'a, Expr<'a>>, Box<'a, Stmt<'a>>),
     DoWhile(Box<'a, Stmt<'a>>, Vec<'a, Expr<'a>>),
     For,
@@ -81,9 +85,9 @@ impl<'a> PartialEq for Stmt<'a> {
                     false
                 }
             }
-            Stmt::If(ref a, ref b) => {
-                if let Stmt::If(ref c, ref d) = *other {
-                    a == c && b == d
+            Stmt::If(ref a, ref b, ref c) => {
+                if let Stmt::If(ref d, ref e, ref g) = *other {
+                    a == d && b == e && c == g
                 } else {
                     false
                 }

@@ -63,6 +63,7 @@ impl<'a> ExecutionContext<'a> {
         data: &'a Bytecode,
         stack: &'a mut Stack,
     ) -> Self {
+        println!("{}", data);
         ExecutionContext {
             gc,
             global,
@@ -425,7 +426,7 @@ impl<'a> ExecutionContext<'a> {
                     let jump = self.read_u16() as i16;
                     self.jump(jump as i32);
                 }
-                op::ConditionalJump => {
+                op::JumpTrue => {
                     let cond = self.read_u8();
                     let jump = self.read_u16() as i16;
                     let cond = self.read(cond);
@@ -433,7 +434,14 @@ impl<'a> ExecutionContext<'a> {
                         self.jump(jump as i32);
                     }
                 }
-
+                op::JumpFalse => {
+                    let cond = self.read_u8();
+                    let jump = self.read_u16() as i16;
+                    let cond = self.read(cond);
+                    if !Self::convert_bool(cond) {
+                        self.jump(jump as i32);
+                    }
+                }
                 op::Return => {
                     let a = self.read_u8();
                     let d = self.read_u16();

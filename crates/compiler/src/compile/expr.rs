@@ -5,6 +5,38 @@ use bumpalo::{collections::Vec, Bump};
 use common::interner::StringId;
 use std::ptr;
 
+#[must_use]
+pub struct CompiledExpr<'a> {
+    id: SsaId,
+    pub true_list: Vec<'a, SsaId>,
+    pub false_list: Vec<'a, SsaId>,
+}
+
+impl<'a> CompiledExpr<'a> {
+    pub fn new_in(id: SsaId, alloc: &'a Bump) -> Self {
+        CompiledExpr {
+            id,
+            true_list: Vec::new_in(alloc),
+            false_list: Vec::new_in(alloc),
+        }
+    }
+
+    pub fn id(&self) -> SsaId {
+        self.id
+    }
+
+    pub fn eval(self, compiler: &mut Compiler) -> SsaId {
+        let cur = compiler.ssa.cur();
+        for j in self.true_list.iter().copied() {
+            compiler.ssa.patch_jump(j, cur)
+        }
+        for j in self.false_list.iter().copied() {
+            compiler.ssa.patch_jump(j, cur)
+        }
+        self.id
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub enum Place {
     Object { object: SsaId, key: SsaId },
@@ -12,22 +44,25 @@ pub enum Place {
 }
 
 impl<'a, 'alloc> Compiler<'a, 'alloc> {
-    pub(crate) fn compile_expr(&mut self, expr: &Expr<'alloc>) -> SsaId {
+    pub(crate) fn compile_expr(&mut self, expr: &Expr<'alloc>) -> CompiledExpr<'a> {
         match expr {
             Expr::UnaryPostfix(expr, op) => match *op {
                 PostfixOperator::Dot(x) => {
                     let expr = self.compile_expr(expr);
                     let constant = self.constants.add(Constant::String(x));
                     let constant = self.ssa.insert(Ssa::LoadConstant { constant });
-                    self.ssa.insert(Ssa::Index {
-                        object: expr,
-                        key: constant,
-                    })
+                    CompiledExpr::new_in(
+                        self.ssa.insert(Ssa::Index {
+                            object: expr.id,
+                            key: constant,
+                        }),
+                        self.alloc,
+                    )
                 }
                 PostfixOperator::Index(ref key) => {
-                    let key = self.compile_expr(key);
-                    let object = self.compile_expr(expr);
-                    self.ssa.insert(Ssa::Index { object, key })
+                    let key = self.compile_expr(key).id;
+                    let object = self.compile_expr(expr).id;
+                    CompiledExpr::new_in(self.ssa.insert(Ssa::Index { object, key }), self.alloc)
                 }
                 ref x @ PostfixOperator::AddOne | ref x @ PostfixOperator::SubtractOne => {
                     let place = self.compile_place(expr);
@@ -49,7 +84,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                         right: one,
                     });
                     self.compile_assignment(place, added);
-                    value
+                    CompiledExpr::new_in(value, self.alloc)
                 }
             },
             Expr::Binary(left, op, right) => {
@@ -74,27 +109,79 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     BinaryOperator::ShiftLeft => BinaryOperation::LeftShift,
                     BinaryOperator::ShiftRight => BinaryOperation::RightShift,
                     BinaryOperator::ShiftRightUnsigned => BinaryOperation::UnsignedRightShift,
+                    BinaryOperator::And => {
+                        let mut left = self.compile_expr(left);
+                        let false_jump = self.ssa.insert(Ssa::ConditionalJump {
+                            condition: left.id,
+                            to: None,
+                            jump_true: false,
+                        });
+                        left.false_list.push(false_jump);
+                        let next = self.ssa.cur().next();
+                        for j in left.true_list.iter().copied() {
+                            self.ssa.patch_jump(j, next);
+                        }
+                        let mut right = self.compile_expr(right);
+                        left.false_list.append(&mut right.false_list);
+                        let alias = self.ssa.insert(Ssa::Alias {
+                            left: left.id,
+                            right: right.id,
+                        });
+                        return CompiledExpr {
+                            id: alias,
+                            true_list: right.true_list,
+                            false_list: left.false_list,
+                        };
+                    }
+                    BinaryOperator::Or => {
+                        let mut left = self.compile_expr(left);
+                        let true_jump = self.ssa.insert(Ssa::ConditionalJump {
+                            condition: left.id,
+                            to: None,
+                            jump_true: true,
+                        });
+                        left.true_list.push(true_jump);
+                        let next = self.ssa.cur().next();
+                        for j in left.false_list.iter().copied() {
+                            self.ssa.patch_jump(j, next);
+                        }
+                        let mut right = self.compile_expr(right);
+                        left.true_list.append(&mut right.true_list);
+                        let alias = self.ssa.insert(Ssa::Alias {
+                            left: left.id,
+                            right: right.id,
+                        });
+                        return CompiledExpr {
+                            id: alias,
+                            true_list: left.true_list,
+                            false_list: right.false_list,
+                        };
+                    }
                     BinaryOperator::Ternary(ref middle) => {
-                        let left = self.compile_expr(left);
+                        let left = self.compile_expr(left).id;
                         let jump_before = self.ssa.insert(Ssa::ConditionalJump {
                             condition: left,
                             to: None,
+                            jump_true: false,
                         });
-                        let right = self.compile_expr(right);
+                        let middle = self.compile_expr(middle).id;
                         let jump_after = self.ssa.insert(Ssa::Jump { to: None });
+                        let right = self.compile_expr(right).id;
                         self.ssa.patch_jump(jump_before, jump_after.next());
-                        let middle = self.compile_expr(middle);
                         self.ssa.patch_jump(jump_after, middle.next());
-                        return self.ssa.push(Ssa::Alias {
-                            left: right,
-                            right: middle,
-                        });
+                        return CompiledExpr::new_in(
+                            self.ssa.push(Ssa::Alias {
+                                left: middle,
+                                right,
+                            }),
+                            self.alloc,
+                        );
                     }
                     _ => todo!(),
                 };
-                let left = self.compile_expr(left);
-                let right = self.compile_expr(right);
-                self.ssa.insert(Ssa::Binary { op, left, right })
+                let left = self.compile_expr(left).id;
+                let right = self.compile_expr(right).id;
+                CompiledExpr::new_in(self.ssa.insert(Ssa::Binary { op, left, right }), self.alloc)
             }
             Expr::UnaryPrefix(op, right) => {
                 let op = match *op {
@@ -123,22 +210,25 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             right: one,
                         });
                         self.compile_assignment(place, added);
-                        return added;
+                        return CompiledExpr::new_in(added, self.alloc);
                     }
                     _ => todo!(),
                 };
-                let right = self.compile_expr(right);
-                self.ssa.insert(Ssa::Unary { op, operand: right })
+                let right = self.compile_expr(right).id;
+                CompiledExpr::new_in(
+                    self.ssa.insert(Ssa::Unary { op, operand: right }),
+                    self.alloc,
+                )
             }
-            Expr::Prime(x) => self.compile_prime(x),
+            Expr::Prime(x) => CompiledExpr::new_in(self.compile_prime(x), self.alloc),
             Expr::Assign(left, AssignOperator::Assign, right) => {
-                let right = self.compile_expr(right);
+                let right = self.compile_expr(right).id;
                 let place = self.compile_place(left);
                 self.compile_assignment(place, right);
-                right
+                CompiledExpr::new_in(right, self.alloc)
             }
             Expr::Assign(left, op, right) => {
-                let right = self.compile_expr(right);
+                let right = self.compile_expr(right).id;
                 let place = self.compile_place(left);
                 let place_use = self.compile_place_use(place);
                 let op = match op {
@@ -162,7 +252,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     right,
                 });
                 self.compile_assignment(place, value);
-                value
+                CompiledExpr::new_in(value, self.alloc)
             }
         }
     }
@@ -203,12 +293,12 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
             },
             Expr::UnaryPostfix(ref expr, ref op) => match *op {
                 PostfixOperator::Index(ref x) => {
-                    let object = self.compile_expr(expr);
-                    let key = self.compile_expr(x);
+                    let object = self.compile_expr(expr).id;
+                    let key = self.compile_expr(x).id;
                     Place::Object { object, key }
                 }
                 PostfixOperator::Dot(x) => {
-                    let object = self.compile_expr(expr);
+                    let object = self.compile_expr(expr).id;
                     let constant = self.constants.add(Constant::String(x));
                     let key = self.ssa.insert(Ssa::LoadConstant { constant });
                     Place::Object { object, key }
@@ -258,7 +348,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 for expr in exprs.iter() {
                     res = Some(self.compile_expr(expr));
                 }
-                res.unwrap()
+                res.unwrap().eval(self)
             }
             PrimeExpr::Object(ref entries) => self.compile_object(entries),
             PrimeExpr::Variable(x) => {
@@ -295,7 +385,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         let res = self.ssa.insert(Ssa::CreateObject);
         for (k, v) in entries.iter() {
             let key_const = self.constants.add(Constant::String(*k));
-            let value = self.compile_expr(v);
+            let value = self.compile_expr(v).eval(self);
             let key = self.ssa.insert(Ssa::LoadConstant {
                 constant: key_const,
             });

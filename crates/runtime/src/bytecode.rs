@@ -207,7 +207,8 @@ op_code!(
         LessEqual(dst, op, op),
 
         /// Test if the condition is thruthy or falsey if neg is false or true respectively, and jump to the index at the next instruction slot
-        ConditionalJump(cond, tgt),
+        JumpTrue(cond, tgt),
+        JumpFalse(cond, tgt),
         /// jump to the index at the next instruction slot
         Jump(null, tgt),
 

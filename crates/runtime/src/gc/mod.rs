@@ -5,7 +5,6 @@ use std::{
     ops::Deref,
     ptr::NonNull,
 };
-
 mod trace;
 pub use trace::Trace;
 
@@ -190,5 +189,11 @@ impl GcArena {
         }
         self.allocation_debt
             .set((self.allocation_debt.get() - work_done as f64).max(0.0));
+    }
+}
+
+impl Drop for GcArena {
+    fn drop(&mut self) {
+        unsafe { self.collect_all(&()) };
     }
 }

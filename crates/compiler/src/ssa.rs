@@ -78,15 +78,15 @@ impl<'alloc> SsaVec<'alloc> {
 
     pub fn patch_jump(&mut self, jump: SsaId, target: SsaId) {
         match self[jump] {
-            Ssa::ConditionalJump {
-                ref mut to,
-                condition: _,
-            }
-            | Ssa::Jump { ref mut to } => {
+            Ssa::ConditionalJump { ref mut to, .. } | Ssa::Jump { ref mut to } => {
                 *to = Some(target);
             }
             _ => panic!("patch instruction not a jump instruction"),
         }
+    }
+
+    pub fn cur(&self) -> SsaId {
+        SsaId::from(self.len() - 1)
     }
 
     pub fn global(&self) -> SsaId {
@@ -94,7 +94,11 @@ impl<'alloc> SsaVec<'alloc> {
     }
 
     pub fn environment(&self, depth: u32) -> SsaId {
-        self.envs.get(&depth).copied().unwrap()
+        dbg!(depth);
+        self.envs
+            .get(&depth)
+            .copied()
+            .expect("no environment at this depth allocated!")
     }
 }
 
@@ -161,6 +165,7 @@ pub enum Ssa {
     ConditionalJump {
         condition: SsaId,
         to: Option<SsaId>,
+        jump_true: bool,
     },
     Jump {
         to: Option<SsaId>,

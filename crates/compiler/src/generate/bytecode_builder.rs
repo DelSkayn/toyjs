@@ -113,10 +113,14 @@ impl<'a> BytecodeBuilder<'a> {
         }
     }
 
-    pub fn jump(&mut self, id: SsaId, target: SsaId, condition: Option<u8>) {
+    pub fn jump(&mut self, id: SsaId, target: SsaId, condition: Option<(u8, bool)>) {
         self.jumps.push((self.instructions.len(), target));
-        if let Some(x) = condition {
-            self.push(id, type_d(Op::ConditionalJump, x, 0));
+        if let Some((v, t)) = condition {
+            if t {
+                self.push(id, type_d(Op::JumpTrue, v, 0));
+            } else {
+                self.push(id, type_d(Op::JumpFalse, v, 0));
+            }
         } else {
             self.push(id, type_d(Op::Jump, 0, 0));
         }
@@ -151,20 +155,28 @@ impl<'a> BytecodeBuilder<'a> {
         for (idx, target) in self.jumps {
             let instr = self.instructions[idx];
             match op_op(instr) {
-                op::ConditionalJump => {
+                op::JumpTrue => {
                     let a = op_a(instr);
                     let target: i32 = self.to_bc[target].unwrap().try_into().unwrap();
                     let cur: i32 = idx as i32;
                     let jump: i32 = target - cur - 1;
                     let target = (jump as u32).try_into().unwrap();
-                    self.instructions[idx] = type_d(Op::ConditionalJump, a, target);
+                    self.instructions[idx] = type_d(Op::JumpTrue, a, target);
+                }
+                op::JumpFalse => {
+                    let a = op_a(instr);
+                    let target: i32 = self.to_bc[target].unwrap().try_into().unwrap();
+                    let cur: i32 = idx as i32;
+                    let jump: i32 = target - cur - 1;
+                    let target = (jump as u32).try_into().unwrap();
+                    self.instructions[idx] = type_d(Op::JumpFalse, a, target);
                 }
                 op::Jump => {
                     let target: i32 = self.to_bc[target].unwrap().try_into().unwrap();
                     let cur: i32 = idx as i32;
                     let jump: i32 = target - cur - 1;
-                    let target = (jump as u32).try_into().unwrap();
-                    self.instructions[idx] = type_d(Op::Jump, 0, target);
+                    let target: i16 = jump.try_into().expect("jump did not have a target");
+                    self.instructions[idx] = type_d(Op::Jump, 0, target as u16);
                 }
                 _ => panic!("not a jump"),
             }

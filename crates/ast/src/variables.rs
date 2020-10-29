@@ -2,7 +2,7 @@ use bumpalo::{collections::Vec, Bump};
 use common::{collections::HashMap, interner::StringId, newtype_index, newtype_slice, newtype_vec};
 use std::{
     cell::{Cell, RefCell},
-    ptr,
+    fmt, ptr,
 };
 
 #[derive(Clone, Debug, Copy)]
@@ -60,7 +60,6 @@ pub struct Variable<'alloc> {
     pub scope: &'alloc Scope<'alloc>,
 }
 
-#[derive(Debug)]
 pub struct Scope<'alloc> {
     pub parent: Option<&'alloc Scope<'alloc>>,
     pub parent_function: Option<&'alloc Scope<'alloc>>,
@@ -71,6 +70,22 @@ pub struct Scope<'alloc> {
     pub captures: RefCell<Vec<'alloc, VariableId>>,
     pub stack_depth: u32,
     pub next_slot: Cell<u32>,
+}
+
+impl<'alloc> fmt::Debug for Scope<'alloc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scope")
+            .field("parent", &self.parent.map(|_| "cyclic"))
+            .field("parent_function", &self.parent_function.map(|_| "cyclic"))
+            .field("is_function", &self.is_function)
+            .field("has_captured_variable", &self.has_captured_variable)
+            .field("children", &self.children)
+            .field("variables", &self.variables)
+            .field("captures", &self.captures)
+            .field("stack_depth", &self.stack_depth)
+            .field("next_slot", &self.next_slot)
+            .finish()
+    }
 }
 
 impl<'alloc> Scope<'alloc> {
@@ -281,7 +296,9 @@ impl<'alloc> Variables<'alloc> {
                 .parent_function
                 .expect("tried to pop root scope")
         }
+        if self.current.is_function {
+            self.cur_depth -= 1;
+        }
         self.current = self.current.parent.expect("tried to pop root scope");
-        self.cur_depth -= 1;
     }
 }
