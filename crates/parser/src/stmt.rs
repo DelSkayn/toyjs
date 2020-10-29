@@ -29,8 +29,15 @@ impl<'a, 'b> Parser<'a, 'b> {
         expect!(self, "(");
         let expr = self.parse_expr()?;
         expect!(self, ")");
-        let stmt = self.parse_stmt()?;
-        Ok(ast::Stmt::If(expr, Box::new_in(stmt, self.bump)))
+        let if_stmt = self.parse_stmt()?;
+        let if_stmt = Box::new_in(if_stmt, self.bump);
+        let else_stmt = if self.eat(t!("else"))? {
+            let else_stmt = self.parse_stmt()?;
+            Some(Box::new_in(else_stmt, self.bump))
+        } else {
+            None
+        };
+        Ok(ast::Stmt::If(expr, if_stmt, else_stmt))
     }
 
     fn parse_while(&mut self) -> Result<ast::Stmt<'b>> {

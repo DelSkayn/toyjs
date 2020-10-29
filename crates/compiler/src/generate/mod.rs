@@ -32,6 +32,7 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
         interner: &'a Interner,
         num_slots: u32,
     ) -> Self {
+        dbg!(ssa);
         Generator {
             allocator: RegisterAllocator::new(alloc, ssa),
             interner,
@@ -183,10 +184,14 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
                 self.builder.jump(ssa, to, None);
                 None
             }
-            Ssa::ConditionalJump { condition, to } => {
+            Ssa::ConditionalJump {
+                condition,
+                to,
+                jump_true,
+            } => {
                 let to = to.unwrap();
                 let cond = self.allocator.retrieve_register(condition);
-                self.builder.jump(ssa, to, Some(cond));
+                self.builder.jump(ssa, to, Some((cond, jump_true)));
                 None
             }
 

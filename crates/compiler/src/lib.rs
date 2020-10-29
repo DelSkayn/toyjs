@@ -49,6 +49,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         interner: &'a Interner,
         variables: &'a Variables<'alloc>,
     ) -> Self {
+        dbg!(variables);
         Compiler {
             ssa: SsaVec::new_in(alloc),
             interner,
@@ -90,8 +91,15 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
             ssa.push_env(depth);
         });
         scope.traverse_childeren(&mut |s| {
+            dbg!(s);
             if s.is_function {
                 return false;
+            }
+            for v in s.variables.borrow().iter().copied() {
+                if variables[v].kind.is_local() {
+                    ssa.push_env(0);
+                    break;
+                }
             }
             s.captures.borrow().iter().copied().for_each(|v| {
                 let define_depth = variables[v].define_depth;

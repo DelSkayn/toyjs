@@ -50,6 +50,7 @@ impl ToyJs {
         let source = Source::from_string(script.to_string());
         let parser = Parser::from_source(&source, &mut self.interner, &alloc, &mut variables);
         let script = parser.parse_script()?;
+        println!("bump allocated bytes: {}", alloc.allocated_bytes());
         Ok(Compiler::new(&alloc, &self.interner, &variables).compile_script(script))
     }
 
