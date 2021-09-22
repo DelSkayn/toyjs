@@ -13,6 +13,9 @@ mod number;
 mod string;
 mod utf;
 
+/// An error returned by the lexer.
+/// Although the lexer will generaly just try to continue as much as possible
+/// there are some situations in which the lexer will not be able to continue.
 #[derive(Clone, Copy, Debug)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -22,15 +25,21 @@ pub struct Error {
 #[derive(Clone, Copy, Debug)]
 pub enum ErrorKind {
     InvalidToken,
+    /// Failed to parse a number.
     InvalidNumber,
     UnexpectedEnd,
+    /// String was not closed.
+    /// This error is unrecoverable as the lexer can not determin where to restart.
     UnClosedString,
+    /// Encountered a byte pattern which was not a valid UTF-8 character.
     InvalidUnicodeSequence,
     InvalidEscapeCode,
 }
 
+/// An internal error without a span.
 type LexResult<T> = StdResult<T, ErrorKind>;
 
+/// A short hand of a result with a lexer error.
 pub type Result<T> = StdResult<T, Error>;
 
 pub struct Lexer<'a> {
@@ -54,6 +63,7 @@ fn is_radix(byte: u8, radix: u8) -> bool {
 }
 
 impl<'a> Lexer<'a> {
+    /// Create a new lexer from source
     pub fn new(source: &'a Source, interner: &'a mut Interner) -> Self {
         Lexer {
             source,
@@ -64,8 +74,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Create a token from a given token kind.
+    ///
+    /// Add a span to token based on the
     fn token(&mut self, kind: TokenKind) -> Token {
-        let hi = u32::try_from(self.offset).expect("source file to big for span");
+        let hi = u32::try_from(self.offset).expect("source file to big for span") - 1;
         let low = u32::try_from(self.span_start).unwrap();
         self.span_start = self.offset;
         Token {
@@ -74,6 +87,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Eats a full line commment ie `// Something`
     fn lex_line_comment(&mut self) -> LexResult<()> {
         loop {
             match self.next_byte() {
@@ -85,6 +99,7 @@ impl<'a> Lexer<'a> {
                     }
                     return Ok(());
                 }
+                // Match utf-8 chars.
                 Some(x) if !x.is_ascii() => match self.next_char(x)? {
                     chars::LS | chars::PS | chars::BS => return Ok(()),
                     _ => {}
@@ -95,6 +110,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Eats a multi line comment ie: `/* Something */`
     fn lex_multi_line_comment(&mut self) -> LexResult<()> {
         loop {
             match self.next_byte() {
@@ -112,6 +128,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Eats all of the next white space.
     fn lex_whitespace(&mut self) -> LexResult<()> {
         loop {
             let next = self.peek_byte();
@@ -134,6 +151,7 @@ impl<'a> Lexer<'a> {
         Ok(())
     }
 
+    /// Matches an ident to an keyword
     fn match_keyword(ident: &str) -> Option<Keyword> {
         let res = match ident {
             "await" => Keyword::Await,
@@ -179,6 +197,10 @@ impl<'a> Lexer<'a> {
         Some(res)
     }
 
+    /// Lexes an full identifier.
+    ///
+    /// The lexer should have already lexed the start of an identifier ie code character's marked
+    /// as the start of a identifier by the Unicode Standard Annex.
     fn lex_ident(&mut self, start: usize) -> LexResult<Token> {
         loop {
             match self.peek_byte() {
@@ -205,6 +227,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Returns the next token.
+    ///
+    /// Will return an error if the lexer failed to propely parse a token.
+    ///
+    /// If there are no more tokens to be lexed the lexer will return `Ok(None)`
     pub fn next(&mut self) -> Result<Option<Token>> {
         self.next_inner().map_err(|e| Error {
             kind: e,
@@ -215,7 +242,9 @@ impl<'a> Lexer<'a> {
         })
     }
 
-    pub fn next_inner(&mut self) -> LexResult<Option<Token>> {
+    /// Parses the next token.
+    /// Returns an error without Span.
+    fn next_inner(&mut self) -> LexResult<Option<Token>> {
         let byte = if let Some(x) = self.next_byte() {
             x
         } else {
@@ -439,14 +468,19 @@ impl<'a> Lexer<'a> {
                 Some(x) if x.is_ascii_digit() => self.lex_number(b'.')?,
                 _ => self.token(t!(".")),
             },
+            // These characters are not offical identifier starters according to unicode
+            // but are specified by ecmascript as such.
             b'$' => self.lex_ident(self.offset - 1)?,
             b'_' => self.lex_ident(self.offset - 1)?,
+
             b'\\' => todo!(),
             b'\'' => self.lex_string(b'\'')?,
             b'\"' => self.lex_string(b'\"')?,
 
             x if x.is_ascii_digit() => self.lex_number(x)?,
             x if x.is_ascii_alphabetic() => self.lex_ident(self.offset - 1)?,
+            // The lexers parses bytes by default as most code contains just simple ascii bytes.
+            // If the lexer encounters a non-ascii character we parse that in a different path.
             x if !x.is_ascii() => return self.match_char(x),
             _ => return Err(ErrorKind::InvalidToken),
         };
@@ -454,16 +488,25 @@ impl<'a> Lexer<'a> {
         Ok(Some(token))
     }
 
+    /// Eats a single byte
+    ///
+    /// Moves cursor by a single byte.
     fn eat_byte(&mut self) {
         self.offset += 1;
     }
 
+    /// Eats a single byte and returns the byte.
+    ///
+    /// Moves cursor by a single byte.
     fn next_byte(&mut self) -> Option<u8> {
         let byte = *self.source.source().as_bytes().get(self.offset)?;
         self.offset += 1;
         Some(byte)
     }
 
+    /// Peek the next byte.
+    ///
+    /// Will not move the cursor.
     fn peek_byte(&mut self) -> Option<u8> {
         self.source.source().as_bytes().get(self.offset).copied()
     }

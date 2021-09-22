@@ -1,53 +1,136 @@
-use bumpalo::{boxed::Box, Bump};
-use std::iter::Iterator;
+use bumpalo::Bump;
+use std::{
+    cell::{Cell, UnsafeCell},
+    cmp::PartialEq,
+    fmt,
+    iter::Iterator,
+    marker::PhantomData,
+    mem::{self, ManuallyDrop},
+    ptr,
+};
 
-#[derive(Debug, Eq, PartialEq)]
-enum ListItem<'alloc, T> {
-    End(T),
-    Chain(T, Box<'alloc, ListItem<'alloc, T>>),
+pub struct ListItem<'alloc, T> {
+    prev: Cell<Option<&'alloc Self>>,
+    next: Cell<Option<&'alloc Self>>,
+    v: UnsafeCell<ManuallyDrop<T>>,
 }
 
-#[derive(Debug)]
+impl<'alloc, T: fmt::Debug> fmt::Debug for ListItem<'alloc, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ListItem")
+            .field("next", &self.next)
+            .field("v", unsafe { &(**self.v.get()) })
+            .finish()
+    }
+}
+
+impl<'alloc, T: PartialEq> PartialEq for ListItem<'alloc, T> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { (&(*self.v.get())).eq(&(*other.v.get())) }
+    }
+}
+
 pub struct List<'alloc, T> {
-    head: Option<ListItem<'alloc, T>>,
+    first: Option<&'alloc ListItem<'alloc, T>>,
+    last: Option<&'alloc ListItem<'alloc, T>>,
     alloc: &'alloc Bump,
+}
+
+impl<'alloc, T: PartialEq> PartialEq for List<'alloc, T> {
+    fn eq(&self, other: &Self) -> bool {
+        let mut iter = self.iter();
+        let mut other_iter = other.iter();
+        while let Some(a) = iter.next() {
+            if let Some(b) = other_iter.next() {
+                if a != b {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        other_iter.next().is_none()
+    }
+}
+
+impl<'alloc, T: fmt::Debug> fmt::Debug for List<'alloc, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("List")
+            .field("first", &self.first)
+            .field("alloc", &self.alloc)
+            .finish()
+    }
 }
 
 impl<'alloc, T> List<'alloc, T> {
     pub fn new_in(alloc: &'alloc Bump) -> Self {
-        List { head: None, alloc }
+        List {
+            first: None,
+            last: None,
+            alloc,
+        }
     }
 
     pub fn push(&mut self, value: T) {
-        if let Some(x) = self.head.take() {
-            let r = Box::new_in(x, self.alloc);
-            self.head.replace(ListItem::Chain(value, r));
+        let n = self.alloc.alloc(ListItem {
+            prev: Cell::new(None),
+            next: Cell::new(None),
+            v: UnsafeCell::new(ManuallyDrop::new(value)),
+        });
+        if let Some(x) = self.last {
+            x.next.set(Some(n));
+            self.last = Some(n);
+            n.prev.set(Some(x));
         } else {
-            self.head = Some(ListItem::End(value))
+            self.first = Some(n);
+            self.last = Some(n);
         }
     }
 
     pub fn pop(&mut self) -> Option<T> {
-        let v = self.head.take()?;
-        match v {
-            ListItem::End(x) => Some(x),
-            ListItem::Chain(x, rest) => {
-                let rest = unsafe { Box::into_raw(rest).read() };
-                self.head = Some(rest);
-                Some(x)
+        if let Some(x) = self.last {
+            self.last = x.prev.get();
+            if ptr::eq(self.first.unwrap(), x) {
+                self.first = None;
             }
+            unsafe { Some(ManuallyDrop::take(&mut *x.v.get())) }
+        } else {
+            None
+        }
+    }
+
+    pub fn append(&mut self, other: &mut Self) {
+        if let Some(x) = self.last {
+            let o_first = other.first.take();
+            o_first.as_ref().map(|x| x.prev.set(Some(x)));
+            x.next.set(o_first);
+            self.last = other.last.take();
+        } else {
+            self.first = other.first.take();
+            self.last = other.last.take();
         }
     }
 
     pub fn iter<'a>(&'a self) -> ListIter<'a, 'alloc, T> {
-        ListIter {
-            item: self.head.as_ref(),
-        }
+        ListIter { item: self.first }
     }
 
     pub fn iter_mut<'a>(&'a mut self) -> ListIterMut<'a, 'alloc, T> {
         ListIterMut {
-            item: self.head.as_mut(),
+            item: self.first,
+            __marker: PhantomData,
+        }
+    }
+}
+
+impl<'alloc, T> Drop for List<'alloc, T> {
+    fn drop(&mut self) {
+        if mem::needs_drop::<T>() {
+            let mut item = self.first;
+            while let Some(x) = item {
+                unsafe { ManuallyDrop::drop(&mut *x.v.get()) }
+                item = x.next.take();
+            }
         }
     }
 }
@@ -59,31 +142,24 @@ pub struct ListIter<'a, 'alloc, T> {
 impl<'a, 'alloc, T> Iterator for ListIter<'a, 'alloc, T> {
     type Item = &'a T;
     fn next(&mut self) -> Option<Self::Item> {
-        let v = self.item.take()?;
-        match *v {
-            ListItem::End(ref x) => Some(x),
-            ListItem::Chain(ref x, ref rest) => {
-                self.item = Some(rest.as_ref());
-                Some(x)
-            }
-        }
+        let item = self.item?;
+        let res = unsafe { &*item.v.get() };
+        self.item = item.next.get();
+        Some(res)
     }
 }
 
 pub struct ListIterMut<'a, 'alloc, T> {
-    item: Option<&'a mut ListItem<'alloc, T>>,
+    item: Option<&'a ListItem<'alloc, T>>,
+    __marker: PhantomData<&'a mut List<'alloc, T>>,
 }
 
 impl<'a, 'alloc, T> Iterator for ListIterMut<'a, 'alloc, T> {
     type Item = &'a mut T;
     fn next(&mut self) -> Option<Self::Item> {
-        let v = self.item.take()?;
-        match *v {
-            ListItem::End(ref mut x) => Some(x),
-            ListItem::Chain(ref mut x, ref mut rest) => {
-                self.item = Some(rest.as_mut());
-                Some(x)
-            }
-        }
+        let item = self.item?;
+        let res = unsafe { &mut *item.v.get() };
+        self.item = item.next.get();
+        Some(res)
     }
 }

@@ -3,10 +3,10 @@ use common::{
     source::{Source, Span},
 };
 use lexer::{Error as LexerError, ErrorKind as LexerErrorKind};
-use std::io::{Result, Write};
+use std::fmt;
 use token::Token;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ErrorKind {
     UnexpectedLineTerminator,
     Todo {
@@ -23,10 +23,20 @@ pub enum ErrorKind {
     LexerError(LexerErrorKind),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Error {
     pub kind: ErrorKind,
     pub origin: Span,
+}
+
+impl Error {
+    pub fn format<'a>(self, source: &'a Source, interner: &'a Interner) -> FormattedError<'a> {
+        FormattedError {
+            error: self,
+            source,
+            interner,
+        }
+    }
 }
 
 impl From<LexerError> for Error {
@@ -38,18 +48,35 @@ impl From<LexerError> for Error {
     }
 }
 
-impl Error {
-    pub fn format<F: Write>(&self, mut w: F, source: &Source, interner: &Interner) -> Result<()> {
+// An error with data required to provide full context in the error.
+pub struct FormattedError<'a> {
+    error: Error,
+    source: &'a Source,
+    interner: &'a Interner,
+}
+
+impl fmt::Display for FormattedError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f)
+    }
+}
+
+impl FormattedError<'_> {
+    // Format an error according to rust like error messages.
+    pub fn format<F: fmt::Write>(&self, mut w: F) -> fmt::Result {
         write!(w, "error: ")?;
-        match self.kind {
+        match self.error.kind {
+            // Line terminator found where it is explicitly forbiden to have a line terminator
             ErrorKind::UnexpectedLineTerminator => {
                 writeln!(
                     w,
                     "unexpected line terminator, syntax forbids line terminator at this point",
                 )?;
-                source.format_span_line(&mut w, self.origin)?;
-                source.format_span_block(&mut w, self.origin, None)?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
             }
+            // Todo marked in the parser
             ErrorKind::Todo {
                 ref file,
                 ref line,
@@ -65,14 +92,21 @@ impl Error {
                 } else {
                     writeln!(w)?;
                 }
-                source.format_span_line(&mut w, self.origin)?;
-                source.format_span_block(&mut w, self.origin, None)?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
             }
+            // Variable was redeclared in the same scope.
             ErrorKind::RedeclaredVariable => {
                 writeln!(w, "redeclared variable")?;
-                source.format_span_line(&mut w, self.origin)?;
-                source.format_span_block(&mut w, self.origin, Some("variable redeclared here"))?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source.format_span_block(
+                    &mut w,
+                    self.error.origin,
+                    Some("variable redeclared here"),
+                )?;
             }
+            // Parser encountered a token it did not expect.
             ErrorKind::UnexpectedToken {
                 ref found,
                 expected,
@@ -80,7 +114,7 @@ impl Error {
             } => {
                 write!(w, "unexpected token")?;
                 if let Some(x) = found {
-                    write!(w, ": found '{}'", x.kind.format(interner))?;
+                    write!(w, ": found '{}'", x.kind.format(self.interner))?;
                 }
                 match expected.len() {
                     0 => {}
@@ -102,8 +136,9 @@ impl Error {
                     }
                 }
                 writeln!(w)?;
-                source.format_span_line(&mut w, self.origin)?;
-                source.format_span_block(&mut w, self.origin, reason)?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, reason)?;
             }
             ErrorKind::LexerError(_) => todo!(),
         }

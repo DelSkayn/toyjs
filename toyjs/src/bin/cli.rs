@@ -1,8 +1,12 @@
 use std::io::{self, BufRead};
-use toyjs::ToyJs;
+use toyjs::{Context, ToyJs};
 
 fn main() -> io::Result<()> {
-    let mut js = ToyJs::new();
+    let js = ToyJs::new();
+    let ctx = Context::new(&js);
+    //js.dump_bc(true);
+    //js.dump_ssa(true);
+    //js.dump_allocated_bytes(true);
 
     let mut buffer = String::new();
     let stdin = io::stdin();
@@ -59,7 +63,9 @@ fn main() -> io::Result<()> {
             continue 'main;
         }
         last_length = 0;
-        println!("value: {:?}", js.exec(&buffer));
+        ctx.with(|ctx| {
+            println!("value: {:?}", ctx.exec(buffer.clone(), true));
+        });
         buffer.clear();
     }
     Ok(())

@@ -1,11 +1,14 @@
 use crate::{
-    constants::Constants,
+    constants::{Constant, Constants},
     ssa::{BinaryOperation, Ssa, SsaId, SsaVec, UnaryOperation},
 };
-use bumpalo::{collections::Vec, Bump};
+use bumpalo::Bump;
 use common::interner::Interner;
-use runtime::bytecode::{op, type_a, type_d, Bytecode, Op};
-use std::convert::TryFrom;
+use runtime::{
+    bytecode::{op, type_a, type_d, Bytecode, Instruction, Module, ModuleFunction, Op},
+    value::JSValue,
+};
+use std::{cmp::Ord, convert::TryFrom};
 
 mod register_allocator;
 use register_allocator::RegisterAllocator;
@@ -13,45 +16,120 @@ use register_allocator::RegisterAllocator;
 mod bytecode_builder;
 use bytecode_builder::BytecodeBuilder;
 
-pub struct Generator<'a, 'alloc> {
-    alloc: &'alloc Bump,
+pub struct ModuleBuilder {
+    pub instructions: Vec<Instruction>,
+    pub constants: Constants,
+    pub functions: Vec<ModuleFunction>,
+}
+
+impl ModuleBuilder {
+    pub fn new() -> Self {
+        ModuleBuilder {
+            instructions: Vec::new(),
+            constants: Constants::new(),
+            functions: Vec::new(),
+        }
+    }
+
+    pub fn build(self, interner: &Interner) -> Module {
+        let mut data = Vec::with_capacity(self.constants.ids.len());
+        self.constants
+            .ids
+            .into_iter()
+            .map(|(k, v)| {
+                let k = match k {
+                    Constant::Float(x) => JSValue::from(x),
+                    Constant::Integer(x) => JSValue::from(x),
+                    Constant::Boolean(x) => JSValue::from(x),
+                    Constant::Null => JSValue::null(),
+                    Constant::Undefined => JSValue::undefined(),
+                };
+                let v: u32 = v.into();
+                (v, k)
+            })
+            .for_each(|(k, v)| {
+                for _ in data.len()..(k as usize + 1) {
+                    data.push(JSValue::undefined())
+                }
+                data[k as usize] = v
+            });
+
+        let mut strings = Vec::with_capacity(self.constants.string_ids.len());
+        self.constants
+            .string_ids
+            .into_iter()
+            .map(|(k, v)| {
+                let k = interner.lookup(k).unwrap().to_string();
+                let v: u32 = v.into();
+                (v, k)
+            })
+            .for_each(|(k, v)| {
+                for _ in strings.len()..(k as usize + 1) {
+                    strings.push(String::new())
+                }
+                strings[k as usize] = v
+            });
+
+        let strings = strings.into_boxed_slice();
+        let data = data.into_boxed_slice();
+        let instructions = self.instructions.into_boxed_slice();
+        let functions = self.functions.into_boxed_slice();
+        Module {
+            bc: Bytecode {
+                instructions,
+                data,
+                strings,
+            },
+            functions,
+        }
+    }
+}
+
+pub struct Generator<'a> {
     interner: &'a Interner,
-    ssa: &'a SsaVec<'alloc>,
-    constants: &'a Constants,
-    allocator: RegisterAllocator<'a, 'alloc>,
-    pending_jumps: Vec<'alloc, usize>,
+    ssa: &'a SsaVec,
+    allocator: RegisterAllocator<'a>,
+    pending_jumps: Vec<usize>,
+    functions: &'a mut Vec<ModuleFunction>,
     builder: BytecodeBuilder<'a>,
     num_slots: u32,
 }
 
-impl<'a, 'alloc> Generator<'a, 'alloc> {
+impl<'a> Generator<'a> {
     pub fn new(
-        alloc: &'alloc Bump,
-        ssa: &'a SsaVec<'alloc>,
-        constants: &'a Constants,
+        name: String,
+        ssa: &'a SsaVec,
         interner: &'a Interner,
+        module_builder: &'a mut ModuleBuilder,
         num_slots: u32,
     ) -> Self {
-        dbg!(ssa);
         Generator {
-            allocator: RegisterAllocator::new(alloc, ssa),
+            allocator: RegisterAllocator::new(ssa),
             interner,
-            pending_jumps: Vec::new_in(alloc),
+            pending_jumps: Vec::new(),
             ssa,
-            constants,
-            alloc,
-            builder: BytecodeBuilder::new(alloc, constants, interner),
+            functions: &mut module_builder.functions,
+            builder: BytecodeBuilder::new(
+                name,
+                &module_builder.constants,
+                interner,
+                &mut module_builder.instructions,
+            ),
             num_slots,
         }
     }
 
-    pub fn generate(mut self) -> Bytecode {
+    pub fn generate(mut self) -> u32 {
         for i in 0..self.ssa.len() {
             let id = SsaId::from(i);
             self.generate_instruction(id);
         }
-        self.builder
-            .finish(self.allocator.used_registers(), self.num_slots)
+        let func = self
+            .builder
+            .finish(self.allocator.used_registers(), self.num_slots);
+        let res = self.functions.len() as u32;
+        self.functions.push(func);
+        res
     }
 
     fn generate_instruction(&mut self, ssa: SsaId) -> Option<u8> {
@@ -72,6 +150,14 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
                 self.builder.push(ssa, type_d(Op::CreateObject, dst, 0));
                 Some(dst)
             }
+            Ssa::CreateFunction { function } => {
+                if !self.allocator.is_used(ssa) {
+                    return None;
+                }
+                let dst = self.allocator.allocate(ssa);
+                self.builder.create_function(ssa, dst, function);
+                Some(dst)
+            }
             Ssa::CreateEnvironment => {
                 if !self.allocator.is_used(ssa) {
                     return None;
@@ -84,6 +170,14 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
                 }
                 let dst = self.allocator.allocate(ssa);
                 self.builder.constant(ssa, dst, constant);
+                Some(dst)
+            }
+            Ssa::LoadString { constant } => {
+                if !self.allocator.is_used(ssa) {
+                    return None;
+                }
+                let dst = self.allocator.allocate(ssa);
+                self.builder.constant_string(ssa, dst, constant);
                 Some(dst)
             }
             Ssa::Return { expr } => {
@@ -196,6 +290,7 @@ impl<'a, 'alloc> Generator<'a, 'alloc> {
             }
 
             Ssa::Alias { .. } => None,
+            _ => todo!(),
         }
     }
 }

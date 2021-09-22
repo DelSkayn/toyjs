@@ -36,7 +36,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     stmt_expr = Some(expr.eval(self));
                     self.compile_assignment(Place::Variable(var), stmt_expr.unwrap());
                 } else {
-                    let constant = self.constants.add(Constant::Undefined);
+                    let constant = self.module.constants.add(Constant::Undefined);
                     let expr = self.ssa.insert(Ssa::LoadConstant { constant });
                     self.compile_assignment(Place::Variable(var), expr);
                 }
@@ -105,7 +105,24 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     self.ssa.patch_jump(j, after_stmt);
                 }
             }
-            _ => todo!(),
+            Stmt::Function(scope, ref id, ref args, ref stmt) => {
+                self.compile_function(scope, *id, args, stmt);
+            }
+            Stmt::Return(ref exprs) => {
+                if let Some(exprs) = exprs {
+                    let mut ret_expr = None;
+                    for expr in exprs.iter() {
+                        ret_expr = Some(self.compile_expr(expr).eval(self));
+                    }
+                    self.ssa.push(Ssa::Return { expr: ret_expr });
+                } else {
+                    self.ssa.push(Ssa::Return { expr: None });
+                }
+            }
+            ref x => {
+                println!("{:?}", x);
+                todo!();
+            }
         }
         stmt_expr
     }

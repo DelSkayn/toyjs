@@ -1,6 +1,6 @@
 //use crate::constant::ConstantId;
-use crate::constants::ConstantId;
-use bumpalo::{collections::Vec, Bump};
+use crate::constants::{ConstStringId, ConstantId};
+use bumpalo::Bump;
 use common::{collections::HashMap, index::Index, newtype_index, newtype_vec};
 use std::fmt;
 
@@ -19,17 +19,17 @@ impl SsaId {
     }
 }
 
-pub struct SsaVec<'alloc> {
-    instructions: Vec<'alloc, Ssa>,
+pub struct SsaVec {
+    instructions: Vec<Ssa>,
     envs: HashMap<u32, SsaId>,
     global: Option<SsaId>,
 }
 
 newtype_vec!(
-    struct SsaVec<'alloc,>.instructions[SsaId] -> Ssa
+    struct SsaVec.instructions[SsaId] -> Ssa
 );
 
-impl<'alloc> fmt::Debug for SsaVec<'alloc> {
+impl fmt::Display for SsaVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let white_space = (self.instructions.len() as f64).log10() as usize + 1;
         writeln!(f, "SSA:")?;
@@ -48,10 +48,10 @@ impl<'alloc> fmt::Debug for SsaVec<'alloc> {
     }
 }
 
-impl<'alloc> SsaVec<'alloc> {
-    pub fn new_in(bump: &'alloc Bump) -> Self {
+impl SsaVec {
+    pub fn new() -> Self {
         SsaVec {
-            instructions: Vec::new_in(bump),
+            instructions: Vec::new(),
             envs: HashMap::default(),
             global: None,
         }
@@ -94,7 +94,6 @@ impl<'alloc> SsaVec<'alloc> {
     }
 
     pub fn environment(&self, depth: u32) -> SsaId {
-        dbg!(depth);
         self.envs
             .get(&depth)
             .copied()
@@ -153,6 +152,9 @@ pub enum Ssa {
         slot: u32,
     },
     CreateObject,
+    CreateFunction {
+        function: u32,
+    },
     Index {
         object: SsaId,
         key: SsaId,
@@ -170,8 +172,19 @@ pub enum Ssa {
     Jump {
         to: Option<SsaId>,
     },
+    Args {
+        cur: SsaId,
+        next: Option<SsaId>,
+    },
+    Call {
+        function: SsaId,
+        args: Option<SsaId>,
+    },
     LoadConstant {
         constant: ConstantId,
+    },
+    LoadString {
+        constant: ConstStringId,
     },
     Binary {
         op: BinaryOperation,

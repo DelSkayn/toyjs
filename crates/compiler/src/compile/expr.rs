@@ -1,7 +1,7 @@
 use crate::Compiler;
 use crate::{constants::Constant, ssa::*};
 use ast::*;
-use bumpalo::{collections::Vec, Bump};
+use bumpalo::Bump;
 use common::interner::StringId;
 use std::ptr;
 
@@ -49,8 +49,8 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
             Expr::UnaryPostfix(expr, op) => match *op {
                 PostfixOperator::Dot(x) => {
                     let expr = self.compile_expr(expr);
-                    let constant = self.constants.add(Constant::String(x));
-                    let constant = self.ssa.insert(Ssa::LoadConstant { constant });
+                    let constant = self.module.constants.add_string(x);
+                    let constant = self.ssa.insert(Ssa::LoadString { constant });
                     CompiledExpr::new_in(
                         self.ssa.insert(Ssa::Index {
                             object: expr.id,
@@ -64,6 +64,19 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                     let object = self.compile_expr(expr).id;
                     CompiledExpr::new_in(self.ssa.insert(Ssa::Index { object, key }), self.alloc)
                 }
+                PostfixOperator::Call(ref args) => {
+                    if args.len() > 0 {
+                        todo!()
+                    }
+                    let function = self.compile_expr(expr).id;
+                    CompiledExpr::new_in(
+                        self.ssa.insert(Ssa::Call {
+                            function,
+                            args: None,
+                        }),
+                        self.alloc,
+                    )
+                }
                 ref x @ PostfixOperator::AddOne | ref x @ PostfixOperator::SubtractOne => {
                     let place = self.compile_place(expr);
                     let value = self.compile_place_use(place);
@@ -71,7 +84,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                         op: UnaryOperation::ToNumber,
                         operand: value,
                     });
-                    let constant = self.constants.add(Constant::Integer(1));
+                    let constant = self.module.constants.add(Constant::Integer(1));
                     let one = self.ssa.push(Ssa::LoadConstant { constant });
                     let op = if *x == PostfixOperator::AddOne {
                         BinaryOperation::Add
@@ -197,7 +210,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             op: UnaryOperation::ToNumber,
                             operand: value,
                         });
-                        let constant = self.constants.add(Constant::Integer(1));
+                        let constant = self.module.constants.add(Constant::Integer(1));
                         let one = self.ssa.push(Ssa::LoadConstant { constant });
                         let op = if *x == PrefixOperator::AddOne {
                             BinaryOperation::Add
@@ -263,22 +276,25 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 let variable = &self.variables[x];
                 match variable.kind {
                     VariableKind::Global => {
-                        if ptr::eq(variable.scope, self.variables.root()) {
+                        if variable.scope == self.variables.root() {
                             let object = self.ssa.global();
-                            let constant = self.constants.add(Constant::String(variable.name));
-                            let key = self.ssa.insert(Ssa::LoadConstant { constant });
+                            let constant = self.module.constants.add_string(variable.name);
+                            let key = self.ssa.insert(Ssa::LoadString { constant });
                             self.ssa.insert(Ssa::Index { object, key })
                         } else {
                             todo!()
                         }
                     }
-                    _ => {
-                        let slot = self.variables[x].slot.unwrap();
-                        let depth = self.scope.as_ref().unwrap().stack_depth
+                    VariableKind::Local(slot)
+                    | VariableKind::Captured(slot)
+                    | VariableKind::LocalConstant(slot)
+                    | VariableKind::CapturedConstant(slot) => {
+                        let depth = self.scope.as_ref().unwrap().ty.as_function().stack_depth
                             - self.variables[x].define_depth;
                         let env = self.ssa.environment(depth);
                         self.ssa.insert(Ssa::IndexEnvironment { env, slot })
                     }
+                    _ => todo!(),
                 }
             }
             Place::Object { object, key } => self.ssa.insert(Ssa::Index { object, key }),
@@ -299,8 +315,8 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 }
                 PostfixOperator::Dot(x) => {
                     let object = self.compile_expr(expr).id;
-                    let constant = self.constants.add(Constant::String(x));
-                    let key = self.ssa.insert(Ssa::LoadConstant { constant });
+                    let constant = self.module.constants.add_string(x);
+                    let key = self.ssa.insert(Ssa::LoadString { constant });
                     Place::Object { object, key }
                 }
                 _ => panic!("not assignable"),
@@ -315,22 +331,25 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 let variable = &self.variables[x];
                 match variable.kind {
                     VariableKind::Global => {
-                        if ptr::eq(variable.scope, self.variables.root()) {
+                        if variable.scope == self.variables.root() {
                             let object = self.ssa.global();
-                            let constant = self.constants.add(Constant::String(variable.name));
-                            let key = self.ssa.insert(Ssa::LoadConstant { constant });
+                            let constant = self.module.constants.add_string(variable.name);
+                            let key = self.ssa.insert(Ssa::LoadString { constant });
                             self.ssa.insert(Ssa::Assign { object, key, value })
                         } else {
                             todo!()
                         }
                     }
-                    _ => {
-                        let slot = self.variables[x].slot.unwrap();
-                        let depth = self.scope.as_ref().unwrap().stack_depth
+                    VariableKind::Local(slot)
+                    | VariableKind::Captured(slot)
+                    | VariableKind::LocalConstant(slot)
+                    | VariableKind::CapturedConstant(slot) => {
+                        let depth = self.scope.as_ref().unwrap().ty.as_function().stack_depth
                             - self.variables[x].define_depth;
                         let env = self.ssa.environment(depth);
                         self.ssa.insert(Ssa::AssignEnvironment { value, env, slot })
                     }
+                    _ => todo!(),
                 }
             }
             Place::Object { object, key } => self.ssa.insert(Ssa::Assign { object, key, value }),
@@ -340,8 +359,17 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
     pub(crate) fn compile_prime(&mut self, prime: &PrimeExpr<'alloc>) -> SsaId {
         match *prime {
             PrimeExpr::Literal(x) => {
-                let constant = self.constants.add(Constant::from_literal(x));
-                self.ssa.insert(Ssa::LoadConstant { constant })
+                let constant = match x {
+                    Literal::Float(x) => Constant::Float(x),
+                    Literal::Boolean(x) => Constant::Boolean(x),
+                    Literal::Integer(x) => Constant::Integer(x),
+                    Literal::String(x) => {
+                        let constant = self.module.constants.add_string(x);
+                        return self.ssa.insert(Ssa::LoadString { constant });
+                    }
+                };
+                let constant = self.module.constants.add(constant);
+                return self.ssa.insert(Ssa::LoadConstant { constant });
             }
             PrimeExpr::Covered(ref exprs) => {
                 let mut res = None;
@@ -355,9 +383,9 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                 let var = &self.variables[x];
                 match var.kind {
                     VariableKind::Global => {
-                        if ptr::eq(var.scope, self.variables.root()) {
-                            let constant = self.constants.add(Constant::String(var.name));
-                            let key = self.ssa.insert(Ssa::LoadConstant { constant });
+                        if var.scope == self.variables.root() {
+                            let constant = self.module.constants.add_string(var.name);
+                            let key = self.ssa.insert(Ssa::LoadString { constant });
                             self.ssa.insert(Ssa::Index {
                                 object: self.ssa.global(),
                                 key,
@@ -366,13 +394,16 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
                             todo!()
                         }
                     }
-                    _ => {
-                        let slot = self.variables[x].slot.unwrap();
-                        let depth = self.scope.as_ref().unwrap().stack_depth
+                    VariableKind::Local(slot)
+                    | VariableKind::Captured(slot)
+                    | VariableKind::LocalConstant(slot)
+                    | VariableKind::CapturedConstant(slot) => {
+                        let depth = self.scope.as_ref().unwrap().ty.as_function().stack_depth
                             - self.variables[x].define_depth;
                         let env = self.ssa.environment(depth);
                         self.ssa.insert(Ssa::IndexEnvironment { env, slot })
                     }
+                    _ => todo!(),
                 }
             }
         }
@@ -384,9 +415,9 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
     ) -> SsaId {
         let res = self.ssa.insert(Ssa::CreateObject);
         for (k, v) in entries.iter() {
-            let key_const = self.constants.add(Constant::String(*k));
+            let key_const = self.module.constants.add_string(*k);
             let value = self.compile_expr(v).eval(self);
-            let key = self.ssa.insert(Ssa::LoadConstant {
+            let key = self.ssa.insert(Ssa::LoadString {
                 constant: key_const,
             });
             self.ssa.insert(Ssa::Assign {

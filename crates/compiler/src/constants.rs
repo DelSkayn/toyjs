@@ -6,36 +6,48 @@ newtype_index! {
     pub struct ConstantId
 }
 
+newtype_index! {
+    pub struct ConstStringId
+}
+
 pub struct Constants {
-    constants: Vec<Constant>,
-    ids: HashMap<Constant, ConstantId>,
+    next_id: usize,
+    next_string_id: usize,
+    pub ids: HashMap<Constant, ConstantId>,
+    pub string_ids: HashMap<StringId, ConstStringId>,
 }
 
 impl Constants {
     pub fn new() -> Self {
         Constants {
-            constants: Vec::new(),
+            next_id: 0,
+            next_string_id: 0,
             ids: HashMap::default(),
+            string_ids: HashMap::default(),
         }
     }
 
     pub fn add(&mut self, constant: Constant) -> ConstantId {
-        let constants = &mut self.constants;
-        *self.ids.entry(constant.clone()).or_insert_with(|| {
-            let id = ConstantId::from(constants.len());
-            constants.push(constant);
-            id
+        let next_id = &mut self.next_id;
+        *self.ids.entry(constant).or_insert_with(|| {
+            let id = *next_id;
+            *next_id += 1;
+            ConstantId::from(id)
         })
     }
 
-    pub fn lookup(&self, id: ConstantId) -> &Constant {
-        &self.constants[usize::from(id)]
+    pub fn add_string(&mut self, string: StringId) -> ConstStringId {
+        let next_id = &mut self.next_string_id;
+        *self.string_ids.entry(string).or_insert_with(|| {
+            let id = *next_id;
+            *next_id += 1;
+            ConstStringId::from(id)
+        })
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum Constant {
-    String(StringId),
     Float(f64),
     Integer(i32),
     Boolean(bool),
@@ -43,27 +55,9 @@ pub enum Constant {
     Null,
 }
 
-impl Constant {
-    pub fn from_literal(literal: Literal) -> Self {
-        match literal {
-            Literal::String(x) => Constant::String(x),
-            Literal::Float(x) => Constant::Float(x),
-            Literal::Integer(x) => Constant::Integer(x),
-            Literal::Boolean(x) => Constant::Boolean(x),
-        }
-    }
-}
-
 impl cmp::PartialEq<Constant> for Constant {
     fn eq(&self, other: &Constant) -> bool {
         match *self {
-            Constant::String(a) => {
-                if let Constant::String(b) = *other {
-                    a == b
-                } else {
-                    false
-                }
-            }
             Constant::Float(a) => {
                 if let Constant::Float(b) = *other {
                     a.to_bits() == b.to_bits()
@@ -107,7 +101,6 @@ impl hash::Hash for Constant {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match *self {
-            Constant::String(ref x) => x.hash(state),
             Constant::Float(ref x) => x.to_bits().hash(state),
             Constant::Integer(ref x) => x.hash(state),
             Constant::Boolean(ref x) => x.hash(state),

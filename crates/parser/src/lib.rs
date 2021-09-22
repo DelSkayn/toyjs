@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use ast::Variables;
-use bumpalo::{collections::Vec, Bump};
+use ast::{Variables, Vec};
+use bumpalo::Bump;
 use common::{
     interner::Interner,
     source::{Source, Span},
@@ -23,16 +23,29 @@ mod stmt;
 
 pub type Result<T> = StdResult<T, Error>;
 
-/// The toyjs parser.
+/// Parser state.
+///
+/// Certain keywords like `break` and `return` are only allowed inside blocks in
+/// a certain context. This keeps struct of that context.
+#[derive(Default, Clone)]
+pub struct State {
+    r#return: bool,
+    r#break: bool,
+    r#continue: bool,
+}
+
+/// The toyjs parser. Takes a set of tokens and produces an AST
 pub struct Parser<'source, 'alloc> {
     lexer: Lexer<'source>,
     peek: Option<Token>,
     bump: &'alloc Bump,
     last_span: Span,
     variables: &'source mut Variables<'alloc>,
+    state: State,
 }
 
 impl<'source, 'alloc> Parser<'source, 'alloc> {
+    /// Create a parser from a lexer.
     pub fn from_lexer(
         lexer: Lexer<'source>,
         bump: &'alloc Bump,
@@ -44,6 +57,7 @@ impl<'source, 'alloc> Parser<'source, 'alloc> {
             bump,
             last_span: Span { low: 0, hi: 0 },
             variables,
+            state: Default::default(),
         }
     }
 
@@ -59,8 +73,22 @@ impl<'source, 'alloc> Parser<'source, 'alloc> {
             bump,
             last_span: Span { low: 0, hi: 0 },
             variables,
+            state: Default::default(),
         }
     }
+
+    fn alter_state<Fa, Fc, R>(&mut self, fa: Fa, fc: Fc) -> R
+    where
+        Fa: FnOnce(&mut State),
+        Fc: FnOnce(&mut Self) -> R,
+    {
+        let clone = self.state.clone();
+        fa(&mut self.state);
+        let res = fc(self);
+        self.state = clone;
+        res
+    }
+
     fn next(&mut self) -> Result<Option<Token>> {
         loop {
             match self.next_lt()? {

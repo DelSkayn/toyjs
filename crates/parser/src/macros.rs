@@ -37,7 +37,7 @@ macro_rules! unexpected{
             found: $s.peek()?,
             expected: &[$($t,)*],
             reason: unexpected!(=> $($r)*)
-        });
+        })
     };
     (=> $r:tt) => {
         Some($r)

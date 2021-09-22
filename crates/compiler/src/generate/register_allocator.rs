@@ -1,14 +1,14 @@
 use crate::ssa::{Ssa, SsaId, SsaVec};
-use bumpalo::{collections::Vec, Bump};
+use bumpalo::Bump;
 use common::{index::Index, newtype_slice};
 
 #[derive(Debug)]
-struct Lifetimes<'alloc>(&'alloc mut [SsaId]);
-newtype_slice!(struct Lifetimes<'alloc,>[SsaId] -> SsaId);
+struct Lifetimes(Box<[SsaId]>);
+newtype_slice!(struct Lifetimes[SsaId] -> SsaId);
 
 #[derive(Debug)]
-struct Allocations<'alloc>(&'alloc mut [Option<u8>]);
-newtype_slice!(struct Allocations<'alloc,>[SsaId] -> Option<u8,>);
+struct Allocations(Box<[Option<u8>]>);
+newtype_slice!(struct Allocations[SsaId] -> Option<u8,>);
 
 #[derive(Clone, Copy, Default, Debug)]
 struct Alias {
@@ -17,10 +17,10 @@ struct Alias {
 }
 
 #[derive(Debug)]
-struct Aliases<'alloc>(&'alloc mut [Alias]);
-newtype_slice!(struct Aliases<'alloc,>[SsaId] -> Alias);
+struct Aliases(Box<[Alias]>);
+newtype_slice!(struct Aliases[SsaId] -> Alias);
 
-impl<'alloc> Aliases<'alloc> {
+impl Aliases {
     pub fn traverse<F: FnMut(SsaId)>(&self, start: SsaId, f: &mut F) {
         f(start);
         self.traverse_up(start, f);
@@ -51,21 +51,19 @@ impl<'alloc> Aliases<'alloc> {
     }
 }
 
-#[derive(Debug)]
-pub struct RegisterAllocator<'a, 'alloc> {
-    ssa: &'a SsaVec<'alloc>,
-    aliases: Aliases<'alloc>,
-    lifetimes: Lifetimes<'alloc>,
-    allocations: Allocations<'alloc>,
-    registers: Vec<'alloc, SsaId>,
+pub struct RegisterAllocator<'a> {
+    ssa: &'a SsaVec,
+    aliases: Aliases,
+    lifetimes: Lifetimes,
+    allocations: Allocations,
+    registers: Vec<SsaId>,
 }
 
-impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
-    pub fn new(alloc: &'alloc Bump, ssa: &'a SsaVec<'alloc>) -> Self {
-        let mut lifetimes =
-            Lifetimes(alloc.alloc_slice_fill_copy(ssa.len(), SsaId::from(Index::MAX)));
-        let mut aliases = Aliases(alloc.alloc_slice_fill_copy(ssa.len(), Alias::default()));
-        let allocations = Allocations(alloc.alloc_slice_fill_copy(ssa.len(), None));
+impl<'a> RegisterAllocator<'a> {
+    pub fn new(ssa: &'a SsaVec) -> Self {
+        let mut lifetimes = Lifetimes(vec![SsaId::from(Index::MAX); ssa.len()].into_boxed_slice());
+        let mut aliases = Aliases(vec![Alias::default(); ssa.len()].into_boxed_slice());
+        let allocations = Allocations(vec![None; ssa.len()].into_boxed_slice());
         for (idx, s) in ssa.iter().enumerate() {
             let idx = SsaId::from(idx);
             match *s {
@@ -74,6 +72,8 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
                 | Ssa::CreateObject
                 | Ssa::GetEnvironment { depth: _ }
                 | Ssa::LoadConstant { constant: _ }
+                | Ssa::LoadString { constant: _ }
+                | Ssa::CreateFunction { .. }
                 | Ssa::Jump { to: _ } => {}
                 Ssa::Binary { op: _, left, right }
                 | Ssa::AssignEnvironment {
@@ -111,13 +111,33 @@ impl<'a, 'alloc> RegisterAllocator<'a, 'alloc> {
                         lifetimes[x] = idx;
                     }
                 }
+                Ssa::Args { .. } => {}
+                Ssa::Call { function, args } => {
+                    lifetimes[function] = idx;
+                    if let Some(x) = args {
+                        lifetimes[x] = idx;
+                        let mut cur_ssa: Ssa = ssa[x];
+                        loop {
+                            if let Ssa::Args { cur, next } = cur_ssa {
+                                lifetimes[cur] = idx;
+                                if let Some(x) = next {
+                                    cur_ssa = ssa[x];
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                panic!("invalid ssa: next argument not of variant Args")
+                            }
+                        }
+                    }
+                }
             }
         }
         RegisterAllocator {
             lifetimes,
             aliases,
             allocations,
-            registers: Vec::new_in(alloc),
+            registers: Vec::new(),
             ssa,
         }
     }

@@ -1,28 +1,49 @@
 use bumpalo::{collections::Vec, Bump};
-use common::{collections::HashMap, interner::StringId, newtype_index, newtype_slice, newtype_vec};
+use common::{
+    bump_list::List, collections::HashMap, interner::StringId, newtype_index, newtype_slice,
+    newtype_vec,
+};
+
 use std::{
     cell::{Cell, RefCell},
-    fmt, ptr,
+    cmp::Eq,
+    fmt,
+    ops::Deref,
+    ptr,
 };
 
 #[derive(Clone, Debug, Copy)]
 pub enum VariableKind {
     Global,
     Implicit,
-    Local,
-    LocalConstant,
-    Captured,
-    CapturedConstant,
+    Local(u32),
+    LocalConstant(u32),
+    Captured(u32),
+    CapturedConstant(u32),
+    Argument(u32),
+    CapturedArgument(u32),
 }
 
 impl VariableKind {
+    fn capture(self) -> VariableKind {
+        match self {
+            VariableKind::Local(x) => VariableKind::Captured(x),
+            VariableKind::LocalConstant(x) => VariableKind::CapturedConstant(x),
+            VariableKind::Argument(x) => VariableKind::CapturedArgument(x),
+            x => x,
+        }
+    }
+
     pub fn is_local(&self) -> bool {
         match self {
-            VariableKind::Global | VariableKind::Implicit => false,
-            VariableKind::Local
-            | VariableKind::LocalConstant
-            | VariableKind::Captured
-            | VariableKind::CapturedConstant => true,
+            VariableKind::Global
+            | VariableKind::Implicit
+            | VariableKind::Argument(_)
+            | VariableKind::CapturedArgument(_) => false,
+            VariableKind::Local(_)
+            | VariableKind::LocalConstant(_)
+            | VariableKind::Captured(_)
+            | VariableKind::CapturedConstant(_) => true,
         }
     }
 }
@@ -56,20 +77,39 @@ pub struct Variable<'alloc> {
     /// }
     /// ```
     pub define_depth: u32,
-    pub slot: Option<u32>,
-    pub scope: &'alloc Scope<'alloc>,
+    pub scope: ScopeRef<'alloc>,
+}
+
+#[derive(Debug)]
+pub struct FunctionScope<'alloc> {
+    pub num_arguments: Cell<u32>,
+    pub captures: RefCell<List<'alloc, VariableId>>,
+    pub has_captured_variable: Cell<bool>,
+    pub stack_depth: u32,
+    pub next_slot: Cell<u32>,
+}
+
+#[derive(Debug)]
+pub enum ScopeType<'alloc> {
+    Lexical,
+    Function(FunctionScope<'alloc>),
+}
+
+impl<'alloc> ScopeType<'alloc> {
+    pub fn as_function(&self) -> &FunctionScope<'alloc> {
+        match *self {
+            ScopeType::Lexical => panic!("called as function on non-function scope"),
+            ScopeType::Function(ref x) => x,
+        }
+    }
 }
 
 pub struct Scope<'alloc> {
-    pub parent: Option<&'alloc Scope<'alloc>>,
-    pub parent_function: Option<&'alloc Scope<'alloc>>,
-    pub is_function: bool,
-    pub has_captured_variable: Cell<bool>,
-    pub children: RefCell<Vec<'alloc, &'alloc Scope<'alloc>>>,
+    pub parent: Option<ScopeRef<'alloc>>,
+    pub parent_function: Option<ScopeRef<'alloc>>,
+    pub children: RefCell<Vec<'alloc, ScopeRef<'alloc>>>,
     pub variables: RefCell<Vec<'alloc, VariableId>>,
-    pub captures: RefCell<Vec<'alloc, VariableId>>,
-    pub stack_depth: u32,
-    pub next_slot: Cell<u32>,
+    pub ty: ScopeType<'alloc>,
 }
 
 impl<'alloc> fmt::Debug for Scope<'alloc> {
@@ -77,33 +117,61 @@ impl<'alloc> fmt::Debug for Scope<'alloc> {
         f.debug_struct("Scope")
             .field("parent", &self.parent.map(|_| "cyclic"))
             .field("parent_function", &self.parent_function.map(|_| "cyclic"))
-            .field("is_function", &self.is_function)
-            .field("has_captured_variable", &self.has_captured_variable)
             .field("children", &self.children)
             .field("variables", &self.variables)
-            .field("captures", &self.captures)
-            .field("stack_depth", &self.stack_depth)
-            .field("next_slot", &self.next_slot)
+            .field("ty", &self.ty)
             .finish()
     }
 }
 
-impl<'alloc> Scope<'alloc> {
-    pub fn traverse_childeren<F: FnMut(&Self) -> bool>(&self, f: &mut F) {
+impl<'alloc> ScopeRef<'alloc> {
+    pub fn traverse_childeren<F: FnMut(Self) -> bool>(&self, f: &mut F) {
         self.children.borrow().iter().copied().for_each(|c| {
             if f(c) {
                 c.traverse_childeren(f)
             }
         });
     }
+
+    pub fn is_function(self) -> bool {
+        match self.ty {
+            ScopeType::Lexical => false,
+            ScopeType::Function(_) => true,
+        }
+    }
+
+    pub fn current_function(self) -> ScopeRef<'alloc> {
+        if self.is_function() {
+            self
+        } else {
+            self.parent_function.unwrap()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ScopeRef<'alloc>(&'alloc Scope<'alloc>);
+
+impl<'alloc> PartialEq for ScopeRef<'alloc> {
+    fn eq(&self, other: &ScopeRef<'alloc>) -> bool {
+        ptr::eq(self.0, other.0)
+    }
+}
+
+impl<'alloc> Deref for ScopeRef<'alloc> {
+    type Target = Scope<'alloc>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
 }
 
 #[derive(Debug)]
 pub struct Variables<'alloc> {
-    root: &'alloc Scope<'alloc>,
+    root: ScopeRef<'alloc>,
     implicits: HashMap<StringId, VariableId>,
-    current: &'alloc Scope<'alloc>,
-    current_function: &'alloc Scope<'alloc>,
+    current: ScopeRef<'alloc>,
+    current_function: ScopeRef<'alloc>,
     alloc: &'alloc Bump,
     variables: VariableVec<'alloc>,
     variable_ids: HashMap<(*const Scope<'alloc>, StringId), VariableId>,
@@ -116,17 +184,19 @@ newtype_slice! (
 
 impl<'alloc> Variables<'alloc> {
     pub fn new_in(alloc: &'alloc Bump) -> Self {
-        let root = alloc.alloc(Scope {
+        let root = ScopeRef(alloc.alloc(Scope {
             parent: None,
             parent_function: None,
-            is_function: true,
-            has_captured_variable: Cell::new(true),
             children: RefCell::new(Vec::new_in(alloc)),
             variables: RefCell::new(Vec::new_in(alloc)),
-            captures: RefCell::new(Vec::new_in(alloc)),
-            stack_depth: 0,
-            next_slot: Cell::new(0),
-        });
+            ty: ScopeType::Function(FunctionScope {
+                num_arguments: Cell::new(0),
+                captures: RefCell::new(List::new_in(alloc)),
+                stack_depth: 0,
+                has_captured_variable: Cell::new(false),
+                next_slot: Cell::new(0),
+            }),
+        }));
         Variables {
             root,
             implicits: HashMap::default(),
@@ -141,7 +211,7 @@ impl<'alloc> Variables<'alloc> {
         }
     }
 
-    pub fn root(&self) -> &'alloc Scope<'alloc> {
+    pub fn root(&self) -> ScopeRef<'alloc> {
         self.root
     }
 
@@ -149,37 +219,34 @@ impl<'alloc> Variables<'alloc> {
         let mut current = self.current;
         let mut crossed_function = false;
         loop {
-            let key = (current as *const _, name);
+            let key = (current.0 as *const _, name);
             if let Some(x) = self.variable_ids.get(&key).copied() {
                 if crossed_function {
                     // Variable crossed function boundery
                     // so some variable kinds should be changed to reflect that.
-                    match self.variables[x].kind {
-                        VariableKind::Local => {
-                            if let Some(x) = self.variables[x].scope.parent_function {
-                                x.has_captured_variable.set(true);
-                            } else {
-                                self.variables[x].scope.has_captured_variable.set(true);
-                            }
-                            self.variables[x].kind = VariableKind::Captured;
-                        }
-                        VariableKind::LocalConstant => {
-                            if let Some(x) = self.variables[x].scope.parent_function {
-                                x.has_captured_variable.set(true);
-                            } else {
-                                self.variables[x].scope.has_captured_variable.set(true);
-                            }
-                            self.variables[x].kind = VariableKind::CapturedConstant;
-                        }
-                        _ => {}
+                    if self.variables[x].kind.is_local() {
+                        self.variables[x]
+                            .scope
+                            .current_function()
+                            .ty
+                            .as_function()
+                            .has_captured_variable
+                            .set(true);
+                        self.variables[x].kind = self.variables[x].kind.capture();
                     }
                 }
                 if crossed_function {
-                    self.current.captures.borrow_mut().push(x);
+                    self.current
+                        .current_function()
+                        .ty
+                        .as_function()
+                        .captures
+                        .borrow_mut()
+                        .push(x);
                 }
                 return x;
             }
-            crossed_function |= current.is_function;
+            crossed_function |= current.is_function();
             if let Some(x) = current.parent {
                 current = x;
             } else {
@@ -191,19 +258,51 @@ impl<'alloc> Variables<'alloc> {
             name,
             kind: VariableKind::Implicit,
             define_depth: 0,
-            slot: None,
             scope: self.current_function,
         });
-        if !ptr::eq(self.current, self.root) {
-            self.current.captures.borrow_mut().push(variable);
+        if self.current != self.root {
+            self.current
+                .current_function()
+                .ty
+                .as_function()
+                .captures
+                .borrow_mut()
+                .push(variable);
         }
         self.implicits.insert(name, variable);
         variable
     }
 
+    pub fn define_argument(&mut self, name: StringId) -> VariableId {
+        let key = (self.current_function.0 as *const _, name);
+        let num_args = self.current_function.ty.as_function().num_arguments.get();
+        self.current_function
+            .ty
+            .as_function()
+            .num_arguments
+            .set(num_args + 1);
+        if let Some(id) = self.implicits.remove(&name) {
+            self.variables[id].kind = VariableKind::Argument(num_args);
+            self.variables[id].define_depth = self.cur_depth;
+            self.variable_ids.insert(key, id);
+            return id;
+        }
+        let id = self.variables.push(Variable {
+            kind: VariableKind::Argument(num_args),
+            name,
+            define_depth: self.cur_depth,
+            scope: self.current_function,
+        });
+        self.variable_ids.insert(key, id);
+        self.current_function.variables.borrow_mut().push(id);
+        self.variable_ids
+            .insert((self.current_function.0, name), id);
+        id
+    }
+
     pub fn define_global(&mut self, name: StringId) -> VariableId {
         // Connect uses of variables to later definitions
-        let key = (self.current_function as *const _, name);
+        let key = (self.current_function.0 as *const _, name);
         if let Some(id) = self.implicits.remove(&name) {
             self.variables[id].kind = VariableKind::Global;
             self.variables[id].define_depth = self.cur_depth;
@@ -214,75 +313,68 @@ impl<'alloc> Variables<'alloc> {
             kind: VariableKind::Global,
             name,
             define_depth: self.cur_depth,
-            slot: None,
             scope: self.current_function,
         });
         self.variable_ids.insert(key, id);
         self.current_function.variables.borrow_mut().push(id);
-        self.variable_ids.insert((self.current_function, name), id);
+        self.variable_ids
+            .insert((self.current_function.0, name), id);
         id
     }
 
     pub fn define_local(&mut self, name: StringId, constant: bool) -> VariableId {
+        let slot = self.current_function.ty.as_function().next_slot.get();
+        self.current_function
+            .ty
+            .as_function()
+            .next_slot
+            .set(slot + 1);
         let ty = if constant {
-            VariableKind::LocalConstant
+            VariableKind::LocalConstant(slot)
         } else {
-            VariableKind::Local
+            VariableKind::Local(slot)
         };
-        let key = (self.current as *const _, name);
-        // Connect uses of variables to later definitions
-        if let Some(id) = self.implicits.remove(&name) {
-            self.variables[id].kind = ty;
-            self.variable_ids.insert(key, id);
-            return id;
-        }
-
-        let slot = self.current_function.next_slot.get();
-        self.current_function.next_slot.set(slot + 1);
         let id = self.variables.push(Variable {
             kind: ty,
             name,
             define_depth: self.cur_depth,
-            slot: Some(slot),
             scope: self.current,
         });
         self.current.variables.borrow_mut().push(id);
-        self.variable_ids.insert((self.current, name), id);
+        self.variable_ids.insert((self.current.0, name), id);
         id
     }
 
-    pub fn push_scope(&mut self) -> &'alloc Scope<'alloc> {
+    pub fn push_scope(&mut self) -> ScopeRef<'alloc> {
         let scope = Scope {
             parent: Some(self.current),
             parent_function: Some(self.current_function),
-            is_function: false,
-            has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
             variables: RefCell::new(Vec::new_in(self.alloc)),
-            captures: RefCell::new(Vec::new_in(self.alloc)),
-            stack_depth: self.cur_depth,
-            next_slot: Cell::new(0),
+            ty: ScopeType::Lexical,
         };
-        let scope_ref = self.alloc.alloc(scope);
+        let scope_ref = ScopeRef(self.alloc.alloc(scope));
         self.current.children.borrow_mut().push(scope_ref);
         self.current = scope_ref;
         scope_ref
     }
 
-    pub fn push_function(&mut self) -> &'alloc Scope<'alloc> {
+    pub fn push_function(&mut self) -> ScopeRef<'alloc> {
         self.cur_depth.checked_add(1).expect("scope depth to great");
         let scope = Scope {
             parent: Some(self.current),
             parent_function: Some(self.current_function),
-            is_function: true,
-            has_captured_variable: Cell::new(false),
             children: RefCell::new(Vec::new_in(self.alloc)),
             variables: RefCell::new(Vec::new_in(self.alloc)),
-            captures: RefCell::new(Vec::new_in(self.alloc)),
-            stack_depth: self.cur_depth,
-            next_slot: Cell::new(0),
+            ty: ScopeType::Function(FunctionScope {
+                next_slot: Cell::new(0),
+                stack_depth: self.cur_depth,
+                num_arguments: Cell::new(0),
+                captures: RefCell::new(List::new_in(self.alloc)),
+                has_captured_variable: Cell::new(false),
+            }),
         };
-        let scope_ref = self.alloc.alloc(scope) as &_;
+        let scope_ref = ScopeRef(self.alloc.alloc(scope));
         self.current.children.borrow_mut().push(scope_ref);
         self.current = scope_ref;
         self.current_function = scope_ref;
@@ -290,14 +382,12 @@ impl<'alloc> Variables<'alloc> {
     }
 
     pub fn pop(&mut self) {
-        if self.current.is_function {
+        if self.current.is_function() {
+            self.cur_depth -= 1;
             self.current_function = self
                 .current
                 .parent_function
                 .expect("tried to pop root scope")
-        }
-        if self.current.is_function {
-            self.cur_depth -= 1;
         }
         self.current = self.current.parent.expect("tried to pop root scope");
     }
