@@ -3,8 +3,9 @@ use std::{
     cmp::Ordering,
     collections::VecDeque,
     convert::TryFrom,
+    fmt::{self, Write},
     fs::File,
-    io::{Read, Result, Write},
+    io::{self, Read},
     path::{Path, PathBuf},
 };
 
@@ -46,7 +47,7 @@ impl Source {
     }
 
     /// Create a source from a path loading the file at that path.
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> io::Result<Self> {
         let mut file = File::open(path.as_ref())?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
@@ -116,7 +117,7 @@ impl Source {
     /// ```
     /// --> location/of/file:line:column
     /// ```
-    pub fn format_span_line<W: Write>(&self, mut w: W, span: Span) -> Result<()> {
+    pub fn format_span_line<W: Write>(&self, mut w: W, span: Span) -> fmt::Result {
         self.finish_lines();
         write!(w, " --> ")?;
         if let Some(x) = self.path.as_ref() {
@@ -145,7 +146,7 @@ impl Source {
         mut w: W,
         span: Span,
         message: Option<&str>,
-    ) -> Result<()> {
+    ) -> fmt::Result {
         self.finish_lines();
         let lines = self.lines.borrow();
         let line = lines

@@ -23,3 +23,11 @@ criterion = "0.3.3"
 [[bench]]
 name = "expr"
 harness = false
+
+
+[[bin]]
+name = "cli"
+[[bin]]
+name = "dump_tokens"
+[[bin]]
+name = "dump_ast"

@@ -19,10 +19,10 @@ pub struct GcBox<T: Trace + ?Sized> {
     pub(crate) value: UnsafeCell<T>,
 }
 
-pub struct Gc<T: Trace>(pub(crate) NonNull<GcBox<T>>);
+pub struct Gc<T: Trace + ?Sized>(pub(crate) NonNull<GcBox<T>>);
 
-impl<T: Trace> Copy for Gc<T> {}
-impl<T: Trace> Clone for Gc<T> {
+impl<T: Trace + ?Sized> Copy for Gc<T> {}
+impl<T: Trace + ?Sized> Clone for Gc<T> {
     fn clone(&self) -> Self {
         *self
     }

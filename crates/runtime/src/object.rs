@@ -1,5 +1,8 @@
-use crate::gc::{Ctx, Gc, Trace};
-use crate::{value::JSValue, ExecutionContext};
+use crate::{
+    exec::RunningExecution,
+    gc::{Ctx, Gc, Trace},
+    value::JSValue,
+};
 use common::collections::HashMap;
 use std::{cell::RefCell, cmp::PartialEq, hash, mem};
 
@@ -21,16 +24,16 @@ impl Object {
         }
     }
 
-    pub unsafe fn get(&self, key: JSValue) -> JSValue {
-        let string = ExecutionContext::convert_string(key);
+    pub unsafe fn get<R>(&self, key: JSValue, ctx: &mut RunningExecution<R>) -> JSValue {
+        let string = ctx.convert_string(key);
         self.values
             .get(&string)
             .copied()
             .unwrap_or(JSValue::undefined())
     }
 
-    pub unsafe fn set(&mut self, key: JSValue, value: JSValue) {
-        let string = ExecutionContext::convert_string(key);
+    pub unsafe fn set<R>(&mut self, key: JSValue, value: JSValue, ctx: &mut RunningExecution<R>) {
+        let string = ctx.convert_string(key);
         self.values.insert(string, value);
     }
 

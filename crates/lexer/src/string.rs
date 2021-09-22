@@ -16,6 +16,7 @@ fn from_ascii_digit(digit: u8) -> u8 {
 }
 
 impl<'a> Lexer<'a> {
+    /// Lex a string token.
     pub(super) fn lex_string(&mut self, start: u8) -> LexResult<Token> {
         self.buffer.clear();
         loop {
@@ -42,6 +43,7 @@ impl<'a> Lexer<'a> {
         Ok(from_ascii_digit(c))
     }
 
+    /// Lexes escape codes in a string.
     fn lex_escape_code(&mut self) -> LexResult<()> {
         let next = if let Some(x) = self.next_byte() {
             x
@@ -66,6 +68,7 @@ impl<'a> Lexer<'a> {
             }
             chars::CR => {}
             b'x' => {
+                // a unicode escape sequence
                 let mut val = 0u8;
                 for _ in 0..2 {
                     match self.next_byte() {
@@ -80,6 +83,7 @@ impl<'a> Lexer<'a> {
                 self.buffer.push(val.into());
             }
             b'u' => {
+                // a unicode escape sequence
                 let next = if let Some(x) = self.next_byte() {
                     x
                 } else {

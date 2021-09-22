@@ -9,7 +9,10 @@ use super::Ctx;
 pub unsafe trait Trace {
     fn needs_trace() -> bool
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        true
+    }
 
     fn trace(&self, ctx: Ctx);
 }
@@ -101,3 +104,28 @@ unsafe impl Trace for () {
 
     fn trace(&self, _: Ctx) {}
 }
+
+macro_rules! impl_trace_tuple{
+    ($($ty:ident,)*) => {
+            #[allow(non_snake_case)]
+            unsafe impl<$($ty:Trace,)*> Trace for ($($ty,)*){
+                fn needs_trace() -> bool{
+                    false $(|| $ty::needs_trace())*
+                }
+
+                fn trace(&self, ctx: Ctx){
+                    let ($(ref $ty,)*) = self;
+                    $($ty.trace(ctx);)*
+                }
+            }
+    };
+}
+
+impl_trace_tuple!(A,);
+impl_trace_tuple!(A, B,);
+impl_trace_tuple!(A, B, C,);
+impl_trace_tuple!(A, B, C, D,);
+impl_trace_tuple!(A, B, C, D, E,);
+impl_trace_tuple!(A, B, C, D, E, F,);
+impl_trace_tuple!(A, B, C, D, E, F, G,);
+impl_trace_tuple!(A, B, C, D, E, F, G, H,);

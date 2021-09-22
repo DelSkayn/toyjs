@@ -1,11 +1,11 @@
 use crate::{
-    constants::{Constant, ConstantId, Constants},
+    constants::{ConstStringId, Constant, ConstantId, Constants},
     ssa::SsaId,
 };
 use bumpalo::{collections::Vec as BumpVec, Bump};
 use common::{collections::HashMap, interner::Interner, newtype_vec};
 use runtime::{
-    bytecode::{op, op_a, op_d, op_op, type_d, Bytecode, Instruction, Op},
+    bytecode::{op, op_a, op_d, op_op, type_d, Bytecode, Instruction, ModuleFunction, Op},
     value::JSValue,
 };
 use std::{
@@ -14,34 +14,38 @@ use std::{
 };
 
 #[derive(Debug)]
-pub struct SsaIdToBytecode<'alloc>(BumpVec<'alloc, Option<u32>>);
-newtype_vec!(struct SsaIdToBytecode<'alloc,>[SsaId] -> Option<u32,>);
+pub struct SsaIdToBytecode(Vec<Option<u32>>);
+newtype_vec!(struct SsaIdToBytecode[SsaId] -> Option<u32,>);
 
 pub struct BytecodeBuilder<'a> {
-    constants: &'a Constants,
+    name: String,
     interner: &'a Interner,
-    instructions: Vec<Instruction>,
     returns: Vec<usize>,
     jumps: Vec<(usize, SsaId)>,
-    data: Vec<JSValue>,
-    strings: Vec<String>,
-    constant_id: HashMap<ConstantId, (u32, bool)>,
-    to_bc: SsaIdToBytecode<'a>,
+    to_bc: SsaIdToBytecode,
+    constants: &'a Constants,
+    instructions: &'a mut Vec<Instruction>,
+    offset: u32,
 }
 
 impl<'a> BytecodeBuilder<'a> {
-    pub fn new(alloc: &'a Bump, constants: &'a Constants, interner: &'a Interner) -> Self {
-        let to_bc = SsaIdToBytecode(BumpVec::new_in(alloc));
+    pub fn new(
+        name: String,
+        constants: &'a Constants,
+        interner: &'a Interner,
+        instructions: &'a mut Vec<Instruction>,
+    ) -> Self {
+        let to_bc = SsaIdToBytecode(Vec::new());
+        instructions.push(0);
         BytecodeBuilder {
+            name,
             interner,
             constants,
-            instructions: vec![0],
+            offset: u32::try_from(instructions.len() - 1).unwrap(),
+            to_bc,
             returns: Vec::new(),
             jumps: Vec::new(),
-            data: Vec::new(),
-            strings: Vec::new(),
-            constant_id: HashMap::default(),
-            to_bc,
+            instructions,
         }
     }
 
@@ -59,56 +63,34 @@ impl<'a> BytecodeBuilder<'a> {
         if op_op(instruction) == op::Return || op_op(instruction) == op::ReturnUndefined {
             self.returns.push(self.instructions.len());
         }
-        self.instructions.push(instruction)
+        self.instructions.push(instruction);
+    }
+
+    pub fn create_function(&mut self, lifetime: SsaId, dst: u8, function_id: u32) {
+        if function_id < u16::MAX as u32 {
+            self.push(lifetime, type_d(Op::LoadData, dst, function_id as u16));
+        } else {
+            self.push(lifetime, type_d(Op::LoadData, dst, u16::MAX));
+            self.instructions.push(function_id);
+        }
     }
 
     pub fn constant(&mut self, lifetime: SsaId, dst: u8, constant: ConstantId) {
-        let strings = &mut self.strings;
-        let data = &mut self.data;
-        let interner = &self.interner;
-        let constants = &self.constants;
-
-        let (id, string) =
-            *self
-                .constant_id
-                .entry(constant)
-                .or_insert_with(|| match constants.lookup(constant) {
-                    Constant::String(x) => {
-                        let id = u32::try_from(strings.len()).unwrap();
-                        strings.push(interner.lookup(*x).unwrap().to_string());
-                        (id, true)
-                    }
-                    Constant::Null => {
-                        let id = u32::try_from(data.len()).unwrap();
-                        data.push(JSValue::null());
-                        (id, false)
-                    }
-                    Constant::Undefined => {
-                        let id = u32::try_from(data.len()).unwrap();
-                        data.push(JSValue::undefined());
-                        (id, false)
-                    }
-                    Constant::Float(x) => {
-                        let id = u32::try_from(data.len()).unwrap();
-                        data.push(JSValue::from(*x));
-                        (id, false)
-                    }
-                    Constant::Integer(x) => {
-                        let id = u32::try_from(data.len()).unwrap();
-                        data.push(JSValue::from(*x));
-                        (id, false)
-                    }
-                    Constant::Boolean(x) => {
-                        let id = u32::try_from(data.len()).unwrap();
-                        data.push(JSValue::from(*x));
-                        (id, false)
-                    }
-                });
-        let op = if string { Op::LoadString } else { Op::LoadData };
+        let id: u32 = constant.into();
         if id < u16::MAX as u32 {
-            self.push(lifetime, type_d(op, dst, id as u16));
+            self.push(lifetime, type_d(Op::LoadData, dst, id as u16));
         } else {
-            self.push(lifetime, type_d(op, dst, u16::MAX));
+            self.push(lifetime, type_d(Op::LoadData, dst, u16::MAX));
+            self.instructions.push(id);
+        }
+    }
+
+    pub fn constant_string(&mut self, lifetime: SsaId, dst: u8, constant: ConstStringId) {
+        let id: u32 = constant.into();
+        if id < u16::MAX as u32 {
+            self.push(lifetime, type_d(Op::LoadString, dst, id as u16));
+        } else {
+            self.push(lifetime, type_d(Op::LoadString, dst, u16::MAX));
             self.instructions.push(id);
         }
     }
@@ -126,8 +108,8 @@ impl<'a> BytecodeBuilder<'a> {
         }
     }
 
-    pub fn finish(mut self, used_registers: u8, used_environment_slots: u32) -> Bytecode {
-        self.instructions[0] = type_d(Op::StackPush, used_registers, 0);
+    pub fn finish(mut self, used_registers: u8, used_environment_slots: u32) -> ModuleFunction {
+        self.instructions[self.offset as usize] = type_d(Op::StackPush, used_registers, 0);
         for s in self.returns {
             let instr = self.instructions[s];
             match op_op(instr) {
@@ -181,11 +163,11 @@ impl<'a> BytecodeBuilder<'a> {
                 _ => panic!("not a jump"),
             }
         }
-        Bytecode {
+        ModuleFunction {
+            offset: self.offset,
+            len: self.instructions.len() as u32 - self.offset,
             slots: used_environment_slots,
-            instructions: self.instructions.into_boxed_slice(),
-            data: self.data.into_boxed_slice(),
-            strings: self.strings.into_boxed_slice(),
+            name: self.name,
         }
     }
 }

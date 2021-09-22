@@ -1,7 +1,7 @@
 use super::*;
 
 use ast::{AssignOperator, BinaryOperator, Expr, PostfixOperator, PrefixOperator};
-use bumpalo::{boxed::Box, collections::Vec};
+use bumpalo::boxed::Box;
 use token::{t, TokenKind};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
@@ -41,7 +41,7 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
 fn postfix_binding_power(kind: TokenKind) -> Option<(u8, ())> {
     match kind {
         t!("++") | t!("--") => Some((31, ())),
-        t!("[") | t!("(") | t!(".") => Some((38, ())),
+        t!("[") | t!(".") | t!("(") => Some((38, ())),
         _ => None,
     }
 }
@@ -101,6 +101,15 @@ impl<'a, 'b> Parser<'a, 'b> {
             t!(".") => {
                 expect_bind!(self,let index = "ident");
                 PostfixOperator::Dot(index)
+            }
+            t!("(") => {
+                let stmts = if let Some(t!(")")) = self.peek_kind()? {
+                    Vec::new_in(self.bump)
+                } else {
+                    self.parse_expr()?
+                };
+                expect!(self, ")");
+                PostfixOperator::Call(stmts)
             }
             t!("[") => {
                 let expr = self.parse_single_expr()?;

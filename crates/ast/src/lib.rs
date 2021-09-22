@@ -1,19 +1,28 @@
-use bumpalo::{boxed::Box, collections::Vec};
+#![feature(allocator_api)]
+
+use bumpalo::boxed::Box;
+//pub use common::bump_list::List as Vec;
+pub use bumpalo::collections::Vec;
 use common::interner::StringId;
-use std::{cmp::PartialEq, ptr};
+use std::cmp::PartialEq;
+
+mod symbol_table;
 
 mod variables;
 pub use variables::*;
 
 #[derive(Debug)]
-pub struct Script<'a>(pub &'a Scope<'a>, pub Vec<'a, Stmt<'a>>);
-impl<'a> PartialEq for Script<'a> {
-    fn eq(&self, other: &Script<'a>) -> bool {
-        ptr::eq(self.0, other.0) && self.1.eq(&other.1)
-    }
+pub struct Script<'a>(pub ScopeRef<'a>, pub Vec<'a, Stmt<'a>>);
+
+#[derive(Debug, PartialEq)]
+pub enum Rest {
+    BindingIdent(VariableId),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub struct Params<'a>(pub Vec<'a, VariableId>, pub Option<Rest>);
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt<'a> {
     Empty,
     Let(VariableId, Option<Expr<'a>>),
@@ -30,98 +39,9 @@ pub enum Stmt<'a> {
     While(Vec<'a, Expr<'a>>, Box<'a, Stmt<'a>>),
     DoWhile(Box<'a, Stmt<'a>>, Vec<'a, Expr<'a>>),
     For,
-    Block(&'a Scope<'a>, Vec<'a, Stmt<'a>>),
-}
-
-impl<'a> PartialEq for Stmt<'a> {
-    fn eq(&self, other: &Stmt<'a>) -> bool {
-        match *self {
-            Stmt::Empty => {
-                if let Stmt::Empty = other {
-                    true
-                } else {
-                    false
-                }
-            }
-            Stmt::Let(ref a, ref b) => {
-                if let Stmt::Let(ref c, ref d) = *other {
-                    a == c && b == d
-                } else {
-                    false
-                }
-            }
-            Stmt::Var(ref a, ref b) => {
-                if let Stmt::Var(ref c, ref d) = *other {
-                    a == c && b == d
-                } else {
-                    false
-                }
-            }
-            Stmt::Const(ref a, ref b) => {
-                if let Stmt::Const(ref c, ref d) = *other {
-                    a == c && b == d
-                } else {
-                    false
-                }
-            }
-            Stmt::Expr(ref a) => {
-                if let Stmt::Expr(ref c) = *other {
-                    a == c
-                } else {
-                    false
-                }
-            }
-            Stmt::Break => {
-                if let Stmt::Break = other {
-                    true
-                } else {
-                    false
-                }
-            }
-            Stmt::Continue => {
-                if let Stmt::Continue = other {
-                    true
-                } else {
-                    false
-                }
-            }
-            Stmt::If(ref a, ref b, ref c) => {
-                if let Stmt::If(ref d, ref e, ref g) = *other {
-                    a == d && b == e && c == g
-                } else {
-                    false
-                }
-            }
-            Stmt::While(ref a, ref b) => {
-                if let Stmt::While(ref c, ref d) = *other {
-                    a == c && b == d
-                } else {
-                    false
-                }
-            }
-            Stmt::DoWhile(ref a, ref b) => {
-                if let Stmt::DoWhile(ref c, ref d) = *other {
-                    a == c && b == d
-                } else {
-                    false
-                }
-            }
-            Stmt::For => {
-                if let Stmt::For = other {
-                    true
-                } else {
-                    false
-                }
-            }
-            Stmt::Block(a, ref b) => {
-                if let Stmt::Block(c, ref d) = *other {
-                    ptr::eq(a, c) && b == d
-                } else {
-                    false
-                }
-            }
-        }
-    }
+    Block(ScopeRef<'a>, Vec<'a, Stmt<'a>>),
+    Function(ScopeRef<'a>, VariableId, Params<'a>, Vec<'a, Stmt<'a>>),
+    Return(Option<Vec<'a, Expr<'a>>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -192,6 +112,7 @@ pub enum PostfixOperator<'a> {
     SubtractOne,
     Dot(StringId),
     Index(Box<'a, Expr<'a>>),
+    Call(Vec<'a, Expr<'a>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -218,6 +139,7 @@ impl<'a> Expr<'a> {
             Expr::UnaryPostfix(_, ref op) => match *op {
                 PostfixOperator::Dot(_) => true,
                 PostfixOperator::Index(_) => true,
+                PostfixOperator::Call(_) => false,
                 PostfixOperator::AddOne => false,
                 PostfixOperator::SubtractOne => false,
             },

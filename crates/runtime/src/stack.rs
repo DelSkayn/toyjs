@@ -14,6 +14,7 @@ pub struct Stack {
     size: usize,
     //frame: *mut JSValue,
     stack: NonNull<JSValue>,
+    frame: NonNull<JSValue>,
 }
 
 unsafe impl Trace for Stack {
@@ -41,6 +42,7 @@ impl Stack {
             size: 0,
             data: NonNull::dangling(),
             stack: NonNull::dangling(),
+            frame: NonNull::dangling(),
         }
     }
 
@@ -110,12 +112,12 @@ impl Stack {
         self.free_space();
     }
 
-    #[inline]
+    #[inline(always)]
     pub unsafe fn get(&self, register: u8) -> JSValue {
         (*self.stack.as_ptr().sub(register as usize + 1))
     }
 
-    #[inline]
+    #[inline(always)]
     pub unsafe fn set(&mut self, register: u8, value: JSValue) {
         self.stack
             .as_ptr()

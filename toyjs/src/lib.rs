@@ -1,71 +1,67 @@
-use bumpalo::Bump;
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use parser::{Parser, Result};
 use runtime::{
-    bytecode::Bytecode,
-    environment::Environment,
-    gc::{Gc, GcArena},
-    object::Object,
-    ExecutionContext, Stack,
+    bytecode::Module,
+    gc::{Ctx, Gc, GcArena, Trace},
 };
-use std::rc::Rc;
+pub use std::{
+    cell::UnsafeCell,
+    sync::{Arc, Mutex, Weak},
+};
 
 mod value;
 pub use value::Value;
+mod context;
+pub use context::Context;
+mod unsafe_mutex;
+use unsafe_mutex::UnsafeMutex;
 
-pub struct ToyJs {
+struct Root {
+    contexts: UnsafeCell<Vec<Weak<Context>>>,
+    use_stack: Vec<Gc<dyn Trace>>,
+}
+
+struct Inner {
     gc: GcArena,
     interner: Interner,
-    stack: Stack,
-    global: Gc<Object>,
+    root: Root,
 }
+
+unsafe impl Trace for Root {
+    fn trace(&self, ctx: Ctx) {
+        unsafe {
+            (*self.contexts.get()).retain(|x| {
+                if let Some(x) = x.upgrade() {
+                    x.trace(ctx);
+                    true
+                } else {
+                    false
+                }
+            });
+            self.use_stack.iter().for_each(|x| {
+                let gc: Gc<_> = *x;
+                ctx.mark_dynamic(gc)
+            });
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ToyJs(Arc<UnsafeMutex<Inner>>);
 
 impl ToyJs {
     pub fn new() -> Self {
-        let arena = GcArena::new();
-        let global = unsafe { arena.allocate(Object::new()) };
-        ToyJs {
-            gc: arena,
+        ToyJs(Arc::new(UnsafeMutex::new(Inner {
             interner: Interner::new(),
-            stack: Stack::new(),
-            global,
-        }
-    }
-
-    pub fn exec(&mut self, script: &str) -> Result<Value> {
-        let bc = self.compile(script)?;
-        self.exec_bytecode(&bc)
-    }
-
-    pub fn compile(&mut self, script: &str) -> Result<Bytecode> {
-        let alloc = Bump::new();
-        let mut variables = ast::Variables::new_in(&alloc);
-        unsafe {
-            for (k, _) in self.global.iter() {
-                let string_id = self.interner.intern(k);
-                variables.define_global(string_id);
-            }
-        }
-        let source = Source::from_string(script.to_string());
-        let parser = Parser::from_source(&source, &mut self.interner, &alloc, &mut variables);
-        let script = parser.parse_script()?;
-        println!("bump allocated bytes: {}", alloc.allocated_bytes());
-        Ok(Compiler::new(&alloc, &self.interner, &variables).compile_script(script))
-    }
-
-    pub fn exec_bytecode(&mut self, bc: &Bytecode) -> Result<Value> {
-        let env = Rc::new(Environment::new(bc.slots, None));
-        let mut execution_ctx =
-            ExecutionContext::new(&self.gc, self.global.clone(), env, bc, &mut self.stack);
-        unsafe { Ok(Value::from_js_value(execution_ctx.run())) }
-    }
-}
-
-impl Drop for ToyJs {
-    fn drop(&mut self) {
-        unsafe {
-            self.gc.collect_all(&());
-        }
+            gc: GcArena::new(),
+            root: Root {
+                contexts: UnsafeCell::new(Vec::new()),
+                use_stack: Vec::new(),
+            },
+        })))
     }
 }

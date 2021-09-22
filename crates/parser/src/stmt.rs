@@ -1,7 +1,7 @@
 use super::*;
 use token::t;
 
-use bumpalo::{boxed::Box, collections::Vec};
+use bumpalo::boxed::Box;
 
 impl<'a, 'b> Parser<'a, 'b> {
     pub(crate) fn parse_stmt(&mut self) -> Result<ast::Stmt<'b>> {
@@ -16,8 +16,10 @@ impl<'a, 'b> Parser<'a, 'b> {
             t!("let") => self.parse_let_binding(),
             t!("var") => self.parse_var_binding(),
             t!("const") => self.parse_const_binding(),
+            t!("return") => self.parse_return(),
             t!(";") => Ok(ast::Stmt::Empty),
             t!("{") => self.parse_block(),
+            t!("function") => self.parse_function(),
             _ => Ok(ast::Stmt::Expr(self.parse_expr()?)),
         };
         self.eat(t!(";"))?;
@@ -101,5 +103,65 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
         self.variables.pop();
         Ok(ast::Stmt::Block(scope, stmts))
+    }
+
+    fn parse_function(&mut self) -> Result<ast::Stmt<'b>> {
+        expect!(self, "function");
+        expect_bind!(self, let name = "ident");
+        let scope = self.variables.push_function();
+        let params = self.parse_params()?;
+        expect!(self, "{");
+        let stmts = self.alter_state::<_, _, Result<_>>(
+            |s| s.r#return = true,
+            |this| {
+                let mut stmts = Vec::new_in(this.bump);
+                while !this.eat(t!("}"))? {
+                    stmts.push(this.parse_stmt()?);
+                }
+                Ok(stmts)
+            },
+        )?;
+        self.variables.push_scope();
+        let var = self.variables.define_global(name);
+        Ok(ast::Stmt::Function(scope, var, params, stmts))
+    }
+
+    fn parse_params(&mut self) -> Result<ast::Params<'b>> {
+        expect!(self, "(");
+        let mut stmt = Vec::new_in(self.bump);
+        let mut rest = None;
+        loop {
+            let peek = if let Some(x) = self.peek_kind()? {
+                x
+            } else {
+                break;
+            };
+            match peek {
+                t!("...") => {
+                    self.next()?;
+                    expect_bind!(self, let arg = "ident");
+                    let arg_var = self.variables.define_argument(arg);
+                    rest = Some(ast::Rest::BindingIdent(arg_var));
+                    break;
+                }
+                t!("ident", arg) => {
+                    self.next()?;
+                    let arg_var = self.variables.define_argument(arg);
+                    stmt.push(arg_var);
+                }
+                t!(")") => {
+                    break;
+                }
+                _ => unexpected!(self, "...", ",", "ident"),
+            }
+        }
+        expect!(self, ")");
+        Ok(ast::Params(stmt, rest))
+    }
+
+    fn parse_return(&mut self) -> Result<ast::Stmt<'b>> {
+        expect!(self, "return");
+        let expr = self.parse_expr().ok();
+        Ok(ast::Stmt::Return(expr))
     }
 }

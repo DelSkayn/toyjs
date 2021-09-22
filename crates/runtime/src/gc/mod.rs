@@ -28,6 +28,13 @@ impl<'gc> Ctx<'gc> {
             }
         }
     }
+
+    pub fn mark_dynamic(self, gc: Gc<dyn Trace>) {
+        unsafe {
+            gc.0.as_ref().color.set(Color::Gray);
+            (*self.0.grays.get()).push(gc.0)
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

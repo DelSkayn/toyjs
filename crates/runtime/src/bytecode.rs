@@ -1,48 +1,90 @@
 //! Bytecode format definition.
 
-use crate::value::JSValue;
+use crate::{
+    gc::{Ctx, Gc, Trace},
+    value::JSValue,
+};
 use std::{fmt, rc::Rc};
 pub type Instruction = u32;
 
 #[derive(Debug)]
-pub struct Bytecode {
+pub struct RuntimeFunction {
+    pub module: Gc<Module>,
+    pub function: u32,
+}
+
+unsafe impl Trace for RuntimeFunction {
+    fn trace(&self, ctx: Ctx) {
+        ctx.mark(self.module);
+    }
+}
+
+#[derive(Debug)]
+pub struct ModuleFunction {
+    pub offset: u32,
+    pub len: u32,
     pub slots: u32,
+    pub name: String,
+}
+
+#[derive(Debug)]
+pub struct Module {
+    pub bc: Bytecode,
+    pub functions: Box<[ModuleFunction]>,
+}
+
+unsafe impl Trace for Module {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+    fn trace(&self, ctx: Ctx) {}
+}
+
+#[derive(Debug)]
+pub struct Bytecode {
     pub instructions: Box<[Instruction]>,
     pub data: Box<[JSValue]>,
     pub strings: Box<[String]>,
 }
 
-impl fmt::Display for Bytecode {
+impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "DATA:")?;
-        for (idx, x) in self.data.iter().enumerate() {
+        for (idx, x) in self.bc.data.iter().enumerate() {
             writeln!(f, "{}:{:?}", idx, x)?;
         }
         writeln!(f, "\nSTRINGS:")?;
-        for (idx, x) in self.strings.iter().enumerate() {
+        for (idx, x) in self.bc.strings.iter().enumerate() {
             writeln!(f, "{}:{:?}", idx, x)?;
         }
-        let mut cur = 0;
         writeln!(f, "\nINSTRUCTIONS:")?;
-        let n_chars = (self.instructions.len() as f64).log10() as u64 + 1;
-        while cur != self.instructions.len() {
-            let instr = self.instructions[cur];
-            format_instr(instr, f);
-            let cur_n_chars = (cur as f64).log10() as u64 + 1;
-            for _ in 0..n_chars - cur_n_chars {
-                write!(f, " ")?;
-            }
-            match op_op(instr) {
-                op::LoadData => {
-                    if op_d(instr) == 0xffff {
-                        cur += 1;
-                        write!(f, " const:{}", self.instructions[cur])?;
-                    }
-                    cur += 1;
+        let n_chars = (self.bc.instructions.len() as f64).log10() as u64 + 1;
+        for func in self.functions.iter() {
+            let mut cur = func.offset;
+            writeln!(f, "{}:", func.name)?;
+            while cur != func.offset + func.len {
+                write!(f, "\t")?;
+                let instr = self.bc.instructions[cur as usize];
+                format_instr(instr, f);
+                let cur_n_chars = (cur as f64).log10() as u64 + 1;
+                for _ in 0..n_chars - cur_n_chars {
+                    write!(f, " ")?;
                 }
-                _ => cur += 1,
+                match op_op(instr) {
+                    op::LoadData => {
+                        if op_d(instr) == 0xffff {
+                            cur += 1;
+                            write!(f, " const:{}", self.bc.instructions[cur as usize])?;
+                        }
+                        cur += 1;
+                    }
+                    _ => cur += 1,
+                }
+                writeln!(f)?;
             }
-            writeln!(f)?;
         }
         Ok(())
     }
@@ -124,6 +166,7 @@ pub fn op_d(instr: Instruction) -> u16 {
 op_code!(
     enum Op {
         CreateObject(dst, null),
+        CreateFunction(dst, id),
 
         /// Load the global object in the destination register.
         LoadGlobal(dst, null),
@@ -211,6 +254,10 @@ op_code!(
         JumpFalse(cond, tgt),
         /// jump to the index at the next instruction slot
         Jump(null, tgt),
+
+        /// Call a function with a given number of arguments,
+        /// Store returned value in dst
+        Call(dst, func, num),
 
         /// return
         Return(regs, val),
