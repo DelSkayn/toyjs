@@ -1,15 +1,12 @@
 #![allow(dead_code)]
+#![feature(allocator_api)]
 
-use ast::{Variables, Vec};
-use bumpalo::Bump;
-use common::{
-    interner::Interner,
-    source::{Source, Span},
-};
+use ast::symbol_table::{SymbolTable, SymbolTableBuilder};
+use common::source::Span;
 use lexer::Lexer;
 use token::{t, Token, TokenKind};
 
-use std::result::Result as StdResult;
+use std::{alloc::Allocator, result::Result as StdResult};
 
 #[macro_use]
 mod macros;
@@ -35,46 +32,54 @@ pub struct State {
 }
 
 /// The toyjs parser. Takes a set of tokens and produces an AST
-pub struct Parser<'source, 'alloc> {
+pub struct Parser<'source, A: Allocator> {
     lexer: Lexer<'source>,
     peek: Option<Token>,
-    bump: &'alloc Bump,
     last_span: Span,
-    variables: &'source mut Variables<'alloc>,
+    symbol_table: SymbolTableBuilder<'source, A>,
     state: State,
+    alloc: A,
 }
 
-impl<'source, 'alloc> Parser<'source, 'alloc> {
-    /// Create a parser from a lexer.
-    pub fn from_lexer(
+impl<'source, A: Allocator + Clone> Parser<'source, A> {
+    pub fn parse_script(
         lexer: Lexer<'source>,
-        bump: &'alloc Bump,
-        variables: &'source mut Variables<'alloc>,
-    ) -> Self {
+        symbol_table: &'source mut SymbolTable<A>,
+        alloc: A,
+    ) -> Result<ast::Script<A>> {
         Parser {
             lexer,
             peek: None,
-            bump,
             last_span: Span { low: 0, hi: 0 },
-            variables,
-            state: Default::default(),
+            symbol_table: SymbolTableBuilder::new_script(symbol_table),
+            alloc,
+            state: State {
+                r#return: false,
+                r#break: false,
+                r#continue: false,
+            },
         }
+        .do_parse_script()
     }
 
-    pub fn from_source(
-        source: &'source Source,
-        interner: &'source mut Interner,
-        bump: &'alloc Bump,
-        variables: &'source mut Variables<'alloc>,
-    ) -> Self {
+    pub fn parse_module(
+        lexer: Lexer<'source>,
+        symbol_table: &'source mut SymbolTable<A>,
+        alloc: A,
+    ) -> Result<ast::Script<A>> {
         Parser {
-            lexer: Lexer::new(source, interner),
+            lexer,
             peek: None,
-            bump,
             last_span: Span { low: 0, hi: 0 },
-            variables,
-            state: Default::default(),
+            symbol_table: SymbolTableBuilder::new_module(symbol_table),
+            alloc,
+            state: State {
+                r#return: false,
+                r#break: false,
+                r#continue: false,
+            },
         }
+        .do_parse_module()
     }
 
     fn alter_state<Fa, Fc, R>(&mut self, fa: Fa, fc: Fc) -> R
@@ -162,15 +167,15 @@ impl<'source, 'alloc> Parser<'source, 'alloc> {
         }
     }
 
-    pub fn parse_script(mut self) -> Result<ast::Script<'alloc>> {
-        let mut stmts = Vec::new_in(self.bump);
+    fn do_parse_script(mut self) -> Result<ast::Script<A>> {
+        let mut stmts = Vec::new_in(self.alloc.clone());
         while self.peek()?.is_some() {
             stmts.push(self.parse_stmt()?);
         }
-        Ok(ast::Script(self.variables.root(), stmts))
+        Ok(ast::Script(stmts))
     }
 
-    pub fn parse_module(&mut self) -> Result<()> {
-        todo!();
+    fn do_parse_module(self) -> Result<ast::Script<A>> {
+        todo!()
     }
 }

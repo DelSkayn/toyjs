@@ -1,11 +1,11 @@
 #![allow(dead_code, unused_imports)]
+#![feature(allocator_api)]
 
-use bumpalo::{collections::Vec, Bump};
+use ast::{ScopeId, Script, SymbolId, SymbolTable};
 
-use ast::{Scope, ScopeRef, Script, VariableId, Variables};
 use common::{collections::HashMap, interner::Interner};
 use runtime::bytecode::Module;
-use std::{convert::TryFrom, mem, ptr};
+use std::{alloc::Allocator, convert::TryFrom, mem, ptr};
 
 mod ssa;
 use ssa::{Ssa, SsaId, SsaVec};
@@ -18,40 +18,36 @@ use generate::{Generator, ModuleBuilder};
 
 mod compile;
 
-struct ExprRes<'alloc> {
+struct ExprRes<A: Allocator> {
     pub value: SsaId,
-    pub true_list: Vec<'alloc, SsaId>,
-    pub false_list: Vec<'alloc, SsaId>,
+    pub true_list: Vec<SsaId, A>,
+    pub false_list: Vec<SsaId, A>,
 }
 
-impl<'alloc> ExprRes<'alloc> {
-    pub fn new(value: SsaId, alloc: &'alloc Bump) -> Self {
+impl<A: Allocator + Clone> ExprRes<A> {
+    pub fn new_in(value: SsaId, alloc: A) -> Self {
         ExprRes {
             value,
-            true_list: Vec::new_in(alloc),
+            true_list: Vec::new_in(alloc.clone()),
             false_list: Vec::new_in(alloc),
         }
     }
 }
 
 /// The compiler, takes an abstract syntax tree and produces bytecode.
-pub struct Compiler<'a, 'alloc> {
-    alloc: &'alloc Bump,
+pub struct Compiler<'a, A: Allocator> {
     interner: &'a Interner,
     ssa: SsaVec,
     module: ModuleBuilder,
-    variables: &'a Variables<'alloc>,
-    scope: Option<ScopeRef<'alloc>>,
+    variables: &'a SymbolTable<A>,
+    scope: Option<SymbolId>,
     dump_ssa: bool,
     dump_bc: bool,
+    alloc: A,
 }
 
-impl<'a, 'alloc> Compiler<'a, 'alloc> {
-    pub fn new(
-        alloc: &'alloc Bump,
-        interner: &'a Interner,
-        variables: &'a Variables<'alloc>,
-    ) -> Self {
+impl<'a, A: Allocator> Compiler<'a, A> {
+    pub fn new_in(interner: &'a Interner, variables: &'a SymbolTable<A>, alloc: A) -> Self {
         Compiler {
             ssa: SsaVec::new(),
             module: ModuleBuilder::new(),
@@ -74,7 +70,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         self
     }
 
-    pub fn compile_script(mut self, script: Script<'alloc>) -> Module {
+    pub fn compile_script(mut self, script: Script<A>) -> Module {
         self.generate_header(script.0);
         let slots = script.0.ty.as_function().next_slot.get();
         self.scope = Some(script.0);
@@ -104,7 +100,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         module
     }
 
-    pub fn generate_header(&mut self, scope: ScopeRef<'alloc>) {
+    pub fn generate_header(&mut self, scope: ScopeId) {
         let depth = scope.ty.as_function().stack_depth;
         let ssa = &mut self.ssa;
         let variables = self.variables;
@@ -144,10 +140,10 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
 
     pub fn compile_function(
         &mut self,
-        scope: ScopeRef<'alloc>,
-        id: VariableId,
-        _args: &ast::Params<'alloc>,
-        stmts: &Vec<'alloc, ast::Stmt<'alloc>>,
+        scope: ScopeId,
+        id: SymbolId,
+        _args: &ast::Params<A>,
+        stmts: &Vec<A, ast::Stmt<A>>,
     ) {
         let old_ssa = mem::replace(&mut self.ssa, SsaVec::new());
         self.generate_header(scope);

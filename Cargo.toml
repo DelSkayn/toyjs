@@ -1,12 +1,6 @@
 [workspace]
 members = [
-    "crates/token",
-    "crates/lexer",
-    "crates/common",
-    "crates/compiler",
-    "crates/parser",
-    "crates/ast",
-    "crates/runtime",
+    "crates/*",
     "toyjs"
 ]
 

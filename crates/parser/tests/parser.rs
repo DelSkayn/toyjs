@@ -1,20 +1,19 @@
+use ast::SymbolTable;
 use bumpalo::Bump;
 use common::{interner::Interner, source::Source};
+use lexer::Lexer;
 use toyjs_parser::Parser;
 
-fn create_parser(string: &str, f: F) -> (Source, Interner, Bump)
-where
-    F: FnOnce(Parser),
-{
+fn parse(string: &str) {
     let source = Source::from_string(string.to_string());
-    let interner = Interner::new();
+    let mut interner = Interner::new();
+    let lexer = Lexer::new(&source, &mut interner);
     let bump = Bump::new();
-    let parser = Parser::from_source(source, interner, bump);
-    f(parser)
+    let mut variables = SymbolTable::new_in(&bump);
+    Parser::parse_script(lexer, &mut variables, &bump).unwrap();
 }
 
+#[test]
 fn basic_expression() {
-    create_parser("1 + 1", |p| {
-        p.parse_script().unwrap();
-    })
+    parse("1 + 1")
 }

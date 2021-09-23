@@ -1,19 +1,19 @@
 use crate::Compiler;
 use crate::{constants::Constant, ssa::*};
 use ast::*;
-use bumpalo::Bump;
 use common::interner::StringId;
+use std::alloc::Allocator;
 use std::ptr;
 
 #[must_use]
-pub struct CompiledExpr<'a> {
+pub struct CompiledExpr<A: Allocator> {
     id: SsaId,
-    pub true_list: Vec<'a, SsaId>,
-    pub false_list: Vec<'a, SsaId>,
+    pub true_list: Vec<SsaId, A>,
+    pub false_list: Vec<SsaId, A>,
 }
 
-impl<'a> CompiledExpr<'a> {
-    pub fn new_in(id: SsaId, alloc: &'a Bump) -> Self {
+impl<A: Allocator> CompiledExpr<A> {
+    pub fn new_in(id: SsaId, alloc: A) -> Self {
         CompiledExpr {
             id,
             true_list: Vec::new_in(alloc),
@@ -25,7 +25,7 @@ impl<'a> CompiledExpr<'a> {
         self.id
     }
 
-    pub fn eval(self, compiler: &mut Compiler) -> SsaId {
+    pub fn eval(self, compiler: &mut Compiler<A>) -> SsaId {
         let cur = compiler.ssa.cur();
         for j in self.true_list.iter().copied() {
             compiler.ssa.patch_jump(j, cur)
@@ -40,11 +40,11 @@ impl<'a> CompiledExpr<'a> {
 #[derive(Copy, Clone, Debug)]
 pub enum Place {
     Object { object: SsaId, key: SsaId },
-    Variable(VariableId),
+    Variable(SymbolId),
 }
 
-impl<'a, 'alloc> Compiler<'a, 'alloc> {
-    pub(crate) fn compile_expr(&mut self, expr: &Expr<'alloc>) -> CompiledExpr<'a> {
+impl<'a, A: Allocator> Compiler<'a, A> {
+    pub(crate) fn compile_expr(&mut self, expr: &Expr<A>) -> CompiledExpr<A> {
         match expr {
             Expr::UnaryPostfix(expr, op) => match *op {
                 PostfixOperator::Dot(x) => {
@@ -301,7 +301,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         }
     }
 
-    pub(crate) fn compile_place(&mut self, expr: &Expr<'alloc>) -> Place {
+    pub(crate) fn compile_place(&mut self, expr: &Expr<A>) -> Place {
         match *expr {
             Expr::Prime(ref x) => match *x {
                 PrimeExpr::Variable(x) => Place::Variable(x),
@@ -356,7 +356,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         };
     }
 
-    pub(crate) fn compile_prime(&mut self, prime: &PrimeExpr<'alloc>) -> SsaId {
+    pub(crate) fn compile_prime(&mut self, prime: &PrimeExpr<A>) -> SsaId {
         match *prime {
             PrimeExpr::Literal(x) => {
                 let constant = match x {
@@ -409,10 +409,7 @@ impl<'a, 'alloc> Compiler<'a, 'alloc> {
         }
     }
 
-    pub(crate) fn compile_object(
-        &mut self,
-        entries: &Vec<'alloc, (StringId, Expr<'alloc>)>,
-    ) -> SsaId {
+    pub(crate) fn compile_object(&mut self, entries: &Vec<(StringId, Expr<A>), A>) -> SsaId {
         let res = self.ssa.insert(Ssa::CreateObject);
         for (k, v) in entries.iter() {
             let key_const = self.module.constants.add_string(*k);

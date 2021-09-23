@@ -1,3 +1,5 @@
+use std::alloc::Allocator;
+
 use crate::Compiler;
 use crate::{constants::Constant, ssa::*};
 use ast::*;
@@ -9,8 +11,8 @@ mod flow;
 mod expr;
 use expr::{CompiledExpr, Place};
 
-impl<'a, 'alloc> Compiler<'a, 'alloc> {
-    pub(crate) fn compile_stmt(&mut self, stmt: &Stmt<'alloc>) -> Option<SsaId> {
+impl<'a, A: Allocator> Compiler<'a, A> {
+    pub(crate) fn compile_stmt(&mut self, stmt: &Stmt<A>) -> Option<SsaId> {
         let mut stmt_expr = None;
         match *stmt {
             Stmt::Block(_scope, ref stmts) => {
