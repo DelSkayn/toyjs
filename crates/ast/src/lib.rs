@@ -1,53 +1,50 @@
 #![feature(allocator_api)]
 
-use bumpalo::boxed::Box;
+use std::alloc::Allocator;
+
 //pub use common::bump_list::List as Vec;
-pub use bumpalo::collections::Vec;
 use common::interner::StringId;
 use std::cmp::PartialEq;
 
-mod symbol_table;
+pub mod symbol_table;
+pub use symbol_table::{ScopeId, SymbolId, SymbolTable, SymbolTableBuilder};
 
-mod variables;
-pub use variables::*;
+//mod variables;
+//pub use variables::*;
 
 #[derive(Debug)]
-pub struct Script<'a>(pub ScopeRef<'a>, pub Vec<'a, Stmt<'a>>);
+pub struct Script<A: Allocator>(pub Vec<Stmt<A>, A>);
 
 #[derive(Debug, PartialEq)]
 pub enum Rest {
-    BindingIdent(VariableId),
+    BindingIdent(SymbolId),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Params<'a>(pub Vec<'a, VariableId>, pub Option<Rest>);
+pub struct Params<A: Allocator>(pub Vec<SymbolId, A>, pub Option<Rest>);
 
 #[derive(Debug, PartialEq)]
-pub enum Stmt<'a> {
+pub enum Stmt<A: Allocator> {
     Empty,
-    Let(VariableId, Option<Expr<'a>>),
-    Var(VariableId, Option<Expr<'a>>),
-    Const(VariableId, Expr<'a>),
-    Expr(Vec<'a, Expr<'a>>),
+    Let(SymbolId, Option<Expr<A>>),
+    Var(SymbolId, Option<Expr<A>>),
+    Const(SymbolId, Expr<A>),
+    Expr(Vec<Expr<A>, A>),
     Break,
     Continue,
-    If(
-        Vec<'a, Expr<'a>>,
-        Box<'a, Stmt<'a>>,
-        Option<Box<'a, Stmt<'a>>>,
-    ),
-    While(Vec<'a, Expr<'a>>, Box<'a, Stmt<'a>>),
-    DoWhile(Box<'a, Stmt<'a>>, Vec<'a, Expr<'a>>),
+    If(Vec<Expr<A>, A>, Box<Stmt<A>, A>, Option<Box<Stmt<A>, A>>),
+    While(Vec<Expr<A>, A>, Box<Stmt<A>, A>),
+    DoWhile(Box<Stmt<A>, A>, Vec<Expr<A>, A>),
     For,
-    Block(ScopeRef<'a>, Vec<'a, Stmt<'a>>),
-    Function(ScopeRef<'a>, VariableId, Params<'a>, Vec<'a, Stmt<'a>>),
-    Return(Option<Vec<'a, Expr<'a>>>),
+    Block(ScopeId, Vec<Stmt<A>, A>),
+    Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
+    Return(Option<Vec<Expr<A>, A>>),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum BinaryOperator<'a> {
-    Ternary(Box<'a, Expr<'a>>),
-    NullCoalessing(Box<'a, Expr<'a>>),
+pub enum BinaryOperator<A: Allocator> {
+    Ternary(Box<Expr<A>, A>),
+    NullCoalessing(Box<Expr<A>, A>),
     TenaryNull,
     In,
     InstanceOf,
@@ -107,24 +104,24 @@ pub enum PrefixOperator {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum PostfixOperator<'a> {
+pub enum PostfixOperator<A: Allocator> {
     AddOne,
     SubtractOne,
     Dot(StringId),
-    Index(Box<'a, Expr<'a>>),
-    Call(Vec<'a, Expr<'a>>),
+    Index(Box<Expr<A>, A>),
+    Call(Vec<Expr<A>, A>),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Expr<'a> {
-    Binary(Box<'a, Expr<'a>>, BinaryOperator<'a>, Box<'a, Expr<'a>>),
-    Assign(Box<'a, Expr<'a>>, AssignOperator, Box<'a, Expr<'a>>),
-    UnaryPrefix(PrefixOperator, Box<'a, Expr<'a>>),
-    UnaryPostfix(Box<'a, Expr<'a>>, PostfixOperator<'a>),
-    Prime(PrimeExpr<'a>),
+pub enum Expr<A: Allocator> {
+    Binary(Box<Expr<A>, A>, BinaryOperator<A>, Box<Expr<A>, A>),
+    Assign(Box<Expr<A>, A>, AssignOperator, Box<Expr<A>, A>),
+    UnaryPrefix(PrefixOperator, Box<Expr<A>, A>),
+    UnaryPostfix(Box<Expr<A>, A>, PostfixOperator<A>),
+    Prime(PrimeExpr<A>),
 }
 
-impl<'a> Expr<'a> {
+impl<A: Allocator> Expr<A> {
     pub fn is_assignable(&self) -> bool {
         match *self {
             Expr::Prime(ref x) => match x {
@@ -148,11 +145,11 @@ impl<'a> Expr<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum PrimeExpr<'a> {
+pub enum PrimeExpr<A: Allocator> {
     Literal(Literal),
-    Variable(VariableId),
-    Covered(Vec<'a, Expr<'a>>),
-    Object(Vec<'a, (StringId, Expr<'a>)>),
+    Variable(SymbolId),
+    Covered(Vec<Expr<A>, A>),
+    Object(Vec<(StringId, Expr<A>), A>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

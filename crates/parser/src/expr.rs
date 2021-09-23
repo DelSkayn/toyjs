@@ -1,7 +1,6 @@
 use super::*;
 
 use ast::{AssignOperator, BinaryOperator, Expr, PostfixOperator, PrefixOperator};
-use bumpalo::boxed::Box;
 use token::{t, TokenKind};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
@@ -57,9 +56,9 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
     }
 }
 
-impl<'a, 'b> Parser<'a, 'b> {
-    pub(crate) fn parse_expr(&mut self) -> Result<Vec<'b, Expr<'b>>> {
-        let mut res = Vec::new_in(self.bump);
+impl<'a, A: Allocator + Clone> Parser<'a, A> {
+    pub(crate) fn parse_expr(&mut self) -> Result<Vec<Expr<A>, A>> {
+        let mut res = Vec::new_in(self.alloc.clone());
         loop {
             res.push(self.parse_ops_rec(0)?);
             if !self.eat(t!(","))? {
@@ -69,11 +68,11 @@ impl<'a, 'b> Parser<'a, 'b> {
         Ok(res)
     }
 
-    pub(crate) fn parse_single_expr(&mut self) -> Result<Expr<'b>> {
+    pub(crate) fn parse_single_expr(&mut self) -> Result<Expr<A>> {
         self.parse_ops_rec(0)
     }
 
-    fn parse_prefix_op(&mut self, r_bp: u8) -> Result<Expr<'b>> {
+    fn parse_prefix_op(&mut self, r_bp: u8) -> Result<Expr<A>> {
         Ok(Expr::UnaryPrefix(
             match self.next()?.unwrap().kind {
                 t!("delete") => PrefixOperator::Delete,
@@ -90,11 +89,11 @@ impl<'a, 'b> Parser<'a, 'b> {
                 t!("--") => PrefixOperator::SubtractOne,
                 _ => panic!("not a unary operator"),
             },
-            Box::new_in(self.parse_ops_rec(r_bp)?, self.bump),
+            Box::new_in(self.parse_ops_rec(r_bp)?, self.alloc.clone()),
         ))
     }
 
-    fn parse_postfix_op(&mut self, _l_bp: u8, lhs: Expr<'b>) -> Result<ast::Expr<'b>> {
+    fn parse_postfix_op(&mut self, _l_bp: u8, lhs: Expr<A>) -> Result<ast::Expr<A>> {
         let kind = match self.next()?.unwrap().kind {
             t!("++") => PostfixOperator::AddOne,
             t!("--") => PostfixOperator::SubtractOne,
@@ -104,7 +103,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             t!("(") => {
                 let stmts = if let Some(t!(")")) = self.peek_kind()? {
-                    Vec::new_in(self.bump)
+                    Vec::new_in(self.alloc.clone())
                 } else {
                     self.parse_expr()?
                 };
@@ -114,24 +113,27 @@ impl<'a, 'b> Parser<'a, 'b> {
             t!("[") => {
                 let expr = self.parse_single_expr()?;
                 expect!(self, "]");
-                PostfixOperator::Index(Box::new_in(expr, self.bump))
+                PostfixOperator::Index(Box::new_in(expr, self.alloc.clone()))
             }
             _ => to_do!(self),
         };
-        Ok(Expr::UnaryPostfix(Box::new_in(lhs, self.bump), kind))
+        Ok(Expr::UnaryPostfix(
+            Box::new_in(lhs, self.alloc.clone()),
+            kind,
+        ))
     }
 
-    fn parse_infix_op(&mut self, r_bp: u8, lhs: Expr<'b>) -> Result<ast::Expr<'b>> {
+    fn parse_infix_op(&mut self, r_bp: u8, lhs: Expr<A>) -> Result<ast::Expr<A>> {
         let kind = match self.next()?.unwrap().kind {
             t!("?") => {
                 let expr = self.parse_ops_rec(r_bp)?;
                 expect!(self, ":");
-                let expr = Box::new_in(expr, self.bump);
+                let expr = Box::new_in(expr, self.alloc.clone());
                 BinaryOperator::Ternary(expr)
             }
             t!("??") => {
                 let expr = self.parse_ops_rec(r_bp)?;
-                let expr = Box::new_in(expr, self.bump);
+                let expr = Box::new_in(expr, self.alloc.clone());
                 BinaryOperator::NullCoalessing(expr)
             }
             t!("?.") => BinaryOperator::TenaryNull,
@@ -195,21 +197,21 @@ impl<'a, 'b> Parser<'a, 'b> {
 
                 let rhs = self.parse_ops_rec(r_bp)?;
                 return Ok(Expr::Assign(
-                    Box::new_in(lhs, self.bump),
+                    Box::new_in(lhs, self.alloc.clone()),
                     op,
-                    Box::new_in(rhs, self.bump),
+                    Box::new_in(rhs, self.alloc.clone()),
                 ));
             }
             _ => unreachable!(),
         };
         Ok(Expr::Binary(
-            Box::new_in(lhs, self.bump),
+            Box::new_in(lhs, self.alloc.clone()),
             kind,
-            Box::new_in(self.parse_ops_rec(r_bp)?, self.bump),
+            Box::new_in(self.parse_ops_rec(r_bp)?, self.alloc.clone()),
         ))
     }
 
-    fn parse_ops_rec(&mut self, min_bp: u8) -> Result<Expr<'b>> {
+    fn parse_ops_rec(&mut self, min_bp: u8) -> Result<Expr<A>> {
         let mut lhs = if let Some(((), r_bp)) = self.peek_kind()?.and_then(prefix_binding_power) {
             self.parse_prefix_op(r_bp)?
         } else {

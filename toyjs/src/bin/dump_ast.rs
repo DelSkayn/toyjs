@@ -1,4 +1,4 @@
-use ast::Variables;
+use ast::SymbolTable;
 use bumpalo::Bump;
 use common::{interner::Interner, source::Source};
 use parser::Parser;

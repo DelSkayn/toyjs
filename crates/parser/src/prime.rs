@@ -2,8 +2,8 @@ use super::*;
 use ast::{Literal, PrimeExpr};
 use token::t;
 
-impl<'a, 'b> Parser<'a, 'b> {
-    pub(crate) fn parse_prime_expr(&mut self) -> Result<PrimeExpr<'b>> {
+impl<'a, A: Allocator + Clone> Parser<'a, A> {
+    pub(crate) fn parse_prime_expr(&mut self) -> Result<PrimeExpr<A>> {
         let peek = match self.peek_kind()? {
             Some(x) => x,
             None => unexpected!(self => "expected expression"),
@@ -26,7 +26,7 @@ impl<'a, 'b> Parser<'a, 'b> {
             }
             TokenKind::Ident(x) => {
                 self.next()?;
-                let var = self.variables.use_variable(x);
+                let var = self.symbol_table.use_symbol(x);
                 Ok(PrimeExpr::Variable(var))
             }
             t!("{") => self.parse_object(),
@@ -47,9 +47,9 @@ impl<'a, 'b> Parser<'a, 'b> {
         }
     }
 
-    pub(crate) fn parse_object(&mut self) -> Result<PrimeExpr<'b>> {
+    pub(crate) fn parse_object(&mut self) -> Result<PrimeExpr<A>> {
         expect!(self, "{");
-        let mut exprs = Vec::new_in(self.bump);
+        let mut exprs = Vec::new_in(self.alloc.clone());
         if self.peek_kind()? != Some(t!("}")) {
             loop {
                 expect_bind!(self, let bind = "ident");

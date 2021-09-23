@@ -1,5 +1,5 @@
 #![allow(unused)]
-use ast::Variables;
+use ast::SymbolTable;
 use bumpalo::Bump;
 use common::{interner::Interner, source::Source};
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
@@ -19,12 +19,9 @@ pub fn benchmark(c: &mut Criterion) {
             |x| {
                 bump.reset();
                 let (source, mut interner) = x;
-                let mut variables = Variables::new_in(&bump);
-                black_box(
-                    Parser::from_source(&source, &mut interner, &bump, &mut variables)
-                        .parse_script()
-                        .unwrap(),
-                );
+                let lexer = lexer::Lexer::new(&source, &mut interner);
+                let mut symbol_table = SymbolTable::new_in(&bump);
+                black_box(Parser::parse_script(lexer, &mut symbol_table, &bump).unwrap());
             },
             BatchSize::SmallInput,
         )

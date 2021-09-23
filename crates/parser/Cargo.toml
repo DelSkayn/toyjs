@@ -13,10 +13,10 @@ common = { package="toyjs_common",path = "../common/" }
 token = { package="toyjs_token",path = "../token/" }
 lexer = { package="toyjs_lexer",path = "../lexer/" }
 ast = { package="toyjs_ast",path = "../ast/" }
-bumpalo = { version = "3.4.0", features = ["boxed","collections"]}
 
 [dev-dependencies]
 criterion = "0.3.3"
+bumpalo = { version = "3.4.0", features = ["boxed","collections","allocator_api"]}
 
 [[bench]]
 name = "parser"
