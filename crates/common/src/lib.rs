@@ -1,12 +1,10 @@
 #![feature(allocator_api)]
 
 #[macro_use]
-pub mod index;
+pub mod slotmap;
 pub mod bitmap;
 pub mod bump_list;
 pub mod interner;
-#[macro_use]
-pub mod slotmap;
 pub mod source;
 
 pub mod collections {

@@ -9,9 +9,6 @@ use std::cmp::PartialEq;
 pub mod symbol_table;
 pub use symbol_table::{ScopeId, SymbolId, SymbolTable, SymbolTableBuilder};
 
-//mod variables;
-//pub use variables::*;
-
 #[derive(Debug)]
 pub struct Script<A: Allocator>(pub Vec<Stmt<A>, A>);
 
