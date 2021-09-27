@@ -19,3 +19,6 @@ criterion = "0.3.3"
 [[bench]]
 name = "lexer"
 harness = false
+
+[[bin]]
+name = "dump_tokens"

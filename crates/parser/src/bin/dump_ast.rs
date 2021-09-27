@@ -1,12 +1,15 @@
+#![feature(allocator_api)]
+
 use ast::SymbolTable;
-use bumpalo::Bump;
 use common::{interner::Interner, source::Source};
-use parser::Parser;
+use lexer::Lexer;
 use std::{
+    alloc::Global,
     env,
     fs::File,
     io::{self, Read},
 };
+use toyjs_parser::Parser;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().skip(1).next() {
@@ -22,10 +25,9 @@ fn main() -> Result<(), io::Error> {
     read.read_to_string(&mut buffer)?;
     let source = Source::from_string(buffer);
     let mut interner = Interner::new();
-    let alloc = Bump::new();
-    let mut variables = Variables::new_in(&alloc);
-    let parser = Parser::from_source(&source, &mut interner, &alloc, &mut variables);
-    match parser.parse_script() {
+    let lexer = Lexer::new(&source, &mut interner);
+    let mut variables = SymbolTable::new();
+    match Parser::parse_script(lexer, &mut variables, Global) {
         Ok(x) => println!("{:#?}", x),
         Err(e) => {
             let formated_error = e.format(&source, &interner);

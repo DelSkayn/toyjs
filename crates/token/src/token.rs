@@ -364,7 +364,7 @@ impl fmt::Display for FormatedTokenKind<'_> {
             TokenKind::TenaryNull => write!(f, "?."),
             TokenKind::NullCoalescing => write!(f, "??"),
             TokenKind::Comma => write!(f, ","),
-            TokenKind::LineTerminator => write!(f, "\n"),
+            TokenKind::LineTerminator => write!(f, "\\n"),
             TokenKind::Unknown => write!(f, "unknown"),
         }
     }

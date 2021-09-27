@@ -27,7 +27,3 @@ harness = false
 
 [[bin]]
 name = "cli"
-[[bin]]
-name = "dump_tokens"
-[[bin]]
-name = "dump_ast"

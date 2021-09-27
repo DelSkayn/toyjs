@@ -1,6 +1,6 @@
 //! A string interner
 
-use crate::slotmap::{SlotKey, SlotMap};
+use crate::slotmap::{SlotKey, SlotVec};
 use fxhash::FxHashMap;
 
 newtype_key!(
@@ -11,7 +11,7 @@ newtype_key!(
 /// count.
 pub struct Interner {
     map: FxHashMap<String, StringId>,
-    values: SlotMap<(String, usize), StringId>,
+    values: SlotVec<(String, usize), StringId>,
 }
 
 impl Default for Interner {
@@ -25,7 +25,7 @@ impl Interner {
     pub fn new() -> Self {
         Interner {
             map: FxHashMap::default(),
-            values: SlotMap::new(),
+            values: SlotVec::new(),
         }
     }
 

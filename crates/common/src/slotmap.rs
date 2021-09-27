@@ -184,39 +184,39 @@ enum SlotMapValue<T, Idx: SlotKey> {
 #[derive(Debug)]
 /// A datastructure mainting an intrusive free list which allows for 0(1) insertion and removal without changing indecies of
 /// values.
-pub struct SlotMap<T, Idx: SlotKey = usize, A: Allocator = Global> {
+pub struct SlotVec<T, Idx: SlotKey = usize, A: Allocator = Global> {
     values: Vec<SlotMapValue<T, Idx>, A>,
     free: Option<Idx>,
 }
 
-impl<T, Idx: SlotKey> SlotMap<T, Idx> {
+impl<T, Idx: SlotKey> SlotVec<T, Idx> {
     /// Create a new list.
     pub fn new() -> Self {
-        SlotMap {
+        SlotVec {
             values: Vec::new(),
             free: None,
         }
     }
     /// Create a list with a given capacity.
-    pub fn with_capacity(capacity: usize) -> SlotMap<T> {
-        SlotMap {
+    pub fn with_capacity(capacity: usize) -> SlotVec<T> {
+        SlotVec {
             values: Vec::with_capacity(capacity),
             free: None,
         }
     }
 }
 
-impl<T, Idx: SlotKey, A: Allocator> SlotMap<T, Idx, A> {
+impl<T, Idx: SlotKey, A: Allocator> SlotVec<T, Idx, A> {
     /// Create a new list.
     pub fn new_in(alloc: A) -> Self {
-        SlotMap {
+        SlotVec {
             values: Vec::new_in(alloc),
             free: None,
         }
     }
     /// Create a list with a given capacity.
     pub fn with_capacity_in(capacity: usize, alloc: A) -> Self {
-        SlotMap {
+        SlotVec {
             values: Vec::with_capacity_in(capacity, alloc),
             free: None,
         }
@@ -366,7 +366,7 @@ impl<'a, T, Idx: SlotKey> Iterator for IterMut<'a, T, Idx> {
     }
 }
 
-impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotMap<T, Idx, A> {
+impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotVec<T, Idx, A> {
     type Output = T;
 
     #[inline(always)]
@@ -383,7 +383,7 @@ impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotMap<T, Idx, A> {
     }
 }
 
-impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotMap<T, Idx, A> {
+impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotVec<T, Idx, A> {
     #[inline(always)]
     fn index_mut(&mut self, idx: Idx) -> &mut T {
         match self.values[idx.index()] {
