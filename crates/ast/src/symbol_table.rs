@@ -3,7 +3,7 @@
 use common::{
     interner::StringId,
     newtype_key,
-    slotmap::{SlotKey, SlotMap},
+    slotmap::{SlotKey, SlotVec},
 };
 use std::{
     alloc::{Allocator, Global},
@@ -33,7 +33,7 @@ pub struct Symbol {
 newtype_key! {
     pub struct SymbolId(u32);
 }
-type Symbols<A> = SlotMap<Symbol, SymbolId, A>;
+type Symbols<A> = SlotVec<Symbol, SymbolId, A>;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum ScopeKind {
@@ -77,7 +77,7 @@ newtype_key! {
     pub struct ScopeId(u32);
 }
 
-type Scopes<A> = SlotMap<Scope<A>, ScopeId, A>;
+type Scopes<A> = SlotVec<Scope<A>, ScopeId, A>;
 
 pub struct SymbolTable<A: Allocator> {
     scopes: Scopes<A>,

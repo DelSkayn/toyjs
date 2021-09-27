@@ -1,5 +1,5 @@
 use crate::{Inner, ToyJs, Value};
-use ast::Variables;
+use ast::SymbolTable;
 use bumpalo::Bump;
 use common::source::Source;
 use compiler::Compiler;
@@ -34,12 +34,11 @@ impl<'js> Ctx<'js> {
     pub fn exec(self, source: String, dump: bool) -> Value {
         unsafe {
             let bump = Bump::new();
-            let mut variables = Variables::new_in(&bump);
+            let mut variables = SymbolTable::new_in(&bump);
             let source = Source::from_string(source.to_string());
             let inner = (*self.context).js.0.bypass();
             let lexer = Lexer::new(&source, &mut inner.interner);
-            let parser = Parser::from_lexer(lexer, &bump, &mut variables);
-            let script = match parser.parse_script() {
+            let script = match Parser::parse_script(lexer, &mut variables, &bump) {
                 Ok(x) => x,
                 Err(e) => {
                     source.finish_lines();
@@ -50,19 +49,7 @@ impl<'js> Ctx<'js> {
             if dump {
                 println!("=== AST ===\n{:#?}", script)
             }
-            let module =
-                Compiler::new(&bump, &mut inner.interner, &variables).compile_script(script);
-            if dump {
-                println!("=== BYTECODE ===\n{}", module)
-            }
-            let module = inner.gc.allocate(module);
-            let function = RuntimeFunction {
-                module,
-                function: (module.functions.len() as u32) - 1,
-            };
-            let mut exec_ctx = ExecutionContext::new(self._global(), function, None);
-            let jsvalue = exec_ctx.into_running(&inner.root, &inner.gc).run();
-            Value::from_js_value(jsvalue)
+            todo!()
         }
     }
 

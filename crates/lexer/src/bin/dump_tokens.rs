@@ -1,5 +1,5 @@
 use common::{interner::Interner, source::Source};
-use lexer::Lexer;
+use toyjs_lexer::Lexer;
 use std::{
     env,
     fs::File,
