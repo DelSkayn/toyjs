@@ -1,20 +1,19 @@
 #![allow(dead_code)]
 
 use common::{
+    collections::{HashMap, HashSet},
     interner::StringId,
     newtype_key,
     slotmap::{SlotKey, SlotVec},
 };
-use std::{
-    alloc::{Allocator, Global},
-    collections::HashMap,
-};
+use std::alloc::{Allocator, Global};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum DeclType {
     /// Declared with `var`
     Global,
     /// Declared implicitly by using a variable before it is declared.
+    /// Forbidden in strict mode.
     Implicit,
     /// Declared with `let`
     Local,
@@ -24,13 +23,18 @@ pub enum DeclType {
     Argument,
 }
 
+/// Data about a lexical symbol
 pub struct Symbol {
+    /// type of symbol
     decl_type: DeclType,
+    /// The id of the scope this symbol was declared in.
     decl_scope: ScopeId,
+    /// The identifier with which this identifier was declared.
     ident: StringId,
 }
 
 newtype_key! {
+    /// A identifier of a certain symbol.
     pub struct SymbolId(u32);
 }
 type Symbols<A> = SlotVec<Symbol, SymbolId, A>;
@@ -49,11 +53,18 @@ pub enum ScopeKind {
 
 /// A lexical scope.
 pub struct Scope<A: Allocator> {
-    parent: Option<ScopeId>,
-    parent_function: Option<ScopeId>,
-    symbols: Vec<SymbolId, A>,
-    children: Vec<ScopeId, A>,
-    kind: ScopeKind,
+    /// The parent of the scope
+    pub parent: Option<ScopeId>,
+    /// The function scope in which this scope was declared.
+    pub parent_function: Option<ScopeId>,
+    /// The symbols declared in this scope.
+    pub symbols: Vec<SymbolId, A>,
+    /// The children scopes of this scope.
+    pub children: Vec<ScopeId, A>,
+    /// Symbols used in this scope which are not declared in this scope.
+    pub used: HashSet<SymbolId>,
+    /// The kind of scope.
+    pub kind: ScopeKind,
 }
 
 impl<A: Allocator + Clone> Scope<A> {
@@ -68,12 +79,14 @@ impl<A: Allocator + Clone> Scope<A> {
             parent_function,
             symbols: Vec::new_in(alloc.clone()),
             children: Vec::new_in(alloc),
+            used: HashSet::default(),
             kind,
         }
     }
 }
 
 newtype_key! {
+    /// A identifier of a certain scope.
     pub struct ScopeId(u32);
 }
 
@@ -82,6 +95,7 @@ type Scopes<A> = SlotVec<Scope<A>, ScopeId, A>;
 pub struct SymbolTable<A: Allocator> {
     scopes: Scopes<A>,
     symbols: Symbols<A>,
+    /// Used for symbol lookup.
     symbols_by_ident: HashMap<(ScopeId, StringId), SymbolId>,
     global: ScopeId,
     alloc: A,
@@ -96,17 +110,11 @@ impl SymbolTable<Global> {
 impl<A: Allocator + Clone> SymbolTable<A> {
     pub fn new_in(alloc: A) -> Self {
         let mut scopes = Scopes::new_in(alloc.clone());
-        let global = scopes.insert(Scope {
-            parent: None,
-            parent_function: None,
-            symbols: Vec::new_in(alloc.clone()),
-            children: Vec::new_in(alloc.clone()),
-            kind: ScopeKind::Global,
-        });
+        let global = scopes.insert(Scope::new_in(None, None, ScopeKind::Global, alloc.clone()));
         SymbolTable {
             scopes,
             symbols: Symbols::new_in(alloc.clone()),
-            symbols_by_ident: HashMap::new(),
+            symbols_by_ident: HashMap::default(),
             global,
             alloc,
         }
@@ -122,6 +130,26 @@ impl<A: Allocator> SymbolTable<A> {
     /// Returns the map containing all scopes
     pub fn scopes(&self) -> &Scopes<A> {
         &self.scopes
+    }
+
+    /// Returns wether a scope is the child of an other scope directly or indirectly.
+    pub fn child_of(&self, mut child: ScopeId, parent: ScopeId) -> bool {
+        while let Some(p) = self.scopes[child].parent {
+            if p == parent {
+                return true;
+            }
+            child = p;
+        }
+        false
+    }
+
+    /// Returns wether a symbol is in scope in the given scope.
+    pub fn in_scope(&self, symbol: SymbolId, scope: ScopeId) -> bool {
+        let symbol_scope = self.symbols[symbol].decl_scope;
+        if symbol_scope == scope {
+            return true;
+        }
+        self.child_of(symbol_scope, scope)
     }
 }
 
@@ -142,13 +170,12 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     }
 
     pub fn new_module(table: &'a mut SymbolTable<A>) -> Self {
-        let new_root = table.scopes.insert(Scope {
-            parent: None,
-            parent_function: None,
-            symbols: Vec::new_in(table.alloc.clone()),
-            children: Vec::new_in(table.alloc.clone()),
-            kind: ScopeKind::Module,
-        });
+        let new_root = table.scopes.insert(Scope::new_in(
+            None,
+            None,
+            ScopeKind::Module,
+            table.alloc.clone(),
+        ));
         SymbolTableBuilder {
             current_scope: new_root,
             current_function: new_root,
@@ -247,6 +274,9 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     /// Implicitly declares a variable if it was not yet declared.
     pub fn use_symbol(&mut self, name: StringId) -> SymbolId {
         if let Some(x) = self.lookup_symbol(name) {
+            if self.table.symbols[x].decl_scope != self.current_scope {
+                self.table.scopes[self.current_scope].used.insert(x);
+            }
             return x;
         }
         let new_symbol = self.table.symbols.insert(Symbol {
@@ -257,6 +287,11 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         self.table.scopes[self.current_function]
             .symbols
             .push(new_symbol);
+
+        self.table.scopes[self.current_scope]
+            .used
+            .insert(new_symbol);
+
         return new_symbol;
     }
 
@@ -267,13 +302,12 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             "can't push global and module scopes"
         );
 
-        let new_scope = self.table.scopes.insert(Scope {
+        let new_scope = self.table.scopes.insert(Scope::new_in(
+            Some(self.current_scope),
+            Some(self.current_function),
             kind,
-            parent: Some(self.current_scope),
-            parent_function: Some(self.current_function),
-            symbols: Vec::new_in(self.table.alloc.clone()),
-            children: Vec::new_in(self.table.alloc.clone()),
-        });
+            self.table.alloc.clone(),
+        ));
         self.current_scope = new_scope;
         if kind == ScopeKind::Function {
             self.current_function = new_scope;
