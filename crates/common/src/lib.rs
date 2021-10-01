@@ -9,6 +9,7 @@ pub mod source;
 
 pub mod collections {
     pub use fxhash::FxHashMap as HashMap;
+    pub use fxhash::FxHashSet as HashSet;
 }
 
 #[macro_export]
