@@ -5,6 +5,7 @@ macro_rules! define_instructions {
                 $name:ident{$($arg:tt)+},
         )* }
     ) => {
+        /// Full instruction representation with operands.
         pub enum Instruction{
             $(
                 $(#[doc = $com])*
@@ -14,6 +15,7 @@ macro_rules! define_instructions {
 
 
         #[repr(u8)]
+        /// Instruction representated as just there opcode
         pub enum InstructionOpcode{
             $(
                 $(#[doc = $com])*
@@ -21,6 +23,7 @@ macro_rules! define_instructions {
             )*
         }
 
+        /// Module containing instruction opcodes as `u8` constants.
         pub mod opcode{
             #![allow(non_upper_case_globals)]
 
@@ -30,6 +33,7 @@ macro_rules! define_instructions {
         }
 
         impl Instruction{
+            /// Returns the kind of instruction
             pub fn kind(&self) -> InstructionKind{
                 match *self{
                     $(
@@ -38,6 +42,7 @@ macro_rules! define_instructions {
                 }
             }
 
+            /// Returns the opcode of the instruction
             pub fn opcode(&self) -> InstructionOpcode{
                 match *self{
                     $(
@@ -46,7 +51,7 @@ macro_rules! define_instructions {
                 }
             }
 
-
+            /// Writes the current instruction to a buffer in compact form.
             pub fn write_to_buffer(&self, buffer: &mut Vec<u32>){
                 $(
                     define_instructions!(@write self, buffer, $name => $($arg)+);
