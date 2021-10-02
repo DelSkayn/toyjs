@@ -15,11 +15,13 @@ pub enum Color {
 
 pub struct GcBox<T: Trace + ?Sized> {
     pub(crate) color: Cell<Color>,
-    pub(crate) next: Cell<Option<NonNull<GcBox<dyn Trace>>>>,
+    pub(crate) next: Cell<Option<GcBoxPtr>>,
     pub(crate) value: UnsafeCell<T>,
 }
 
 pub struct Gc<T: Trace + ?Sized>(pub(crate) NonNull<GcBox<T>>);
+
+pub type GcBoxPtr = NonNull<GcBox<dyn Trace>>;
 
 impl<T: Trace + ?Sized> Copy for Gc<T> {}
 impl<T: Trace + ?Sized> Clone for Gc<T> {

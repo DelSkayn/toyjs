@@ -5,10 +5,12 @@ use std::{
     ptr::NonNull,
 };
 mod trace;
+use common::cell_vec::CellVec;
 pub use trace::Trace;
 
 mod ptr;
-pub use ptr::{Color, Gc, GcBox};
+pub use ptr::Gc;
+use ptr::{Color, GcBox, GcBoxPtr};
 
 const PAUSE_FACTOR: f64 = 0.5;
 const TIMING_FACTOR: f64 = 1.5;
@@ -23,7 +25,7 @@ impl<'gc> Ctx<'gc> {
         unsafe {
             gc.0.as_ref().color.set(Color::Gray);
             if T::needs_trace() {
-                (*self.0.grays.get()).push(gc.0);
+                self.0.grays.push(gc.0);
             }
         }
     }
@@ -31,7 +33,7 @@ impl<'gc> Ctx<'gc> {
     pub fn mark_dynamic(self, gc: Gc<dyn Trace>) {
         unsafe {
             gc.0.as_ref().color.set(Color::Gray);
-            (*self.0.grays.get()).push(gc.0)
+            self.0.grays.push(gc.0)
         }
     }
 }
@@ -45,12 +47,12 @@ pub enum Phase {
 }
 
 pub struct GcArena {
-    all: Cell<Option<NonNull<GcBox<dyn Trace>>>>,
-    grays: UnsafeCell<Vec<NonNull<GcBox<dyn Trace>>>>,
-    grays_again: UnsafeCell<Vec<NonNull<GcBox<dyn Trace>>>>,
+    all: Cell<Option<GcBoxPtr>>,
+    grays: CellVec<GcBoxPtr>,
+    grays_again: CellVec<GcBoxPtr>,
 
-    sweep: Cell<Option<NonNull<GcBox<dyn Trace>>>>,
-    sweep_prev: Cell<Option<NonNull<GcBox<dyn Trace>>>>,
+    sweep: Cell<Option<GcBoxPtr>>,
+    sweep_prev: Cell<Option<GcBoxPtr>>,
     phase: Cell<Phase>,
 
     total_allocated: Cell<usize>,
@@ -63,8 +65,8 @@ impl GcArena {
     pub fn new() -> Self {
         GcArena {
             all: Cell::new(None),
-            grays: UnsafeCell::new(Vec::new()),
-            grays_again: UnsafeCell::new(Vec::new()),
+            grays: CellVec::new(),
+            grays_again: CellVec::new(),
 
             sweep: Cell::new(None),
             sweep_prev: Cell::new(None),
@@ -112,7 +114,7 @@ impl GcArena {
     pub unsafe fn write_barrier<T: Trace + 'static>(&self, gc: Gc<T>) {
         if self.phase.get() == Phase::Mark && gc.0.as_ref().color.get() == Color::Black {
             gc.0.as_ref().color.set(Color::Gray);
-            (*self.grays_again.get()).push(gc.0);
+            self.grays_again.push(gc.0);
         }
     }
 
@@ -148,11 +150,11 @@ impl GcArena {
                     self.phase.set(Phase::Mark);
                 }
                 Phase::Mark => {
-                    if let Some(x) = (*self.grays.get()).pop() {
+                    if let Some(x) = self.grays.pop() {
                         let size = mem::size_of_val(x.as_ref());
                         work_done += size;
                         x.as_ref().color.set(Color::Black);
-                    } else if let Some(x) = (*self.grays_again.get()).pop() {
+                    } else if let Some(x) = self.grays_again.pop() {
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else {
