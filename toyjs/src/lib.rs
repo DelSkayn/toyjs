@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+/*
 use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use parser::{Parser, Result};
@@ -65,3 +66,4 @@ impl ToyJs {
         })))
     }
 }
+*/

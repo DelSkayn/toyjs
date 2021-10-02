@@ -25,7 +25,7 @@ macro_rules! impl_trace_primitive{
                     false
                 }
 
-                fn trace(&self, _ctx: Ctx){}
+                fn trace(&self, ctx: Ctx){}
             }
         )*
     };
