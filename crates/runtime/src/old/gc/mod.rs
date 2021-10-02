@@ -1,14 +1,15 @@
 //! A garbage collector based on the gc-arena crate.
 use std::{
     cell::{Cell, UnsafeCell},
-    mem,
+    fmt, mem,
+    ops::Deref,
     ptr::NonNull,
 };
 mod trace;
 pub use trace::Trace;
 
-mod ptr;
-pub use ptr::{Color, Gc, GcBox};
+mod gc;
+pub use gc::{Color, Gc, GcBox};
 
 const PAUSE_FACTOR: f64 = 0.5;
 const TIMING_FACTOR: f64 = 1.5;
@@ -77,36 +78,33 @@ impl GcArena {
         }
     }
 
-    pub fn allocate<T: Trace + 'static>(&self, value: T) -> Gc<T> {
-        unsafe {
-            let size = mem::size_of::<GcBox<T>>();
-            self.total_allocated.set(self.total_allocated.get() + size);
+    pub unsafe fn allocate<T: Trace + 'static>(&self, value: T) -> Gc<T> {
+        let size = mem::size_of::<GcBox<T>>();
+        self.total_allocated.set(self.total_allocated.get() + size);
 
-            let ptr = NonNull::new_unchecked(Box::into_raw(Box::new(GcBox {
-                color: Cell::new(Color::White),
-                next: Cell::new(self.all.get()),
-                value: UnsafeCell::new(value),
-            })));
+        let ptr = NonNull::new_unchecked(Box::into_raw(Box::new(GcBox {
+            color: Cell::new(Color::White),
+            next: Cell::new(self.all.get()),
+            value: UnsafeCell::new(value),
+        })));
 
-            if self.phase.get() == Phase::Sleep
-                && self.total_allocated.get() > self.wakeup_total.get()
-            {
-                self.phase.set(Phase::Wake);
-            }
-
-            if self.phase.get() != Phase::Sleep {
-                self.allocation_debt
-                    .set(self.allocation_debt.get() + size as f64 + size as f64 / TIMING_FACTOR)
-            }
-
-            self.all.set(Some(ptr));
-
-            if self.phase.get() == Phase::Sweep && self.sweep_prev.get().is_none() {
-                self.sweep_prev.set(self.all.get());
-            }
-
-            Gc(ptr)
+        if self.phase.get() == Phase::Sleep && self.total_allocated.get() > self.wakeup_total.get()
+        {
+            self.phase.set(Phase::Wake);
         }
+
+        if self.phase.get() != Phase::Sleep {
+            self.allocation_debt
+                .set(self.allocation_debt.get() + size as f64 + size as f64 / TIMING_FACTOR)
+        }
+
+        self.all.set(Some(ptr));
+
+        if self.phase.get() == Phase::Sweep && self.sweep_prev.get().is_none() {
+            self.sweep_prev.set(self.all.get());
+        }
+
+        Gc(ptr)
     }
 
     pub unsafe fn write_barrier<T: Trace + 'static>(&self, gc: Gc<T>) {

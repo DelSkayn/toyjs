@@ -1,27 +1,36 @@
-#![allow(unused)]
+#![allow(dead_code)]
 
-pub const MAX_REGISTERS: u8 = 255;
-
+use std::fmt;
 pub mod gc;
-#[macro_use]
-mod macros;
-pub mod bytecode;
-pub mod environment;
-pub mod exec;
-pub mod function;
-pub mod object;
-pub mod stack;
+pub use gc::{Gc, GcArena};
+pub mod instructions;
 pub mod value;
-
-use bytecode::RuntimeFunction;
-use environment::Environment;
-use exec::ExecutionContext;
-use function::Function;
-use gc::{Ctx, Gc, GcArena, Trace};
-use object::Object;
-use stack::Stack;
-pub use std::{
-    cell::RefCell,
-    sync::{Arc, Mutex, Weak},
-};
+use instructions::{Instruction, InstructionBuffer, InstructionReader};
 pub use value::JSValue;
+
+pub struct ByteCode {
+    pub constants: Box<[JSValue]>,
+    pub instructions: InstructionBuffer,
+}
+
+impl fmt::Display for ByteCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut reader = InstructionReader::new(&self.instructions);
+        let mut idx = 0;
+
+        writeln!(f, " # CONSTANTS")?;
+        for (idx, c) in self.constants.iter().enumerate() {
+            writeln!(f, "{:>4}: {:?}", idx, c)?;
+        }
+
+        writeln!(f)?;
+        writeln!(f, " # INSTRUCTIONS")?;
+        while !reader.at_end() {
+            write!(f, "{:>4}: ", idx)?;
+            Instruction::format_byte_instruction(f, &mut reader)?;
+            writeln!(f)?;
+            idx += 1;
+        }
+        Ok(())
+    }
+}

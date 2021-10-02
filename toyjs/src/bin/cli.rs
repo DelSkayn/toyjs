@@ -1,7 +1,9 @@
-use std::io::{self, BufRead};
-use toyjs::{Context, ToyJs};
+//use std::io::{self, BufRead};
+use std::io;
+//use toyjs::{Context, ToyJs};
 
 fn main() -> io::Result<()> {
+    /*
     let js = ToyJs::new();
     let ctx = Context::new(&js);
     //js.dump_bc(true);
@@ -68,5 +70,6 @@ fn main() -> io::Result<()> {
         });
         buffer.clear();
     }
+    */
     Ok(())
 }

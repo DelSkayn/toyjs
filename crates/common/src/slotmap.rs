@@ -2,15 +2,17 @@ use std::{
     alloc::{Allocator, Global},
     fmt,
     hash::Hash,
-    mem, ops, slice,
+    marker, mem,
+    ops::{self, Deref},
+    slice,
 };
 
 #[macro_export]
 macro_rules! newtype_key{
-    ( $(#[$attrs:meta])* $v:vis struct $name:ident($ty:ident);) => {
+    ( $(#[$attrs:meta])* $v:vis struct $name:ident($vi:vis $ty:ident);) => {
         $(#[$attrs])*
         #[derive(Copy, Clone, Default, Debug, Eq,PartialEq, Hash)]
-        $v struct $name ($ty);
+        $v struct $name ($vi $ty);
 
         unsafe impl SlotKey for $name{
             type Version = <$ty as SlotKey>::Version;
@@ -398,5 +400,59 @@ impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotVec<T, Idx, A> {
             }
             SlotMapValue::Free(_) => panic!("no value at given index"),
         }
+    }
+}
+
+pub struct SlotStack<T, K, A: Allocator = Global> {
+    values: Vec<T, A>,
+    marker: marker::PhantomData<K>,
+}
+
+impl<T, K: SlotKey> SlotStack<T, K, Global> {
+    pub fn new() -> Self {
+        Self::new_in(Global)
+    }
+}
+
+impl<T, K: SlotKey, A: Allocator> SlotStack<T, K, A> {
+    pub fn new_in(alloc: A) -> Self {
+        SlotStack {
+            values: Vec::new_in(alloc),
+            marker: marker::PhantomData,
+        }
+    }
+
+    pub fn push(&mut self, value: T) -> K {
+        let res = K::new(self.values.len());
+        self.values.push(value);
+        res
+    }
+
+    pub fn into_vec(self) -> Vec<T, A> {
+        self.values
+    }
+}
+
+impl<T, K: SlotKey, A: Allocator> Deref for SlotStack<T, K, A> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        self.values.as_slice()
+    }
+}
+
+impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotStack<T, Idx, A> {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, idx: Idx) -> &T {
+        &self.values[idx.index()]
+    }
+}
+
+impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotStack<T, Idx, A> {
+    #[inline(always)]
+    fn index_mut(&mut self, idx: Idx) -> &mut T {
+        &mut self.values[idx.index()]
     }
 }

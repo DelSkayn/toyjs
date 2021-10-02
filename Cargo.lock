@@ -184,6 +184,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dump_bytecode"
+version = "0.1.0"
+dependencies = [
+ "toyjs_ast",
+ "toyjs_common",
+ "toyjs_compiler",
+ "toyjs_lexer",
+ "toyjs_parser",
+ "toyjs_runtime",
+ "toyjs_token",
+]
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

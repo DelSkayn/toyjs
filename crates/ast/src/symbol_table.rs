@@ -26,11 +26,11 @@ pub enum DeclType {
 /// Data about a lexical symbol
 pub struct Symbol {
     /// type of symbol
-    decl_type: DeclType,
+    pub decl_type: DeclType,
     /// The id of the scope this symbol was declared in.
-    decl_scope: ScopeId,
+    pub decl_scope: ScopeId,
     /// The identifier with which this identifier was declared.
-    ident: StringId,
+    pub ident: StringId,
 }
 
 newtype_key! {
@@ -122,6 +122,9 @@ impl<A: Allocator + Clone> SymbolTable<A> {
 }
 
 impl<A: Allocator> SymbolTable<A> {
+    pub fn global(&self) -> ScopeId {
+        self.global
+    }
     /// Returns the map containing all symbols
     pub fn symbols(&self) -> &Symbols<A> {
         &self.symbols

@@ -8,3 +8,4 @@ The VM is not ment to be actually used and at the moment is not at all compliant
  - Register based bytecode VM
  - Handwritten parser.
  - Traditional Lexer to Parser to ast to compiler to bytecode design.
+ - Minimal dependcies.

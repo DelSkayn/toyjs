@@ -1,5 +1,5 @@
 use crate::{
-    exec::RunningExecution,
+    //exec::RunningExecution,
     gc::{Ctx, Gc, Trace},
     value::JSValue,
 };
@@ -24,6 +24,7 @@ impl Object {
         }
     }
 
+    /*
     pub unsafe fn get<R>(&self, key: JSValue, ctx: &mut RunningExecution<R>) -> JSValue {
         let string = ctx.convert_string(key);
         self.values
@@ -36,6 +37,7 @@ impl Object {
         let string = ctx.convert_string(key);
         self.values.insert(string, value);
     }
+    */
 
     pub unsafe fn iter(&self) -> impl Iterator<Item = (&String, &JSValue)> {
         self.values.iter()

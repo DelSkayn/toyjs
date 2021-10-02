@@ -1,8 +1,7 @@
 [package]
-name = "toyjs_runtime"
+name = "dump_bytecode"
 version = "0.1.0"
-authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,4 +10,6 @@ common = { package="toyjs_common",path = "../common/" }
 token = { package="toyjs_token",path = "../token/" }
 lexer = { package="toyjs_lexer",path = "../lexer/" }
 ast = { package="toyjs_ast",path = "../ast/" }
-bumpalo = { version = "3.4.0", features = ["boxed","collections"]}
+parser = { package="toyjs_parser",path = "../parser/" }
+compiler = { package="toyjs_compiler",path = "../compiler/" }
+runtime = { package="toyjs_runtime",path = "../runtime/" }

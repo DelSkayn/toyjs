@@ -1,6 +1,6 @@
 #![feature(allocator_api)]
 
-use std::alloc::Allocator;
+use std::{alloc::Allocator, hash::Hash, mem};
 
 //pub use common::bump_list::List as Vec;
 use common::interner::StringId;
@@ -149,10 +149,59 @@ pub enum PrimeExpr<A: Allocator> {
     Object(Vec<(StringId, Expr<A>), A>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Literal {
     String(StringId),
     Integer(i32),
     Float(f64),
     Boolean(bool),
+}
+
+impl PartialEq for Literal {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Literal::Float(a) => {
+                if let Literal::Float(b) = other {
+                    a.to_bits() == b.to_bits()
+                } else {
+                    false
+                }
+            }
+            Literal::Integer(a) => {
+                if let Literal::Integer(b) = other {
+                    a == b
+                } else {
+                    false
+                }
+            }
+            Literal::Boolean(a) => {
+                if let Literal::Boolean(b) = other {
+                    a == b
+                } else {
+                    false
+                }
+            }
+            Literal::String(a) => {
+                if let Literal::String(b) = other {
+                    a == b
+                } else {
+                    false
+                }
+            }
+        }
+    }
+}
+
+impl Eq for Literal {}
+
+impl Hash for Literal {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        mem::discriminant(self).hash(state);
+        match *self {
+            Literal::Float(x) => x.to_bits().hash(state),
+            Literal::Integer(x) => x.hash(state),
+            Literal::Boolean(x) => x.hash(state),
+            Literal::String(x) => x.hash(state),
+        }
+    }
 }
