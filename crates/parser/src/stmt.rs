@@ -103,7 +103,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     }
 
     fn parse_const_binding(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "var");
+        expect!(self, "const");
         expect_bind!(self, let id = "ident");
         expect!(self, "=" => "constant needs to be initialized");
         let expr = self.parse_single_expr()?;
