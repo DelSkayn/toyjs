@@ -3,7 +3,6 @@
 #[macro_use]
 pub mod slotmap;
 pub mod bitmap;
-pub mod bump_list;
 pub mod cell_vec;
 pub mod interner;
 pub mod source;

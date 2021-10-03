@@ -21,16 +21,20 @@ impl<A: Allocator + Clone> ExprValue<A> {
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
-    pub(crate) fn compile_expr(&mut self, expr: &Expr<A>) -> ExprValue<A> {
+    pub(crate) fn compile_expr(
+        &mut self,
+        placement: Option<Register>,
+        expr: &Expr<A>,
+    ) -> ExprValue<A> {
         match expr {
-            Expr::Prime(x) => self.compile_prime(x),
+            Expr::Prime(x) => self.compile_prime(placement, x),
             Expr::Binary(left, op, right) => {
-                let left = self.compile_expr(left);
-                let right = self.compile_expr(right);
+                let left = self.compile_expr(None, left);
+                let right = self.compile_expr(None, right);
 
                 self.registers.free_temp(left.place);
                 self.registers.free_temp(right.place);
-                let reg_dst = self.registers.alloc_temp();
+                let reg_dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
 
                 match op {
                     BinaryOperator::Add => {
@@ -76,36 +80,100 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
-    fn compile_prime(&mut self, expr: &PrimeExpr<A>) -> ExprValue<A> {
+    fn compile_prime(&mut self, placement: Option<Register>, expr: &PrimeExpr<A>) -> ExprValue<A> {
         match expr {
-            PrimeExpr::Variable(symbol) => {
-                ExprValue::new_in(self.compile_symbol_use(*symbol), self.alloc.clone())
-            }
+            PrimeExpr::Variable(symbol) => ExprValue::new_in(
+                self.compile_symbol_use(placement, *symbol),
+                self.alloc.clone(),
+            ),
             PrimeExpr::Covered(x) => x
                 .iter()
-                .map(|expr| self.compile_expr(expr))
+                .map(|expr| self.compile_expr(placement, expr))
                 .last()
                 .expect("covered expression did not contain atleast a single expression"),
             PrimeExpr::Literal(x) => {
-                ExprValue::new_in(self.compile_literal(*x), self.alloc.clone())
+                ExprValue::new_in(self.compile_literal(placement, *x), self.alloc.clone())
             }
             _ => todo!(),
         }
     }
 
-    fn compile_symbol_use(&mut self, symbol_id: SymbolId) -> Register {
+    fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
         match symbol.decl_type {
             DeclType::Global => {
                 // Test if it is a true global
                 if symbol.decl_scope == self.symbol_table.global() {
-                    let name = self.compile_literal(Literal::String(symbol.ident));
+                    let name = self.compile_literal(None, Literal::String(symbol.ident));
                     let global = self.registers.alloc_temp();
                     self.instructions.push(Instruction::LoadGlobal {
                         dst: global.0,
                         null: 0,
                     });
                     self.registers.free_temp(global);
+                    if let Some(place) = placement {
+                        self.registers.free_temp(name);
+                        self.instructions.push(Instruction::Index {
+                            dst: place.0,
+                            key: name.0,
+                            obj: global.0,
+                        });
+                        return place;
+                    } else {
+                        // Just reuse name temp instruction.
+                        self.instructions.push(Instruction::Index {
+                            dst: name.0,
+                            key: name.0,
+                            obj: global.0,
+                        });
+                        return name;
+                    }
+                }
+                //TODO crossing variables.
+                if let Some(place) = placement {
+                    let reg = self.registers.alloc_symbol(symbol_id);
+                    if reg != place {
+                        self.instructions.push(Instruction::Move {
+                            dst: place.0,
+                            src: reg.0 as u16,
+                        });
+                    }
+                    return place;
+                } else {
+                    return self.registers.alloc_symbol(symbol_id);
+                }
+            }
+            DeclType::Local | DeclType::Const => {
+                if let Some(place) = placement {
+                    let reg = self.registers.alloc_symbol(symbol_id);
+                    if reg != place {
+                        self.instructions.push(Instruction::Move {
+                            dst: place.0,
+                            src: reg.0 as u16,
+                        });
+                    }
+                    return place;
+                } else {
+                    return self.registers.alloc_symbol(symbol_id);
+                }
+            }
+            DeclType::Implicit => {
+                let name = self.compile_literal(None, Literal::String(symbol.ident));
+                let global = self.registers.alloc_temp();
+                self.instructions.push(Instruction::LoadGlobal {
+                    dst: global.0,
+                    null: 0,
+                });
+                self.registers.free_temp(global);
+                if let Some(place) = placement {
+                    self.registers.free_temp(name);
+                    self.instructions.push(Instruction::Index {
+                        dst: place.0,
+                        key: name.0,
+                        obj: global.0,
+                    });
+                    return place;
+                } else {
                     // Just reuse name temp instruction.
                     self.instructions.push(Instruction::Index {
                         dst: name.0,
@@ -114,37 +182,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     return name;
                 }
-                //TODO crossing variables.
-                return self.registers.alloc_symbol(symbol_id);
-            }
-            DeclType::Local => {
-                return self.registers.alloc_symbol(symbol_id);
-            }
-            DeclType::Const => {
-                return self.registers.alloc_symbol(symbol_id);
-            }
-            DeclType::Implicit => {
-                let name = self.compile_literal(Literal::String(symbol.ident));
-                let global = self.registers.alloc_temp();
-                self.instructions.push(Instruction::LoadGlobal {
-                    dst: global.0,
-                    null: 0,
-                });
-                self.registers.free_temp(global);
-                // Just reuse name temp instruction.
-                self.instructions.push(Instruction::Index {
-                    dst: name.0,
-                    key: name.0,
-                    obj: global.0,
-                });
-                return name;
             }
             _ => todo!(),
         }
     }
 
-    fn compile_literal(&mut self, literal: Literal) -> Register {
-        let register = self.registers.alloc_temp();
+    fn compile_literal(&mut self, placement: Option<Register>, literal: Literal) -> Register {
+        let register = placement.unwrap_or_else(|| self.registers.alloc_temp());
         let constant = self.constants.push_constant(literal);
         if constant.0 < u16::MAX as u32 {
             self.instructions.push(Instruction::LoadConst {

@@ -26,12 +26,14 @@ pub struct InstructionReader<'a> {
 }
 
 impl<'a> InstructionReader<'a> {
-    pub fn new(buffer: &'a InstructionBuffer) -> Self {
-        InstructionReader {
-            cur: buffer.0.as_ptr() as *const u8,
-            first: buffer.0.as_ptr() as *const u8,
-            last: unsafe { buffer.0.as_ptr().add(buffer.0.len()) as *const u8 },
-            marker: PhantomData,
+    pub fn new(buffer: &'a InstructionBuffer, offset: usize, size: usize) -> Self {
+        unsafe {
+            InstructionReader {
+                cur: buffer.0.as_ptr().add(offset) as *const u8,
+                first: buffer.0.as_ptr().add(offset) as *const u8,
+                last: buffer.0.as_ptr().add(offset + size) as *const u8,
+                marker: PhantomData,
+            }
         }
     }
 
