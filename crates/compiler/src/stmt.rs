@@ -21,6 +21,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 //TODO captured variables
                 expr.as_ref().map(|x| self.compile_expr(Some(reg), x).place)
             }
+            Stmt::Const(symbol, expr) => {
+                let reg = self.registers.alloc_symbol(*symbol);
+                //TODO captured variables
+                Some(self.compile_expr(Some(reg), expr).place)
+            }
             _ => todo!(),
         }
     }
