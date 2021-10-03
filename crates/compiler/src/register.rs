@@ -10,6 +10,8 @@ enum AllocValue {
     Free,
     Temp,
     Symbol(SymbolId),
+    Global,
+    Env(u8),
 }
 
 pub struct Registers {

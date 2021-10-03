@@ -20,6 +20,7 @@ mod expr;
 mod register;
 use register::Registers;
 mod constants;
+mod lexical_info;
 mod stmt;
 
 newtype_key! {

@@ -456,3 +456,82 @@ impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotStack<T, Idx, A> 
         &mut self.values[idx.index()]
     }
 }
+
+pub struct SlotMap<T, K: SlotKey, A: Allocator = Global> {
+    values: Vec<Option<(T, K::Version)>, A>,
+}
+
+impl<T, K: SlotKey> SlotMap<T, K> {
+    pub fn new() -> Self {
+        Self::new_in(Global)
+    }
+}
+
+impl<T, K: SlotKey, A: Allocator> SlotMap<T, K, A> {
+    pub fn new_in(alloc: A) -> Self {
+        Self {
+            values: Vec::new_in(alloc),
+        }
+    }
+
+    pub fn insert(&mut self, k: K, v: T) {
+        if self.values.len() <= k.index() {
+            self.values.resize_with(k.index() + 1, || None)
+        }
+        self.values[k.index()] = Some((v, k.version()));
+    }
+
+    pub fn get(&self, k: K) -> Option<&T> {
+        self.values
+            .get(k.index())
+            .and_then(|x| x.as_ref())
+            .and_then(|x| if x.1 == k.version() { Some(&x.0) } else { None })
+    }
+
+    pub fn get_mut(&mut self, k: K) -> Option<&mut T> {
+        self.values
+            .get_mut(k.index())
+            .and_then(|x| x.as_mut())
+            .and_then(|x| {
+                if x.1 == k.version() {
+                    Some(&mut x.0)
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotMap<T, Idx, A> {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, idx: Idx) -> &T {
+        self.values[idx.index()]
+            .as_ref()
+            .and_then(|x| {
+                if x.1 == idx.version() {
+                    Some(&x.0)
+                } else {
+                    None
+                }
+            })
+            .unwrap()
+    }
+}
+
+impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotMap<T, Idx, A> {
+    #[inline(always)]
+    fn index_mut(&mut self, idx: Idx) -> &mut T {
+        self.values[idx.index()]
+            .as_mut()
+            .and_then(|x| {
+                if x.1 == idx.version() {
+                    Some(&mut x.0)
+                } else {
+                    None
+                }
+            })
+            .unwrap()
+    }
+}
