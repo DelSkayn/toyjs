@@ -183,7 +183,6 @@ enum SlotMapValue<T, Idx: SlotKey> {
     Value { value: T, version: Idx::Version },
 }
 
-#[derive(Debug)]
 /// A datastructure mainting an intrusive free list which allows for 0(1) insertion and removal without changing indecies of
 /// values.
 pub struct SlotVec<T, Idx: SlotKey = usize, A: Allocator = Global> {
@@ -403,6 +402,15 @@ impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotVec<T, Idx, A> {
     }
 }
 
+impl<T: fmt::Debug, K: SlotKey, A: Allocator> fmt::Debug for SlotVec<T, K, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SlotVec")
+            .field("values", &self.values)
+            .field("free", &self.free)
+            .finish()
+    }
+}
+
 pub struct SlotStack<T, K, A: Allocator = Global> {
     values: Vec<T, A>,
     marker: marker::PhantomData<K>,
@@ -454,6 +462,15 @@ impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotStack<T, Idx, A> 
     #[inline(always)]
     fn index_mut(&mut self, idx: Idx) -> &mut T {
         &mut self.values[idx.index()]
+    }
+}
+
+impl<T: fmt::Debug, K, A: Allocator> fmt::Debug for SlotStack<T, K, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SlotStack")
+            .field("values", &self.values)
+            .field("marker", &self.marker)
+            .finish()
     }
 }
 
@@ -533,5 +550,16 @@ impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotMap<T, Idx, A> {
                 }
             })
             .unwrap()
+    }
+}
+
+impl<T: fmt::Debug, K: SlotKey, A: Allocator> fmt::Debug for SlotMap<T, K, A>
+where
+    K::Version: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SlotStack")
+            .field("values", &self.values)
+            .finish()
     }
 }

@@ -6,7 +6,10 @@ use common::{
     newtype_key,
     slotmap::{SlotKey, SlotVec},
 };
-use std::alloc::{Allocator, Global};
+use std::{
+    alloc::{Allocator, Global},
+    fmt,
+};
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum DeclType {
@@ -61,10 +64,26 @@ pub struct Scope<A: Allocator> {
     pub symbols: Vec<SymbolId, A>,
     /// The children scopes of this scope.
     pub children: Vec<ScopeId, A>,
-    /// Symbols used in this scope which are not declared in this scope.
+    /// Symbols used in this scope which are not declared in this function scope.
     pub used: HashSet<SymbolId>,
     /// The kind of scope.
     pub kind: ScopeKind,
+    /// The depth of the scope, i.e. number of parent function scopes
+    pub function_depth: u32,
+}
+
+impl<A: Allocator> fmt::Debug for Scope<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scope")
+            .field("parent", &self.parent)
+            .field("parent_function", &self.parent_function)
+            .field("symbols", &self.symbols)
+            .field("children", &self.children)
+            .field("used", &self.used)
+            .field("kind", &self.kind)
+            .field("function_depth", &self.function_depth)
+            .finish()
+    }
 }
 
 impl<A: Allocator + Clone> Scope<A> {
@@ -72,6 +91,7 @@ impl<A: Allocator + Clone> Scope<A> {
         parent: Option<ScopeId>,
         parent_function: Option<ScopeId>,
         kind: ScopeKind,
+        depth: u32,
         alloc: A,
     ) -> Self {
         Scope {
@@ -80,6 +100,7 @@ impl<A: Allocator + Clone> Scope<A> {
             symbols: Vec::new_in(alloc.clone()),
             children: Vec::new_in(alloc),
             used: HashSet::default(),
+            function_depth: depth,
             kind,
         }
     }
@@ -110,7 +131,13 @@ impl SymbolTable<Global> {
 impl<A: Allocator + Clone> SymbolTable<A> {
     pub fn new_in(alloc: A) -> Self {
         let mut scopes = Scopes::new_in(alloc.clone());
-        let global = scopes.insert(Scope::new_in(None, None, ScopeKind::Global, alloc.clone()));
+        let global = scopes.insert(Scope::new_in(
+            None,
+            None,
+            ScopeKind::Global,
+            0,
+            alloc.clone(),
+        ));
         SymbolTable {
             scopes,
             symbols: Symbols::new_in(alloc.clone()),
@@ -154,12 +181,32 @@ impl<A: Allocator> SymbolTable<A> {
         }
         self.child_of(symbol_scope, scope)
     }
+
+    /// Travese the given scope and all its children in prefix order.
+    pub fn traverse_scopes<F: FnMut(ScopeId, &Scope<A>)>(&self, scope: ScopeId, f: &mut F) {
+        f(scope, &self.scopes[scope]);
+        for child in self.scopes[scope].children.iter() {
+            self.traverse_scopes(*child, f);
+        }
+    }
+
+    /// Returns the function scope within which this scope is declared.
+    /// If the scope is a function scope it will return the current scope.
+    pub fn function_scope(&self, scope: ScopeId) -> ScopeId {
+        match self.scopes[scope].kind {
+            ScopeKind::Function | ScopeKind::Module | ScopeKind::Global => scope,
+            ScopeKind::Lexical => self.scopes[scope]
+                .parent_function
+                .expect("lexical scopes should always have a parent"),
+        }
+    }
 }
 
 pub struct SymbolTableBuilder<'a, A: Allocator> {
     table: &'a mut SymbolTable<A>,
     current_scope: ScopeId,
     current_function: ScopeId,
+    current_depth: u32,
 }
 
 impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
@@ -168,6 +215,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         SymbolTableBuilder {
             current_scope: table.global,
             current_function: table.global,
+            current_depth: 0,
             table,
         }
     }
@@ -177,11 +225,13 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             None,
             None,
             ScopeKind::Module,
+            0,
             table.alloc.clone(),
         ));
         SymbolTableBuilder {
             current_scope: new_root,
             current_function: new_root,
+            current_depth: 0,
             table,
         }
     }
@@ -241,7 +291,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             }
             DeclType::Implicit => panic!("can't define variables explicitly implicit."),
         }
-        // Variable was not declared yeu.
+        // Variable was not declared yet.
 
         match kind {
             // Let and const's are declared in lexical scope.
@@ -283,7 +333,8 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     /// Implicitly declares a variable if it was not yet declared.
     pub fn use_symbol(&mut self, name: StringId) -> SymbolId {
         if let Some(x) = self.lookup_symbol(name) {
-            if self.table.symbols[x].decl_scope != self.current_scope {
+            if self.table.function_scope(self.table.symbols[x].decl_scope) != self.current_function
+            {
                 self.table.scopes[self.current_scope].used.insert(x);
             }
             return x;
@@ -311,12 +362,19 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             "can't push global and module scopes"
         );
 
+        if kind == ScopeKind::Function {
+            self.current_depth += 1;
+        }
         let new_scope = self.table.scopes.insert(Scope::new_in(
             Some(self.current_scope),
             Some(self.current_function),
             kind,
+            self.current_depth,
             self.table.alloc.clone(),
         ));
+        self.table.scopes[self.current_scope]
+            .children
+            .push(new_scope);
         self.current_scope = new_scope;
         if kind == ScopeKind::Function {
             self.current_function = new_scope;
@@ -331,6 +389,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             .expect("tried to pop a scope without a parent");
 
         if self.current_scope == self.current_function {
+            self.current_depth -= 1;
             self.current_function = self.table.scopes[self.current_scope]
                 .parent_function
                 .expect("tried to pop root scope");
