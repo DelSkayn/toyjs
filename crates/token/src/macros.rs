@@ -2,345 +2,345 @@
 #[macro_export]
 macro_rules! t {
     ("strict_directive"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::STRICT_DIRECTIVE)
+        $crate::TokenKind::Ident($crate::interner::consts::STRICT_DIRECTIVE)
     };
     ("target"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::TARGET)
+        $crate::TokenKind::Ident($crate::interner::consts::TARGET)
     };
     ("get"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::GET)
+        $crate::TokenKind::Ident($crate::interner::consts::GET)
     };
     ("set"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::SET)
+        $crate::TokenKind::Ident($crate::interner::consts::SET)
     };
     ("static"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::STATIC)
+        $crate::TokenKind::Ident($crate::interner::consts::STATIC)
     };
     ("of"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::OF)
+        $crate::TokenKind::Ident($crate::interner::consts::OF)
     };
     ("import"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::IMPORT)
+        $crate::TokenKind::Ident($crate::interner::consts::IMPORT)
     };
     ("meta"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident($crate::interner::consts::META)
+        $crate::TokenKind::Ident($crate::interner::consts::META)
     };
     ("string",$x:ident) => {
-        $crate::token::TokenKind::Lit($crate::token::LitToken::String($x))
+        $crate::TokenKind::Lit($crate::LitToken::String($x))
     };
     ("number",$x:ident) => {
-        $crate::token::TokenKind::Lit($crate::token::LitToken::Number($x))
+        $crate::TokenKind::Lit($crate::LitToken::Number($x))
     };
     ("literal",$x:ident) => {
-        $crate::token::TokenKind::Lit($x)
+        $crate::TokenKind::Lit($x)
     };
     ("ident",$x:ident) => {
-        $crate::token::TokenKind::Ident($x)
+        $crate::TokenKind::Ident($x)
     };
     ("string") => {
-        $crate::token::TokenKind::Lit($crate::token::LitToken::String(_))
+        $crate::TokenKind::Lit($crate::LitToken::String(_))
     };
     ("number"$($rest:tt)*) => {
-        $crate::token::TokenKind::Lit($crate::token::LitToken::Number(_))
+        $crate::TokenKind::Lit($crate::LitToken::Number(_))
     };
     ("literal"$($rest:tt)*) => {
-        $crate::token::TokenKind::Lit(_)
+        $crate::TokenKind::Lit(_)
     };
     ("ident"$($rest:tt)*) => {
-        $crate::token::TokenKind::Ident(_)
+        $crate::TokenKind::Ident(_)
     };
     ("\n"$($rest:tt)*) => {
-        $crate::token::TokenKind::LineTerminator
+        $crate::TokenKind::LineTerminator
     };
     (";"$($rest:tt)*) => {
-        $crate::token::TokenKind::SemiColon
+        $crate::TokenKind::SemiColon
     };
     ("++"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::AddOne)
+        $crate::TokenKind::Operator($crate::Operator::AddOne)
     };
     ("--"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::SubractOne)
+        $crate::TokenKind::Operator($crate::Operator::SubractOne)
     };
     ("~"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::BitwiseNot)
+        $crate::TokenKind::Operator($crate::Operator::BitwiseNot)
     };
     ("!"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Not)
+        $crate::TokenKind::Operator($crate::Operator::Not)
     };
     ("<"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Less)
+        $crate::TokenKind::Operator($crate::Operator::Less)
     };
     ("<="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::LessEqual)
+        $crate::TokenKind::Operator($crate::Operator::LessEqual)
     };
     (">"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Greater)
+        $crate::TokenKind::Operator($crate::Operator::Greater)
     };
     (">="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::GreaterEqual)
+        $crate::TokenKind::Operator($crate::Operator::GreaterEqual)
     };
     ("="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Assign)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Assign)
     };
     ("=>"$($rest:tt)*) => {
-        $crate::token::TokenKind::Arrow
+        $crate::TokenKind::Arrow
     };
     ("=="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Equal)
+        $crate::TokenKind::Operator($crate::Operator::Equal)
     };
     ("==="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::StrictEqual)
+        $crate::TokenKind::Operator($crate::Operator::StrictEqual)
     };
     ("!="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::NotEqual)
+        $crate::TokenKind::Operator($crate::Operator::NotEqual)
     };
     ("!=="$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::StrictNotEqual)
+        $crate::TokenKind::Operator($crate::Operator::StrictNotEqual)
     };
     ("."$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Dot)
+        $crate::TokenKind::Operator($crate::Operator::Dot)
     };
     (".."$($rest:tt)*) => {
-        $crate::token::TokenKind::DotDot
+        $crate::TokenKind::DotDot
     };
     ("..."$($rest:tt)*) => {
-        $crate::token::TokenKind::DotDotDot
+        $crate::TokenKind::DotDotDot
     };
     (":"$($rest:tt)*) => {
-        $crate::token::TokenKind::Colon
+        $crate::TokenKind::Colon
     };
     ("::"$($rest:tt)*) => {
-        $crate::token::TokenKind::DoubleColon
+        $crate::TokenKind::DoubleColon
     };
     ("&&"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::And)
+        $crate::TokenKind::Operator($crate::Operator::And)
     };
     ("||"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Or)
+        $crate::TokenKind::Operator($crate::Operator::Or)
     };
     ("?"$($rest:tt)*) => {
-        $crate::token::TokenKind::Tenary
+        $crate::TokenKind::Tenary
     };
     ("?."$($rest:tt)*) => {
-        $crate::token::TokenKind::TenaryNull
+        $crate::TokenKind::TenaryNull
     };
     ("??"$($rest:tt)*) => {
-        $crate::token::TokenKind::NullCoalescing
+        $crate::TokenKind::NullCoalescing
     };
     (","$($rest:tt)*) => {
-        $crate::token::TokenKind::Comma
+        $crate::TokenKind::Comma
     };
     ("("$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimOpen($crate::token::Delim::Paren)
+        $crate::TokenKind::DelimOpen($crate::Delim::Paren)
     };
     ("["$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimOpen($crate::token::Delim::Bracket)
+        $crate::TokenKind::DelimOpen($crate::Delim::Bracket)
     };
     ("{"$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimOpen($crate::token::Delim::Brace)
+        $crate::TokenKind::DelimOpen($crate::Delim::Brace)
     };
     (")"$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimClose($crate::token::Delim::Paren)
+        $crate::TokenKind::DelimClose($crate::Delim::Paren)
     };
     ("]"$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimClose($crate::token::Delim::Bracket)
+        $crate::TokenKind::DelimClose($crate::Delim::Bracket)
     };
     ("}"$($rest:tt)*) => {
-        $crate::token::TokenKind::DelimClose($crate::token::Delim::Brace)
+        $crate::TokenKind::DelimClose($crate::Delim::Brace)
     };
     ("-="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Minus)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Minus)
     };
     ("+="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Plus)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Plus)
     };
     ("*="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Mul)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Mul)
     };
     ("**="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Exponentiate)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Exponentiate)
     };
     ("/="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Div)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Div)
     };
     ("//="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::IntegerDiv)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::IntegerDiv)
     };
     ("%="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::Remainder)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::Remainder)
     };
     ("<<="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::LeftShift)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::LeftShift)
     };
     (">>="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::RightShift)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::RightShift)
     };
     (">>>="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::UnsignedRightShift)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::UnsignedRightShift)
     };
     ("&="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::BitwiseAnd)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::BitwiseAnd)
     };
     ("^="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::BitwiseXor)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::BitwiseXor)
     };
     ("|="$($rest:tt)*) => {
-        $crate::token::TokenKind::AssignOperator($crate::token::AssignOperator::BitwiseOr)
+        $crate::TokenKind::AssignOperator($crate::AssignOperator::BitwiseOr)
     };
     ("-"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Minus)
+        $crate::TokenKind::Operator($crate::Operator::Minus)
     };
     ("+"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Plus)
+        $crate::TokenKind::Operator($crate::Operator::Plus)
     };
     ("*"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Mul)
+        $crate::TokenKind::Operator($crate::Operator::Mul)
     };
     ("**"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Exponentiate)
+        $crate::TokenKind::Operator($crate::Operator::Exponentiate)
     };
     ("/"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Div)
+        $crate::TokenKind::Operator($crate::Operator::Div)
     };
     ("//"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::IntegerDiv)
+        $crate::TokenKind::Operator($crate::Operator::IntegerDiv)
     };
     ("%"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::Remainder)
+        $crate::TokenKind::Operator($crate::Operator::Remainder)
     };
     ("<<"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::LeftShift)
+        $crate::TokenKind::Operator($crate::Operator::LeftShift)
     };
     (">>"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::RightShift)
+        $crate::TokenKind::Operator($crate::Operator::RightShift)
     };
     (">>>"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::UnsignedRightShift)
+        $crate::TokenKind::Operator($crate::Operator::UnsignedRightShift)
     };
     ("&"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::BitwiseAnd)
+        $crate::TokenKind::Operator($crate::Operator::BitwiseAnd)
     };
     ("^"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::BitwiseXor)
+        $crate::TokenKind::Operator($crate::Operator::BitwiseXor)
     };
     ("|"$($rest:tt)*) => {
-        $crate::token::TokenKind::Operator($crate::token::Operator::BitwiseOr)
+        $crate::TokenKind::Operator($crate::Operator::BitwiseOr)
     };
     ("await"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Await)
+        $crate::TokenKind::Keyword($crate::Keyword::Await)
     };
     ("break"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Break)
+        $crate::TokenKind::Keyword($crate::Keyword::Break)
     };
     ("case"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Case)
+        $crate::TokenKind::Keyword($crate::Keyword::Case)
     };
     ("catch"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Catch)
+        $crate::TokenKind::Keyword($crate::Keyword::Catch)
     };
     ("class"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Class)
+        $crate::TokenKind::Keyword($crate::Keyword::Class)
     };
     ("let"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Let)
+        $crate::TokenKind::Keyword($crate::Keyword::Let)
     };
     ("const"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Const)
+        $crate::TokenKind::Keyword($crate::Keyword::Const)
     };
     ("continue"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Continue)
+        $crate::TokenKind::Keyword($crate::Keyword::Continue)
     };
     ("debugger"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Debugger)
+        $crate::TokenKind::Keyword($crate::Keyword::Debugger)
     };
     ("default"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Default)
+        $crate::TokenKind::Keyword($crate::Keyword::Default)
     };
     ("delete"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Delete)
+        $crate::TokenKind::Keyword($crate::Keyword::Delete)
     };
     ("do"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Do)
+        $crate::TokenKind::Keyword($crate::Keyword::Do)
     };
     ("else"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Else)
+        $crate::TokenKind::Keyword($crate::Keyword::Else)
     };
     ("enum"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Enum)
+        $crate::TokenKind::Keyword($crate::Keyword::Enum)
     };
     ("export"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Export)
+        $crate::TokenKind::Keyword($crate::Keyword::Export)
     };
     ("extends"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Extends)
+        $crate::TokenKind::Keyword($crate::Keyword::Extends)
     };
     ("false"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::False)
+        $crate::TokenKind::Keyword($crate::Keyword::False)
     };
     ("finally"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Finally)
+        $crate::TokenKind::Keyword($crate::Keyword::Finally)
     };
     ("for"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::For)
+        $crate::TokenKind::Keyword($crate::Keyword::For)
     };
     ("function"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Function)
+        $crate::TokenKind::Keyword($crate::Keyword::Function)
     };
     ("if"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::If)
+        $crate::TokenKind::Keyword($crate::Keyword::If)
     };
     ("import"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Import)
+        $crate::TokenKind::Keyword($crate::Keyword::Import)
     };
     ("in"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::In)
+        $crate::TokenKind::Keyword($crate::Keyword::In)
     };
     ("instanceof"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Instanceof)
+        $crate::TokenKind::Keyword($crate::Keyword::Instanceof)
     };
     ("new"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::New)
+        $crate::TokenKind::Keyword($crate::Keyword::New)
     };
     ("null"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Null)
+        $crate::TokenKind::Keyword($crate::Keyword::Null)
     };
     ("return"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Return)
+        $crate::TokenKind::Keyword($crate::Keyword::Return)
     };
     ("super"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Super)
+        $crate::TokenKind::Keyword($crate::Keyword::Super)
     };
     ("switch"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Switch)
+        $crate::TokenKind::Keyword($crate::Keyword::Switch)
     };
     ("this"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::This)
+        $crate::TokenKind::Keyword($crate::Keyword::This)
     };
     ("throw"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Throw)
+        $crate::TokenKind::Keyword($crate::Keyword::Throw)
     };
     ("true"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::True)
+        $crate::TokenKind::Keyword($crate::Keyword::True)
     };
     ("try"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Try)
+        $crate::TokenKind::Keyword($crate::Keyword::Try)
     };
     ("typeof"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Typeof)
+        $crate::TokenKind::Keyword($crate::Keyword::Typeof)
     };
     ("var"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Var)
+        $crate::TokenKind::Keyword($crate::Keyword::Var)
     };
     ("void"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Void)
+        $crate::TokenKind::Keyword($crate::Keyword::Void)
     };
     ("while"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::While)
+        $crate::TokenKind::Keyword($crate::Keyword::While)
     };
     ("with"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::With)
+        $crate::TokenKind::Keyword($crate::Keyword::With)
     };
     ("yield"$($rest:tt)*) => {
-        $crate::token::TokenKind::Keyword($crate::token::Keyword::Yield)
+        $crate::TokenKind::Keyword($crate::Keyword::Yield)
     };
 }

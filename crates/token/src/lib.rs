@@ -1,3 +1,3 @@
-pub mod token;
+mod token;
 pub use token::*;
 mod macros;
