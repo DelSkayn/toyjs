@@ -172,7 +172,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                     let arg_var = self
                         .symbol_table
                         .define(arg, DeclType::Argument)
-                        .expect("arguments should not possibly be redeclared!");
+                        .ok_or_else(|| Error {
+                            kind: ErrorKind::RedeclaredVariable,
+                            origin: self.last_span,
+                        })?;
                     rest = Some(ast::Rest::BindingIdent(arg_var));
                     break;
                 }
@@ -181,7 +184,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                     let arg_var = self
                         .symbol_table
                         .define(arg, DeclType::Argument)
-                        .expect("arguments should not possibly be redeclared!");
+                        .ok_or_else(|| Error {
+                            kind: ErrorKind::RedeclaredVariable,
+                            origin: self.last_span,
+                        })?;
                     stmt.push(arg_var);
                 }
                 t!(")") => {
