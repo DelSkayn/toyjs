@@ -11,7 +11,7 @@ use constants::Constants;
 use runtime::{
     gc::GcArena,
     instructions::{Instruction, InstructionBuffer},
-    ByteCode,
+    ByteCode, ByteFunction,
 };
 
 use std::alloc::{Allocator, Global};
@@ -30,6 +30,7 @@ pub struct Compiler<'a, A: Allocator> {
     symbol_table: &'a SymbolTable<A>,
     instructions: SlotStack<Instruction, InstructionId, A>,
     registers: Registers,
+    functions: Vec<ByteFunction>,
     constants: Constants<'a, Global>,
     alloc: A,
 }
@@ -45,6 +46,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             symbol_table,
             instructions: SlotStack::new_in(alloc.clone()),
             registers: Registers::new(),
+            functions: vec![ByteFunction {
+                offset: 0,
+                size: 0,
+                registers: 0,
+            }],
             constants: Constants::new_in(interner, gc, Global),
             alloc,
         }
@@ -66,10 +72,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
 
         let constants = self.constants.into_constants();
+
+        let function = self.functions.last_mut().unwrap();
+        function.registers = self.registers.registers_needed();
+        function.size = self.instructions.len();
+
         let instructions = InstructionBuffer::from_instructions(&self.instructions);
 
         ByteCode {
             constants,
+            functions: self.functions.into_boxed_slice(),
             instructions,
         }
     }

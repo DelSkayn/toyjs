@@ -14,12 +14,16 @@ enum AllocValue {
 
 pub struct Registers {
     registers: [AllocValue; 255],
+    cur_allocated: u8,
+    max_allocated: u8,
 }
 
 impl Registers {
     pub fn new() -> Self {
         Registers {
             registers: [AllocValue::Free; 255],
+            cur_allocated: 0,
+            max_allocated: 0,
         }
     }
 
@@ -33,12 +37,18 @@ impl Registers {
             .expect("could not find free register")
             .0;
 
+        self.cur_allocated += 1;
+        self.max_allocated = self.max_allocated.max(self.cur_allocated);
+
         self.registers[reg] = AllocValue::Temp;
         Register(reg as u8)
     }
 
     pub fn free_temp(&mut self, register: Register) {
-        self.registers[register.0 as usize] = AllocValue::Free;
+        if self.registers[register.0 as usize] == AllocValue::Temp {
+            self.registers[register.0 as usize] = AllocValue::Free;
+            self.cur_allocated -= 1;
+        }
     }
 
     pub fn alloc_symbol(&mut self, symbol: SymbolId) -> Register {
@@ -53,6 +63,12 @@ impl Registers {
         }
         let free = free.expect("could not find free register");
         self.registers[free] = AllocValue::Symbol(symbol);
+        self.cur_allocated += 1;
+        self.max_allocated = self.max_allocated.max(self.cur_allocated);
         Register(free as u8)
+    }
+
+    pub fn registers_needed(&self) -> u8 {
+        self.max_allocated
     }
 }

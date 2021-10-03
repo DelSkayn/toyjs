@@ -255,6 +255,9 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 self.table.scopes[self.current_scope]
                     .symbols
                     .push(new_symbol);
+                self.table
+                    .symbols_by_ident
+                    .insert((self.current_scope, name), new_symbol);
                 return Some(new_symbol);
             }
             // Arguments and globals are always declared at function scope
@@ -267,6 +270,9 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 self.table.scopes[self.current_function]
                     .symbols
                     .push(new_symbol);
+                self.table
+                    .symbols_by_ident
+                    .insert((self.current_function, name), new_symbol);
                 return Some(new_symbol);
             }
             DeclType::Implicit => panic!("can't define variables explicitly implicit."),
