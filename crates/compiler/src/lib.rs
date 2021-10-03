@@ -1,13 +1,14 @@
 #![allow(dead_code, unused_imports)]
 #![feature(allocator_api)]
 
-use ast::{Script, SymbolTable};
+use ast::{ScopeId, Script, SymbolTable};
 use common::{
     interner::Interner,
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
 use constants::Constants;
+use lexical_info::LexicalInfo;
 use runtime::{
     gc::GcArena,
     instructions::{Instruction, InstructionBuffer},
@@ -33,17 +34,20 @@ pub struct Compiler<'a, A: Allocator> {
     registers: Registers,
     functions: Vec<ByteFunction>,
     constants: Constants<'a, Global>,
+    lexical_info: LexicalInfo<A>,
     alloc: A,
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
-    pub fn new(
+    fn new(
         symbol_table: &'a SymbolTable<A>,
         interner: &'a Interner,
         gc: &'a GcArena,
+        root: ScopeId,
         alloc: A,
     ) -> Self {
         Compiler {
+            lexical_info: LexicalInfo::new_in(root, &symbol_table, alloc.clone()),
             symbol_table,
             instructions: SlotStack::new_in(alloc.clone()),
             registers: Registers::new(),
@@ -57,32 +61,40 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
-    pub fn compile_script(mut self, script: &Script<A>) -> ByteCode {
+    pub fn compile_script(
+        script: &Script<A>,
+        symbol_table: &'a SymbolTable<A>,
+        interner: &'a Interner,
+        gc: &'a GcArena,
+        alloc: A,
+    ) -> ByteCode {
+        let mut this = Compiler::new(symbol_table, interner, gc, symbol_table.global(), alloc);
+
         let mut res = None;
         for stmt in script.0.iter() {
-            res = self.compile_stmt(stmt);
+            res = this.compile_stmt(stmt);
         }
         if let Some(res) = res {
-            self.instructions.push(Instruction::Return {
+            this.instructions.push(Instruction::Return {
                 ret: res.0,
                 null: 0,
             });
         } else {
-            self.instructions
+            this.instructions
                 .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
         }
 
-        let constants = self.constants.into_constants();
+        let constants = this.constants.into_constants();
 
-        let function = self.functions.last_mut().unwrap();
-        function.registers = self.registers.registers_needed();
-        function.size = self.instructions.len();
+        let function = this.functions.last_mut().unwrap();
+        function.registers = this.registers.registers_needed();
+        function.size = this.instructions.len();
 
-        let instructions = InstructionBuffer::from_instructions(&self.instructions);
+        let instructions = InstructionBuffer::from_instructions(&this.instructions);
 
         ByteCode {
             constants,
-            functions: self.functions.into_boxed_slice(),
+            functions: this.functions.into_boxed_slice(),
             instructions,
         }
     }

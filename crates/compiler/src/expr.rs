@@ -1,7 +1,7 @@
 use ast::{symbol_table::DeclType, BinaryOperator, Expr, Literal, PrimeExpr, SymbolId};
 use runtime::instructions::Instruction;
 
-use crate::{register::Register, Compiler, InstructionId};
+use crate::{lexical_info::SymbolInfo, register::Register, Compiler, InstructionId};
 use std::alloc::Allocator;
 
 pub struct ExprValue<A: Allocator> {
@@ -106,64 +106,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
-        match symbol.decl_type {
-            DeclType::Global => {
-                // Test if it is a true global
-                if symbol.decl_scope == self.symbol_table.global() {
-                    let name = self.compile_literal(None, Literal::String(symbol.ident));
-                    let global = self.registers.alloc_temp();
-                    self.instructions.push(Instruction::LoadGlobal {
-                        dst: global.0,
-                        null: 0,
-                    });
-                    self.registers.free_temp(global);
-                    if let Some(place) = placement {
-                        self.registers.free_temp(name);
-                        self.instructions.push(Instruction::Index {
-                            dst: place.0,
-                            key: name.0,
-                            obj: global.0,
-                        });
-                        return place;
-                    } else {
-                        // Just reuse name temp instruction.
-                        self.instructions.push(Instruction::Index {
-                            dst: name.0,
-                            key: name.0,
-                            obj: global.0,
-                        });
-                        return name;
-                    }
-                }
-                //TODO crossing variables.
-                if let Some(place) = placement {
-                    let reg = self.registers.alloc_symbol(symbol_id);
-                    if reg != place {
-                        self.instructions.push(Instruction::Move {
-                            dst: place.0,
-                            src: reg.0 as u16,
-                        });
-                    }
-                    return place;
-                } else {
-                    return self.registers.alloc_symbol(symbol_id);
-                }
-            }
-            DeclType::Local | DeclType::Const => {
-                if let Some(place) = placement {
-                    let reg = self.registers.alloc_symbol(symbol_id);
-                    if reg != place {
-                        self.instructions.push(Instruction::Move {
-                            dst: place.0,
-                            src: reg.0 as u16,
-                        });
-                    }
-                    return place;
-                } else {
-                    return self.registers.alloc_symbol(symbol_id);
-                }
-            }
-            DeclType::Implicit => {
+        match self.lexical_info.symbol_info()[symbol_id] {
+            SymbolInfo::Global => {
                 let name = self.compile_literal(None, Literal::String(symbol.ident));
                 let global = self.registers.alloc_temp();
                 self.instructions.push(Instruction::LoadGlobal {
@@ -187,6 +131,20 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         obj: global.0,
                     });
                     return name;
+                }
+            }
+            SymbolInfo::Local => {
+                if let Some(place) = placement {
+                    let reg = self.registers.alloc_symbol(symbol_id);
+                    if reg != place {
+                        self.instructions.push(Instruction::Move {
+                            dst: place.0,
+                            src: reg.0 as u16,
+                        });
+                    }
+                    return place;
+                } else {
+                    return self.registers.alloc_symbol(symbol_id);
                 }
             }
             _ => todo!(),

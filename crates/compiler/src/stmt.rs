@@ -26,6 +26,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 //TODO captured variables
                 Some(self.compile_expr(Some(reg), expr).place)
             }
+            Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
             _ => todo!(),
         }
     }
