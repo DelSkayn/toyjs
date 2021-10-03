@@ -21,6 +21,8 @@ impl<A: Allocator + Clone> ExprValue<A> {
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
+    /// Compile the given expression
+    /// Will put result of expression in given placement register if there is one.
     pub(crate) fn compile_expr(
         &mut self,
         placement: Option<Register>,
@@ -80,6 +82,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
+    /// Compile the given prime expression
+    /// Will put result of expression in given placement register if there is one.
     fn compile_prime(&mut self, placement: Option<Register>, expr: &PrimeExpr<A>) -> ExprValue<A> {
         match expr {
             PrimeExpr::Variable(symbol) => ExprValue::new_in(
@@ -98,6 +102,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
+    /// Compile the use of a symbol
+    /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
         match symbol.decl_type {
@@ -187,6 +193,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
+    /// Compile the use of a literal expression
+    /// Will put result of expression in given placement register if there is one.
     fn compile_literal(&mut self, placement: Option<Register>, literal: Literal) -> Register {
         let register = placement.unwrap_or_else(|| self.registers.alloc_temp());
         let constant = self.constants.push_constant(literal);
