@@ -17,7 +17,7 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
         | t!("&=")
         | t!("^=")
         | t!("|=")
-        | t!("**=") => Some((1, 2)),
+        | t!("**=") => Some((2, 1)),
         t!("?") => Some((4, 3)),
         t!("??") => Some((6, 5)),
         t!("||") => Some((7, 8)),
