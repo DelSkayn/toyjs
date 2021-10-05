@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 bumpalo = { version = "3.4.0", features = ["boxed","collections"]}
 common = { package="toyjs_common",path = "../common/" }
+derivative = "2.2.0"

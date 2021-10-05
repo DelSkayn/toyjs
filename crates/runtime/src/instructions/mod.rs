@@ -53,11 +53,14 @@ define_instructions! {
 
         CreateObject{ dst: u8, null: u16},
 
-        IndexAssign{obj: u8,key: u8, value:u8},
+        IndexAssign{obj: u8,key: u8, val:u8},
         Index{dst: u8,obj: u8, key:u8},
 
         EnvAssign{env: u8, val:u8, key:u8},
         EnvIndex{dst: u8, env:u8, key:u8},
+
+        In{dst: u8, left:u8, righ:u8},
+        InstanceOf{dst: u8, left:u8, righ:u8},
 
         Add{dst: u8, left: u8, righ:u8},
         Sub{dst: u8, left: u8, righ:u8},
@@ -66,9 +69,9 @@ define_instructions! {
         Pow{dst: u8, left: u8, righ:u8},
         Mod{dst: u8, left: u8, righ:u8},
 
-        BinaryAnd{dst: u8, left: u8, righ:u8},
-        BinaryOr{dst: u8, left: u8, righ:u8},
-        BinaryXor{dst: u8, left: u8, righ:u8},
+        BitwiseAnd{dst: u8, left: u8, righ:u8},
+        BitwiseOr{dst: u8, left: u8, righ:u8},
+        BitwiseXor{dst: u8, left: u8, righ:u8},
 
         ShiftLeft{dst: u8, left: u8, righ:u8},
         ShiftRight{dst: u8, left: u8, righ:u8},
@@ -76,14 +79,14 @@ define_instructions! {
 
 
         Equal{dst: u8, left: u8, righ:u8},
-        StrictEqual{dst: u8, left: u8, righ:u8},
+        SEqual{dst: u8, left: u8, righ:u8},
         NotEqual{dst: u8, left: u8, righ:u8},
-        StrictNotEqual{dst: u8, left: u8, righ:u8},
+        SNotEqual{dst: u8, left: u8, righ:u8},
 
         Greater{dst: u8, left: u8, righ:u8},
-        GreaterEqual{dst: u8, left: u8, righ:u8},
-        Lesser{dst: u8, left: u8, righ:u8},
-        LesserEqual{dst: u8, left: u8, righ:u8},
+        GreaterEq{dst: u8, left: u8, righ:u8},
+        Less{dst: u8, left: u8, righ:u8},
+        LessEq{dst: u8, left: u8, righ:u8},
 
         Negative{dst: u8, op: u16},
 
@@ -91,6 +94,7 @@ define_instructions! {
         ToBool{dst: u8, op: u16},
 
         IsNullish{dst: u8, op: u16},
+        Not{ dst: u8, src: u16},
 
         JumpTrue{cond: u8, tgt:i16},
         JumpFalse{cond: u8, tgt:i16},
