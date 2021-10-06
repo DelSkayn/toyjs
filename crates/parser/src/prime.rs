@@ -24,6 +24,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 self.next()?;
                 Ok(PrimeExpr::Literal(Literal::Boolean(false)))
             }
+            t!("null") => {
+                self.next()?;
+                Ok(PrimeExpr::Literal(Literal::Null))
+            }
             TokenKind::Ident(x) => {
                 self.next()?;
                 let var = self.symbol_table.use_symbol(x);

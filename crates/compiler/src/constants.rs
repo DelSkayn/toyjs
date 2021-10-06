@@ -35,6 +35,7 @@ impl<'a, A: Allocator> Constants<'a, A> {
         let gc = self.gc;
         let interner = self.interner;
         *self.map.entry(literal).or_insert_with(|| match literal {
+            Literal::Null => constants.push(JSValue::null()),
             Literal::Float(x) => constants.push(JSValue::from(x)),
             Literal::Boolean(x) => constants.push(JSValue::from(x)),
             Literal::Integer(x) => constants.push(JSValue::from(x)),

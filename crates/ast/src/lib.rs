@@ -166,6 +166,7 @@ pub enum PrimeExpr<A: Allocator> {
 #[derive(Derivative, Clone, Copy)]
 #[derivative(Debug(bound = ""))]
 pub enum Literal {
+    Null,
     String(StringId),
     Integer(i32),
     Float(f64),
@@ -175,6 +176,13 @@ pub enum Literal {
 impl PartialEq for Literal {
     fn eq(&self, other: &Self) -> bool {
         match self {
+            Literal::Null => {
+                if let Literal::Null = other {
+                    true
+                } else {
+                    false
+                }
+            }
             Literal::Float(a) => {
                 if let Literal::Float(b) = other {
                     a.to_bits() == b.to_bits()
@@ -213,6 +221,7 @@ impl Hash for Literal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match *self {
+            Literal::Null => {}
             Literal::Float(x) => x.to_bits().hash(state),
             Literal::Integer(x) => x.hash(state),
             Literal::Boolean(x) => x.hash(state),
