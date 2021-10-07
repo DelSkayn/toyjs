@@ -210,18 +210,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             },
             Expr::UnaryPrefix(op, expr) => match op {
                 PrefixOperator::Not => {
-                    let expr = self.compile_expr(None, expr);
+                    // It seems that binary expressions do not shortcut through a not evaluation.
+                    let expr = self.compile_expr(None, expr).eval(self);
                     let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.registers.free_temp(expr.register);
+                    self.registers.free_temp(expr);
                     self.instructions.push(Instruction::Not {
                         dst: dst.0,
-                        src: expr.register.0 as u16,
+                        src: expr.0 as u16,
                     });
-                    ExprValue {
-                        register: expr.register,
-                        true_list: expr.false_list,
-                        false_list: expr.true_list,
-                    }
+                    ExprValue::new_in(dst, self.alloc.clone())
                 }
                 _ => todo!(),
             },
