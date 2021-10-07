@@ -46,6 +46,15 @@ pub struct Object {
     values: HashMap<KeyValue, JSValue>,
 }
 
+impl Object {
+    pub fn new() -> Self {
+        Object {
+            prototype: None,
+            values: HashMap::default(),
+        }
+    }
+}
+
 unsafe impl Trace for Object {
     fn needs_trace() -> bool
     where
