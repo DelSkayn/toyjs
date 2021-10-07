@@ -10,18 +10,28 @@ use crate::{lexical_info::SymbolInfo, register::Register, Compiler, InstructionI
 use std::alloc::Allocator;
 
 pub struct ExprValue<A: Allocator> {
-    pub place: Register,
-    true_list: Vec<InstructionId, A>,
-    false_list: Vec<InstructionId, A>,
+    pub register: Register,
+    pub true_list: Vec<InstructionId, A>,
+    pub false_list: Vec<InstructionId, A>,
 }
 
 impl<A: Allocator + Clone> ExprValue<A> {
     pub fn new_in(register: Register, alloc: A) -> Self {
         ExprValue {
-            place: register,
+            register,
             true_list: Vec::new_in(alloc.clone()),
             false_list: Vec::new_in(alloc),
         }
+    }
+
+    pub fn eval(self, this: &mut Compiler<A>) -> Register {
+        self.true_list
+            .into_iter()
+            .for_each(|x| this.patch_jump(x, this.next_instruction_id()));
+        self.false_list
+            .into_iter()
+            .for_each(|x| this.patch_jump(x, this.next_instruction_id()));
+        self.register
     }
 }
 
@@ -37,12 +47,12 @@ impl AssignmentTarget {
         match assign {
             Expr::Prime(PrimeExpr::Variable(symbol)) => AssignmentTarget::Variable(*symbol),
             Expr::UnaryPostfix(expr, PostfixOperator::Dot(name)) => {
-                let reg = this.compile_expr(None, expr).place;
+                let reg = this.compile_expr(None, expr).eval(this);
                 AssignmentTarget::Dot(reg, *name)
             }
             Expr::UnaryPostfix(expr, PostfixOperator::Index(index)) => {
-                let tgt = this.compile_expr(None, expr).place;
-                let index_expr = this.compile_expr(None, index).place;
+                let tgt = this.compile_expr(None, expr).eval(this);
+                let index_expr = this.compile_expr(None, index).eval(this);
                 AssignmentTarget::Index(tgt, index_expr)
             }
             x => panic!("expression is not assignable: {:?}", x),
@@ -156,13 +166,13 @@ macro_rules! match_binary_instruction{
             $(
                 BinaryOperator::$op => {$this.instructions.push(Instruction::$instr{
                     dst: $dst.0,
-                    left: $left.place.0,
-                    righ: $right.place.0,
+                    left: $left.0,
+                    righ: $right.0,
                 });
                 return ExprValue::new_in($dst, $this.alloc.clone())
                 }
             )*
-                _ => {}
+                _ => unreachable!()
         }
     };
 }
@@ -184,7 +194,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Expr::Binary(left, op, right) => self.compile_binary_expr(placement, left, op, right),
             Expr::UnaryPostfix(expr, op) => match *op {
                 PostfixOperator::Dot(name) => {
-                    let expr = self.compile_expr(None, expr).place;
+                    let expr = self.compile_expr(None, expr).eval(self);
                     let key = self.compile_literal(None, Literal::String(name));
                     self.registers.free_temp(expr);
                     self.registers.free_temp(key);
@@ -202,13 +212,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 PrefixOperator::Not => {
                     let expr = self.compile_expr(None, expr);
                     let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.registers.free_temp(expr.place);
+                    self.registers.free_temp(expr.register);
                     self.instructions.push(Instruction::Not {
                         dst: dst.0,
-                        src: expr.place.0 as u16,
+                        src: expr.register.0 as u16,
                     });
                     ExprValue {
-                        place: dst,
+                        register: expr.register,
                         true_list: expr.false_list,
                         false_list: expr.true_list,
                     }
@@ -225,13 +235,55 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         op: &BinaryOperator<A>,
         right: &Expr<A>,
     ) -> ExprValue<A> {
-        let left = self.compile_expr(None, left);
-        let right = self.compile_expr(None, right);
+        let mut left = self.compile_expr(None, left);
 
-        self.registers.free_temp(left.place);
-        self.registers.free_temp(right.place);
+        match op {
+            BinaryOperator::And => {
+                left.false_list
+                    .push(self.instructions.push(Instruction::JumpFalse {
+                        cond: left.register.0,
+                        tgt: 1,
+                    }));
+                for i in left.true_list.iter().copied() {
+                    self.patch_jump(i, self.next_instruction_id());
+                }
+                let mut right = self.compile_expr(Some(left.register), right);
+                left.false_list.append(&mut right.false_list);
+                return ExprValue {
+                    register: left.register,
+                    true_list: right.true_list,
+                    false_list: left.false_list,
+                };
+            }
+            BinaryOperator::Or => {
+                left.true_list
+                    .push(self.instructions.push(Instruction::JumpTrue {
+                        cond: left.register.0,
+                        tgt: 1,
+                    }));
+                for i in left.false_list.iter().copied() {
+                    self.patch_jump(i, self.next_instruction_id());
+                }
+                let mut right = self.compile_expr(Some(left.register), right);
+                left.true_list.append(&mut right.true_list);
+                return ExprValue {
+                    register: left.register,
+                    true_list: left.true_list,
+                    false_list: right.false_list,
+                };
+            }
+            BinaryOperator::Index => todo!(),
+            BinaryOperator::TenaryNull => todo!(),
+            BinaryOperator::NullCoalessing(_) => todo!(),
+            BinaryOperator::Ternary(_) => todo!(),
+            _ => {}
+        }
+
+        let left = left.eval(self);
+        let right = self.compile_expr(None, right).eval(self);
         let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-
+        self.registers.free_temp(left);
+        self.registers.free_temp(right);
         // Simple macro to shorten repetitive code.
         // each entry results in roughly
         // ```
@@ -263,16 +315,6 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             In => In,
             InstanceOf => InstanceOf,
         });
-
-        match op {
-            BinaryOperator::And => todo!(),
-            BinaryOperator::Or => todo!(),
-            BinaryOperator::Index => todo!(),
-            BinaryOperator::TenaryNull => todo!(),
-            BinaryOperator::NullCoalessing(_) => todo!(),
-            BinaryOperator::Ternary(_) => todo!(),
-            _ => unreachable!(),
-        }
     }
 
     fn compile_assignment(
@@ -286,13 +328,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let place = assign_target.placment(self);
 
         if let AssignOperator::Assign = op {
-            let expr = self.compile_expr(place, value).place;
+            let expr = self.compile_expr(place, value).eval(self);
             assign_target.compile_assign(self, expr);
             return expr;
         }
 
         let assign_value = assign_target.compile_use(self);
-        let expr = self.compile_expr(None, value).place;
+        let expr = self.compile_expr(None, value).eval(self);
         let dst = place
             .or(placement)
             .unwrap_or_else(|| self.registers.alloc_temp());

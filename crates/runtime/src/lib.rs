@@ -7,6 +7,8 @@ pub mod instructions;
 pub mod value;
 use instructions::{Instruction, InstructionBuffer, InstructionReader};
 pub use value::JSValue;
+pub mod object;
+use object::Object;
 
 pub struct ByteFunction {
     pub offset: usize,
@@ -47,4 +49,8 @@ impl fmt::Display for ByteCode {
         }
         Ok(())
     }
+}
+
+pub struct Realm {
+    global: Gc<Object>,
 }
