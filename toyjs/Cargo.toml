@@ -27,3 +27,6 @@ harness = false
 
 [[bin]]
 name = "cli"
+
+[[bin]]
+name = "temp_test"
