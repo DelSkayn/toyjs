@@ -15,7 +15,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         place
                     })
                     .last()
-                    .expect("expression node did not have atleast a single expression"),
+                    .expect("expression node did not have, atleast, a single expression"),
             ),
             Stmt::If(cond, r#if, r#else) => {
                 self.compile_if(cond, r#if, r#else);
@@ -24,8 +24,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Stmt::Let(symbol, expr) => {
                 let reg = self.registers.alloc_symbol(*symbol);
                 //TODO captured variables
-                expr.as_ref()
-                    .map(|x| self.compile_expr(Some(reg), x).eval(self))
+                if let Some(x) = expr.as_ref() {
+                    Some(self.compile_expr(Some(reg), x).eval(self))
+                } else {
+                    self.compile_literal(Some(reg), Literal::Undefined);
+                    None
+                }
             }
             Stmt::Const(symbol, expr) => {
                 let reg = self.registers.alloc_symbol(*symbol);
