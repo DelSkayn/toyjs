@@ -1,12 +1,24 @@
 #![allow(dead_code)]
+#![feature(allocator_api)]
 
-use std::fmt;
+use ast::SymbolTable;
+
 pub mod gc;
+use common::interner::Interner;
+use gc::Trace;
 pub use gc::{Gc, GcArena};
 pub mod instructions;
 pub mod value;
 use instructions::{Instruction, InstructionBuffer, InstructionReader};
 pub use value::JSValue;
+pub mod object;
+use object::Object;
+pub mod stack;
+use stack::Stack;
+
+pub mod exec;
+
+use std::{alloc::Global, collections::VecDeque, fmt};
 
 pub struct ByteFunction {
     pub offset: usize,
@@ -18,6 +30,18 @@ pub struct ByteCode {
     pub constants: Box<[JSValue]>,
     pub functions: Box<[ByteFunction]>,
     pub instructions: InstructionBuffer,
+}
+
+unsafe impl Trace for ByteCode {
+    // Bytecode constants only contain values which do not need to be traced.
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    fn trace(&self, _: gc::Ctx) {}
 }
 
 impl fmt::Display for ByteCode {
@@ -46,5 +70,53 @@ impl fmt::Display for ByteCode {
             }
         }
         Ok(())
+    }
+}
+
+pub struct Task {
+    pub bc: Gc<ByteCode>,
+    pub function: usize,
+}
+
+pub struct Realm {
+    pub symbol_table: SymbolTable<Global>,
+    pub interner: Interner,
+    pub global: Gc<Object>,
+    pub gc: GcArena,
+    pub tasks: VecDeque<Task>,
+    pub stack: Stack,
+}
+
+impl Realm {
+    pub fn new() -> Self {
+        let gc = GcArena::new();
+        let global = gc.allocate(Object::new());
+
+        Realm {
+            symbol_table: SymbolTable::new(),
+            interner: Interner::new(),
+            global,
+            tasks: VecDeque::new(),
+            gc,
+            stack: Stack::new(),
+        }
+    }
+
+    pub fn schedule_task(&mut self, bc: Gc<ByteCode>, function: usize) {
+        self.tasks.push_back(Task { bc, function })
+    }
+
+    pub fn execute_pending_tasks(&mut self) {
+        while let Some(task) = self.tasks.pop_front() {
+            self.execute_task(&task);
+        }
+    }
+
+    pub fn execute_task(&mut self, task: &Task) -> JSValue {
+        let function = &task.bc.functions[task.function];
+        let mut reader =
+            InstructionReader::new(&task.bc.instructions, function.offset, function.size);
+        self.stack.enter_call(function.registers);
+        unsafe { self.execute(&mut reader, task.bc) }
     }
 }

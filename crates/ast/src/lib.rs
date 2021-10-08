@@ -1,5 +1,6 @@
 #![feature(allocator_api)]
 
+use derivative::Derivative;
 use std::{alloc::Allocator, hash::Hash, mem};
 
 //pub use common::bump_list::List as Vec;
@@ -9,18 +10,22 @@ use std::cmp::PartialEq;
 pub mod symbol_table;
 pub use symbol_table::{ScopeId, SymbolId, SymbolTable, SymbolTableBuilder};
 
-#[derive(Debug)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub struct Script<A: Allocator>(pub Vec<Stmt<A>, A>);
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Rest {
     BindingIdent(SymbolId),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub struct Params<A: Allocator>(pub Vec<SymbolId, A>, pub Option<Rest>);
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
     Let(SymbolId, Option<Expr<A>>),
@@ -38,7 +43,8 @@ pub enum Stmt<A: Allocator> {
     Return(Option<Vec<Expr<A>, A>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum BinaryOperator<A: Allocator> {
     Ternary(Box<Expr<A>, A>),
     NullCoalessing(Box<Expr<A>, A>),
@@ -70,7 +76,8 @@ pub enum BinaryOperator<A: Allocator> {
     Index,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum AssignOperator {
     Assign,
     Add,
@@ -87,7 +94,8 @@ pub enum AssignOperator {
     BitwiseOr,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum PrefixOperator {
     Not,
     Delete,
@@ -100,7 +108,8 @@ pub enum PrefixOperator {
     SubtractOne,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum PostfixOperator<A: Allocator> {
     AddOne,
     SubtractOne,
@@ -109,7 +118,8 @@ pub enum PostfixOperator<A: Allocator> {
     Call(Vec<Expr<A>, A>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Expr<A: Allocator> {
     Binary(Box<Expr<A>, A>, BinaryOperator<A>, Box<Expr<A>, A>),
     Assign(Box<Expr<A>, A>, AssignOperator, Box<Expr<A>, A>),
@@ -127,7 +137,10 @@ impl<A: Allocator> Expr<A> {
                 PrimeExpr::Covered(_) => false,
                 PrimeExpr::Object(_) => false,
             },
-            Expr::Assign(..) => false,
+            Expr::Assign(ref left, ref op, _) => match op {
+                AssignOperator::Assign => left.is_assignable(),
+                _ => false,
+            },
             Expr::Binary(..) => false,
             Expr::UnaryPrefix(..) => false,
             Expr::UnaryPostfix(_, ref op) => match *op {
@@ -141,7 +154,8 @@ impl<A: Allocator> Expr<A> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum PrimeExpr<A: Allocator> {
     Literal(Literal),
     Variable(SymbolId),
@@ -149,8 +163,11 @@ pub enum PrimeExpr<A: Allocator> {
     Object(Vec<(StringId, Expr<A>), A>),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Derivative, Clone, Copy)]
+#[derivative(Debug(bound = ""))]
 pub enum Literal {
+    Null,
+    Undefined,
     String(StringId),
     Integer(i32),
     Float(f64),
@@ -160,6 +177,20 @@ pub enum Literal {
 impl PartialEq for Literal {
     fn eq(&self, other: &Self) -> bool {
         match self {
+            Literal::Null => {
+                if let Literal::Null = other {
+                    true
+                } else {
+                    false
+                }
+            }
+            Literal::Undefined => {
+                if let Literal::Undefined = other {
+                    true
+                } else {
+                    false
+                }
+            }
             Literal::Float(a) => {
                 if let Literal::Float(b) = other {
                     a.to_bits() == b.to_bits()
@@ -198,6 +229,8 @@ impl Hash for Literal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match *self {
+            Literal::Null => {}
+            Literal::Undefined => {}
             Literal::Float(x) => x.to_bits().hash(state),
             Literal::Integer(x) => x.hash(state),
             Literal::Boolean(x) => x.hash(state),

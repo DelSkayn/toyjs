@@ -15,7 +15,10 @@ use runtime::{
     ByteCode, ByteFunction,
 };
 
-use std::alloc::{Allocator, Global};
+use std::{
+    alloc::{Allocator, Global},
+    convert::TryInto,
+};
 
 mod expr;
 mod register;
@@ -97,5 +100,52 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             functions: this.functions.into_boxed_slice(),
             instructions,
         }
+    }
+
+    fn patch_jump(&mut self, id: InstructionId, to: InstructionId) {
+        let jump = to.0 as i64 - id.0 as i64;
+        match self.instructions[id] {
+            Instruction::JumpTrue { cond, ref mut tgt } => {
+                if let Ok(x) = jump.try_into() {
+                    *tgt = x;
+                } else {
+                    // TODO; propagate error
+                    self.instructions[id] = Instruction::JumpTrueL {
+                        cond,
+                        null: 0,
+                        tgt: jump.try_into().unwrap(),
+                    }
+                }
+            }
+            Instruction::JumpFalse { cond, ref mut tgt } => {
+                if let Ok(x) = jump.try_into() {
+                    *tgt = x;
+                } else {
+                    // TODO; propagate error
+                    self.instructions[id] = Instruction::JumpFalseL {
+                        cond,
+                        null: 0,
+                        tgt: jump.try_into().unwrap(),
+                    }
+                }
+            }
+            Instruction::Jump { ref mut tgt, .. } => {
+                if let Ok(x) = jump.try_into() {
+                    *tgt = x;
+                } else {
+                    // TODO; propagate error
+                    self.instructions[id] = Instruction::JumpL {
+                        nul0: 0,
+                        nul1: 0,
+                        tgt: jump.try_into().unwrap(),
+                    }
+                }
+            }
+            _ => panic!("instruction is not a patchable jump"),
+        }
+    }
+
+    fn next_instruction_id(&self) -> InstructionId {
+        InstructionId::new(self.instructions.len())
     }
 }
