@@ -1,7 +1,7 @@
 use crate::{
     gc::Gc,
     instructions::{opcode, InstructionReader},
-    ByteCode, JSValue, Realm,
+    value, ByteCode, JSValue, Realm,
 };
 
 impl Realm {
@@ -39,6 +39,25 @@ impl Realm {
                         todo!()
                     }
                 }
+                opcode::Jump => {
+                    instr.read_u8();
+                    let tgt = instr.read_i16();
+                    instr.jump(tgt as i32)
+                }
+                opcode::JumpFalse => {
+                    let cond = self.stack.read(instr.read_u8());
+                    let tgt = instr.read_i16();
+                    if self.is_nullish(cond) {
+                        instr.jump(tgt as i32)
+                    }
+                }
+                opcode::JumpTrue => {
+                    let cond = self.stack.read(instr.read_u8());
+                    let tgt = instr.read_i16();
+                    if !self.is_nullish(cond) {
+                        instr.jump(tgt as i32)
+                    }
+                }
                 opcode::ReturnUndefined => return JSValue::undefined(),
                 opcode::Return => {
                     let reg = instr.read_u8();
@@ -46,6 +65,23 @@ impl Realm {
                 }
                 _ => todo!(),
             }
+        }
+    }
+
+    unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
+        match value.tag() {
+            value::TAG_INT => value.into_int() == 0,
+            value::TAG_BASE => match value.0.bits {
+                value::VALUE_NULL => true,
+                value::VALUE_UNDEFINED => true,
+                value::VALUE_FALSE => true,
+                _ => false,
+            },
+            value::TAG_STRING => *value.into_string() == "",
+            value::TAG_OBJECT => false,
+            value::TAG_FUNCTION => false,
+            value::TAG_SYMBOL => todo!(),
+            _ => panic!("invalid tag"),
         }
     }
 

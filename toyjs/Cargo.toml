@@ -15,7 +15,6 @@ parser = { package="toyjs_parser",path = "../crates/parser/" }
 compiler = { package="toyjs_compiler",path = "../crates/compiler/" }
 runtime = { package="toyjs_runtime",path = "../crates/runtime/" }
 bumpalo = { version = "3.4.0", features = ["allocator_api"]}
-gc = "0.3.6"
 
 [dev-dependencies]
 criterion = "0.3.3"
