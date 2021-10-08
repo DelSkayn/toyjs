@@ -56,6 +56,10 @@ impl<T: Trace + 'static> Gc<T> {
             self.0.as_ref().value.get()
         }
     }
+
+    pub fn ptr_eq(self, other: Self) -> bool {
+        self.0.as_ptr() == other.0.as_ptr()
+    }
 }
 
 impl<T: Trace> Deref for Gc<T> {
@@ -65,3 +69,11 @@ impl<T: Trace> Deref for Gc<T> {
         unsafe { &(*self.0.as_ref().value.get()) }
     }
 }
+
+impl<T: PartialEq + Trace> PartialEq for Gc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        (**self) == (**other)
+    }
+}
+
+impl<T: Eq + Trace> Eq for Gc<T> {}
