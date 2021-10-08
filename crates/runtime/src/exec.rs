@@ -15,6 +15,39 @@ impl Realm {
                     self.stack
                         .write(dst, *bc.constants.get_unchecked(cons as usize));
                 }
+                opcode::LoadGlobal => {
+                    let dst = instr.read_u8();
+                    instr.read_u16();
+                    self.stack.write(dst, JSValue::from(self.global));
+                }
+                opcode::Move => {
+                    let dst = instr.read_u8();
+                    let src = instr.read_u16() as u8;
+                    self.stack.write(dst, self.stack.read(src))
+                }
+                opcode::IndexAssign => {
+                    let obj = self.stack.read(instr.read_u8());
+                    let key = self.stack.read(instr.read_u8());
+                    let val = self.stack.read(instr.read_u8());
+                    match obj.tag() {
+                        value::TAG_OBJECT => {
+                            obj.into_object().index_set(key, val, self);
+                        }
+                        _ => todo!(),
+                    }
+                }
+                opcode::Index => {
+                    let dst = instr.read_u8();
+                    let obj = self.stack.read(instr.read_u8());
+                    let key = self.stack.read(instr.read_u8());
+                    match obj.tag() {
+                        value::TAG_OBJECT => {
+                            let res = obj.into_object().index(key, self);
+                            self.stack.write(dst, res)
+                        }
+                        _ => todo!(),
+                    }
+                }
                 opcode::Add => {
                     let dst = instr.read_u8();
                     let left = self.stack.read(instr.read_u8());
@@ -38,6 +71,12 @@ impl Realm {
                     } else {
                         todo!()
                     }
+                }
+                opcode::Not => {
+                    let dst = instr.read_u8();
+                    let src = self.stack.read(instr.read_u16() as u8);
+                    let nullish = self.is_nullish(src);
+                    self.stack.write(dst, JSValue::from(nullish))
                 }
                 opcode::Jump => {
                     instr.read_u8();
@@ -68,7 +107,7 @@ impl Realm {
         }
     }
 
-    unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
+    pub unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
         match value.tag() {
             value::TAG_INT => value.into_int() == 0,
             value::TAG_BASE => match value.0.bits {
@@ -80,6 +119,25 @@ impl Realm {
             value::TAG_STRING => *value.into_string() == "",
             value::TAG_OBJECT => false,
             value::TAG_FUNCTION => false,
+            value::TAG_SYMBOL => todo!(),
+            _ => panic!("invalid tag"),
+        }
+    }
+
+    pub unsafe fn coerce_string(&mut self, value: JSValue) -> String {
+        match value.tag() {
+            value::TAG_INT => format!("{}", value.into_int()),
+            value::TAG_BASE => match value.0.bits {
+                value::VALUE_NULL => "null".to_string(),
+                value::VALUE_UNDEFINED => "undefined".to_string(),
+                value::VALUE_TRUE => "true".to_string(),
+                value::VALUE_FALSE => "false".to_string(),
+                _ => panic!("invalid base value"),
+            },
+            // TODO find a better way?
+            value::TAG_STRING => (*value.into_string()).clone(),
+            value::TAG_OBJECT => "[object Object]".to_string(),
+            value::TAG_FUNCTION => todo!(),
             value::TAG_SYMBOL => todo!(),
             _ => panic!("invalid tag"),
         }

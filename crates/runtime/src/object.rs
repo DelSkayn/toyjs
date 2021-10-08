@@ -1,11 +1,12 @@
 use std::{
+    cell::UnsafeCell,
     hash::{Hash, Hasher},
     mem,
 };
 
 use crate::{
     gc::{Gc, Trace},
-    JSValue,
+    JSValue, Realm,
 };
 use common::collections::HashMap;
 
@@ -43,15 +44,28 @@ impl Hash for KeyValue {
 
 pub struct Object {
     prototype: Option<Gc<Object>>,
-    values: HashMap<KeyValue, JSValue>,
+    values: UnsafeCell<HashMap<String, JSValue>>,
 }
 
 impl Object {
     pub fn new() -> Self {
         Object {
             prototype: None,
-            values: HashMap::default(),
+            values: UnsafeCell::new(HashMap::default()),
         }
+    }
+
+    pub unsafe fn index(&self, key: JSValue, realm: &mut Realm) -> JSValue {
+        let string = realm.coerce_string(key);
+        (*self.values.get())
+            .get(&string)
+            .copied()
+            .unwrap_or(JSValue::undefined())
+    }
+
+    pub unsafe fn index_set(&self, key: JSValue, value: JSValue, realm: &mut Realm) {
+        let string = realm.coerce_string(key);
+        (*self.values.get()).insert(string, value);
     }
 }
 
@@ -64,12 +78,14 @@ unsafe impl Trace for Object {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        if let Some(x) = self.prototype.as_ref() {
-            x.trace(ctx);
-        }
-        for (k, v) in self.values.iter() {
-            k.trace(ctx);
-            v.trace(ctx);
+        unsafe {
+            if let Some(x) = self.prototype.as_ref() {
+                x.trace(ctx);
+            }
+            for (_, v) in (*self.values.get()).iter() {
+                //k.trace(ctx);
+                v.trace(ctx);
+            }
         }
     }
 }
