@@ -131,11 +131,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 let expr = Box::new_in(expr, self.alloc.clone());
                 BinaryOperator::Ternary(expr)
             }
-            t!("??") => {
-                let expr = self.parse_ops_rec(r_bp)?;
-                let expr = Box::new_in(expr, self.alloc.clone());
-                BinaryOperator::NullCoalessing(expr)
-            }
+            t!("??") => BinaryOperator::NullCoalessing,
             t!("?.") => BinaryOperator::TenaryNull,
             t!("||") => BinaryOperator::Or,
             t!("&&") => BinaryOperator::And,

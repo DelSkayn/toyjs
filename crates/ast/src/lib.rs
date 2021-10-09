@@ -47,7 +47,7 @@ pub enum Stmt<A: Allocator> {
 #[derivative(Debug(bound = ""))]
 pub enum BinaryOperator<A: Allocator> {
     Ternary(Box<Expr<A>, A>),
-    NullCoalessing(Box<Expr<A>, A>),
+    NullCoalessing,
     TenaryNull,
     In,
     InstanceOf,
