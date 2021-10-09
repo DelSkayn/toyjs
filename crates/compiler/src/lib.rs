@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 #![feature(allocator_api)]
 
-use ast::{ScopeId, Script, SymbolTable};
+use ast::{Params, ScopeId, Script, Stmt, SymbolId, SymbolTable};
 use common::{
     interner::Interner,
     newtype_key,
@@ -31,11 +31,36 @@ newtype_key! {
     pub struct InstructionId(u32);
 }
 
+impl InstructionId {
+    pub fn requires_long(self) -> bool {
+        self.0 as u16 as u32 == self.0
+    }
+}
+
+newtype_key! {
+    pub struct FunctionId(u32);
+}
+
+impl FunctionId {
+    pub fn requires_long(self) -> bool {
+        self.0 as u16 as u32 != self.0
+    }
+}
+
+pub struct PendingFunction<'a, A: Allocator> {
+    id: FunctionId,
+    scope: ScopeId,
+    args: &'a Params<A>,
+    stmts: &'a Vec<Stmt<A>, A>,
+}
+
 pub struct Compiler<'a, A: Allocator> {
     symbol_table: &'a SymbolTable<A>,
     instructions: SlotStack<Instruction, InstructionId, A>,
     registers: Registers,
     functions: Vec<ByteFunction>,
+    pending_functions: Vec<PendingFunction<'a, A>, A>,
+    next_function_id: u32,
     constants: Constants<'a, Global>,
     lexical_info: LexicalInfo<A>,
     alloc: A,
@@ -59,13 +84,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 size: 0,
                 registers: 0,
             }],
+            pending_functions: Vec::new_in(alloc.clone()),
+            next_function_id: 1,
             constants: Constants::new_in(interner, gc, Global),
             alloc,
         }
     }
 
     pub fn compile_script(
-        script: &Script<A>,
+        script: &'a Script<A>,
         symbol_table: &'a SymbolTable<A>,
         interner: &'a Interner,
         gc: &'a GcArena,
@@ -73,10 +100,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     ) -> ByteCode {
         let mut this = Compiler::new(symbol_table, interner, gc, symbol_table.global(), alloc);
 
-        let mut res = None;
-        for stmt in script.0.iter() {
-            res = this.compile_stmt(stmt);
-        }
+        let res = script
+            .0
+            .iter()
+            .map(|stmt| this.compile_stmt(stmt))
+            .last()
+            .flatten();
         if let Some(res) = res {
             this.instructions.push(Instruction::Return {
                 ret: res.0,
@@ -87,12 +116,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
         }
 
-        let constants = this.constants.into_constants();
-
-        let function = this.functions.last_mut().unwrap();
+        let function = &mut this.functions[0];
         function.registers = this.registers.registers_needed();
         function.size = this.instructions.len();
 
+        while let Some(x) = this.pending_functions.pop() {
+            this.compile_function(x);
+        }
+
+        let constants = this.constants.into_constants();
         let instructions = InstructionBuffer::from_instructions(&this.instructions);
 
         ByteCode {
@@ -100,6 +132,43 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             functions: this.functions.into_boxed_slice(),
             instructions,
         }
+    }
+
+    fn compile_function(&mut self, func: PendingFunction<'a, A>) {
+        self.registers.clear();
+        self.functions[func.id.0 as usize].offset = self.instructions.len();
+
+        func.stmts.iter().for_each(|stmt| {
+            self.compile_stmt(stmt);
+        });
+        self.instructions
+            .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+
+        self.functions[func.id.0 as usize].registers = self.registers.registers_needed();
+        self.functions[func.id.0 as usize].size =
+            self.instructions.len() - self.functions[func.id.0 as usize].offset;
+    }
+
+    fn push_pending_function(
+        &mut self,
+        scope: ScopeId,
+        args: &'a Params<A>,
+        stmts: &'a Vec<Stmt<A>, A>,
+    ) -> FunctionId {
+        let id = FunctionId(self.next_function_id);
+        self.next_function_id = self.next_function_id.checked_add(1).unwrap();
+        self.functions.push(ByteFunction {
+            offset: 0,
+            size: 0,
+            registers: 0,
+        });
+        self.pending_functions.push(PendingFunction {
+            id,
+            scope,
+            args,
+            stmts,
+        });
+        id
     }
 
     fn patch_jump(&mut self, id: InstructionId, to: InstructionId) {

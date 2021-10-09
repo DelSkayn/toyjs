@@ -29,6 +29,14 @@ impl Registers {
         }
     }
 
+    pub fn clear(&mut self) {
+        for i in 0..self.max_allocated as usize {
+            self.registers[i] = AllocValue::Free;
+        }
+        self.cur_allocated = 0;
+        self.max_allocated = 0;
+    }
+
     pub fn alloc_temp(&mut self) -> Register {
         let reg = self
             .registers
