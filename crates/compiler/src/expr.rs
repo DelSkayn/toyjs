@@ -248,10 +248,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         op: &BinaryOperator<A>,
         right: &Expr<A>,
     ) -> ExprValue<A> {
-        let mut left = self.compile_expr(None, left);
-
         match op {
             BinaryOperator::And => {
+                let mut left = self.compile_expr(None, left);
                 left.false_list
                     .push(self.instructions.push(Instruction::JumpFalse {
                         cond: left.register.0,
@@ -269,6 +268,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 };
             }
             BinaryOperator::Or => {
+                let mut left = self.compile_expr(None, left);
                 left.true_list
                     .push(self.instructions.push(Instruction::JumpTrue {
                         cond: left.register.0,
@@ -286,7 +286,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 };
             }
             BinaryOperator::Index => {
-                let left = left.eval(self);
+                let left = self.compile_expr(None, left).eval(self);
                 let right = self.compile_expr(None, right).eval(self);
                 self.registers.free_temp(left);
                 self.registers.free_temp(right);
@@ -299,8 +299,25 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 return ExprValue::new_in(dst, self.alloc.clone());
             }
             BinaryOperator::TenaryNull => todo!(),
-            BinaryOperator::NullCoalessing(_) => todo!(),
+            BinaryOperator::NullCoalessing => {
+                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                self.compile_expr(Some(dst), left).eval(self);
+                let tmp = self.registers.alloc_temp();
+                self.instructions.push(Instruction::IsNullish {
+                    op: dst.0 as u16,
+                    dst: tmp.0,
+                });
+                self.registers.free_temp(tmp);
+                let jump = self.instructions.push(Instruction::JumpFalse {
+                    cond: tmp.0,
+                    tgt: 1,
+                });
+                self.compile_expr(Some(dst), right).eval(self);
+                self.patch_jump(jump, self.next_instruction_id());
+                return ExprValue::new_in(dst, self.alloc.clone());
+            }
             BinaryOperator::Ternary(inner) => {
+                let left = self.compile_expr(None, left);
                 left.true_list
                     .into_iter()
                     .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
@@ -326,6 +343,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             _ => {}
         }
 
+        let left = self.compile_expr(None, left);
         let left = left.eval(self);
         let right = self.compile_expr(None, right).eval(self);
         let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());

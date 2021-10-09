@@ -72,11 +72,17 @@ impl Realm {
                         todo!()
                     }
                 }
-                opcode::Not => {
+                opcode::IsNullish => {
                     let dst = instr.read_u8();
                     let src = self.stack.read(instr.read_u16() as u8);
                     let nullish = self.is_nullish(src);
                     self.stack.write(dst, JSValue::from(nullish))
+                }
+                opcode::Not => {
+                    let dst = instr.read_u8();
+                    let src = self.stack.read(instr.read_u16() as u8);
+                    let falsish = self.is_falsish(src);
+                    self.stack.write(dst, JSValue::from(falsish))
                 }
                 opcode::Jump => {
                     instr.read_u8();
@@ -86,14 +92,14 @@ impl Realm {
                 opcode::JumpFalse => {
                     let cond = self.stack.read(instr.read_u8());
                     let tgt = instr.read_i16();
-                    if self.is_nullish(cond) {
+                    if self.is_falsish(cond) {
                         instr.jump(tgt as i32)
                     }
                 }
                 opcode::JumpTrue => {
                     let cond = self.stack.read(instr.read_u8());
                     let tgt = instr.read_i16();
-                    if !self.is_nullish(cond) {
+                    if !self.is_falsish(cond) {
                         instr.jump(tgt as i32)
                     }
                 }
@@ -107,7 +113,7 @@ impl Realm {
         }
     }
 
-    pub unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
+    pub unsafe fn is_falsish(&mut self, value: JSValue) -> bool {
         match value.tag() {
             value::TAG_INT => value.into_int() == 0,
             value::TAG_BASE => match value.0.bits {
@@ -121,6 +127,17 @@ impl Realm {
             value::TAG_FUNCTION => false,
             value::TAG_SYMBOL => todo!(),
             _ => panic!("invalid tag"),
+        }
+    }
+
+    pub unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
+        match value.tag() {
+            value::TAG_BASE => match value.0.bits {
+                value::VALUE_NULL => true,
+                value::VALUE_UNDEFINED => true,
+                _ => false,
+            },
+            _ => false,
         }
     }
 
