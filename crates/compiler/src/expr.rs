@@ -285,10 +285,44 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     false_list: right.false_list,
                 };
             }
-            BinaryOperator::Index => todo!(),
+            BinaryOperator::Index => {
+                let left = left.eval(self);
+                let right = self.compile_expr(None, right).eval(self);
+                self.registers.free_temp(left);
+                self.registers.free_temp(right);
+                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                self.instructions.push(Instruction::Index {
+                    obj: left.0,
+                    key: right.0,
+                    dst: dst.0,
+                });
+                return ExprValue::new_in(dst, self.alloc.clone());
+            }
             BinaryOperator::TenaryNull => todo!(),
             BinaryOperator::NullCoalessing(_) => todo!(),
-            BinaryOperator::Ternary(_) => todo!(),
+            BinaryOperator::Ternary(inner) => {
+                left.true_list
+                    .into_iter()
+                    .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+                let reg = left.register;
+                let jump = self.instructions.push(Instruction::JumpFalse {
+                    cond: reg.0,
+                    tgt: 1,
+                });
+                self.registers.free_temp(reg);
+                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                self.compile_expr(Some(dst), inner).eval(self);
+                let jump_after = self
+                    .instructions
+                    .push(Instruction::Jump { null: 0, tgt: 1 });
+                left.false_list
+                    .into_iter()
+                    .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+                self.patch_jump(jump, self.next_instruction_id());
+                self.compile_expr(Some(dst), right).eval(self);
+                self.patch_jump(jump_after, self.next_instruction_id());
+                return ExprValue::new_in(dst, self.alloc.clone());
+            }
             _ => {}
         }
 
