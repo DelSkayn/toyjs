@@ -1,24 +1,27 @@
 use ast::{Expr, Literal, Stmt};
 use runtime::instructions::Instruction;
 
-use crate::{register::Register, Compiler};
+use crate::{expr::ExprValue, register::Register, Compiler};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub(crate) fn compile_stmt(&mut self, stmt: &Stmt<A>) -> Option<Register> {
         match stmt {
-            Stmt::Expr(x) => Some(
-                x.iter()
-                    .map(|x| {
-                        let place = self.compile_expr(None, x).eval(self);
-                        self.registers.free_temp(place);
-                        place
-                    })
-                    .last()
-                    .expect("expression node did not have, atleast, a single expression"),
-            ),
+            Stmt::Expr(x) => {
+                let reg = self.compile_expressions(None, x).eval(self);
+                self.registers.free_temp(reg);
+                Some(reg)
+            }
             Stmt::If(cond, r#if, r#else) => {
                 self.compile_if(cond, r#if, r#else);
+                None
+            }
+            Stmt::While(cond, block) => {
+                self.compile_while(cond, block);
+                None
+            }
+            Stmt::DoWhile(block, cond) => {
+                self.compile_do_while(block, cond);
                 None
             }
             Stmt::Let(symbol, expr) => {
@@ -72,15 +75,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         r#if: &Stmt<A>,
         r#else: &Option<Box<Stmt<A>, A>>,
     ) {
-        for expr in cond[..cond.len() - 1].iter() {
-            let place = self.compile_expr(None, expr).eval(self);
-            self.registers.free_temp(place);
-        }
-        let expr = self.compile_expr(
-            None,
-            cond.last()
-                .expect("if condition did not have a single expression"),
-        );
+        let expr = self.compile_expressions(None, cond);
 
         let patch_if = self.instructions.push(Instruction::JumpFalse {
             cond: expr.register.0,
@@ -108,5 +103,62 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
             self.patch_jump(patch_if, self.next_instruction_id());
         }
+    }
+
+    pub fn compile_while(&mut self, cond: &Vec<Expr<A>, A>, block: &Stmt<A>) {
+        let before_cond = self.next_instruction_id();
+        let expr = self.compile_expressions(None, cond);
+        let patch_while = self.instructions.push(Instruction::JumpFalse {
+            cond: expr.register.0,
+            tgt: 1,
+        });
+        expr.true_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+
+        self.compile_stmt(block)
+            .map(|r| self.registers.free_temp(r));
+        let before_jump = before_cond.0 as i32 - self.next_instruction_id().0 as i32;
+        if before_jump as i16 as i32 == before_jump {
+            self.instructions.push(Instruction::Jump {
+                null: 0,
+                tgt: before_jump as i16,
+            });
+        } else {
+            self.instructions.push(Instruction::JumpL {
+                nul0: 0,
+                nul1: 0,
+                tgt: before_jump,
+            });
+        }
+        self.patch_jump(patch_while, self.next_instruction_id());
+        expr.false_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+    }
+
+    pub fn compile_do_while(&mut self, block: &Stmt<A>, cond: &Vec<Expr<A>, A>) {
+        let before_stmt = self.next_instruction_id();
+        self.compile_stmt(block);
+        let res = self.compile_expressions(None, cond);
+        let before_jump = before_stmt.0 as i32 - self.next_instruction_id().0 as i32;
+        if before_jump as i16 as i32 == before_jump {
+            self.instructions.push(Instruction::JumpTrue {
+                cond: res.register.0,
+                tgt: before_jump as i16,
+            });
+        } else {
+            self.instructions.push(Instruction::JumpTrueL {
+                cond: res.register.0,
+                null: 0,
+                tgt: before_jump,
+            });
+        }
+        res.true_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, before_stmt));
+        res.false_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
     }
 }
