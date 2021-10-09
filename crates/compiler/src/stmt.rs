@@ -5,7 +5,7 @@ use crate::{expr::ExprValue, register::Register, Compiler};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
-    pub(crate) fn compile_stmt(&mut self, stmt: &Stmt<A>) -> Option<Register> {
+    pub(crate) fn compile_stmt(&mut self, stmt: &'a Stmt<A>) -> Option<Register> {
         match stmt {
             Stmt::Expr(x) => {
                 let reg = self.compile_expressions(None, x).eval(self);
@@ -65,6 +65,41 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 }
             }
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
+            Stmt::Function(scope, symbol, params, stmts) => {
+                let id = self.push_pending_function(*scope, params, stmts);
+                //TODO local functions stmts
+                let tmp = self.registers.alloc_temp();
+                let glob = self.registers.alloc_temp();
+                if id.requires_long() {
+                    self.instructions.push(Instruction::LoadFunctionL {
+                        dst: tmp.0,
+                        null: 0,
+                        func: id.0,
+                    });
+                } else {
+                    self.instructions.push(Instruction::LoadFunction {
+                        dst: tmp.0,
+                        func: id.0 as u16,
+                    });
+                }
+                self.instructions.push(Instruction::LoadGlobal {
+                    dst: glob.0,
+                    null: 0,
+                });
+                let key = self.compile_literal(
+                    None,
+                    Literal::String(self.symbol_table.symbols()[*symbol].ident),
+                );
+                self.instructions.push(Instruction::IndexAssign {
+                    obj: glob.0,
+                    key: key.0,
+                    val: tmp.0,
+                });
+                self.registers.free_temp(key);
+                self.registers.free_temp(glob);
+                self.registers.free_temp(tmp);
+                None
+            }
             _ => todo!(),
         }
     }
@@ -72,8 +107,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub fn compile_if(
         &mut self,
         cond: &Vec<Expr<A>, A>,
-        r#if: &Stmt<A>,
-        r#else: &Option<Box<Stmt<A>, A>>,
+        r#if: &'a Stmt<A>,
+        r#else: &'a Option<Box<Stmt<A>, A>>,
     ) {
         let expr = self.compile_expressions(None, cond);
 
@@ -105,7 +140,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
-    pub fn compile_while(&mut self, cond: &Vec<Expr<A>, A>, block: &Stmt<A>) {
+    pub fn compile_while(&mut self, cond: &Vec<Expr<A>, A>, block: &'a Stmt<A>) {
         let before_cond = self.next_instruction_id();
         let expr = self.compile_expressions(None, cond);
         let patch_while = self.instructions.push(Instruction::JumpFalse {
@@ -137,7 +172,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
     }
 
-    pub fn compile_do_while(&mut self, block: &Stmt<A>, cond: &Vec<Expr<A>, A>) {
+    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &Vec<Expr<A>, A>) {
         let before_stmt = self.next_instruction_id();
         self.compile_stmt(block);
         let res = self.compile_expressions(None, cond);
