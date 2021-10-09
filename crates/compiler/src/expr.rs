@@ -178,6 +178,22 @@ macro_rules! match_binary_instruction{
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
+    pub(crate) fn compile_expressions(
+        &mut self,
+        placment: Option<Register>,
+        expr: &Vec<Expr<A>, A>,
+    ) -> ExprValue<A> {
+        for e in expr[..expr.len() - 1].iter() {
+            let expr = self.compile_expr(None, e).eval(self);
+            self.registers.free_temp(expr);
+        }
+        self.compile_expr(
+            placment,
+            expr.last()
+                .expect("expression node did not have atleast a single expression"),
+        )
+    }
+
     /// Compile the given expression
     /// Will put result of expression in given placement register if there is one.
     pub(crate) fn compile_expr(
@@ -379,11 +395,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_symbol_use(placement, *symbol),
                 self.alloc.clone(),
             ),
-            PrimeExpr::Covered(x) => x
-                .iter()
-                .map(|expr| self.compile_expr(placement, expr))
-                .last()
-                .expect("covered expression did not contain atleast a single expression"),
+            PrimeExpr::Covered(x) => self.compile_expressions(placement, x),
             PrimeExpr::Literal(x) => {
                 ExprValue::new_in(self.compile_literal(placement, *x), self.alloc.clone())
             }
