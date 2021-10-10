@@ -120,3 +120,18 @@ impl Realm {
         unsafe { self.execute(&mut reader, task.bc) }
     }
 }
+
+unsafe impl Trace for Realm {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: gc::Ctx) {
+        self.tasks.iter().for_each(|x| ctx.mark(x.bc));
+        self.stack.trace(ctx);
+        ctx.mark(self.global);
+    }
+}

@@ -42,7 +42,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
 
         for global_symbol in table.scopes()[table.global()].symbols.iter().copied() {
             match table.symbols()[global_symbol].decl_type {
-                DeclType::Global | DeclType::Implicit => {
+                DeclType::Var | DeclType::Implicit => {
                     symbol_info.insert(global_symbol, SymbolInfo::Global)
                 }
                 _ => {}
@@ -75,7 +75,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
                 match table.symbols()[used].decl_type {
                     // Implicits are always globals.
                     DeclType::Implicit => symbol_info.insert(used, SymbolInfo::Global),
-                    DeclType::Const | DeclType::Local | DeclType::Global => {
+                    DeclType::Const | DeclType::Let | DeclType::Var => {
                         let decl_scope = table.symbols()[used].decl_scope;
                         let decl_function = table.function_scope(decl_scope);
                         // Variable is captured

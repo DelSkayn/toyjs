@@ -76,7 +76,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         };
         let var = self
             .symbol_table
-            .define(id, DeclType::Local)
+            .define(id, DeclType::Let)
             .ok_or_else(|| Error {
                 kind: ErrorKind::RedeclaredVariable,
                 origin: self.last_span,
@@ -94,7 +94,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         };
         let var = self
             .symbol_table
-            .define(id, DeclType::Global)
+            .define(id, DeclType::Var)
             .ok_or_else(|| Error {
                 kind: ErrorKind::RedeclaredVariable,
                 origin: self.last_span,
@@ -131,8 +131,15 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     fn parse_function(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "function");
         expect_bind!(self, let name = "ident");
+        let var = self
+            .symbol_table
+            .define(name, DeclType::Var)
+            .ok_or_else(|| Error {
+                kind: ErrorKind::RedeclaredVariable,
+                origin: self.last_span,
+            })?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.parse_params()?;
+        let params = dbg!(self.parse_params()?);
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
             |s| s.r#return = true,
@@ -145,17 +152,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             },
         )?;
         self.symbol_table.pop_scope();
-        let var = self
-            .symbol_table
-            .define(name, DeclType::Global)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
         Ok(ast::Stmt::Function(scope, var, params, stmts))
     }
 
-    fn parse_params(&mut self) -> Result<ast::Params<A>> {
+    pub(crate) fn parse_params(&mut self) -> Result<ast::Params<A>> {
         expect!(self, "(");
         let mut stmt = Vec::new_in(self.alloc.clone());
         let mut rest = None;

@@ -14,12 +14,12 @@ use std::{
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum DeclType {
     /// Declared with `var`
-    Global,
+    Var,
     /// Declared implicitly by using a variable before it is declared.
     /// Forbidden in strict mode.
     Implicit,
     /// Declared with `let`
-    Local,
+    Let,
     /// Declared with `const`
     Const,
     /// Declared as a function argument
@@ -253,7 +253,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
 
     pub fn define(&mut self, name: StringId, kind: DeclType) -> Option<SymbolId> {
         match kind {
-            DeclType::Local | DeclType::Const | DeclType::Argument => {
+            DeclType::Let | DeclType::Const | DeclType::Argument => {
                 if self
                     .table
                     .symbols_by_ident
@@ -264,7 +264,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                     return None;
                 }
             }
-            DeclType::Global => {
+            DeclType::Var => {
                 let existing = self
                     .table
                     .symbols_by_ident
@@ -279,11 +279,11 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 if let Some(existing) = existing {
                     match self.table.symbols[existing].decl_type {
                         // Global may be redeclared without issue
-                        DeclType::Global => return Some(existing),
-                        DeclType::Local | DeclType::Const | DeclType::Argument => return None,
+                        DeclType::Var => return Some(existing),
+                        DeclType::Let | DeclType::Const | DeclType::Argument => return None,
                         DeclType::Implicit => {
                             // Value previously implicitly declared is now declared as a global.
-                            self.table.symbols[existing].decl_type = DeclType::Global;
+                            self.table.symbols[existing].decl_type = DeclType::Var;
                             return Some(existing);
                         }
                     }
@@ -296,7 +296,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         match kind {
             // Let and const's are declared in lexical scope.
             // NOTE: not entirely true to spec but the semantics are almost identical.
-            DeclType::Local | DeclType::Const => {
+            DeclType::Let | DeclType::Const => {
                 let new_symbol = self.table.symbols.insert(Symbol {
                     decl_type: kind,
                     decl_scope: self.current_scope,
@@ -311,7 +311,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 return Some(new_symbol);
             }
             // Arguments and globals are always declared at function scope
-            DeclType::Argument | DeclType::Global => {
+            DeclType::Argument | DeclType::Var => {
                 let new_symbol = self.table.symbols.insert(Symbol {
                     decl_type: kind,
                     decl_scope: self.current_function,
