@@ -106,7 +106,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     pub fn compile_if(
         &mut self,
-        cond: &Vec<Expr<A>, A>,
+        cond: &'a Vec<Expr<A>, A>,
         r#if: &'a Stmt<A>,
         r#else: &'a Option<Box<Stmt<A>, A>>,
     ) {
@@ -140,7 +140,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
-    pub fn compile_while(&mut self, cond: &Vec<Expr<A>, A>, block: &'a Stmt<A>) {
+    pub fn compile_while(&mut self, cond: &'a Vec<Expr<A>, A>, block: &'a Stmt<A>) {
         let before_cond = self.next_instruction_id();
         let expr = self.compile_expressions(None, cond);
         let patch_while = self.instructions.push(Instruction::JumpFalse {
@@ -172,7 +172,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
     }
 
-    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &Vec<Expr<A>, A>) {
+    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a Vec<Expr<A>, A>) {
         let before_stmt = self.next_instruction_id();
         self.compile_stmt(block);
         let res = self.compile_expressions(None, cond);

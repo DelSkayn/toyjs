@@ -1,7 +1,7 @@
 use crate::{
     gc::Gc,
     instructions::{opcode, InstructionReader},
-    value, ByteCode, JSValue, Realm,
+    value, ByteCode, JSValue, Object, Realm,
 };
 
 impl Realm {
@@ -24,6 +24,14 @@ impl Realm {
                     let dst = instr.read_u8();
                     let src = instr.read_u16() as u8;
                     self.stack.write(dst, self.stack.read(src))
+                }
+                opcode::CreateObject => {
+                    self.gc.collect_debt(self);
+                    let dst = instr.read_u8();
+                    instr.read_u16();
+                    let object = Object::new();
+                    let res = JSValue::from(self.gc.allocate(object));
+                    self.stack.write(dst, res)
                 }
                 opcode::IndexAssign => {
                     let obj = self.stack.read(instr.read_u8());

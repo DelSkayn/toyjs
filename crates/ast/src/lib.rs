@@ -136,6 +136,7 @@ impl<A: Allocator> Expr<A> {
                 PrimeExpr::Literal(_) => false,
                 PrimeExpr::Covered(_) => false,
                 PrimeExpr::Object(_) => false,
+                PrimeExpr::Function(_, _, _, _) => false,
             },
             Expr::Assign(ref left, ref op, _) => match op {
                 AssignOperator::Assign => left.is_assignable(),
@@ -161,6 +162,7 @@ pub enum PrimeExpr<A: Allocator> {
     Variable(SymbolId),
     Covered(Vec<Expr<A>, A>),
     Object(Vec<(StringId, Expr<A>), A>),
+    Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
 }
 
 #[derive(Derivative, Clone, Copy)]

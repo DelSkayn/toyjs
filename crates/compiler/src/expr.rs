@@ -43,7 +43,10 @@ enum AssignmentTarget {
 
 impl AssignmentTarget {
     /// Create the assignment target from an assignment expression.
-    pub fn from_expr<A: Allocator + Clone>(this: &mut Compiler<A>, assign: &Expr<A>) -> Self {
+    pub fn from_expr<'a, A: Allocator + Clone>(
+        this: &mut Compiler<'a, A>,
+        assign: &'a Expr<A>,
+    ) -> Self {
         match assign {
             Expr::Prime(PrimeExpr::Variable(symbol)) => AssignmentTarget::Variable(*symbol),
             Expr::UnaryPostfix(expr, PostfixOperator::Dot(name)) => {
@@ -181,7 +184,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub(crate) fn compile_expressions(
         &mut self,
         placment: Option<Register>,
-        expr: &Vec<Expr<A>, A>,
+        expr: &'a Vec<Expr<A>, A>,
     ) -> ExprValue<A> {
         for e in expr[..expr.len() - 1].iter() {
             let expr = self.compile_expr(None, e).eval(self);
@@ -199,7 +202,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub(crate) fn compile_expr(
         &mut self,
         placement: Option<Register>,
-        expr: &Expr<A>,
+        expr: &'a Expr<A>,
     ) -> ExprValue<A> {
         match expr {
             Expr::Prime(x) => self.compile_prime(placement, x),
@@ -244,9 +247,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn compile_binary_expr(
         &mut self,
         placement: Option<Register>,
-        left: &Expr<A>,
-        op: &BinaryOperator<A>,
-        right: &Expr<A>,
+        left: &'a Expr<A>,
+        op: &'a BinaryOperator<A>,
+        right: &'a Expr<A>,
     ) -> ExprValue<A> {
         match op {
             BinaryOperator::And => {
@@ -385,9 +388,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn compile_assignment(
         &mut self,
         placement: Option<Register>,
-        assign: &Expr<A>,
-        op: &AssignOperator,
-        value: &Expr<A>,
+        assign: &'a Expr<A>,
+        op: &'a AssignOperator,
+        value: &'a Expr<A>,
     ) -> Register {
         let assign_target = AssignmentTarget::from_expr(self, assign);
         let place = assign_target.placment(self);
@@ -441,7 +444,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     /// Compile the given prime expression
     /// Will put result of expression in given placement register if there is one.
-    fn compile_prime(&mut self, placement: Option<Register>, expr: &PrimeExpr<A>) -> ExprValue<A> {
+    fn compile_prime(
+        &mut self,
+        placement: Option<Register>,
+        expr: &'a PrimeExpr<A>,
+    ) -> ExprValue<A> {
         match expr {
             PrimeExpr::Variable(symbol) => ExprValue::new_in(
                 self.compile_symbol_use(placement, *symbol),
@@ -451,7 +458,30 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             PrimeExpr::Literal(x) => {
                 ExprValue::new_in(self.compile_literal(placement, *x), self.alloc.clone())
             }
-            _ => todo!(),
+            PrimeExpr::Object(bindings) => ExprValue::new_in(
+                self.compile_object_literal(placement, bindings),
+                self.alloc.clone(),
+            ),
+            PrimeExpr::Function(scope, symbol, args, stmts) => {
+                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                let id = self.push_pending_function(*scope, args, stmts);
+                if id.requires_long() {
+                    self.instructions.push(Instruction::LoadFunctionL {
+                        dst: dst.0,
+                        null: 0,
+                        func: id.0,
+                    });
+                } else {
+                    self.instructions.push(Instruction::LoadFunction {
+                        dst: dst.0,
+                        func: id.0 as u16,
+                    });
+                }
+                if let Some(_) = symbol {
+                    todo!()
+                }
+                ExprValue::new_in(dst, self.alloc.clone())
+            }
         }
     }
 
@@ -526,5 +556,30 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             });
         }
         register
+    }
+
+    fn compile_object_literal(
+        &mut self,
+        placement: Option<Register>,
+        bindings: &'a Vec<(StringId, Expr<A>), A>,
+    ) -> Register {
+        let object = placement.unwrap_or_else(|| self.registers.alloc_temp());
+        self.instructions.push(Instruction::CreateObject {
+            dst: object.0,
+            null: 0,
+        });
+        for (name, value) in bindings {
+            let expr = self.compile_expr(None, value).eval(self);
+            let key = self.compile_literal(None, Literal::String(*name));
+            self.registers.free_temp(expr);
+            self.registers.free_temp(key);
+            self.instructions.push(Instruction::IndexAssign {
+                obj: object.0,
+                val: expr.0,
+                key: key.0,
+            });
+        }
+
+        object
     }
 }

@@ -1,5 +1,8 @@
 use super::*;
-use ast::{Literal, PrimeExpr};
+use ast::{
+    symbol_table::{DeclType, ScopeKind},
+    Literal, PrimeExpr,
+};
 use token::t;
 
 impl<'a, A: Allocator + Clone> Parser<'a, A> {
@@ -47,6 +50,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                     _ => to_do!(self),
                 })
             }
+            t!("function") => self.parse_function_expression(),
             x => to_do!(self, x),
         }
     }
@@ -67,5 +71,43 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         }
         expect!(self,"}" => "expected object to end here, missing comma?");
         Ok(PrimeExpr::Object(exprs))
+    }
+
+    fn parse_function_expression(&mut self) -> Result<PrimeExpr<A>> {
+        expect!(self, "function");
+        let symbol = self
+            .peek()?
+            .and_then(|x| {
+                if let TokenKind::Ident(x) = x.kind {
+                    self.next().unwrap();
+                    Some(x)
+                } else {
+                    None
+                }
+            })
+            .map(|x| {
+                self.symbol_table
+                    .define(x, DeclType::Var)
+                    .ok_or_else(|| Error {
+                        kind: ErrorKind::RedeclaredVariable,
+                        origin: self.last_span,
+                    })
+            })
+            .transpose()?;
+        let scope = self.symbol_table.push_scope(ScopeKind::Function);
+        let params = self.parse_params()?;
+        expect!(self, "{");
+        let stmts = self.alter_state::<_, _, Result<_>>(
+            |s| s.r#return = true,
+            |this| {
+                let mut stmts = Vec::new_in(this.alloc.clone());
+                while !this.eat(t!("}"))? {
+                    stmts.push(this.parse_stmt()?);
+                }
+                Ok(stmts)
+            },
+        )?;
+        self.symbol_table.pop_scope();
+        Ok(ast::PrimeExpr::Function(scope, symbol, params, stmts))
     }
 }
