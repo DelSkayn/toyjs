@@ -1,4 +1,5 @@
 use crate::{
+    function::Function,
     gc::Gc,
     instructions::{opcode, InstructionReader},
     value, ByteCode, JSValue, Object, Realm,
@@ -19,6 +20,14 @@ impl Realm {
                     let dst = instr.read_u8();
                     instr.read_u16();
                     self.stack.write(dst, JSValue::from(self.global));
+                }
+                opcode::LoadFunction => {
+                    self.gc.collect_debt(self);
+                    let dst = instr.read_u8();
+                    let tgt = instr.read_u16();
+                    let func = Function::from_bc(bc, tgt as usize);
+                    let res = JSValue::from(self.gc.allocate(func));
+                    self.stack.write(dst, res);
                 }
                 opcode::Move => {
                     let dst = instr.read_u8();
@@ -109,6 +118,23 @@ impl Realm {
                     let tgt = instr.read_i16();
                     if !self.is_falsish(cond) {
                         instr.jump(tgt as i32)
+                    }
+                }
+                opcode::SetArg => {
+                    let tgt = instr.read_u8();
+                    let src = self.stack.read(instr.read_u16() as u8);
+                    self.stack.write_arg(tgt, src);
+                }
+
+                opcode::Call => {
+                    let dst = instr.read_u8();
+                    let func = self.stack.read(instr.read_u8());
+                    let _num = instr.read_u8();
+                    if func.is_function() {
+                        let res = func.into_function().call(self);
+                        self.stack.write(dst, res);
+                    } else {
+                        todo!()
                     }
                 }
                 opcode::ReturnUndefined => return JSValue::undefined(),

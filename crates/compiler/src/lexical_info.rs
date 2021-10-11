@@ -5,9 +5,18 @@ use ast::{
 use common::slotmap::SlotMap;
 use std::{alloc::Allocator, convert::TryInto, fmt};
 
+use crate::register::Register;
+
+#[derive(Debug)]
+pub enum ArgAllocInfo {
+    Array(u16),
+    Register(Register),
+    Pending,
+}
+
 #[derive(Debug)]
 pub enum SymbolInfo {
-    Argument,
+    Argument(ArgAllocInfo),
     Local,
     Captured(u16),
     Global,
@@ -31,8 +40,8 @@ impl<A: Allocator> fmt::Debug for ScopeInfo<A> {
 }
 
 pub struct LexicalInfo<A: Allocator> {
-    scope_info: ScopeInfoMap<A>,
-    symbol_info: SymbolInfoMap<A>,
+    pub scope_info: ScopeInfoMap<A>,
+    pub symbol_info: SymbolInfoMap<A>,
 }
 
 impl<A: Allocator + Clone> LexicalInfo<A> {
@@ -69,7 +78,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
                 match symbol_info.get(used) {
                     Some(SymbolInfo::Global)
                     | Some(SymbolInfo::Captured(_))
-                    | Some(SymbolInfo::Argument) => continue,
+                    | Some(SymbolInfo::Argument(_)) => continue,
                     _ => {}
                 }
                 match table.symbols()[used].decl_type {
@@ -93,7 +102,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
                         }
                     }
                     DeclType::Argument => {
-                        symbol_info.insert(used, SymbolInfo::Argument);
+                        symbol_info.insert(used, SymbolInfo::Argument(ArgAllocInfo::Pending));
                     }
                 }
             }
@@ -117,14 +126,6 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
             scope_info,
             symbol_info,
         }
-    }
-
-    pub fn symbol_info(&self) -> &SymbolInfoMap<A> {
-        &self.symbol_info
-    }
-
-    pub fn scope_info(&self) -> &ScopeInfoMap<A> {
-        &self.scope_info
     }
 }
 

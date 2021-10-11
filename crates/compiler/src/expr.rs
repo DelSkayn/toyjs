@@ -90,7 +90,7 @@ impl AssignmentTarget {
     /// Returns an optional placement register if the assignment target is an local register.
     pub fn placment<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = self {
-            if let SymbolInfo::Local = this.lexical_info.symbol_info()[*x] {
+            if let SymbolInfo::Local = this.lexical_info.symbol_info[*x] {
                 Some(this.registers.alloc_symbol(*x))
             } else {
                 None
@@ -105,7 +105,7 @@ impl AssignmentTarget {
     /// register.
     pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, dst: Register) {
         match *self {
-            Self::Variable(x) => match this.lexical_info.symbol_info()[x] {
+            Self::Variable(x) => match this.lexical_info.symbol_info[x] {
                 SymbolInfo::Local => {}
                 SymbolInfo::Global => {
                     let global = this.registers.alloc_temp();
@@ -127,7 +127,7 @@ impl AssignmentTarget {
                     });
                 }
                 SymbolInfo::Captured(_x) => todo!(),
-                SymbolInfo::Argument => todo!(),
+                SymbolInfo::Argument(_) => todo!(),
             },
             Self::Dot(obj, name) => {
                 let name = this.compile_literal(None, Literal::String(name));
@@ -225,6 +225,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+                PostfixOperator::Call(ref args) => ExprValue::new_in(
+                    self.compile_function_call(placement, expr, args),
+                    self.alloc.clone(),
+                ),
                 _ => todo!(),
             },
             Expr::UnaryPrefix(op, expr) => match op {
@@ -489,7 +493,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
-        match self.lexical_info.symbol_info()[symbol_id] {
+        match self.lexical_info.symbol_info[symbol_id] {
             SymbolInfo::Global => {
                 let name = self.compile_literal(None, Literal::String(symbol.ident));
                 let global = self.registers.alloc_temp();
@@ -581,5 +585,33 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
 
         object
+    }
+
+    fn compile_function_call(
+        &mut self,
+        placement: Option<Register>,
+        lhs: &'a Expr<A>,
+        args: &'a Vec<Expr<A>, A>,
+    ) -> Register {
+        let func = self.compile_expr(None, lhs).eval(self);
+        for (idx, arg) in args.iter().enumerate() {
+            if idx >= 16 {
+                todo!()
+            }
+            let reg = self.compile_expr(None, arg).eval(self);
+            self.registers.free_temp(reg);
+            self.instructions.push(Instruction::SetArg {
+                tgt: idx as u8,
+                src: reg.0 as u16,
+            });
+        }
+        self.registers.free_temp(func);
+        let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+        self.instructions.push(Instruction::Call {
+            dst: dst.0,
+            func: func.0,
+            num: args.len() as u8,
+        });
+        dst
     }
 }

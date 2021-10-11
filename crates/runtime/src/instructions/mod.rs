@@ -100,6 +100,8 @@ define_instructions! {
         JumpFalse{cond: u8, tgt:i16},
         Jump{null: u8, tgt:i16},
 
+        SetArg{ tgt: u8, src: u16 },
+
         Call{dst:u8, func:u8, num:u8},
 
         Return{ret: u8,null: u16},

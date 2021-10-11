@@ -15,11 +15,13 @@ pub mod object;
 use object::Object;
 pub mod stack;
 use stack::Stack;
+mod function;
 
 pub mod exec;
 
 use std::{alloc::Global, collections::VecDeque, fmt};
 
+#[derive(Clone, Copy)]
 pub struct ByteFunction {
     pub offset: usize,
     pub size: usize,

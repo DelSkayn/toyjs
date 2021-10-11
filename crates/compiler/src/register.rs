@@ -2,7 +2,7 @@
 
 use ast::SymbolId;
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct Register(pub u8);
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -12,6 +12,16 @@ enum AllocValue {
     Symbol(SymbolId),
     Global,
     Env(u8),
+    Arg(SymbolId),
+}
+
+impl AllocValue {
+    pub fn is_arg(&self) -> bool {
+        match *self {
+            AllocValue::Arg(_) => true,
+            _ => false,
+        }
+    }
 }
 
 pub struct Registers {
@@ -67,6 +77,9 @@ impl Registers {
             if *r == AllocValue::Symbol(symbol) {
                 return Register(idx as u8);
             }
+            if *r == AllocValue::Arg(symbol) {
+                return Register(idx as u8);
+            }
             if *r == AllocValue::Free && free.is_none() {
                 free = Some(idx);
             }
@@ -76,6 +89,17 @@ impl Registers {
         self.cur_allocated += 1;
         self.max_allocated = self.max_allocated.max(self.cur_allocated);
         Register(free as u8)
+    }
+
+    pub fn alloc_arg(&mut self, symbol: SymbolId) -> Register {
+        debug_assert!(
+            self.cur_allocated == 0 || self.registers[self.cur_allocated as usize - 1].is_arg()
+        );
+        let res = Register(self.cur_allocated);
+        self.registers[self.cur_allocated as usize] = AllocValue::Arg(symbol);
+        self.cur_allocated += 1;
+        self.max_allocated += 1;
+        res
     }
 
     pub fn registers_needed(&self) -> u8 {
