@@ -1,7 +1,12 @@
-use ast::{Expr, Literal, Stmt};
+use ast::{Expr, Literal, Params, Stmt};
 use runtime::instructions::Instruction;
 
-use crate::{expr::ExprValue, register::Register, Compiler};
+use crate::{
+    expr::ExprValue,
+    lexical_info::{ArgAllocInfo, SymbolInfo},
+    register::Register,
+    Compiler,
+};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -100,6 +105,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.registers.free_temp(tmp);
                 None
             }
+            Stmt::Return(expr) => {
+                if let Some(expr) = expr {
+                    let reg = self.compile_expressions(None, expr).eval(self);
+                    self.registers.free_temp(reg);
+                    self.instructions.push(Instruction::Return {
+                        ret: reg.0,
+                        null: 0,
+                    });
+                } else {
+                    self.instructions
+                        .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+                }
+
+                None
+            }
             _ => todo!(),
         }
     }
@@ -195,5 +215,22 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         res.false_list
             .into_iter()
             .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+    }
+
+    pub fn compile_params(&mut self, params: &'a Params<A>) {
+        for (i, p) in params.0.iter().enumerate() {
+            if i >= 16 {
+                todo!();
+            }
+            match self.lexical_info.symbol_info[*p] {
+                SymbolInfo::Argument(ref mut alloc) => {
+                    *alloc = ArgAllocInfo::Register(self.registers.alloc_arg(*p))
+                }
+                _ => panic!("argument symbol is not an argument in its corresponding info"),
+            }
+        }
+        if let Some(_) = params.1 {
+            todo!()
+        }
     }
 }

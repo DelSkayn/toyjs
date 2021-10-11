@@ -141,9 +141,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         func.stmts.iter().for_each(|stmt| {
             self.compile_stmt(stmt);
         });
-        self.instructions
-            .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
-
+        match self.instructions.last() {
+            Some(Instruction::Return { .. }) | Some(Instruction::ReturnUndefined { .. }) => {}
+            _ => {
+                self.instructions
+                    .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+            }
+        }
         self.functions[func.id.0 as usize].registers = self.registers.registers_needed();
         self.functions[func.id.0 as usize].size =
             self.instructions.len() - self.functions[func.id.0 as usize].offset;

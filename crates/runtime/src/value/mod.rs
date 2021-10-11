@@ -1,4 +1,5 @@
 use crate::{
+    function::Function,
     gc::{Ctx, Gc, Trace},
     Object,
 };
@@ -161,6 +162,12 @@ impl JSValue {
     }
 
     #[inline]
+    pub unsafe fn into_function(self) -> Gc<Function> {
+        debug_assert!(self.is_function());
+        Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
+    }
+
+    #[inline]
     pub unsafe fn into_string(self) -> Gc<String> {
         debug_assert!(self.is_string());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
@@ -226,6 +233,15 @@ impl From<Gc<Object>> for JSValue {
     }
 }
 
+impl From<Gc<Function>> for JSValue {
+    #[inline]
+    fn from(v: Gc<Function>) -> JSValue {
+        JSValue(JSValueUnion {
+            bits: TAG_FUNCTION | Gc::into_raw(v) as u64,
+        })
+    }
+}
+
 unsafe impl Trace for JSValue {
     fn needs_trace() -> bool
     where
@@ -264,7 +280,10 @@ impl fmt::Debug for JSValue {
                 }
                 TAG_BIGINT => todo!(),
                 TAG_SYMBOL => todo!(),
-                TAG_FUNCTION => todo!(),
+                TAG_FUNCTION => {
+                    let mut obj = f.debug_tuple("JSValue::Function");
+                    obj.finish()
+                }
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
                     .field(&self.into_int())

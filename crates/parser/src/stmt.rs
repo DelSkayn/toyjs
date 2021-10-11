@@ -139,7 +139,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 origin: self.last_span,
             })?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = dbg!(self.parse_params()?);
+        let params = self.parse_params()?;
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
             |s| s.r#return = true,
@@ -189,11 +189,16 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                             origin: self.last_span,
                         })?;
                     stmt.push(arg_var);
+                    if self.eat(t!(","))? {
+                        continue;
+                    } else {
+                        break;
+                    }
                 }
                 t!(")") => {
                     break;
                 }
-                _ => unexpected!(self, "...", ",", "ident"),
+                _ => unexpected!(self, "...", ")", "ident"),
             }
         }
         expect!(self, ")");
