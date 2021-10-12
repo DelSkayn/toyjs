@@ -27,7 +27,7 @@ unsafe impl Trace for Stack {
             let mut cur = self.frame;
             while cur > self.root.as_ptr() {
                 cur = cur.sub(1);
-                self.frame.read().trace(ctx);
+                cur.read().trace(ctx);
             }
         }
     }

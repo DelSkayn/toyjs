@@ -46,6 +46,13 @@ pub enum Phase {
     Sweep,
 }
 
+/// A structure for creating pointers managed by a garbage collector.
+/// Allocating and using the pointers provide by the Gc are all save,
+/// However it is unsafe to actually collect garbage because if the
+/// colletion methods are not called properly the gc will free values which are still in use.
+///
+/// As such GcArena does not deallocate any pointers it allocated when it is dropped so one should
+/// manually call `collect_all`.
 pub struct GcArena {
     all: Cell<Option<GcBoxPtr>>,
     grays: CellVec<GcBoxPtr>,
@@ -111,21 +118,29 @@ impl GcArena {
         }
     }
 
-    pub unsafe fn write_barrier<T: Trace + 'static>(&self, gc: Gc<T>) {
-        if self.phase.get() == Phase::Mark && gc.0.as_ref().color.get() == Color::Black {
-            gc.0.as_ref().color.set(Color::Gray);
-            self.grays_again.push(gc.0);
+    /// Function must be called if the value behind a gc pointer could possible contain new gc
+    /// pointers.
+    pub fn write_barrier<T: Trace + 'static>(&self, gc: Gc<T>) {
+        if !T::needs_trace() {
+            return;
+        }
+        unsafe {
+            if self.phase.get() == Phase::Mark && gc.0.as_ref().color.get() == Color::Black {
+                gc.0.as_ref().color.set(Color::Gray);
+                self.grays_again.push(gc.0);
+            }
         }
     }
 
-    /// Run Collection till all objects not reachable from the root are collected.
-    /// Very unsafe, if not used correctly will cause undefined behaviour.
+    /// Run Collection to completion for a full cycle.
+    /// Might not free all objects not reachable by root if they where reachable in a previous call
+    /// if the gc is already running collection.
     ///
     /// # Safety
     /// All gc pointers held by the programm allocated with the current GcArena must be reachable
     /// from the root handed as an argument to this function.
     /// Any gc pointers which where not reachable from the program will be freed.
-    pub unsafe fn collect_all<T: Trace>(&self, root: &T) {
+    pub unsafe fn collect_full<T: Trace>(&self, root: &T) {
         self.allocation_debt.set(f64::INFINITY);
         self.phase.set(Phase::Wake);
         self.collect_debt(root);
@@ -137,6 +152,7 @@ impl GcArena {
     /// # Safety
     /// All gc pointers held by the programm allocated with the current GcArena must be reachable
     /// from the root handed as an argument to this function.
+    /// If any new pointers are added into a structure which could contain
     /// Any gc pointers which where not reachable from the program will be freed.
     pub unsafe fn collect_debt<T: Trace>(&self, root: &T) {
         let work = self.allocation_debt.get();
@@ -145,6 +161,9 @@ impl GcArena {
         while work > work_done as f64 {
             match self.phase.get() {
                 Phase::Wake => {
+                    self.sweep_prev.set(None);
+                    // Trace the root, every value reachable by the root is live.
+                    // All gc pointers will be put on into the grays array.
                     root.trace(Ctx(self));
                     work_done += mem::size_of::<T>();
                     self.phase.set(Phase::Mark);
@@ -153,11 +172,15 @@ impl GcArena {
                     if let Some(x) = self.grays.pop() {
                         let size = mem::size_of_val(x.as_ref());
                         work_done += size;
+                        // ???
+                        (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else if let Some(x) = self.grays_again.pop() {
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else {
+                        root.trace(Ctx(self));
+                        self.grays.clear();
                         self.phase.set(Phase::Sweep);
                         self.sweep.set(self.all.get());
                     }
@@ -173,7 +196,6 @@ impl GcArena {
                             } else {
                                 self.all.set(x.as_ref().next.get())
                             }
-                            work_done += size;
                             self.total_allocated.set(self.total_allocated.get() - size);
                             Box::from_raw(x.as_ptr());
                         } else {
@@ -182,7 +204,6 @@ impl GcArena {
                             self.sweep_prev.set(Some(x));
                         }
                     } else {
-                        self.sweep_prev.set(None);
                         self.phase.set(Phase::Sleep);
                         self.allocation_debt.set(0.0);
                         self.wakeup_total.set(
@@ -201,10 +222,10 @@ impl GcArena {
         self.allocation_debt
             .set((self.allocation_debt.get() - work_done as f64).max(0.0));
     }
-}
 
-impl Drop for GcArena {
-    fn drop(&mut self) {
-        unsafe { self.collect_all(&()) };
+    pub unsafe fn collect_all(&self) {
+        self.collect_full(&());
+        self.collect_full(&());
+        assert!(self.all.get().is_none());
     }
 }

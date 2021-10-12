@@ -37,6 +37,10 @@ impl<T, A: Allocator> CellVec<T, A> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    pub fn clear(&self) {
+        unsafe { (*self.0.get()).clear() }
+    }
 }
 
 impl<T: Clone, A: Allocator> CellVec<T, A> {

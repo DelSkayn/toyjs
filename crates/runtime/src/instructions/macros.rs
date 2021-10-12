@@ -59,7 +59,9 @@ macro_rules! define_instructions {
             }
 
             pub fn format_byte_instruction(fmt: &mut std::fmt::Formatter, reader: &mut InstructionReader) -> std::fmt::Result{
-                match reader.safe_read_u8(){
+                let op = reader.safe_read_u8();
+                write!(fmt,"{:3} ",op)?;
+                match op {
                     $(
                     opcode::$name => define_instructions!(@format fmt,reader,$name => $($arg)+),
                     )*
