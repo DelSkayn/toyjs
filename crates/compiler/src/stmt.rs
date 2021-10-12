@@ -226,7 +226,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 SymbolInfo::Argument(ref mut alloc) => {
                     *alloc = ArgAllocInfo::Register(self.registers.alloc_arg(*p))
                 }
-                _ => panic!("argument symbol is not an argument in its corresponding info"),
+                ref x => panic!(
+                    "argument symbol is not an argument in its corresponding info: {:?}",
+                    x
+                ),
             }
         }
         if let Some(_) = params.1 {

@@ -70,7 +70,11 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
 
             for s in scope.symbols.iter().copied() {
                 if symbol_info.get(s).is_none() {
-                    symbol_info.insert(s, SymbolInfo::Local);
+                    if let DeclType::Argument = table.symbols()[s].decl_type {
+                        symbol_info.insert(s, SymbolInfo::Argument(ArgAllocInfo::Pending));
+                    } else {
+                        symbol_info.insert(s, SymbolInfo::Local);
+                    }
                 }
             }
 

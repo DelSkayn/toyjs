@@ -83,7 +83,6 @@ impl Realm {
                     let dst = instr.read_u8();
                     let left = self.stack.read(instr.read_u8());
                     let right = self.stack.read(instr.read_u8());
-                    print!("{:?}\r", left);
                     if Self::both_int(left, right) {
                         let res =
                             Self::coerce_int(left.into_int() as i64 - right.into_int() as i64);

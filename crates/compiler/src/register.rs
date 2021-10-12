@@ -74,6 +74,9 @@ impl Registers {
     pub fn alloc_symbol(&mut self, symbol: SymbolId) -> Register {
         let mut free = None;
         for (idx, r) in self.registers.iter().enumerate() {
+            if idx > self.max_allocated as usize {
+                break;
+            }
             if *r == AllocValue::Symbol(symbol) {
                 return Register(idx as u8);
             }

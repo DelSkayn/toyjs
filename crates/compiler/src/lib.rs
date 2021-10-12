@@ -138,6 +138,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.registers.clear();
         self.functions[func.id.0 as usize].offset = self.instructions.len();
 
+        self.compile_params(func.args);
+
         func.stmts.iter().for_each(|stmt| {
             self.compile_stmt(stmt);
         });

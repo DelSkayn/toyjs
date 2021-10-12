@@ -6,7 +6,11 @@ use ast::{
 use common::interner::StringId;
 use runtime::instructions::Instruction;
 
-use crate::{lexical_info::SymbolInfo, register::Register, Compiler, InstructionId};
+use crate::{
+    lexical_info::{ArgAllocInfo, SymbolInfo},
+    register::Register,
+    Compiler, InstructionId,
+};
 use std::alloc::Allocator;
 
 pub struct ExprValue<A: Allocator> {
@@ -532,6 +536,19 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     return place;
                 } else {
                     return self.registers.alloc_symbol(symbol_id);
+                }
+            }
+            SymbolInfo::Argument(ArgAllocInfo::Register(reg)) => {
+                if let Some(place) = placement {
+                    if reg != place {
+                        self.instructions.push(Instruction::Move {
+                            dst: place.0,
+                            src: reg.0 as u16,
+                        });
+                    }
+                    return place;
+                } else {
+                    return reg;
                 }
             }
             _ => todo!(),
