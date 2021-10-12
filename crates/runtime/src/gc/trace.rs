@@ -15,6 +15,10 @@ pub unsafe trait Trace {
     }
 
     fn trace(&self, ctx: Ctx);
+
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 macro_rules! impl_trace_primitive{
@@ -34,6 +38,34 @@ macro_rules! impl_trace_primitive{
 impl_trace_primitive!(
     bool, char, u8, u16, u32, u64, usize, i8, i16, i32, i64, f32, f64, isize, String, str,
 );
+
+unsafe impl<T: Trace> Trace for &T {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        T::needs_trace()
+    }
+
+    #[inline]
+    fn trace(&self, ctx: Ctx) {
+        (**self).trace(ctx)
+    }
+}
+
+unsafe impl<T: Trace> Trace for &mut T {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        T::needs_trace()
+    }
+
+    #[inline]
+    fn trace(&self, ctx: Ctx) {
+        (**self).trace(ctx)
+    }
+}
 
 unsafe impl<T: Trace> Trace for Box<T> {
     fn needs_trace() -> bool

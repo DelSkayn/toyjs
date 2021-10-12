@@ -22,7 +22,7 @@ impl Realm {
                     self.stack.write(dst, JSValue::from(self.global));
                 }
                 opcode::LoadFunction => {
-                    self.gc.collect_debt(self);
+                    self.gc.collect_debt(&(&*self, bc));
                     let dst = instr.read_u8();
                     let tgt = instr.read_u16();
                     let func = Function::from_bc(bc, tgt as usize);
@@ -35,7 +35,7 @@ impl Realm {
                     self.stack.write(dst, self.stack.read(src))
                 }
                 opcode::CreateObject => {
-                    self.gc.collect_debt(self);
+                    self.gc.collect_debt(&(&*self, bc));
                     let dst = instr.read_u8();
                     instr.read_u16();
                     let object = Object::new();
@@ -48,7 +48,9 @@ impl Realm {
                     let val = self.stack.read(instr.read_u8());
                     match obj.tag() {
                         value::TAG_OBJECT => {
-                            obj.into_object().index_set(key, val, self);
+                            let obj = obj.into_object();
+                            self.gc.write_barrier(obj);
+                            obj.index_set(key, val, self);
                         }
                         _ => todo!(),
                     }
@@ -81,6 +83,7 @@ impl Realm {
                     let dst = instr.read_u8();
                     let left = self.stack.read(instr.read_u8());
                     let right = self.stack.read(instr.read_u8());
+                    print!("{:?}\r", left);
                     if Self::both_int(left, right) {
                         let res =
                             Self::coerce_int(left.into_int() as i64 - right.into_int() as i64);
@@ -142,7 +145,7 @@ impl Realm {
                     let reg = instr.read_u8();
                     return self.stack.read(reg);
                 }
-                _ => todo!(),
+                x => panic!("invalid opcode {}", x),
             }
         }
     }

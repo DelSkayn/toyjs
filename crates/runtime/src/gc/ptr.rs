@@ -77,3 +77,17 @@ impl<T: PartialEq + Trace> PartialEq for Gc<T> {
 }
 
 impl<T: Eq + Trace> Eq for Gc<T> {}
+
+unsafe impl<T: Trace + 'static> Trace for Gc<T> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    #[inline]
+    fn trace(&self, ctx: super::Ctx) {
+        ctx.mark(*self)
+    }
+}

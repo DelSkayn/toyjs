@@ -35,15 +35,16 @@ pub struct ByteCode {
 }
 
 unsafe impl Trace for ByteCode {
-    // Bytecode constants only contain values which do not need to be traced.
     fn needs_trace() -> bool
     where
         Self: Sized,
     {
-        false
+        true
     }
 
-    fn trace(&self, _: gc::Ctx) {}
+    fn trace(&self, ctx: gc::Ctx) {
+        self.constants.iter().for_each(|x| x.trace(ctx))
+    }
 }
 
 impl fmt::Display for ByteCode {
@@ -83,8 +84,8 @@ pub struct Task {
 pub struct Realm {
     pub symbol_table: SymbolTable<Global>,
     pub interner: Interner,
-    pub global: Gc<Object>,
     pub gc: GcArena,
+    pub global: Gc<Object>,
     pub tasks: VecDeque<Task>,
     pub stack: Stack,
 }
@@ -135,5 +136,11 @@ unsafe impl Trace for Realm {
         self.tasks.iter().for_each(|x| ctx.mark(x.bc));
         self.stack.trace(ctx);
         ctx.mark(self.global);
+    }
+}
+
+impl Drop for Realm {
+    fn drop(&mut self) {
+        unsafe { self.gc.collect_all() };
     }
 }
