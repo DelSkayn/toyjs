@@ -1,7 +1,7 @@
 use crate::{
     function::Function,
     gc::Gc,
-    instructions::{opcode, InstructionReader},
+    instructions::{opcode, InstructionOpcode, InstructionReader},
     value, ByteCode, JSValue, Object, Realm,
 };
 
@@ -76,7 +76,8 @@ impl Realm {
                             Self::coerce_int(left.into_int() as i64 + right.into_int() as i64);
                         self.stack.write(dst, res);
                     } else {
-                        todo!()
+                        let res = self.add(left, right);
+                        self.stack.write(dst, res);
                     }
                 }
                 opcode::Sub => {
@@ -88,8 +89,37 @@ impl Realm {
                             Self::coerce_int(left.into_int() as i64 - right.into_int() as i64);
                         self.stack.write(dst, res);
                     } else {
-                        todo!()
+                        let res = self.numeric_operator(left, right, InstructionOpcode::Sub);
+                        self.stack.write(dst, res);
                     }
+                }
+                opcode::Mul => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = self.numeric_operator(left, right, InstructionOpcode::Mul);
+                    self.stack.write(dst, res);
+                }
+                opcode::Div => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = self.numeric_operator(left, right, InstructionOpcode::Div);
+                    self.stack.write(dst, res);
+                }
+                opcode::Mod => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = self.numeric_operator(left, right, InstructionOpcode::Mod);
+                    self.stack.write(dst, res);
+                }
+                opcode::Pow => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = self.numeric_operator(left, right, InstructionOpcode::Pow);
+                    self.stack.write(dst, res);
                 }
                 opcode::IsNullish => {
                     let dst = instr.read_u8();
@@ -193,6 +223,134 @@ impl Realm {
             value::TAG_FUNCTION => todo!(),
             value::TAG_SYMBOL => todo!(),
             _ => panic!("invalid tag"),
+        }
+    }
+
+    pub unsafe fn coerce_number(&mut self, value: JSValue) -> JSValue {
+        match value.tag() {
+            value::TAG_INT => value,
+            value::TAG_BASE => match value.0.bits {
+                value::VALUE_NULL => JSValue::from(0i32),
+                value::VALUE_UNDEFINED => JSValue::from(f64::NAN),
+                value::VALUE_TRUE => JSValue::from(1i32),
+                value::VALUE_FALSE => JSValue::from(0i32),
+                _ => panic!("invalid base value"),
+            },
+            // TODO find a better way?
+            value::TAG_STRING => {
+                if let Ok(v) = value.into_string().parse::<f64>() {
+                    if v as i32 as f64 == v {
+                        JSValue::from(v as i32)
+                    } else {
+                        JSValue::from(v)
+                    }
+                } else {
+                    JSValue::from(f64::NAN)
+                }
+            }
+            value::TAG_OBJECT | value::TAG_FUNCTION => {
+                let prim = self.to_primitive(value);
+                self.coerce_number(prim)
+            }
+            value::TAG_SYMBOL => todo!(),
+            _ => {
+                if value.is_float() {
+                    return value;
+                } else {
+                    panic!("invalid jsvalue")
+                }
+            }
+        }
+    }
+
+    pub unsafe fn add(&mut self, left: JSValue, right: JSValue) -> JSValue {
+        let left = self.to_primitive(left);
+        let right = self.to_primitive(right);
+        if left.tag() == value::TAG_STRING || right.tag() == value::TAG_STRING {
+            let left = self.coerce_string(left);
+            let right = self.coerce_string(right);
+            return JSValue::from(self.gc.allocate(left.to_string() + &right.to_string()));
+        }
+        let left = self.coerce_number(left);
+        let right = self.coerce_number(right);
+        let left = match left.tag() {
+            value::TAG_INT => left.into_int() as f64,
+            _ => {
+                if left.is_float() {
+                    left.into_float()
+                } else {
+                    todo!()
+                }
+            }
+        };
+        let right = match right.tag() {
+            value::TAG_INT => right.into_int() as f64,
+            _ => {
+                if right.is_float() {
+                    right.into_float()
+                } else {
+                    todo!()
+                }
+            }
+        };
+        let res = left + right;
+        if res as i32 as f64 == res {
+            JSValue::from(res as i32)
+        } else {
+            JSValue::from(res)
+        }
+    }
+
+    #[inline]
+    pub unsafe fn numeric_operator(
+        &mut self,
+        left: JSValue,
+        right: JSValue,
+        op: InstructionOpcode,
+    ) -> JSValue {
+        let left = self.to_primitive(left);
+        let right = self.to_primitive(right);
+        let left = self.coerce_number(left);
+        let right = self.coerce_number(right);
+        let left = match left.tag() {
+            value::TAG_INT => left.into_int() as f64,
+            _ => {
+                if left.is_float() {
+                    left.into_float()
+                } else {
+                    todo!()
+                }
+            }
+        };
+        let right = match right.tag() {
+            value::TAG_INT => right.into_int() as f64,
+            _ => {
+                if right.is_float() {
+                    right.into_float()
+                } else {
+                    todo!()
+                }
+            }
+        };
+        let res = match op {
+            InstructionOpcode::Sub => left - right,
+            InstructionOpcode::Mul => left * right,
+            InstructionOpcode::Div => left / right,
+            InstructionOpcode::Mod => left % right,
+            InstructionOpcode::Pow => left.powf(right),
+            _ => panic!("invalid operator"),
+        };
+        if res as i32 as f64 == res {
+            JSValue::from(res as i32)
+        } else {
+            JSValue::from(res)
+        }
+    }
+
+    pub unsafe fn to_primitive(&mut self, v: JSValue) -> JSValue {
+        match v.tag() {
+            value::TAG_OBJECT => todo!(),
+            _ => v,
         }
     }
 
