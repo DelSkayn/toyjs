@@ -85,8 +85,26 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("-") => PrefixOperator::Negative,
                 t!("!") => PrefixOperator::Not,
                 t!("~") => PrefixOperator::BinaryNot,
-                t!("++") => PrefixOperator::AddOne,
-                t!("--") => PrefixOperator::SubtractOne,
+                t!("++") => {
+                    let expr = self.parse_ops_rec(r_bp)?;
+                    if !expr.is_assignable() {
+                        unexpected!(self => "right hand side expression is not assignable")
+                    }
+                    return Ok(Expr::UnaryPrefix(
+                        PrefixOperator::AddOne,
+                        Box::new_in(expr, self.alloc.clone()),
+                    ));
+                }
+                t!("--") => {
+                    let expr = self.parse_ops_rec(r_bp)?;
+                    if !expr.is_assignable() {
+                        unexpected!(self => "right hand side expression is not assignable")
+                    }
+                    return Ok(Expr::UnaryPrefix(
+                        PrefixOperator::SubtractOne,
+                        Box::new_in(expr, self.alloc.clone()),
+                    ));
+                }
                 _ => panic!("not a unary operator"),
             },
             Box::new_in(self.parse_ops_rec(r_bp)?, self.alloc.clone()),
@@ -95,8 +113,18 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
 
     fn parse_postfix_op(&mut self, _l_bp: u8, lhs: Expr<A>) -> Result<ast::Expr<A>> {
         let kind = match self.next()?.unwrap().kind {
-            t!("++") => PostfixOperator::AddOne,
-            t!("--") => PostfixOperator::SubtractOne,
+            t!("++") => {
+                if !lhs.is_assignable() {
+                    unexpected!(self => "left hand side expression is not assignable")
+                }
+                PostfixOperator::AddOne
+            }
+            t!("--") => {
+                if !lhs.is_assignable() {
+                    unexpected!(self => "left hand side expression is not assignable")
+                }
+                PostfixOperator::AddOne
+            }
             t!(".") => {
                 expect_bind!(self,let index = "ident");
                 PostfixOperator::Dot(index)
