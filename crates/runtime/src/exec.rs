@@ -121,6 +121,32 @@ impl Realm {
                     let res = self.numeric_operator(left, right, InstructionOpcode::Pow);
                     self.stack.write(dst, res);
                 }
+
+                opcode::ShiftLeft => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let left = self.convert_int(left);
+                    let right = self.convert_int(right) as u32 % 32;
+                    self.stack.write(dst, JSValue::from(left << right));
+                }
+                opcode::ShiftRight => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let left = self.convert_int(left);
+                    let right = self.convert_int(right) as u32 % 32;
+                    self.stack.write(dst, JSValue::from(left >> right));
+                }
+                opcode::ShiftUnsigned => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let left = self.convert_int(left) as u32;
+                    let right = self.convert_int(right) as u32 % 32;
+                    self.stack.write(dst, JSValue::from((left >> right) as i32));
+                }
+
                 opcode::IsNullish => {
                     let dst = instr.read_u8();
                     let src = self.stack.read(instr.read_u16() as u8);
@@ -132,6 +158,21 @@ impl Realm {
                     let src = self.stack.read(instr.read_u16() as u8);
                     let falsish = self.is_falsish(src);
                     self.stack.write(dst, JSValue::from(falsish))
+                }
+                opcode::Negative => {
+                    let dst = instr.read_u8();
+                    let src = self.stack.read(instr.read_u16() as u8);
+                    let number = self.coerce_number(src);
+                    if number.is_int() {
+                        let number = -(number.into_int() as i64);
+                        if number as i32 as i64 == number {
+                            self.stack.write(dst, JSValue::from(number as i32))
+                        } else {
+                            self.stack.write(dst, JSValue::from(number as f64))
+                        }
+                    } else if number.is_float() {
+                        self.stack.write(dst, JSValue::from(-number.into_float()))
+                    }
                 }
                 opcode::Jump => {
                     instr.read_u8();
@@ -260,6 +301,27 @@ impl Realm {
                     panic!("invalid jsvalue")
                 }
             }
+        }
+    }
+
+    pub unsafe fn convert_int(&mut self, value: JSValue) -> i32 {
+        let number = self.coerce_number(value);
+        if number.is_int() {
+            return number.into_int();
+        } else if number.is_float() {
+            let f = number.into_float();
+            if f.is_normal() {
+                let res = f.abs().floor() as i32;
+                if f.is_sign_positive() {
+                    return res;
+                } else {
+                    return -res;
+                }
+            } else {
+                return 0;
+            }
+        } else {
+            todo!()
         }
     }
 
