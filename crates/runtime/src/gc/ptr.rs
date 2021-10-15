@@ -2,6 +2,7 @@ use super::{GcArena, Trace};
 use std::{
     cell::{Cell, UnsafeCell},
     fmt,
+    marker::PhantomData,
     ops::Deref,
     ptr::NonNull,
 };
@@ -89,5 +90,37 @@ unsafe impl<T: Trace + 'static> Trace for Gc<T> {
     #[inline]
     fn trace(&self, ctx: super::Ctx) {
         ctx.mark(*self)
+    }
+}
+
+pub type RootValuePtr = NonNull<RootValue>;
+
+pub struct RootValue {
+    pub next: Cell<Option<RootValuePtr>>,
+    pub prev: Cell<Option<RootValuePtr>>,
+    pub ptr: GcBoxPtr,
+}
+
+pub struct GcRoot<T: Trace + 'static>(pub(crate) RootValuePtr, pub(crate) PhantomData<T>);
+
+impl<T: Trace + 'static> Drop for GcRoot<T> {
+    fn drop(&mut self) {
+        unsafe {
+            let val = self.0.as_ref();
+            if let Some(next) = val.next.get() {
+                next.as_ref().prev.set(val.prev.get());
+            }
+            if let Some(prev) = val.prev.get() {
+                prev.as_ref().next.set(val.next.get());
+            }
+            Box::from_raw(self.0.as_ptr());
+        }
+    }
+}
+
+impl<T: Trace + 'static> Deref for GcRoot<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        unsafe { &*(self.0.as_ref().ptr.as_ref().value.get() as *mut T) }
     }
 }

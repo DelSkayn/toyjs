@@ -1,6 +1,7 @@
 //! A garbage collector based on the gc-arena crate.
 use std::{
     cell::{Cell, UnsafeCell},
+    marker::PhantomData,
     mem,
     ptr::NonNull,
 };
@@ -9,8 +10,10 @@ use common::cell_vec::CellVec;
 pub use trace::Trace;
 
 mod ptr;
-pub use ptr::Gc;
 use ptr::{Color, GcBox, GcBoxPtr};
+pub use ptr::{Gc, GcRoot, RootValue};
+
+use self::ptr::RootValuePtr;
 
 const PAUSE_FACTOR: f64 = 0.5;
 const TIMING_FACTOR: f64 = 1.5;
@@ -62,6 +65,8 @@ pub struct GcArena {
     sweep_prev: Cell<Option<GcBoxPtr>>,
     phase: Cell<Phase>,
 
+    roots: UnsafeCell<Box<RootValue>>,
+
     total_allocated: Cell<usize>,
     remembered_size: Cell<usize>,
     wakeup_total: Cell<usize>,
@@ -70,6 +75,8 @@ pub struct GcArena {
 
 impl GcArena {
     pub fn new() -> Self {
+        let ptr = NonNull::<GcBox<()>>::dangling();
+
         GcArena {
             all: Cell::new(None),
             grays: CellVec::new(),
@@ -78,6 +85,12 @@ impl GcArena {
             sweep: Cell::new(None),
             sweep_prev: Cell::new(None),
             phase: Cell::new(Phase::Sleep),
+
+            roots: UnsafeCell::new(Box::new(RootValue {
+                next: Cell::new(None),
+                prev: Cell::new(None),
+                ptr,
+            })),
 
             total_allocated: Cell::new(0),
             remembered_size: Cell::new(0),
@@ -115,6 +128,21 @@ impl GcArena {
             }
 
             Gc(ptr)
+        }
+    }
+
+    pub fn root<T: Trace + 'static>(&self, v: Gc<T>) -> GcRoot<T> {
+        unsafe {
+            let root = &mut (*self.roots.get());
+            let prev = NonNull::<RootValue>::new_unchecked(&mut **root);
+            let ptr = NonNull::new_unchecked(Box::into_raw(Box::new(RootValue {
+                next: Cell::new(root.next.get()),
+                prev: Cell::new(Some(prev)),
+                ptr: v.0,
+            })));
+            root.next.set(Some(ptr as RootValuePtr));
+
+            GcRoot(ptr, PhantomData)
         }
     }
 
@@ -165,6 +193,12 @@ impl GcArena {
                     // Trace the root, every value reachable by the root is live.
                     // All gc pointers will be put on into the grays array.
                     root.trace(Ctx(self));
+
+                    let mut cur_root = (*self.roots.get()).next.get();
+                    while let Some(x) = cur_root {
+                        (*x.as_ref().ptr.as_ref().value.get()).trace(Ctx(self));
+                        cur_root = x.as_ref().next.get();
+                    }
                     work_done += mem::size_of::<T>();
                     self.phase.set(Phase::Mark);
                 }
