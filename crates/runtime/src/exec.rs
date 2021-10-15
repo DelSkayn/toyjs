@@ -2,7 +2,8 @@ use crate::{
     function::Function,
     gc::Gc,
     instructions::{opcode, InstructionOpcode, InstructionReader},
-    value, ByteCode, JSValue, Object, Realm,
+    value::{self, TAG_BASE},
+    ByteCode, JSValue, Object, Realm,
 };
 
 impl Realm {
@@ -145,6 +146,20 @@ impl Realm {
                     let left = self.convert_int(left) as u32;
                     let right = self.convert_int(right) as u32 % 32;
                     self.stack.write(dst, JSValue::from((left >> right) as i32));
+                }
+                opcode::SEqual => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = self.strict_equal(left, right);
+                    self.stack.write(dst, JSValue::from(res));
+                }
+                opcode::SNotEqual => {
+                    let dst = instr.read_u8();
+                    let left = self.stack.read(instr.read_u8());
+                    let right = self.stack.read(instr.read_u8());
+                    let res = !self.strict_equal(left, right);
+                    self.stack.write(dst, JSValue::from(res));
                 }
 
                 opcode::IsNullish => {
@@ -322,6 +337,32 @@ impl Realm {
             }
         } else {
             todo!()
+        }
+    }
+
+    pub unsafe fn strict_equal(&mut self, left: JSValue, right: JSValue) -> bool {
+        if left.tag() == right.tag() {
+            if left.tag() == TAG_BASE {
+                left.0.bits == right.0.bits
+            } else if left.is_int() {
+                left.into_int() == right.into_int()
+            } else if left.is_undefined() {
+                true
+            } else if left.is_nullish() {
+                true
+            } else if left.is_string() {
+                left.into_string() == right.into_string()
+            } else if left.is_object() || right.is_function() {
+                left.into_object().ptr_eq(right.into_object())
+            } else {
+                panic!("invalid value");
+            }
+        } else {
+            if left.is_float() && right.is_float() {
+                left.into_float() == right.into_float()
+            } else {
+                false
+            }
         }
     }
 
