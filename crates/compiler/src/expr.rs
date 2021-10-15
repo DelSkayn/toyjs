@@ -67,11 +67,15 @@ impl AssignmentTarget {
     }
 
     /// Returns a register which contains the value of the assignment target.
-    pub fn compile_use<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Register {
+    pub fn compile_use<A: Allocator + Clone>(
+        &self,
+        placement: Option<Register>,
+        this: &mut Compiler<A>,
+    ) -> Register {
         match self {
-            Self::Variable(x) => this.compile_symbol_use(None, *x),
+            Self::Variable(x) => this.compile_symbol_use(placement, *x),
             Self::Dot(register, string) => {
-                let reg = this.compile_literal(None, Literal::String(*string));
+                let reg = this.compile_literal(placement, Literal::String(*string));
                 this.instructions.push(Instruction::Index {
                     dst: reg.0,
                     obj: register.0,
@@ -80,7 +84,7 @@ impl AssignmentTarget {
                 reg
             }
             Self::Index(obj, key) => {
-                let dst = this.registers.alloc_temp();
+                let dst = placement.unwrap_or_else(|| this.registers.alloc_temp());
                 this.instructions.push(Instruction::Index {
                     dst: dst.0,
                     obj: obj.0,
@@ -92,7 +96,7 @@ impl AssignmentTarget {
     }
 
     /// Returns an optional placement register if the assignment target is an local register.
-    pub fn placment<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
+    pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = self {
             if let SymbolInfo::Local = this.lexical_info.symbol_info[*x] {
                 Some(this.registers.alloc_symbol(*x))
@@ -233,7 +237,75 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     self.compile_function_call(placement, expr, args),
                     self.alloc.clone(),
                 ),
-                _ => todo!(),
+                PostfixOperator::Index(ref key) => {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let key = self.compile_expr(None, key).eval(self);
+                    self.registers.free_temp(expr);
+                    self.registers.free_temp(key);
+                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                    self.instructions.push(Instruction::Index {
+                        dst: dst.0,
+                        obj: expr.0,
+                        key: key.0,
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
+                PostfixOperator::AddOne => {
+                    let ass = AssignmentTarget::from_expr(self, expr);
+                    let one = self.compile_literal(None, Literal::Integer(1));
+                    let mut value = ass.compile_use(placement, self);
+                    if let Some(x) = ass.placement(self) {
+                        if x == value {
+                            let new_value = self.registers.alloc_temp();
+                            self.instructions.push(Instruction::Move {
+                                src: value.0 as u16,
+                                dst: new_value.0,
+                            });
+                            value = new_value;
+                        }
+                    }
+                    self.registers.free_temp(one);
+                    let dst = ass
+                        .placement(self)
+                        .unwrap_or_else(|| self.registers.alloc_temp());
+
+                    self.instructions.push(Instruction::Add {
+                        dst: dst.0,
+                        left: value.0,
+                        righ: one.0,
+                    });
+                    ass.compile_assign(self, dst);
+                    self.registers.free_temp(dst);
+                    ExprValue::new_in(value, self.alloc.clone())
+                }
+                PostfixOperator::SubtractOne => {
+                    let ass = AssignmentTarget::from_expr(self, expr);
+                    let one = self.compile_literal(None, Literal::Integer(1));
+                    let mut value = ass.compile_use(placement, self);
+                    if let Some(x) = ass.placement(self) {
+                        if x == value {
+                            let new_value = self.registers.alloc_temp();
+                            self.instructions.push(Instruction::Move {
+                                src: value.0 as u16,
+                                dst: new_value.0,
+                            });
+                            value = new_value;
+                        }
+                    }
+                    self.registers.free_temp(one);
+                    let dst = ass
+                        .placement(self)
+                        .unwrap_or_else(|| self.registers.alloc_temp());
+
+                    self.instructions.push(Instruction::Sub {
+                        dst: dst.0,
+                        left: value.0,
+                        righ: one.0,
+                    });
+                    ass.compile_assign(self, dst);
+                    self.registers.free_temp(dst);
+                    ExprValue::new_in(value, self.alloc.clone())
+                }
             },
             Expr::UnaryPrefix(op, expr) => match op {
                 PrefixOperator::Not => {
@@ -245,6 +317,60 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         dst: dst.0,
                         src: expr.0 as u16,
                     });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
+                PrefixOperator::AddOne => {
+                    let ass = AssignmentTarget::from_expr(self, expr);
+                    let value = ass.compile_use(None, self);
+                    let one = self.compile_literal(None, Literal::Integer(1));
+                    self.registers.free_temp(value);
+                    self.registers.free_temp(one);
+                    let tgt_placement = ass.placement(self);
+                    let dst = tgt_placement
+                        .or(placement)
+                        .unwrap_or_else(|| self.registers.alloc_temp());
+
+                    self.instructions.push(Instruction::Add {
+                        dst: dst.0,
+                        left: value.0,
+                        righ: one.0,
+                    });
+                    match (placement, tgt_placement) {
+                        (Some(to), Some(from)) => {
+                            self.instructions.push(Instruction::Move {
+                                src: from.0 as u16,
+                                dst: to.0,
+                            });
+                        }
+                        _ => {}
+                    }
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
+                PrefixOperator::SubtractOne => {
+                    let ass = AssignmentTarget::from_expr(self, expr);
+                    let value = ass.compile_use(None, self);
+                    let one = self.compile_literal(None, Literal::Integer(1));
+                    self.registers.free_temp(value);
+                    self.registers.free_temp(one);
+                    let tgt_placement = ass.placement(self);
+                    let dst = tgt_placement
+                        .or(placement)
+                        .unwrap_or_else(|| self.registers.alloc_temp());
+
+                    self.instructions.push(Instruction::Sub {
+                        dst: dst.0,
+                        left: value.0,
+                        righ: one.0,
+                    });
+                    match (placement, tgt_placement) {
+                        (Some(to), Some(from)) => {
+                            self.instructions.push(Instruction::Move {
+                                src: from.0 as u16,
+                                dst: to.0,
+                            });
+                        }
+                        _ => {}
+                    }
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
                 _ => todo!(),
@@ -401,7 +527,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         value: &'a Expr<A>,
     ) -> Register {
         let assign_target = AssignmentTarget::from_expr(self, assign);
-        let place = assign_target.placment(self);
+        let place = assign_target.placement(self);
 
         if let AssignOperator::Assign = op {
             let expr = self.compile_expr(place, value).eval(self);
@@ -409,7 +535,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             return expr;
         }
 
-        let assign_value = assign_target.compile_use(self);
+        let assign_value = assign_target.compile_use(None, self);
         let expr = self.compile_expr(None, value).eval(self);
         let dst = place
             .or(placement)
