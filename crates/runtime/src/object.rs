@@ -45,6 +45,7 @@ impl Hash for KeyValue {
 pub struct Object {
     prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, JSValue>>,
+    array: UnsafeCell<Vec<JSValue>>,
 }
 
 impl Object {
@@ -52,10 +53,20 @@ impl Object {
         Object {
             prototype: None,
             values: UnsafeCell::new(HashMap::default()),
+            array: UnsafeCell::new(Vec::new()),
         }
     }
 
     pub unsafe fn index(&self, key: JSValue, realm: &mut Realm) -> JSValue {
+        if key.is_int() {
+            let idx = key.into_int();
+            if idx >= 0 {
+                return (*self.array.get())
+                    .get(idx as usize)
+                    .copied()
+                    .unwrap_or(JSValue::undefined());
+            }
+        }
         let string = realm.coerce_string(key);
         (*self.values.get())
             .get(&string)
@@ -64,8 +75,19 @@ impl Object {
     }
 
     pub unsafe fn index_set(&self, key: JSValue, value: JSValue, realm: &mut Realm) {
-        let string = realm.coerce_string(key);
-        (*self.values.get()).insert(string, value);
+        if key.is_int() {
+            let idx = key.into_int();
+            if idx >= 0 {
+                let idx = idx as usize;
+                if (*self.array.get()).len() <= idx {
+                    (*self.array.get()).resize(idx + 1, JSValue::undefined())
+                }
+                return (*self.array.get())[idx] = value;
+            }
+        } else {
+            let string = realm.coerce_string(key);
+            (*self.values.get()).insert(string, value);
+        }
     }
 }
 
@@ -83,7 +105,9 @@ unsafe impl Trace for Object {
                 x.trace(ctx);
             }
             for (_, v) in (*self.values.get()).iter() {
-                //k.trace(ctx);
+                v.trace(ctx);
+            }
+            for v in (*self.array.get()).iter() {
                 v.trace(ctx);
             }
         }
