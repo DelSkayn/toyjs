@@ -319,6 +319,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+                PrefixOperator::Negative => {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                    self.registers.free_temp(expr);
+                    self.instructions.push(Instruction::Negative {
+                        dst: dst.0,
+                        op: expr.0 as u16,
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
                 PrefixOperator::AddOne => {
                     let ass = AssignmentTarget::from_expr(self, expr);
                     let value = ass.compile_use(None, self);
