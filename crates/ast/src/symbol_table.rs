@@ -200,6 +200,17 @@ impl<A: Allocator> SymbolTable<A> {
                 .expect("lexical scopes should always have a parent"),
         }
     }
+
+    pub fn define_global(&mut self, str: StringId) -> SymbolId {
+        let symbol = self.symbols.insert(Symbol {
+            decl_type: DeclType::Var,
+            decl_scope: self.global,
+            ident: str,
+        });
+        let global = self.global;
+        self.scopes[global].symbols.push(symbol);
+        symbol
+    }
 }
 
 pub struct SymbolTableBuilder<'a, A: Allocator> {

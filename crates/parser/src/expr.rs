@@ -123,7 +123,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 if !lhs.is_assignable() {
                     unexpected!(self => "left hand side expression is not assignable")
                 }
-                PostfixOperator::AddOne
+                PostfixOperator::SubtractOne
             }
             t!(".") => {
                 expect_bind!(self,let index = "ident");
