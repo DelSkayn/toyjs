@@ -114,6 +114,15 @@ impl Stack {
         self.frame.add(1 + arg as usize).write(value)
     }
 
+    #[inline(always)]
+    pub unsafe fn read_arg(&mut self, arg: u8) -> JSValue {
+        let used = self.frame.offset_from(self.root.as_ptr()) as usize;
+        if used + arg as usize + 1 > self.capacity {
+            return JSValue::undefined();
+        }
+        self.frame.add(1 + arg as usize).read()
+    }
+
     fn grow(&mut self) {
         todo!()
     }

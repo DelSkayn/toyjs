@@ -17,6 +17,7 @@ pub mod stack;
 use stack::Stack;
 mod function;
 
+pub mod env;
 pub mod exec;
 
 use std::{alloc::Global, collections::VecDeque, fmt};
@@ -95,14 +96,16 @@ impl Realm {
         let gc = GcArena::new();
         let global = gc.allocate(Object::new());
 
-        Realm {
+        let mut res = Realm {
             symbol_table: SymbolTable::new(),
             interner: Interner::new(),
             global,
             tasks: VecDeque::new(),
             gc,
             stack: Stack::new(),
-        }
+        };
+        unsafe { env::initialize(&mut res) };
+        res
     }
 
     pub fn schedule_task(&mut self, bc: Gc<ByteCode>, function: usize) {
