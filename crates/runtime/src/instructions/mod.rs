@@ -7,7 +7,69 @@
 #[macro_use]
 mod macros;
 mod buffer;
+use std::fmt;
+
 pub use buffer::{InstructionBuffer, InstructionReader};
+
+use crate::{
+    gc::{self, Trace},
+    JSValue,
+};
+
+#[derive(Clone, Copy)]
+pub struct ByteFunction {
+    pub offset: usize,
+    pub size: usize,
+    pub registers: u8,
+}
+
+pub struct ByteCode {
+    pub constants: Box<[JSValue]>,
+    pub functions: Box<[ByteFunction]>,
+    pub instructions: InstructionBuffer,
+}
+
+unsafe impl Trace for ByteCode {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: gc::Ctx) {
+        self.constants.iter().for_each(|x| x.trace(ctx))
+    }
+}
+
+impl fmt::Display for ByteCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "> CONSTANTS")?;
+        for (idx, c) in self.constants.iter().enumerate() {
+            writeln!(f, "{:>4}: {:?}", idx, c)?;
+        }
+        writeln!(f)?;
+        writeln!(f, "> INSTRUCTIONS")?;
+        for (idx, func) in self.functions.iter().enumerate() {
+            writeln!(
+                f,
+                "= FUNC:{:<4} registers:{:<2} instructions:{}",
+                idx, func.registers, func.size
+            )?;
+
+            let mut reader = InstructionReader::new(&self.instructions, func.offset, func.size);
+            let mut idx = 0;
+
+            while !reader.at_end() {
+                write!(f, "{:>4}: ", idx)?;
+                Instruction::format_byte_instruction(f, &mut reader)?;
+                writeln!(f)?;
+                idx += 1;
+            }
+        }
+        Ok(())
+    }
+}
 
 /// Possible instruction types
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]

@@ -1,9 +1,10 @@
 use crate::{
     function::Function,
     gc::Gc,
-    instructions::{opcode, InstructionOpcode, InstructionReader},
+    instructions::{opcode, ByteCode, InstructionOpcode, InstructionReader},
+    realm::Realm,
     value::{self, TAG_BASE},
-    ByteCode, JSValue, Object, Realm,
+    JSValue, Object,
 };
 
 impl Realm {
@@ -364,6 +365,53 @@ impl Realm {
                 false
             }
         }
+    }
+
+    pub unsafe fn equal(&mut self, left: JSValue, right: JSValue) -> bool {
+        if left.tag() == right.tag() {
+            return if left.tag() == TAG_BASE {
+                if left.is_undefined() || left.is_null() && right.is_undefined() || right.is_null()
+                {
+                    true
+                } else {
+                    left.0.bits == right.0.bits
+                }
+            } else if left.is_int() {
+                left.into_int() == right.into_int()
+            } else if left.is_string() {
+                left.into_string() == right.into_string()
+            } else if left.is_object() || right.is_function() {
+                left.into_object().ptr_eq(right.into_object())
+            } else {
+                true
+            };
+        }
+        if left.is_float() && right.is_float() {
+            return left.into_float() == right.into_float();
+        }
+        if left.is_float() || left.is_int() && right.is_string() {
+            return if let Ok(v) = right.into_string().parse::<f64>() {
+                if v as i32 as f64 == v {
+                    left.into_float() == v
+                } else {
+                    left.into_int() == v as i32
+                }
+            } else {
+                false
+            };
+        }
+        if right.is_float() || right.is_int() && left.is_string() {
+            return if let Ok(v) = left.into_string().parse::<f64>() {
+                if v as i32 as f64 == v {
+                    right.into_float() == v
+                } else {
+                    right.into_int() == v as i32
+                }
+            } else {
+                false
+            };
+        }
+        todo!()
     }
 
     pub unsafe fn add(&mut self, left: JSValue, right: JSValue) -> JSValue {

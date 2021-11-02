@@ -1,6 +1,10 @@
 use crate::{
-    gc::Trace, instructions::InstructionReader, object::Object, stack::Stack, ByteCode, Gc,
-    JSValue, Realm,
+    gc::Trace,
+    instructions::{ByteCode, InstructionReader},
+    object::Object,
+    realm::Realm,
+    stack::Stack,
+    Gc, JSValue,
 };
 use std::cell::RefCell;
 
