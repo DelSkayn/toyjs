@@ -6,7 +6,8 @@ use std::{
 
 use crate::{
     gc::{Gc, Trace},
-    JSValue, Realm,
+    realm::Realm,
+    JSValue,
 };
 use common::collections::HashMap;
 

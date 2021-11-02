@@ -11,8 +11,7 @@ use constants::Constants;
 use lexical_info::LexicalInfo;
 use runtime::{
     gc::GcArena,
-    instructions::{Instruction, InstructionBuffer},
-    ByteCode, ByteFunction,
+    instructions::{ByteCode, ByteFunction, Instruction, InstructionBuffer},
 };
 
 use std::{

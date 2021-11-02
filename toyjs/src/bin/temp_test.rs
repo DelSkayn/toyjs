@@ -5,7 +5,7 @@ use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
-use runtime::{Realm, Task};
+use runtime::realm::{Realm, Task};
 use std::{
     alloc::Global,
     env,
