@@ -1,5 +1,5 @@
 use ast::{Expr, Literal, Params, Stmt};
-use runtime::instructions::Instruction;
+use vm::instructions::Instruction;
 
 use crate::{
     expr::ExprValue,

@@ -59,7 +59,7 @@ macro_rules! define_instructions {
             }
 
             pub fn format_byte_instruction(fmt: &mut std::fmt::Formatter, reader: &mut InstructionReader) -> std::fmt::Result{
-                let op = reader.safe_read_u8();
+                let op = reader.try_read_u8().unwrap();
                 write!(fmt,"{:3} ",op)?;
                 match op {
                     $(
@@ -157,73 +157,73 @@ macro_rules! define_instructions {
         write!($w,"{:15}  {:>4}:0x{:<2x}  {:>4}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($b),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($c),
-            $reader.safe_read_u8()
+            $reader.try_read_u8().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_u16()
+            $reader.try_read_u16().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_i16()
+            $reader.try_read_i16().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident: u32) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_u16(),
+            $reader.try_read_u16().unwrap(),
             stringify!($l),
-            $reader.safe_read_u32()
+            $reader.try_read_u32().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident: i32) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_u16(),
+            $reader.try_read_u16().unwrap(),
             stringify!($l),
-            $reader.safe_read_i32()
+            $reader.try_read_i32().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident: u32) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_i16(),
+            $reader.try_read_i16().unwrap(),
             stringify!($l),
-            $reader.safe_read_u32()
+            $reader.try_read_u32().unwrap()
             )
     };
     (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident: i32) => {
         write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.safe_read_u8(),
+            $reader.try_read_u8().unwrap(),
             stringify!($d),
-            $reader.safe_read_i16(),
+            $reader.try_read_i16().unwrap(),
             stringify!($l),
-            $reader.safe_read_i32()
+            $reader.try_read_i32().unwrap()
             )
     };
 }

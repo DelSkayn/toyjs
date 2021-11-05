@@ -203,8 +203,8 @@ dependencies = [
  "toyjs_compiler",
  "toyjs_lexer",
  "toyjs_parser",
- "toyjs_runtime",
  "toyjs_token",
+ "toyjs_vm",
 ]
 
 [[package]]
@@ -548,8 +548,8 @@ dependencies = [
  "toyjs_compiler",
  "toyjs_lexer",
  "toyjs_parser",
- "toyjs_runtime",
  "toyjs_token",
+ "toyjs_vm",
 ]
 
 [[package]]
@@ -577,7 +577,7 @@ dependencies = [
  "bumpalo",
  "toyjs_ast",
  "toyjs_common",
- "toyjs_runtime",
+ "toyjs_vm",
 ]
 
 [[package]]
@@ -604,21 +604,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "toyjs_runtime"
-version = "0.1.0"
-dependencies = [
- "bumpalo",
- "toyjs_ast",
- "toyjs_common",
- "toyjs_lexer",
- "toyjs_token",
-]
-
-[[package]]
 name = "toyjs_token"
 version = "0.1.0"
 dependencies = [
  "toyjs_common",
+]
+
+[[package]]
+name = "toyjs_vm"
+version = "0.1.0"
+dependencies = [
+ "toyjs_ast",
+ "toyjs_common",
+ "toyjs_lexer",
+ "toyjs_token",
 ]
 
 [[package]]

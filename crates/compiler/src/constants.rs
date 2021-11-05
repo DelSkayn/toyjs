@@ -7,7 +7,7 @@ use common::{
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
-use runtime::{gc::GcArena, JSValue};
+use vm::{gc::GcArena, JSValue};
 
 newtype_key! {
     pub struct ConstantId(pub(crate) u32);

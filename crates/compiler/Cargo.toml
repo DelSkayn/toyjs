@@ -9,5 +9,5 @@ edition = "2018"
 [dependencies]
 common = { package="toyjs_common",path = "../common/" }
 ast = { package="toyjs_ast",path = "../ast/" }
-runtime = { package="toyjs_runtime",path = "../runtime/" }
+vm = { package="toyjs_vm",path = "../vm/" }
 bumpalo = { version = "3.4.0", features = ["boxed","collections"]}

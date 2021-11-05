@@ -9,7 +9,7 @@ use common::{
 };
 use constants::Constants;
 use lexical_info::LexicalInfo;
-use runtime::{
+use vm::{
     gc::GcArena,
     instructions::{ByteCode, ByteFunction, Instruction, InstructionBuffer},
 };

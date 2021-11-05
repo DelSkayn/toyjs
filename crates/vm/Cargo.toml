@@ -1,5 +1,5 @@
 [package]
-name = "toyjs_runtime"
+name = "toyjs_vm"
 version = "0.1.0"
 authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
 edition = "2018"
@@ -11,4 +11,3 @@ common = { package="toyjs_common",path = "../common/" }
 token = { package="toyjs_token",path = "../token/" }
 lexer = { package="toyjs_lexer",path = "../lexer/" }
 ast = { package="toyjs_ast",path = "../ast/" }
-bumpalo = { version = "3.4.0", features = ["boxed","collections"]}

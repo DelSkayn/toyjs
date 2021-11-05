@@ -3,13 +3,68 @@
 //! Instructions come in two different formats.
 //! 1. The simple to use enum representation in [`Instruction`]
 //! 2. The dense format used in the runtime in the form of a series of bytes [`InstructionBuffer`]
+//!
+//! # Safety
+//!
+//! The vm makes a major assumption regarding the bytecode it is being handed to run, it assumes
+//! the bytecode is correct.
+//!
+//! Bytecode which is correct should make sure that the following statements hold.
+//!
+//! - No pointer to an instruction, be it a jump or a offset into the instructions from a
+//! bytefuction, should point to a value outside of the instruction buffer.
+//! - All constants and functions id's in the bytecode should be valid id's for the current
+//! bytecode.
+//! - No instructions references a register larger then the amount of registers the current
+//! function has defined.
+//! - All instructions should be valid opcodes.
+//! - All list of instructions belonging to a function should end in a return instruction.
+//!
 
 #[macro_use]
 mod macros;
 mod buffer;
-use std::fmt;
+use std::{error::Error, fmt};
 
 pub use buffer::{InstructionBuffer, InstructionReader};
+
+#[derive(Debug)]
+pub enum ValidationError {
+    FunctionOffsetInvalid {
+        /// Which function
+        function: usize,
+        /// The invalid offset
+        offset: usize,
+        /// The size of the buffer.
+        buffer_size: usize,
+    },
+    InvalidOpcode {
+        /// Which function
+        function: usize,
+        /// The offset of the invalid opcode in the instruction buffer.
+        offset: usize,
+        /// The invalid opcode
+        opcode: u8,
+    },
+}
+
+impl Error for ValidationError {}
+
+impl fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::FunctionOffsetInvalid {
+                function,
+                offset,
+                buffer_size,
+            } => {
+                write!(f,"Function `{}` had an invalid offset into its instruction buffer. The offset was `{}` while the instruction buffer had a size of `{}`",function,offset,buffer_size)?;
+            }
+            _ => todo!(),
+        }
+        Ok(())
+    }
+}
 
 use crate::{
     gc::{self, Trace},
@@ -18,15 +73,65 @@ use crate::{
 
 #[derive(Clone, Copy)]
 pub struct ByteFunction {
+    /// The offset into the instruction buffer where this function starts.
     pub offset: usize,
+    /// The amount of instructions part of this function.
     pub size: usize,
+    /// The amount of register this function uses.
     pub registers: u8,
 }
 
+/// A generic set of instructions, functions and constants.
 pub struct ByteCode {
+    /// Constants used in this bytecode set.
     pub constants: Box<[JSValue]>,
+    /// The functions defined in this bytecode, the entry function is always the first one.
     pub functions: Box<[ByteFunction]>,
+    //// All instructions beloning to all functions defined in the bytecode.
     pub instructions: InstructionBuffer,
+}
+
+impl ByteCode {
+    /// Makes sure that bytecode is valid and returns a struct signifying that the bytecode has
+    /// been validated.
+    pub fn validate(self) -> Result<ValidByteCode, (Self, ValidationError)> {
+        unsafe {
+            match self.is_valid() {
+                None => Ok(ValidByteCode::assume_valid(self)),
+                Some(x) => Err((self, x)),
+            }
+        }
+    }
+
+    pub fn is_valid(&self) -> Option<ValidationError> {
+        let mut _l_values = Vec::<usize>::new();
+
+        for (f_idx, f) in self.functions.iter().enumerate() {
+            if f.offset >= self.instructions.size() {
+                return Some(ValidationError::FunctionOffsetInvalid {
+                    function: f_idx,
+                    offset: f.offset,
+                    buffer_size: self.instructions.size(),
+                });
+            }
+            let _reader = InstructionReader::new(&self.instructions, f.offset, f.size);
+        }
+        todo!();
+    }
+}
+
+/// Byte code which has been validated to ensure that the assumptions the vm makes about the
+/// bytecode hold hold.
+pub struct ValidByteCode(ByteCode);
+
+impl ValidByteCode {
+    pub unsafe fn assume_valid(bc: ByteCode) -> ValidByteCode {
+        ValidByteCode(bc)
+    }
+
+    pub fn into_inner(self) -> ByteCode {
+        self.0
+    }
 }
 
 unsafe impl Trace for ByteCode {

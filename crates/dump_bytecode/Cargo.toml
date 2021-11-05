@@ -12,4 +12,4 @@ lexer = { package="toyjs_lexer",path = "../lexer/" }
 ast = { package="toyjs_ast",path = "../ast/" }
 parser = { package="toyjs_parser",path = "../parser/" }
 compiler = { package="toyjs_compiler",path = "../compiler/" }
-runtime = { package="toyjs_runtime",path = "../runtime/" }
+vm = { package="toyjs_vm",path = "../vm/" }
