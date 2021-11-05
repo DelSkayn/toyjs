@@ -3,7 +3,6 @@ use crate::{
     gc::Gc,
     instructions::{opcode, ByteCode, InstructionOpcode, InstructionReader},
     realm::Realm,
-    value::{self, TAG_BASE},
     JSValue, Object,
 };
 
@@ -48,25 +47,24 @@ impl Realm {
                     let obj = self.stack.read(instr.read_u8());
                     let key = self.stack.read(instr.read_u8());
                     let val = self.stack.read(instr.read_u8());
-                    match obj.tag() {
-                        value::TAG_OBJECT => {
-                            let obj = obj.into_object();
-                            self.gc.write_barrier(obj);
-                            obj.index_set(key, val, self);
-                        }
-                        _ => todo!(),
+
+                    if obj.is_object() {
+                        let obj = obj.into_object();
+                        self.gc.write_barrier(obj);
+                        obj.index_set(key, val, self);
+                    } else {
+                        todo!()
                     }
                 }
                 opcode::Index => {
                     let dst = instr.read_u8();
                     let obj = self.stack.read(instr.read_u8());
                     let key = self.stack.read(instr.read_u8());
-                    match obj.tag() {
-                        value::TAG_OBJECT => {
-                            let res = obj.into_object().index(key, self);
-                            self.stack.write(dst, res)
-                        }
-                        _ => todo!(),
+                    if obj.is_object() {
+                        let res = obj.into_object().index(key, self);
+                        self.stack.write(dst, res)
+                    } else {
+                        todo!()
                     }
                 }
                 opcode::Add => {
@@ -237,86 +235,59 @@ impl Realm {
     }
 
     pub unsafe fn is_falsish(&mut self, value: JSValue) -> bool {
-        match value.tag() {
-            value::TAG_INT => value.into_int() == 0,
-            value::TAG_BASE => match value.0.bits {
-                value::VALUE_NULL => true,
-                value::VALUE_UNDEFINED => true,
-                value::VALUE_FALSE => true,
-                _ => false,
-            },
-            value::TAG_STRING => *value.into_string() == "",
-            value::TAG_OBJECT => false,
-            value::TAG_FUNCTION => false,
-            value::TAG_SYMBOL => todo!(),
-            _ => panic!("invalid tag"),
+        if value.is_int() {
+            value.into_int() == 0
+        } else if value.is_string() {
+            *value.into_string() == ""
+        } else {
+            value.is_null() || value.is_undefined() || value.is_false()
         }
     }
 
     pub unsafe fn is_nullish(&mut self, value: JSValue) -> bool {
-        match value.tag() {
-            value::TAG_BASE => match value.0.bits {
-                value::VALUE_NULL => true,
-                value::VALUE_UNDEFINED => true,
-                _ => false,
-            },
-            _ => false,
-        }
+        value.is_null() || value.is_undefined()
     }
 
     pub unsafe fn coerce_string(&mut self, value: JSValue) -> String {
-        match value.tag() {
-            value::TAG_INT => format!("{}", value.into_int()),
-            value::TAG_BASE => match value.0.bits {
-                value::VALUE_NULL => "null".to_string(),
-                value::VALUE_UNDEFINED => "undefined".to_string(),
-                value::VALUE_TRUE => "true".to_string(),
-                value::VALUE_FALSE => "false".to_string(),
-                _ => panic!("invalid base value"),
-            },
-            // TODO find a better way?
-            value::TAG_STRING => (*value.into_string()).clone(),
-            value::TAG_OBJECT => "[object Object]".to_string(),
-            value::TAG_FUNCTION => todo!(),
-            value::TAG_SYMBOL => todo!(),
-            _ => panic!("invalid tag"),
+        if value.is_int() {
+            format!("{}", value.into_int())
+        } else if value.is_null() {
+            "null".to_string()
+        } else if value.is_undefined() {
+            "undefined".to_string()
+        } else if value.is_true() {
+            "true".to_string()
+        } else if value.is_false() {
+            "false".to_string()
+        } else if value.is_string() {
+            (*value.into_string()).clone()
+        } else if value.is_object() {
+            "[object Object]".to_string()
+        } else {
+            todo!()
         }
     }
 
     pub unsafe fn coerce_number(&mut self, value: JSValue) -> JSValue {
-        match value.tag() {
-            value::TAG_INT => value,
-            value::TAG_BASE => match value.0.bits {
-                value::VALUE_NULL => JSValue::from(0i32),
-                value::VALUE_UNDEFINED => JSValue::from(f64::NAN),
-                value::VALUE_TRUE => JSValue::from(1i32),
-                value::VALUE_FALSE => JSValue::from(0i32),
-                _ => panic!("invalid base value"),
-            },
-            // TODO find a better way?
-            value::TAG_STRING => {
-                if let Ok(v) = value.into_string().parse::<f64>() {
-                    if v as i32 as f64 == v {
-                        JSValue::from(v as i32)
-                    } else {
-                        JSValue::from(v)
-                    }
+        if value.is_int() || value.is_float() {
+            value
+        } else if value.is_null() || value.is_undefined() || value.is_false() {
+            JSValue::from(0i32)
+        } else if value.is_string() {
+            if let Ok(v) = value.into_string().parse::<f64>() {
+                if v as i32 as f64 == v {
+                    JSValue::from(v as i32)
                 } else {
-                    JSValue::from(f64::NAN)
+                    JSValue::from(v)
                 }
+            } else {
+                JSValue::from(f64::NAN)
             }
-            value::TAG_OBJECT | value::TAG_FUNCTION => {
-                let prim = self.to_primitive(value);
-                self.coerce_number(prim)
-            }
-            value::TAG_SYMBOL => todo!(),
-            _ => {
-                if value.is_float() {
-                    return value;
-                } else {
-                    panic!("invalid jsvalue")
-                }
-            }
+        } else if value.is_object() || value.is_function() {
+            let prim = self.to_primitive(value);
+            self.coerce_number(prim)
+        } else {
+            todo!()
         }
     }
 
@@ -342,52 +313,33 @@ impl Realm {
     }
 
     pub unsafe fn strict_equal(&mut self, left: JSValue, right: JSValue) -> bool {
-        if left.tag() == right.tag() {
-            if left.tag() == TAG_BASE {
-                left.0.bits == right.0.bits
-            } else if left.is_int() {
-                left.into_int() == right.into_int()
-            } else if left.is_undefined() {
-                true
-            } else if left.is_nullish() {
-                true
-            } else if left.is_string() {
-                left.into_string() == right.into_string()
-            } else if left.is_object() || right.is_function() {
-                left.into_object().ptr_eq(right.into_object())
-            } else {
-                panic!("invalid value");
-            }
-        } else {
-            if left.is_float() && right.is_float() {
-                left.into_float() == right.into_float()
-            } else {
-                false
-            }
+        if !left.same_type(right) {
+            return false;
         }
-    }
-
-    pub unsafe fn equal(&mut self, left: JSValue, right: JSValue) -> bool {
-        if left.tag() == right.tag() {
-            return if left.tag() == TAG_BASE {
-                if left.is_undefined() || left.is_null() && right.is_undefined() || right.is_null()
-                {
-                    true
-                } else {
-                    left.0.bits == right.0.bits
-                }
-            } else if left.is_int() {
-                left.into_int() == right.into_int()
-            } else if left.is_string() {
-                left.into_string() == right.into_string()
-            } else if left.is_object() || right.is_function() {
-                left.into_object().ptr_eq(right.into_object())
-            } else {
-                true
-            };
+        if left.is_int() {
+            return left.into_int() == right.into_int();
+        }
+        if left.is_string() {
+            return left.into_string() == right.into_string();
+        }
+        if left.is_object() {
+            return left.into_object().ptr_eq(right.into_object());
+        }
+        if left.is_function() {
+            return left.into_function().ptr_eq(right.into_function());
         }
         if left.is_float() && right.is_float() {
             return left.into_float() == right.into_float();
+        }
+        todo!()
+    }
+
+    pub unsafe fn equal(&mut self, left: JSValue, right: JSValue) -> bool {
+        if self.strict_equal(left, right) {
+            return true;
+        }
+        if left.is_undefined() || left.is_null() {
+            return right.is_undefined() || right.is_null();
         }
         if left.is_float() || left.is_int() && right.is_string() {
             return if let Ok(v) = right.into_string().parse::<f64>() {
@@ -417,31 +369,29 @@ impl Realm {
     pub unsafe fn add(&mut self, left: JSValue, right: JSValue) -> JSValue {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
-        if left.tag() == value::TAG_STRING || right.tag() == value::TAG_STRING {
+        if left.is_string() || right.is_string() {
             let left = self.coerce_string(left);
             let right = self.coerce_string(right);
             return JSValue::from(self.gc.allocate(left.to_string() + &right.to_string()));
         }
         let left = self.coerce_number(left);
         let right = self.coerce_number(right);
-        let left = match left.tag() {
-            value::TAG_INT => left.into_int() as f64,
-            _ => {
-                if left.is_float() {
-                    left.into_float()
-                } else {
-                    todo!()
-                }
+        let left = if left.is_int() {
+            left.into_int() as f64
+        } else {
+            if left.is_float() {
+                left.into_float()
+            } else {
+                todo!()
             }
         };
-        let right = match right.tag() {
-            value::TAG_INT => right.into_int() as f64,
-            _ => {
-                if right.is_float() {
-                    right.into_float()
-                } else {
-                    todo!()
-                }
+        let right = if right.is_int() {
+            right.into_int() as f64
+        } else {
+            if right.is_float() {
+                right.into_float()
+            } else {
+                todo!()
             }
         };
         let res = left + right;
@@ -463,24 +413,22 @@ impl Realm {
         let right = self.to_primitive(right);
         let left = self.coerce_number(left);
         let right = self.coerce_number(right);
-        let left = match left.tag() {
-            value::TAG_INT => left.into_int() as f64,
-            _ => {
-                if left.is_float() {
-                    left.into_float()
-                } else {
-                    todo!()
-                }
+        let left = if left.is_int() {
+            left.into_int() as f64
+        } else {
+            if left.is_float() {
+                left.into_float()
+            } else {
+                todo!()
             }
         };
-        let right = match right.tag() {
-            value::TAG_INT => right.into_int() as f64,
-            _ => {
-                if right.is_float() {
-                    right.into_float()
-                } else {
-                    todo!()
-                }
+        let right = if right.is_int() {
+            right.into_int() as f64
+        } else {
+            if right.is_float() {
+                right.into_float()
+            } else {
+                todo!()
             }
         };
         let res = match op {
@@ -499,10 +447,10 @@ impl Realm {
     }
 
     pub unsafe fn to_primitive(&mut self, v: JSValue) -> JSValue {
-        match v.tag() {
-            value::TAG_OBJECT => todo!(),
-            _ => v,
+        if v.is_object() || v.is_function() {
+            todo!()
         }
+        return v;
     }
 
     #[inline]

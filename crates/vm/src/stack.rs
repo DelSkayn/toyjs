@@ -6,6 +6,7 @@ use std::{
 
 use crate::{gc::Trace, JSValue};
 
+/// The vm stack implementation.
 pub struct Stack {
     root: NonNull<JSValue>,
     stack: *mut JSValue,
@@ -34,8 +35,9 @@ unsafe impl Trace for Stack {
 }
 
 impl Stack {
-    const INITIAL_CAPACITY: usize = 256;
+    pub const INITIAL_CAPACITY: usize = 256;
 
+    /// Create a new stack with a capacity of [`Self::INITIAL_CAPACITY`].
     pub fn new() -> Self {
         unsafe {
             let layout = Layout::array::<JSValue>(Self::INITIAL_CAPACITY).unwrap();
@@ -52,7 +54,7 @@ impl Stack {
 
     /// Reinitialize the current frame.
     /// Used in the case of a tail call.
-    pub fn recall(&mut self, registers: u8) {
+    fn recall(&mut self, registers: u8) {
         unsafe {
             let used = self.stack.offset_from(self.root.as_ptr()) as usize;
             if used + registers as usize > self.capacity {
@@ -67,6 +69,8 @@ impl Stack {
         }
     }
 
+    /// Allocates additional registers onto the stack.
+    /// Should be called when a new function is about to be executed.
     pub fn enter_call(&mut self, registers: u8) {
         unsafe {
             let used = self.frame.offset_from(self.root.as_ptr()) as usize;
@@ -85,6 +89,8 @@ impl Stack {
         }
     }
 
+    /// Pops last allocated registers from the stack.
+    /// Should be called when a function returns.
     pub unsafe fn exit_call(&mut self) {
         debug_assert!(self.frame != self.root.as_ptr());
         let registers = self.stack.sub(1).read().into_int() as usize;
@@ -94,26 +100,44 @@ impl Stack {
 
     //pub fn exit_call(&mut self,
 
+    /// Read a value from the allocated registers
+    ///
+    /// # Safety
+    ///
+    /// Enough registers should be called for to access the given register.
     #[inline(always)]
     pub unsafe fn read(&self, register: u8) -> JSValue {
         self.stack.add(register as usize).read()
     }
 
+    /// Write a value to one of the allocated registers
+    ///
+    /// # Safety
+    ///
+    /// Enough registers should be called for to access the given register.
     #[inline(always)]
     pub unsafe fn write(&mut self, register: u8, value: JSValue) {
         self.stack.add(register as usize).write(value)
     }
 
+    /// Writes a new argument to the stack past the allocated registers.
     #[inline(always)]
-    pub unsafe fn write_arg(&mut self, arg: u8, value: JSValue) {
-        let used = self.frame.offset_from(self.root.as_ptr()) as usize;
-        if used + arg as usize + 1 > self.capacity {
-            self.grow();
+    pub fn write_arg(&mut self, arg: u8, value: JSValue) {
+        unsafe {
+            let used = self.frame.offset_from(self.root.as_ptr()) as usize;
+            if used + arg as usize + 1 > self.capacity {
+                self.grow();
+            }
+            self.args = self.args.max(arg as usize + 1);
+            self.frame.add(1 + arg as usize).write(value)
         }
-        self.args = self.args.max(arg as usize + 1);
-        self.frame.add(1 + arg as usize).write(value)
     }
 
+    /// Reads a argument to the stack past the allocated registers.
+    ///
+    /// # Safety
+    ///
+    /// The arugment should have been allocated and written to.
     #[inline(always)]
     pub unsafe fn read_arg(&mut self, arg: u8) -> JSValue {
         let used = self.frame.offset_from(self.root.as_ptr()) as usize;

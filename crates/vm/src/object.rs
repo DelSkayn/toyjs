@@ -1,8 +1,4 @@
-use std::{
-    cell::UnsafeCell,
-    hash::{Hash, Hasher},
-    mem,
-};
+use std::cell::UnsafeCell;
 
 use crate::{
     gc::{Gc, Trace},
@@ -11,38 +7,6 @@ use crate::{
 };
 use common::collections::HashMap;
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum KeyValue {
-    Integer(i32),
-    String(Gc<String>),
-}
-
-unsafe impl Trace for KeyValue {
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        true
-    }
-
-    fn trace(&self, ctx: crate::gc::Ctx) {
-        match *self {
-            KeyValue::String(x) => ctx.mark(x),
-            KeyValue::Integer(_) => {}
-        }
-    }
-}
-
-impl Hash for KeyValue {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        mem::discriminant(self).hash(state);
-        match *self {
-            Self::Integer(x) => x.hash(state),
-            KeyValue::String(x) => x.hash(state),
-        }
-    }
-}
-
 pub struct Object {
     prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, JSValue>>,
@@ -50,6 +14,7 @@ pub struct Object {
 }
 
 impl Object {
+    /// Create a new object.
     pub fn new() -> Self {
         Object {
             prototype: None,
@@ -58,7 +23,16 @@ impl Object {
         }
     }
 
+    /// Index into the object and return the value assiociated with the key.
+    ///
+    /// # Safety
+    ///
+    /// The realm should be the same realm the object was created in.
     pub unsafe fn index(&self, key: JSValue, realm: &mut Realm) -> JSValue {
+        // All uses of unsafe cell are save since no value can hold a reference to
+        // an value in the hashmap or vec.
+        // And object is not Sync nor Send.
+        //
         if key.is_int() {
             let idx = key.into_int();
             if idx >= 0 {
@@ -75,7 +49,16 @@ impl Object {
             .unwrap_or(JSValue::undefined())
     }
 
+    /// Index into the object and set the value assiociated with the key.
+    ///
+    /// # Safety
+    ///
+    /// The realm should be the same realm the object was created in.
     pub unsafe fn index_set(&self, key: JSValue, value: JSValue, realm: &mut Realm) {
+        // All uses of unsafe cell are save since no value can hold a reference to
+        // an value in the hashmap or vec.
+        // And object is not Sync nor Send.
+
         if key.is_int() {
             let idx = key.into_int();
             if idx >= 0 {
