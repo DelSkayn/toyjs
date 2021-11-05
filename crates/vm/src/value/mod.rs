@@ -4,6 +4,9 @@ use crate::{
     Object,
 };
 
+//mod tagged_union;
+//pub use tagged_union::TaggedValue;
+
 use std::{cmp, fmt};
 
 pub const VALUE_EMPTY: u64 = 0x0;
@@ -40,18 +43,40 @@ impl cmp::PartialEq<JSValueUnion> for JSValueUnion {
     }
 }
 
+/// The value representation used in the VM.
+///
+/// Toyjs uses nan-tagging for its value.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct JSValue(pub JSValueUnion);
 
 impl JSValue {
     #[inline]
-    pub fn tag(self) -> u64 {
-        unsafe { self.0.bits & TAG_MASK }
+    pub fn same_type(self, other: JSValue) -> bool {
+        unsafe {
+            let tag = self.0.bits & TAG_MASK;
+            if tag != other.0.bits & TAG_MASK {
+                return self.is_float() && other.is_float();
+            }
+            if tag == TAG_BASE {
+                return self.0.bits == other.0.bits;
+            }
+            true
+        }
     }
 
     #[inline]
     pub fn is_bool(self) -> bool {
         unsafe { (self.0.bits & !1) == VALUE_FALSE }
+    }
+
+    #[inline]
+    pub fn is_false(self) -> bool {
+        unsafe { self.0.bits == VALUE_FALSE }
+    }
+
+    #[inline]
+    pub fn is_true(self) -> bool {
+        unsafe { self.0.bits == VALUE_TRUE }
     }
 
     #[inline]
