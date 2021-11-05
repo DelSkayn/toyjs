@@ -13,7 +13,7 @@ lexer = { package="toyjs_lexer",path = "../crates/lexer/" }
 ast = { package="toyjs_ast",path = "../crates/ast/" }
 parser = { package="toyjs_parser",path = "../crates/parser/" }
 compiler = { package="toyjs_compiler",path = "../crates/compiler/" }
-runtime = { package="toyjs_runtime",path = "../crates/runtime/" }
+vm = { package="toyjs_vm",path = "../crates/vm/" }
 bumpalo = { version = "3.4.0", features = ["allocator_api"]}
 
 [dev-dependencies]

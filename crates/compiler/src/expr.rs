@@ -4,7 +4,7 @@ use ast::{
     SymbolId,
 };
 use common::interner::StringId;
-use runtime::instructions::Instruction;
+use vm::instructions::Instruction;
 
 use crate::{
     lexical_info::{ArgAllocInfo, SymbolInfo},

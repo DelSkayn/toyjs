@@ -5,13 +5,13 @@ use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
-use runtime::gc::GcArena;
 use std::{
     alloc::Global,
     env,
     fs::File,
     io::{self, Read},
 };
+use vm::gc::GcArena;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().skip(1).next() {
