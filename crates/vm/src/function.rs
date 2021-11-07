@@ -87,11 +87,11 @@ impl Function {
     /// the function can only be called in the same realm.
     ///
     /// Any gc pointers held can be invalidated
-    pub unsafe fn call(&self, realm: &mut Realm) -> Value {
+    pub unsafe fn call(&self, realm: &mut Realm, args: u8) -> Value {
         match self.kind {
             FunctionKind::Runtime { bc, function } => {
                 let func = bc.functions[function];
-                realm.stack.enter_call(func.registers);
+                realm.stack.enter_call(func.registers, args);
                 let mut reader = InstructionReader::new(&bc.instructions, func.offset, func.size);
                 let res = realm.execute(&mut reader, bc);
                 realm.stack.exit_call();

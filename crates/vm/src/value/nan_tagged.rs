@@ -282,7 +282,9 @@ impl fmt::Debug for Value {
                     VALUE_FALSE => f.debug_tuple("JSValue::Bool").field(&false).finish(),
                     VALUE_NULL => f.debug_tuple("JSValue::Null").finish(),
                     VALUE_UNDEFINED => f.debug_tuple("JSValue::Undefined").finish(),
-                    _ => todo!(),
+                    VALUE_EMPTY => f.debug_tuple("JSValue::Empty").finish(),
+                    VALUE_DELETED => f.debug_tuple("JSValue::Deleted").finish(),
+                    _ => f.debug_tuple("JSvalue::INVALID_VALUE").finish(),
                 },
                 TAG_STRING => f
                     .debug_tuple("JSValue::String")

@@ -216,9 +216,9 @@ impl Realm {
                 opcode::Call => {
                     let dst = instr.read_u8();
                     let func = self.stack.read(instr.read_u8());
-                    let _num = instr.read_u8();
+                    let num = instr.read_u8();
                     if func.is_function() {
-                        let res = func.unsafe_cast_function().call(self);
+                        let res = func.unsafe_cast_function().call(self, num);
                         self.stack.write(dst, res);
                     } else {
                         todo!()

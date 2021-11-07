@@ -29,3 +29,6 @@ name = "cli"
 
 [[bin]]
 name = "temp_test"
+
+[profile.release]
+debug = true
