@@ -12,6 +12,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("if") => self.parse_if(),
             t!("while") => self.parse_while(),
             t!("do") => self.parse_do_while(),
+            t!("for") => self.parse_for(),
             t!("let") => self.parse_let_binding(),
             t!("var") => self.parse_var_binding(),
             t!("const") => self.parse_const_binding(),
@@ -64,6 +65,37 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             Box::new_in(stmt, self.alloc.clone()),
             expr,
         ))
+    }
+
+    pub(crate) fn parse_for(&mut self) -> Result<ast::Stmt<A>> {
+        expect!(self, "for");
+        expect!(self, "(");
+        let _scope = self.symbol_table.push_scope(ScopeKind::Lexical);
+        let decl = match self.peek_kind()? {
+            None => unexpected!(self, "let", "var", "const", "ident"),
+            Some(t!("let")) => {
+                ast::ForDecl::Stmt(Box::new_in(self.parse_let_binding()?, self.alloc.clone()))
+            }
+            Some(t!("const")) => {
+                ast::ForDecl::Stmt(Box::new_in(self.parse_const_binding()?, self.alloc.clone()))
+            }
+            _ => ast::ForDecl::Expr(self.parse_single_expr()?),
+        };
+        expect!(self, ";");
+        let cond = self.parse_single_expr()?;
+        expect!(self, ";");
+        let post = self.parse_single_expr()?;
+        expect!(self, ")");
+
+        let stmt = self.parse_stmt()?;
+        self.symbol_table.pop_scope();
+
+        return Ok(ast::Stmt::For(
+            decl,
+            cond,
+            post,
+            Box::new_in(stmt, self.alloc.clone()),
+        ));
     }
 
     fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
