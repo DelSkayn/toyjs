@@ -68,7 +68,7 @@ impl fmt::Display for ValidationError {
 
 use crate::{
     gc::{self, Trace},
-    JSValue,
+    Value,
 };
 
 #[derive(Clone, Copy)]
@@ -84,7 +84,7 @@ pub struct ByteFunction {
 /// A generic set of instructions, functions and constants.
 pub struct ByteCode {
     /// Constants used in this bytecode set.
-    pub constants: Box<[JSValue]>,
+    pub constants: Box<[Value]>,
     /// The functions defined in this bytecode, the entry function is always the first one.
     pub functions: Box<[ByteFunction]>,
     //// All instructions beloning to all functions defined in the bytecode.

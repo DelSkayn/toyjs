@@ -7,14 +7,14 @@ use common::{
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
-use vm::{gc::GcArena, JSValue};
+use vm::{gc::GcArena, Value};
 
 newtype_key! {
     pub struct ConstantId(pub(crate) u32);
 }
 
 pub struct Constants<'a, A: Allocator> {
-    constants: SlotStack<JSValue, ConstantId, A>,
+    constants: SlotStack<Value, ConstantId, A>,
     map: HashMap<Literal, ConstantId>,
     gc: &'a GcArena,
     interner: &'a Interner,
@@ -35,11 +35,11 @@ impl<'a, A: Allocator> Constants<'a, A> {
         let gc = self.gc;
         let interner = self.interner;
         *self.map.entry(literal).or_insert_with(|| match literal {
-            Literal::Null => constants.push(JSValue::null()),
-            Literal::Undefined => constants.push(JSValue::undefined()),
-            Literal::Float(x) => constants.push(JSValue::from(x)),
-            Literal::Boolean(x) => constants.push(JSValue::from(x)),
-            Literal::Integer(x) => constants.push(JSValue::from(x)),
+            Literal::Null => constants.push(Value::null()),
+            Literal::Undefined => constants.push(Value::undefined()),
+            Literal::Float(x) => constants.push(Value::from(x)),
+            Literal::Boolean(x) => constants.push(Value::from(x)),
+            Literal::Integer(x) => constants.push(Value::from(x)),
             Literal::String(x) => {
                 let str = gc.allocate(
                     interner
@@ -47,12 +47,12 @@ impl<'a, A: Allocator> Constants<'a, A> {
                         .expect("symbol name string no longer exists")
                         .to_string(),
                 );
-                constants.push(JSValue::from(str))
+                constants.push(Value::from(str))
             }
         })
     }
 
-    pub fn into_constants(self) -> Box<[JSValue], A> {
+    pub fn into_constants(self) -> Box<[Value], A> {
         self.constants.into_vec().into_boxed_slice()
     }
 }

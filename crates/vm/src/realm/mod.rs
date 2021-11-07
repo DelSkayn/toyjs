@@ -5,14 +5,14 @@ use crate::{
     instructions::{ByteCode, InstructionReader},
     object::Object,
     stack::Stack,
-    Gc, GcArena, JSValue,
+    Gc, GcArena, Value,
 };
 use common::interner::Interner;
 
 use std::{alloc::Global, collections::VecDeque};
 
-pub mod env;
 pub mod exec;
+pub mod runtime;
 
 pub struct Task {
     pub bc: Gc<ByteCode>,
@@ -41,7 +41,7 @@ impl Realm {
             gc,
             stack: Stack::new(),
         };
-        unsafe { env::initialize(&mut res) };
+        unsafe { runtime::initialize(&mut res) };
         res
     }
 
@@ -55,7 +55,7 @@ impl Realm {
         }
     }
 
-    pub fn execute_task(&mut self, task: &Task) -> JSValue {
+    pub fn execute_task(&mut self, task: &Task) -> Value {
         let function = &task.bc.functions[task.function];
         let mut reader =
             InstructionReader::new(&task.bc.instructions, function.offset, function.size);

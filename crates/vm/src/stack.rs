@@ -4,13 +4,13 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{gc::Trace, JSValue};
+use crate::{gc::Trace, Value};
 
 /// The vm stack implementation.
 pub struct Stack {
-    root: NonNull<JSValue>,
-    stack: *mut JSValue,
-    frame: *mut JSValue,
+    root: NonNull<Value>,
+    stack: *mut Value,
+    frame: *mut Value,
     args: usize,
     capacity: usize,
 }
@@ -40,8 +40,8 @@ impl Stack {
     /// Create a new stack with a capacity of [`Self::INITIAL_CAPACITY`].
     pub fn new() -> Self {
         unsafe {
-            let layout = Layout::array::<JSValue>(Self::INITIAL_CAPACITY).unwrap();
-            let root = alloc::alloc(layout) as *mut JSValue;
+            let layout = Layout::array::<Value>(Self::INITIAL_CAPACITY).unwrap();
+            let root = alloc::alloc(layout) as *mut Value;
             Stack {
                 frame: root,
                 stack: root,
@@ -62,7 +62,7 @@ impl Stack {
             }
             let new = self.stack.add(registers as usize);
             while self.frame < new {
-                self.frame.write(JSValue::empty());
+                self.frame.write(Value::empty());
                 self.frame = self.frame.add(1);
             }
             self.frame = new;
@@ -77,12 +77,12 @@ impl Stack {
             if used + registers as usize + 1 > self.capacity {
                 self.grow();
             }
-            self.frame.write(JSValue::from(registers as i32));
+            self.frame.write(Value::from(registers as i32));
             self.stack = self.frame.add(1);
             self.frame = self.frame.add(registers as usize + 1);
             let mut cur = self.stack.add(self.args);
             while cur != self.frame {
-                cur.write(JSValue::undefined());
+                cur.write(Value::undefined());
                 cur = cur.add(1);
             }
             self.args = 0;
@@ -93,7 +93,7 @@ impl Stack {
     /// Should be called when a function returns.
     pub unsafe fn exit_call(&mut self) {
         debug_assert!(self.frame != self.root.as_ptr());
-        let registers = self.stack.sub(1).read().into_int() as usize;
+        let registers = self.stack.sub(1).read().cast_int() as usize;
         self.frame = self.stack.sub(1);
         self.stack = self.frame.sub(registers);
     }
@@ -106,7 +106,7 @@ impl Stack {
     ///
     /// Enough registers should be called for to access the given register.
     #[inline(always)]
-    pub unsafe fn read(&self, register: u8) -> JSValue {
+    pub unsafe fn read(&self, register: u8) -> Value {
         self.stack.add(register as usize).read()
     }
 
@@ -116,13 +116,13 @@ impl Stack {
     ///
     /// Enough registers should be called for to access the given register.
     #[inline(always)]
-    pub unsafe fn write(&mut self, register: u8, value: JSValue) {
+    pub unsafe fn write(&mut self, register: u8, value: Value) {
         self.stack.add(register as usize).write(value)
     }
 
     /// Writes a new argument to the stack past the allocated registers.
     #[inline(always)]
-    pub fn write_arg(&mut self, arg: u8, value: JSValue) {
+    pub fn write_arg(&mut self, arg: u8, value: Value) {
         unsafe {
             let used = self.frame.offset_from(self.root.as_ptr()) as usize;
             if used + arg as usize + 1 > self.capacity {
@@ -139,10 +139,10 @@ impl Stack {
     ///
     /// The arugment should have been allocated and written to.
     #[inline(always)]
-    pub unsafe fn read_arg(&mut self, arg: u8) -> JSValue {
+    pub unsafe fn read_arg(&mut self, arg: u8) -> Value {
         let used = self.frame.offset_from(self.root.as_ptr()) as usize;
         if used + arg as usize + 1 > self.capacity {
-            return JSValue::undefined();
+            return Value::undefined();
         }
         self.frame.add(1 + arg as usize).read()
     }
@@ -158,7 +158,7 @@ impl Drop for Stack {
             if self.capacity > 0 {
                 alloc::dealloc(
                     self.root.as_ptr() as *mut u8,
-                    Layout::array::<JSValue>(self.capacity).unwrap(),
+                    Layout::array::<Value>(self.capacity).unwrap(),
                 )
             }
         }

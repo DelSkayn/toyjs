@@ -26,7 +26,7 @@ pub mod gc;
 pub use gc::{Gc, GcArena};
 pub mod instructions;
 pub mod value;
-pub use value::JSValue;
+pub use value::Value;
 pub mod object;
 use object::Object;
 mod function;
