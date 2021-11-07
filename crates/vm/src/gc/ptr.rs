@@ -93,34 +93,29 @@ unsafe impl<T: Trace + 'static> Trace for Gc<T> {
     }
 }
 
-pub type RootValuePtr = NonNull<RootValue>;
-
-pub struct RootValue {
-    pub next: Cell<Option<RootValuePtr>>,
-    pub prev: Cell<Option<RootValuePtr>>,
-    pub ptr: GcBoxPtr,
+#[derive(Clone, Copy)]
+pub struct BoundGc<'a, T: Trace + ?Sized> {
+    marker: PhantomData<Cell<&'a ()>>,
+    gc: Gc<T>,
 }
 
-pub struct GcRoot<T: Trace + 'static>(pub(crate) RootValuePtr, pub(crate) PhantomData<T>);
+impl<'a, T: Trace + ?Sized> Deref for BoundGc<'a, T> {
+    type Target = T;
 
-impl<T: Trace + 'static> Drop for GcRoot<T> {
-    fn drop(&mut self) {
-        unsafe {
-            let val = self.0.as_ref();
-            if let Some(next) = val.next.get() {
-                next.as_ref().prev.set(val.prev.get());
-            }
-            if let Some(prev) = val.prev.get() {
-                prev.as_ref().next.set(val.next.get());
-            }
-            Box::from_raw(self.0.as_ptr());
-        }
+    fn deref(&self) -> &Self::Target {
+        unsafe { &(*self.gc.0.as_ref().value.get()) }
     }
 }
 
-impl<T: Trace + 'static> Deref for GcRoot<T> {
-    type Target = T;
-    fn deref(&self) -> &Self::Target {
-        unsafe { &*(self.0.as_ref().ptr.as_ref().value.get() as *mut T) }
+impl<'a, T: Trace + ?Sized> BoundGc<'a, T> {
+    pub fn bind(value: Gc<T>) -> Self {
+        BoundGc {
+            gc: value,
+            marker: PhantomData,
+        }
+    }
+
+    pub unsafe fn unbind(self) -> Gc<T> {
+        self.gc
     }
 }

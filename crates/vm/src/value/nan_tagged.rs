@@ -1,17 +1,11 @@
-use crate::gc::{Ctx, Gc, Trace};
+use crate::{
+    function::Function,
+    gc::{Ctx, Gc, Trace},
+    Object,
+};
 
-//Tmp object struct
-pub struct Object;
-
-unsafe impl Trace for Object {
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        false
-    }
-    fn trace(&self, _ctx: Ctx) {}
-}
+//mod tagged_union;
+//pub use tagged_union::TaggedValue;
 
 use std::{cmp, fmt};
 
@@ -36,31 +30,54 @@ const TAG_MASK: u64 = 0xffff_0000_0000_0000;
 const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
 
 #[derive(Clone, Copy)]
-pub union JSValueUnion {
+pub union ValueUnion {
     float: f64,
     int: i32,
     pub bits: u64,
 }
 
-impl cmp::Eq for JSValueUnion {}
-impl cmp::PartialEq<JSValueUnion> for JSValueUnion {
-    fn eq(&self, other: &JSValueUnion) -> bool {
+impl cmp::Eq for ValueUnion {}
+impl cmp::PartialEq<ValueUnion> for ValueUnion {
+    fn eq(&self, other: &ValueUnion) -> bool {
         unsafe { self.bits == other.bits }
     }
 }
 
+/// The value representation used in the VM.
+///
+/// Toyjs uses nan-tagging for its value.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct JSValue(pub JSValueUnion);
+pub struct Value(pub ValueUnion);
 
-impl JSValue {
+impl Value {
+    /// Returns wether two values have the same data type.
     #[inline]
-    pub fn tag(self) -> u64 {
-        unsafe { self.0.bits & TAG_MASK }
+    pub fn same_type(self, other: Value) -> bool {
+        unsafe {
+            let tag = self.0.bits & TAG_MASK;
+            if tag != other.0.bits & TAG_MASK {
+                return self.is_float() && other.is_float();
+            }
+            if tag == TAG_BASE {
+                return self.0.bits == other.0.bits;
+            }
+            true
+        }
     }
 
     #[inline]
     pub fn is_bool(self) -> bool {
         unsafe { (self.0.bits & !1) == VALUE_FALSE }
+    }
+
+    #[inline]
+    pub fn is_false(self) -> bool {
+        unsafe { self.0.bits == VALUE_FALSE }
+    }
+
+    #[inline]
+    pub fn is_true(self) -> bool {
+        unsafe { self.0.bits == VALUE_TRUE }
     }
 
     #[inline]
@@ -110,37 +127,37 @@ impl JSValue {
 
     #[inline]
     pub fn undefined() -> Self {
-        JSValue(JSValueUnion {
+        Value(ValueUnion {
             bits: VALUE_UNDEFINED,
         })
     }
 
     #[inline]
     pub fn null() -> Self {
-        JSValue(JSValueUnion { bits: VALUE_NULL })
+        Value(ValueUnion { bits: VALUE_NULL })
     }
 
     #[inline]
     pub fn empty() -> Self {
-        JSValue(JSValueUnion { bits: VALUE_EMPTY })
+        Value(ValueUnion { bits: VALUE_EMPTY })
     }
 
     #[inline]
     pub unsafe fn from_ptr(ptr: *mut ()) -> Self {
-        JSValue(JSValueUnion {
+        Value(ValueUnion {
             bits: ptr as u64 & PTR_MASK,
         })
     }
 
     #[inline]
     pub unsafe fn from_const_ptr(ptr: *const ()) -> Self {
-        JSValue(JSValueUnion {
+        Value(ValueUnion {
             bits: ptr as u64 & PTR_MASK,
         })
     }
 
     #[inline]
-    pub fn into_bool(self) -> bool {
+    pub fn cast_bool(self) -> bool {
         unsafe {
             debug_assert!(self.is_bool());
             self.0.bits == VALUE_TRUE
@@ -148,7 +165,7 @@ impl JSValue {
     }
 
     #[inline]
-    pub fn into_int(self) -> i32 {
+    pub fn cast_int(self) -> i32 {
         unsafe {
             debug_assert!(self.is_int());
             self.0.int
@@ -156,7 +173,7 @@ impl JSValue {
     }
 
     #[inline]
-    pub fn into_float(mut self) -> f64 {
+    pub fn cast_float(mut self) -> f64 {
         unsafe {
             debug_assert!(self.is_float());
             self.0.bits -= MIN_FLOAT;
@@ -165,84 +182,81 @@ impl JSValue {
     }
 
     #[inline]
-    pub unsafe fn into_object(self) -> Gc<Object> {
+    pub unsafe fn unsafe_cast_object(self) -> Gc<Object> {
         debug_assert!(self.is_object());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
 
     #[inline]
-    pub unsafe fn into_function(self) -> Gc<Function> {
+    pub unsafe fn unsafe_cast_function(self) -> Gc<Function> {
         debug_assert!(self.is_function());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
 
     #[inline]
-    pub unsafe fn into_string(self) -> Gc<String> {
+    pub unsafe fn unsafe_cast_string(self) -> Gc<String> {
         debug_assert!(self.is_string());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
-
-    #[inline]
-    pub unsafe fn into_ptr(self) -> *mut () {
-        debug_assert!(self.0.bits & TAG_MASK == 0);
-        self.0.bits as *mut ()
-    }
-
-    #[inline]
-    pub unsafe fn into_const_ptr(self) -> *const () {
-        debug_assert!(self.0.bits & TAG_MASK == 0);
-        self.0.bits as *const ()
-    }
 }
 
-impl From<bool> for JSValue {
+impl From<bool> for Value {
     #[inline]
-    fn from(v: bool) -> JSValue {
-        JSValue(JSValueUnion {
+    fn from(v: bool) -> Value {
+        Value(ValueUnion {
             bits: if v { VALUE_TRUE } else { VALUE_FALSE },
         })
     }
 }
 
-impl From<i32> for JSValue {
+impl From<i32> for Value {
     #[inline]
-    fn from(v: i32) -> JSValue {
-        JSValue(JSValueUnion {
+    fn from(v: i32) -> Value {
+        Value(ValueUnion {
             bits: TAG_INT | v as u32 as u64,
         })
     }
 }
 
-impl From<f64> for JSValue {
+impl From<f64> for Value {
     #[inline]
-    fn from(v: f64) -> JSValue {
+    fn from(v: f64) -> Value {
         unsafe {
-            let mut val = JSValueUnion { float: v };
+            let mut val = ValueUnion { float: v };
             val.bits += MIN_FLOAT;
-            JSValue(val)
+            Value(val)
         }
     }
 }
 
-impl From<Gc<String>> for JSValue {
+impl From<Gc<String>> for Value {
     #[inline]
-    fn from(v: Gc<String>) -> JSValue {
-        JSValue(JSValueUnion {
+    fn from(v: Gc<String>) -> Value {
+        Value(ValueUnion {
             bits: TAG_STRING | Gc::into_raw(v) as u64,
         })
     }
 }
 
-impl From<Gc<Object>> for JSValue {
+impl From<Gc<Object>> for Value {
     #[inline]
-    fn from(v: Gc<Object>) -> JSValue {
-        JSValue(JSValueUnion {
+    fn from(v: Gc<Object>) -> Value {
+        Value(ValueUnion {
             bits: TAG_OBJECT | Gc::into_raw(v) as u64,
         })
     }
 }
 
-unsafe impl Trace for JSValue {
+impl From<Gc<Function>> for Value {
+    #[inline]
+    fn from(v: Gc<Function>) -> Value {
+        Value(ValueUnion {
+            bits: TAG_FUNCTION | Gc::into_raw(v) as u64,
+        })
+    }
+}
+
+unsafe impl Trace for Value {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -252,14 +266,14 @@ unsafe impl Trace for JSValue {
 
     fn trace(&self, ctx: Ctx) {
         if self.is_object() {
-            unsafe { ctx.mark(self.into_object()) }
+            unsafe { ctx.mark(self.unsafe_cast_object()) }
         } else if self.is_string() {
-            unsafe { ctx.mark(self.into_string()) }
+            unsafe { ctx.mark(self.unsafe_cast_string()) }
         }
     }
 }
 
-impl fmt::Debug for JSValue {
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             match self.0.bits & TAG_MASK {
@@ -272,7 +286,7 @@ impl fmt::Debug for JSValue {
                 },
                 TAG_STRING => f
                     .debug_tuple("JSValue::String")
-                    .field(&self.into_string())
+                    .field(&self.unsafe_cast_string())
                     .finish(),
                 TAG_OBJECT => {
                     let mut obj = f.debug_tuple("JSValue::Object");
@@ -286,11 +300,11 @@ impl fmt::Debug for JSValue {
                 }
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
-                    .field(&self.into_int())
+                    .field(&self.cast_int())
                     .finish(),
                 _ => f
                     .debug_tuple("JSValue::Float")
-                    .field(&self.into_float())
+                    .field(&self.cast_float())
                     .finish(),
             }
         }
