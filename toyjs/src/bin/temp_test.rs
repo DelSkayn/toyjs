@@ -11,7 +11,7 @@ use std::{
     fs::File,
     io::{self, Read},
 };
-use vm::realm::{Realm, Task};
+use vm::realm::Realm;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().skip(1).next() {
@@ -33,8 +33,8 @@ fn main() -> Result<(), io::Error> {
     let mut realm = Realm::new();
     let bytecode = Compiler::compile_script(&script, &variables, &interner, &realm.gc, Global);
 
-    let bc = realm.gc.allocate(bytecode);
-    println!("{:?}", realm.execute_task(&Task { bc, function: 0 }));
+    println!("{:?}", realm.eval(bytecode).unbind());
+    while realm.execute_pending_task() {}
 
     Ok(())
 }

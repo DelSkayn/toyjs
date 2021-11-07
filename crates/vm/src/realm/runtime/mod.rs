@@ -13,6 +13,14 @@ pub unsafe fn log(realm: &mut Realm) -> Value {
     Value::undefined()
 }
 
+pub unsafe fn defer(realm: &mut Realm) -> Value {
+    let arg = realm.stack.read_arg(0);
+    if arg.is_function() {
+        realm.push_task(arg.unsafe_cast_function())
+    }
+    Value::undefined()
+}
+
 pub unsafe fn initialize(realm: &mut Realm) {
     let console = realm.gc.allocate(Object::new());
 
@@ -28,7 +36,17 @@ pub unsafe fn initialize(realm: &mut Realm) {
         Value::from(console),
         realm,
     );
+    let defer = realm
+        .gc
+        .allocate(Function::from_native(|realm| defer(realm)));
+    global.unsafe_index_set(
+        Value::from(realm.gc.allocate("defer".to_string())),
+        Value::from(defer),
+        realm,
+    );
 
     let name = realm.interner.intern("console");
+    let defer = realm.interner.intern("defer");
     realm.symbol_table.define_global(name);
+    realm.symbol_table.define_global(defer);
 }
