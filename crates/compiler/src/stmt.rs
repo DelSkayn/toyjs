@@ -1,4 +1,4 @@
-use ast::{Expr, Literal, Params, Stmt};
+use ast::{Expr, ForDecl, Literal, Params, Stmt};
 use vm::instructions::Instruction;
 
 use crate::{
@@ -27,6 +27,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             Stmt::DoWhile(block, cond) => {
                 self.compile_do_while(block, cond);
+                None
+            }
+            Stmt::For(decl, cond, post, block) => {
+                self.compile_for(decl, cond, post, block);
                 None
             }
             Stmt::Let(symbol, expr) => {
@@ -173,19 +177,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         self.compile_stmt(block)
             .map(|r| self.registers.free_temp(r));
-        let before_jump = before_cond.0 as i32 - self.next_instruction_id().0 as i32;
-        if before_jump as i16 as i32 == before_jump {
-            self.instructions.push(Instruction::Jump {
-                null: 0,
-                tgt: before_jump as i16,
-            });
-        } else {
-            self.instructions.push(Instruction::JumpL {
-                nul0: 0,
-                nul1: 0,
-                tgt: before_jump,
-            });
-        }
+        let back_jump = self
+            .instructions
+            .push(Instruction::Jump { null: 0, tgt: 1 });
+        self.patch_jump(back_jump, before_cond);
         self.patch_jump(patch_while, self.next_instruction_id());
         expr.false_list
             .into_iter()
@@ -196,23 +191,53 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let before_stmt = self.next_instruction_id();
         self.compile_stmt(block);
         let res = self.compile_expressions(None, cond);
-        let before_jump = before_stmt.0 as i32 - self.next_instruction_id().0 as i32;
-        if before_jump as i16 as i32 == before_jump {
-            self.instructions.push(Instruction::JumpTrue {
-                cond: res.register.0,
-                tgt: before_jump as i16,
-            });
-        } else {
-            self.instructions.push(Instruction::JumpTrueL {
-                cond: res.register.0,
-                null: 0,
-                tgt: before_jump,
-            });
-        }
+        let back_jump = self.instructions.push(Instruction::JumpTrue {
+            cond: res.register.0,
+            tgt: 1,
+        });
+        self.patch_jump(back_jump, before_stmt);
         res.true_list
             .into_iter()
             .for_each(|x| self.patch_jump(x, before_stmt));
         res.false_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+    }
+
+    pub fn compile_for(
+        &mut self,
+        decl: &'a ForDecl<A>,
+        cond: &'a Expr<A>,
+        post: &'a Expr<A>,
+        block: &'a Stmt<A>,
+    ) {
+        match decl {
+            ForDecl::Stmt(x) => {
+                self.compile_stmt(&x);
+            }
+            ForDecl::Expr(x) => {
+                let reg = self.compile_expr(None, x).eval(self);
+                self.registers.free_temp(reg);
+            }
+        }
+        let before_cond = self.next_instruction_id();
+        let cond = self.compile_expr(None, cond);
+        let patch_cond = self.instructions.push(Instruction::JumpFalse {
+            cond: cond.register.0,
+            tgt: 1,
+        });
+        cond.true_list
+            .into_iter()
+            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+        self.compile_stmt(block);
+        let reg = self.compile_expr(None, post).eval(self);
+        self.registers.free_temp(reg);
+        let back_jump = self
+            .instructions
+            .push(Instruction::Jump { tgt: 1, null: 0 });
+        self.patch_jump(back_jump, before_cond);
+        self.patch_jump(patch_cond, self.next_instruction_id());
+        cond.false_list
             .into_iter()
             .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
     }

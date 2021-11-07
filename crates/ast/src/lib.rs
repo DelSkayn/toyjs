@@ -37,10 +37,17 @@ pub enum Stmt<A: Allocator> {
     If(Vec<Expr<A>, A>, Box<Stmt<A>, A>, Option<Box<Stmt<A>, A>>),
     While(Vec<Expr<A>, A>, Box<Stmt<A>, A>),
     DoWhile(Box<Stmt<A>, A>, Vec<Expr<A>, A>),
-    For,
+    For(ForDecl<A>, Expr<A>, Expr<A>, Box<Stmt<A>, A>),
     Block(ScopeId, Vec<Stmt<A>, A>),
     Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
     Return(Option<Vec<Expr<A>, A>>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum ForDecl<A: Allocator> {
+    Stmt(Box<Stmt<A>, A>),
+    Expr(Expr<A>),
 }
 
 #[derive(Derivative, PartialEq)]
