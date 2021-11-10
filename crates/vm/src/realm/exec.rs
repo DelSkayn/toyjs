@@ -207,10 +207,11 @@ impl Realm {
                         instr.jump(tgt as i32)
                     }
                 }
-                opcode::SetArg => {
-                    let tgt = instr.read_u8();
-                    let src = self.stack.read(instr.read_u16() as u8);
-                    self.stack.write_arg(tgt, src);
+                opcode::Push => {
+                    let src = instr.read_u8();
+                    let _null = instr.read_u16();
+                    let src = self.stack.read(src);
+                    self.stack.push(src);
                 }
 
                 opcode::Call => {

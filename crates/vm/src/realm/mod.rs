@@ -65,7 +65,7 @@ impl Realm {
         unsafe {
             let bc = self.gc.allocate(bc);
             let func = bc.functions[0];
-            self.stack.enter_call(func.registers, 0);
+            self.stack.enter_call(func.registers);
             let mut reader = InstructionReader::new(&bc.instructions, func.offset, func.size);
             let res = self.execute(&mut reader, bc);
             self.stack.exit_call();

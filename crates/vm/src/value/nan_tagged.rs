@@ -23,8 +23,9 @@ pub const TAG_BIGINT: u64 = 0x0003_0000_0000_0000;
 pub const TAG_SYMBOL: u64 = 0x0004_0000_0000_0000; //?
 pub const TAG_FUNCTION: u64 = 0x0005_0000_0000_0000; //?
 pub const TAG_INT: u64 = 0x0006_0000_0000_0000;
+pub const TAG_STACK_VALUE: u64 = 0x0007_0000_0000_0000;
 
-const MIN_FLOAT: u64 = 0x0007_0000_0000_0000;
+const MIN_FLOAT: u64 = 0x0008_0000_0000_0000;
 const MIN_NUMBER: u64 = (TAG_INT as u64) << 48;
 const TAG_MASK: u64 = 0xffff_0000_0000_0000;
 const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
@@ -126,6 +127,16 @@ impl Value {
     }
 
     #[inline]
+    pub fn is_stack_value(self) -> bool {
+        unsafe { self.0.bits & TAG_MASK == TAG_STACK_VALUE }
+    }
+
+    pub fn into_stack_value(self) -> u64 {
+        debug_assert!(self.is_stack_value());
+        return unsafe { self.0.bits & !TAG_MASK };
+    }
+
+    #[inline]
     pub fn undefined() -> Self {
         Value(ValueUnion {
             bits: VALUE_UNDEFINED,
@@ -142,17 +153,9 @@ impl Value {
         Value(ValueUnion { bits: VALUE_EMPTY })
     }
 
-    #[inline]
-    pub unsafe fn from_ptr(ptr: *mut ()) -> Self {
+    pub fn stack_value(v: u64) -> Self {
         Value(ValueUnion {
-            bits: ptr as u64 & PTR_MASK,
-        })
-    }
-
-    #[inline]
-    pub unsafe fn from_const_ptr(ptr: *const ()) -> Self {
-        Value(ValueUnion {
-            bits: ptr as u64 & PTR_MASK,
+            bits: (v & !TAG_MASK) | TAG_STACK_VALUE,
         })
     }
 

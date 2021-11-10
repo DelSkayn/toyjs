@@ -91,17 +91,27 @@ impl Function {
         match self.kind {
             FunctionKind::Runtime { bc, function } => {
                 let func = bc.functions[function];
-                realm.stack.enter_call(func.registers, args);
+                realm.stack.enter_call(func.registers);
                 let mut reader = InstructionReader::new(&bc.instructions, func.offset, func.size);
                 let res = realm.execute(&mut reader, bc);
                 realm.stack.exit_call();
                 res
             }
-            FunctionKind::Native(ref func) => (**func)(realm),
+            FunctionKind::Native(ref func) => {
+                realm.stack.enter_call(args);
+                let res = (**func)(realm);
+                realm.stack.exit_call();
+                res
+            }
             FunctionKind::Mutable(ref func) => {
-                (**func
+                realm.stack.enter_call(args);
+                let res = (**func
                     .try_borrow_mut()
-                    .expect("recursively called mutable native function"))(realm)
+                    .expect("recursively called mutable native function"))(
+                    realm
+                );
+                realm.stack.exit_call();
+                res
             }
         }
     }
