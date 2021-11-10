@@ -1,7 +1,7 @@
 use crate::{function::Function, object::Object, Realm, Value};
 
 pub unsafe fn log(realm: &mut Realm) -> Value {
-    let arg = realm.stack.read_arg(0);
+    let arg = realm.stack.read(0);
     if arg.is_string() {
         println!("{}", *arg.unsafe_cast_string())
     } else if arg.is_int() {
@@ -14,7 +14,7 @@ pub unsafe fn log(realm: &mut Realm) -> Value {
 }
 
 pub unsafe fn defer(realm: &mut Realm) -> Value {
-    let arg = realm.stack.read_arg(0);
+    let arg = realm.stack.read(0);
     if arg.is_function() {
         realm.push_task(arg.unsafe_cast_function())
     }

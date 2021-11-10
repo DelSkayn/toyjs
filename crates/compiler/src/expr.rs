@@ -753,9 +753,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             let reg = self.compile_expr(None, arg).eval(self);
             self.registers.free_temp(reg);
-            self.instructions.push(Instruction::SetArg {
-                tgt: idx as u8,
-                src: reg.0 as u16,
+            self.instructions.push(Instruction::Push {
+                src: reg.0,
+                null: 0,
             });
         }
         self.registers.free_temp(func);

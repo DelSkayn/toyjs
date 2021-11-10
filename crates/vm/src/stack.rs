@@ -11,7 +11,7 @@ pub struct Stack {
     root: NonNull<Value>,
     frame: *mut Value,
     stack: *mut Value,
-    args: usize,
+    num_registers: u8,
     capacity: usize,
 }
 
@@ -25,17 +25,18 @@ unsafe impl Trace for Stack {
 
     fn trace(&self, ctx: crate::gc::Ctx) {
         unsafe {
-            let mut cur = self.stack;
+            let mut cur = self.stack.sub(2);
+            // Dont need to trace the first value as it will always be a integer.
             while cur > self.root.as_ptr() {
-                cur = cur.sub(1);
                 cur.read().trace(ctx);
+                cur = cur.sub(1);
             }
         }
     }
 }
 
 impl Stack {
-    pub const INITIAL_CAPACITY: usize = 256;
+    pub const INITIAL_CAPACITY: usize = 8;
 
     /// Create a new stack with a capacity of [`Self::INITIAL_CAPACITY`].
     pub fn new() -> Self {
@@ -46,14 +47,15 @@ impl Stack {
                 stack: root,
                 frame: root,
                 root: NonNull::new(root).unwrap(),
-                args: 0,
+                num_registers: 0,
                 capacity: Self::INITIAL_CAPACITY,
             }
         }
     }
 
-    /// Reinitialize the current frame.
-    /// Used in the case of a tail call.
+    // Reinitialize the current frame.
+    // Used in the case of a tail call.
+    /*
     fn recall(&mut self, registers: u8) {
         unsafe {
             let used = self.frame.offset_from(self.root.as_ptr()) as usize;
@@ -68,24 +70,43 @@ impl Stack {
             self.stack = new;
         }
     }
+    */
 
     /// Allocates additional registers onto the stack.
     /// Should be called when a new function is about to be executed.
-    pub fn enter_call(&mut self, registers: u8, args: u8) {
+    pub fn enter_call(&mut self, registers: u8) {
         unsafe {
-            let used = self.stack.offset_from(self.root.as_ptr()) as usize;
-            if used + registers as usize + 1 > self.capacity {
-                self.grow();
+            let used = self.frame.offset_from(self.root.as_ptr()) as usize;
+            // The already used values, the current registers in use, the new registers and one for
+            // to store the value to recover the frame.
+            let new_capacity = used + self.num_registers as usize + registers as usize + 1;
+            if new_capacity > self.capacity {
+                self.grow(new_capacity);
             }
-            let offset = self.stack.offset_from(self.frame);
-            self.stack.write(Value::from(offset as i32));
-            self.frame = self.stack.add(1);
-            self.stack = self.stack.add(registers as usize + 1);
-            let mut cur = self.frame.add(args as usize);
-            while cur != self.stack {
-                cur.write(Value::undefined());
-                cur = cur.add(1);
+            // Write the amount of current registers to just after the currently live registers.
+            // New frame ptr points to the first new register.
+            self.frame = self.frame.add(self.num_registers as usize);
+            self.frame.write(Value::from(self.num_registers as i32));
+            self.frame = self.frame.add(1);
+
+            self.num_registers = registers;
+
+            // From the current stack ptr to the where the new registers are stored are
+            // uninitialized so they need to be initialized.
+            let new_stack = self.frame.add(registers as usize);
+            while self.stack != new_stack {
+                self.stack.write(Value::undefined());
+                self.stack = self.stack.add(1);
             }
+            // The stack pointer points to 2(!) values after the last new register.
+            // This is where possible arguments would be writen to.
+            //
+            // --+----------+-----------+-----------+
+            // ..| last reg | invalid 1 | invalid 2 |
+            // --+----------+-----------+-----------+
+            //                          ^
+            //                       stack ptr
+            self.stack = self.stack.add(1);
         }
     }
 
@@ -93,9 +114,9 @@ impl Stack {
     /// Should be called when a function returns.
     pub unsafe fn exit_call(&mut self) {
         debug_assert!(self.stack != self.root.as_ptr());
-        let registers = self.frame.sub(1).read().cast_int() as usize;
-        self.stack = self.frame.sub(1);
-        self.frame = self.stack.sub(registers);
+        self.stack = self.frame;
+        self.num_registers = self.frame.sub(1).read().cast_int() as u8;
+        self.frame = self.stack.sub(self.num_registers as usize + 1);
     }
 
     //pub fn exit_call(&mut self,
@@ -120,35 +141,22 @@ impl Stack {
         self.frame.add(register as usize).write(value)
     }
 
-    /// Writes a new argument to the stack past the allocated registers.
+    /// Writes a new value to the stack past the current frame.
     #[inline(always)]
-    pub fn write_arg(&mut self, arg: u8, value: Value) {
+    pub fn push(&mut self, value: Value) {
         unsafe {
             let used = self.stack.offset_from(self.root.as_ptr()) as usize;
-            if used + arg as usize + 1 > self.capacity {
-                self.grow();
+            if used + 1 > self.capacity {
+                self.grow(used + 1);
             }
-            self.stack.add(1 + arg as usize).write(value)
+            self.stack.write(value);
+            self.stack = self.stack.add(1);
         }
     }
 
-    /// Reads a argument to the stack past the allocated registers.
-    ///
-    /// # Safety
-    ///
-    /// The arugment should have been allocated and written to.
-    #[inline(always)]
-    pub unsafe fn read_arg(&mut self, arg: u8) -> Value {
-        let used = self.stack.offset_from(self.root.as_ptr()) as usize;
-        if used + arg as usize + 1 > self.capacity {
-            return Value::undefined();
-        }
-        self.stack.add(1 + arg as usize).read()
-    }
-
-    fn grow(&mut self) {
+    fn grow(&mut self, new_capacity: usize) {
         unsafe {
-            let new_capacity = (self.capacity + 1).next_power_of_two();
+            let new_capacity = new_capacity.next_power_of_two();
             let layout = Layout::array::<Value>(self.capacity).unwrap();
             let new_root = System.realloc(
                 self.root.as_ptr() as *mut _,
