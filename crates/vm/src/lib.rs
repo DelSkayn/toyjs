@@ -23,6 +23,8 @@
 #![feature(allocator_api)]
 
 pub mod gc;
+use std::{cell::Cell, marker::PhantomData};
+
 pub use gc::{Gc, GcArena};
 pub mod instructions;
 pub mod value;
@@ -30,9 +32,11 @@ pub use value::Value;
 pub mod object;
 use object::Object;
 mod function;
-pub mod stack;
 
 pub mod realm;
 pub use realm::Realm;
 
-pub mod realm2;
+pub struct Context<'a> {
+    vm: &'a mut Realm,
+    marker: PhantomData<Cell<&'a ()>>,
+}

@@ -14,6 +14,7 @@ macro_rules! define_instructions {
         }
 
 
+        #[derive(Debug)]
         #[repr(u8)]
         /// Instruction representated as just there opcode
         pub enum InstructionOpcode{
@@ -68,6 +69,17 @@ macro_rules! define_instructions {
                     _ => panic!("invalid opcode")
                 }
 }
+        }
+
+        impl InstructionOpcode{
+            pub fn from_u8(v: u8) -> Option<Self>{
+                match v {
+                    $(
+                        opcode::$name => Some(InstructionOpcode::$name),
+                    )*
+                    _ => None
+                }
+            }
         }
     };
 

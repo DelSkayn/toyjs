@@ -16,9 +16,9 @@ unicode-xid = "0.2.1"
 [dev-dependencies]
 criterion = "0.3.3"
 
-[[bench]]
-name = "lexer"
-harness = false
+# [[bench]]
+# name = "lexer"
+# harness = false
 
 [[bin]]
 name = "dump_tokens"

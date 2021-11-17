@@ -117,7 +117,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         let function = &mut this.functions[0];
         function.registers = this.registers.registers_needed();
-        function.size = this.instructions.len();
+        //TODO: propagate size errors
+        function.size = this.instructions.len().try_into().unwrap();
 
         while let Some(x) = this.pending_functions.pop() {
             this.compile_function(x);
@@ -135,7 +136,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     fn compile_function(&mut self, func: PendingFunction<'a, A>) {
         self.registers.clear();
-        self.functions[func.id.0 as usize].offset = self.instructions.len();
+        //TODO: propagate size errors
+        self.functions[func.id.0 as usize].offset = self.instructions.len().try_into().unwrap();
 
         self.compile_params(func.args);
 
@@ -150,8 +152,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
         }
         self.functions[func.id.0 as usize].registers = self.registers.registers_needed();
-        self.functions[func.id.0 as usize].size =
-            self.instructions.len() - self.functions[func.id.0 as usize].offset;
+        //TODO: propagate size errors
+        self.functions[func.id.0 as usize].size = (self.instructions.len()
+            - self.functions[func.id.0 as usize].offset as usize)
+            .try_into()
+            .unwrap();
     }
 
     fn push_pending_function(

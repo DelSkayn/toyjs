@@ -32,9 +32,10 @@ fn main() -> Result<(), io::Error> {
     let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
     let mut realm = Realm::new();
     let bytecode = Compiler::compile_script(&script, &variables, &interner, &realm.gc, Global);
+    let bytecode = realm.gc.allocate(bytecode);
 
-    println!("{:?}", realm.eval(bytecode).unbind());
-    while realm.execute_pending_task() {}
+    println!("{:?}", realm.eval(bytecode).unwrap());
+    //while realm.execute_pending_task() {}
 
     Ok(())
 }
