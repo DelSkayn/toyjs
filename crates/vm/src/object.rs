@@ -2,9 +2,8 @@ use std::cell::UnsafeCell;
 
 use crate::{
     gc::{Gc, Trace},
-    realm::Realm,
     value::BoundValue,
-    Value,
+    Realm, Value,
 };
 use common::collections::HashMap;
 

@@ -30,19 +30,20 @@ pub use buffer::{InstructionBuffer, InstructionReader};
 
 #[derive(Debug)]
 pub enum ValidationError {
+    ByteCodeToLarge,
     FunctionOffsetInvalid {
         /// Which function
-        function: usize,
+        function: u32,
         /// The invalid offset
-        offset: usize,
+        offset: u32,
         /// The size of the buffer.
-        buffer_size: usize,
+        buffer_size: u32,
     },
     InvalidOpcode {
         /// Which function
-        function: usize,
+        function: u32,
         /// The offset of the invalid opcode in the instruction buffer.
-        offset: usize,
+        offset: u32,
         /// The invalid opcode
         opcode: u8,
     },
@@ -71,17 +72,18 @@ use crate::{
     Value,
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct ByteFunction {
     /// The offset into the instruction buffer where this function starts.
-    pub offset: usize,
+    pub offset: u32,
     /// The amount of instructions part of this function.
-    pub size: usize,
+    pub size: u32,
     /// The amount of register this function uses.
     pub registers: u8,
 }
 
 /// A generic set of instructions, functions and constants.
+#[derive(Debug)]
 pub struct ByteCode {
     /// Constants used in this bytecode set.
     pub constants: Box<[Value]>,
@@ -106,12 +108,16 @@ impl ByteCode {
     pub fn is_valid(&self) -> Option<ValidationError> {
         let mut _l_values = Vec::<usize>::new();
 
+        if self.instructions.size() > u32::MAX as usize {
+            return Some(ValidationError::ByteCodeToLarge);
+        }
+
         for (f_idx, f) in self.functions.iter().enumerate() {
-            if f.offset >= self.instructions.size() {
+            if f.offset >= self.instructions.size() as u32 {
                 return Some(ValidationError::FunctionOffsetInvalid {
-                    function: f_idx,
+                    function: f_idx as u32,
                     offset: f.offset,
-                    buffer_size: self.instructions.size(),
+                    buffer_size: self.instructions.size() as u32,
                 });
             }
             let _reader = InstructionReader::new(&self.instructions, f.offset, f.size);

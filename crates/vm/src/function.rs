@@ -1,28 +1,19 @@
-use crate::{
-    gc::Trace,
-    instructions::{ByteCode, InstructionReader},
-    object::Object,
-    realm::Realm,
-    stack::Stack,
-    Gc, Value,
-};
+use crate::{gc::Trace, instructions::ByteCode, object::Object, Gc, Realm, Value};
 use std::cell::RefCell;
 
-pub struct Arguments<'a> {
-    stack: &'a Stack,
-}
+pub const RECURSIVE_FUNC_PANIC: &'static str = "tried to call mutable function recursively";
 
 pub type MutableFn = Box<dyn FnMut(&mut Realm) -> Value>;
 pub type NativeFn = Box<dyn Fn(&mut Realm) -> Value>;
 
 pub enum FunctionKind {
-    Runtime { bc: Gc<ByteCode>, function: usize },
+    Runtime { bc: Gc<ByteCode>, function: u32 },
     Mutable(RefCell<MutableFn>),
     Native(NativeFn),
 }
 
 pub struct Function {
-    kind: FunctionKind,
+    pub kind: FunctionKind,
     object: Object,
 }
 
@@ -72,46 +63,22 @@ impl Function {
     }
 
     /// Create a functions from a function in a bytecode set.
-    pub fn from_bc(bc: Gc<ByteCode>, func: usize) -> Function {
+    pub fn from_bc(bc: Gc<ByteCode>, func: u32) -> Function {
         Function {
             kind: FunctionKind::Runtime { bc, function: func },
             object: Object::new(),
         }
     }
 
-    /// Call the function within the given closure.
-    ///
-    /// # Safety
-    ///
-    /// If this function represents a function created in a specific realm
-    /// the function can only be called in the same realm.
-    ///
-    /// Any gc pointers held can be invalidated
-    pub unsafe fn call(&self, realm: &mut Realm, args: u8) -> Value {
+    pub unsafe fn call(&self, realm: &mut Realm, _args: u8) -> Value {
         match self.kind {
-            FunctionKind::Runtime { bc, function } => {
-                let func = bc.functions[function];
-                realm.stack.enter_call(func.registers);
-                let mut reader = InstructionReader::new(&bc.instructions, func.offset, func.size);
-                let res = realm.execute(&mut reader, bc);
-                realm.stack.exit_call();
-                res
+            FunctionKind::Native(ref x) => x(realm),
+            FunctionKind::Runtime { .. } => {
+                todo!()
             }
-            FunctionKind::Native(ref func) => {
-                realm.stack.enter_call(args);
-                let res = (**func)(realm);
-                realm.stack.exit_call();
-                res
-            }
-            FunctionKind::Mutable(ref func) => {
-                realm.stack.enter_call(args);
-                let res = (**func
-                    .try_borrow_mut()
-                    .expect("recursively called mutable native function"))(
-                    realm
-                );
-                realm.stack.exit_call();
-                res
+            FunctionKind::Mutable(ref x) => {
+                (*x.try_borrow_mut()
+                    .expect("tried to recursively call native function"))(realm)
             }
         }
     }
