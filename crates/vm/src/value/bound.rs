@@ -1,6 +1,21 @@
 use super::Value;
 use crate::{function::Function, gc::BoundGc, object::Object};
-use std::{cell::Cell, marker::PhantomData};
+use std::{cell::Cell, convert::TryFrom, error::Error, fmt, marker::PhantomData};
+
+/// An error returend when trying to convert a value into the wrong type.
+#[derive(Debug)]
+pub struct ValueConversionError;
+
+impl Error for ValueConversionError {}
+
+impl fmt::Display for ValueConversionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Tried to convert value to a type which it did not contain"
+        )
+    }
+}
 
 /// A value bound to a realm
 ///
@@ -10,6 +25,7 @@ use std::{cell::Cell, marker::PhantomData};
 /// Bound values hold an immutable reference to the realm they where returned from, as executing
 /// code requires a mutable refrence it is impossible to hold onto a bound value during garbage
 /// collection.
+#[derive(Clone, Copy, Debug)]
 pub struct BoundValue<'a> {
     value: Value,
     marker: PhantomData<Cell<&'a ()>>,
@@ -21,6 +37,10 @@ impl<'a> BoundValue<'a> {
             value,
             marker: PhantomData,
         }
+    }
+
+    pub fn undefined() -> BoundValue<'a> {
+        unsafe { Self::bind(Value::undefined()) }
     }
 
     pub fn unbind(self) -> Value {
@@ -119,6 +139,41 @@ impl<'a> BoundValue<'a> {
     #[inline]
     pub unsafe fn unsafe_cast_string(self) -> BoundGc<'a, String> {
         BoundGc::bind(self.value.unsafe_cast_string())
+    }
+}
+
+impl<'a> TryFrom<BoundValue<'a>> for BoundGc<'a, String> {
+    type Error = ValueConversionError;
+    fn try_from(v: BoundValue<'a>) -> Result<BoundGc<'a, String>, Self::Error> {
+        if v.is_string() {
+            Ok(unsafe { v.unsafe_cast_string() })
+        } else {
+            Err(ValueConversionError)
+        }
+    }
+}
+
+impl<'a> TryFrom<BoundValue<'a>> for i32 {
+    type Error = ValueConversionError;
+    fn try_from(v: BoundValue<'a>) -> Result<Self, Self::Error> {
+        if v.is_int() {
+            Ok(v.cast_int())
+        } else {
+            Err(ValueConversionError)
+        }
+    }
+}
+
+impl<'a> TryFrom<BoundValue<'a>> for f64 {
+    type Error = ValueConversionError;
+    fn try_from(v: BoundValue<'a>) -> Result<Self, Self::Error> {
+        if v.is_int() {
+            Ok(v.cast_int() as f64)
+        } else if v.is_float() {
+            Ok(v.cast_float())
+        } else {
+            Err(ValueConversionError)
+        }
     }
 }
 

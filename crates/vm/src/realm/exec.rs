@@ -52,7 +52,7 @@ impl Realm {
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
                         self.gc.write_barrier(obj);
-                        obj.unsafe_index_set(key, val, self);
+                        obj.unsafe_index_set(key, val, self.context());
                     } else {
                         todo!()
                     }
@@ -62,7 +62,7 @@ impl Realm {
                     let obj = self.stack.read(instr.read_u8());
                     let key = self.stack.read(instr.read_u8());
                     if obj.is_object() {
-                        let res = obj.unsafe_cast_object().unsafe_index(key, self);
+                        let res = obj.unsafe_cast_object().unsafe_index(key, self.context());
                         self.stack.write(dst, res)
                     } else {
                         todo!()
@@ -268,6 +268,8 @@ impl Realm {
     pub unsafe fn coerce_string(&mut self, value: Value) -> String {
         if value.is_int() {
             format!("{}", value.cast_int())
+        } else if value.is_float() {
+            format!("{}", value.cast_float())
         } else if value.is_null() {
             "null".to_string()
         } else if value.is_undefined() {
@@ -506,15 +508,19 @@ impl Realm {
             }
             FunctionKind::Mutable(ref x) => {
                 self.stack.enter(0);
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self);
+                let ctx = self.context();
+                let args = self.arguments();
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(ctx, args);
                 self.stack.pop();
-                Some(res)
+                Some(res.unbind())
             }
             FunctionKind::Native(ref x) => {
                 self.stack.enter(0);
-                let res = (*x)(self);
+                let ctx = self.context();
+                let args = self.arguments();
+                let res = (*x)(ctx, args);
                 self.stack.pop();
-                Some(res)
+                Some(res.unbind())
             }
         }
     }

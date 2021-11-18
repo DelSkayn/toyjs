@@ -108,7 +108,7 @@ impl<'a, T: Trace + ?Sized> Deref for BoundGc<'a, T> {
 }
 
 impl<'a, T: Trace + ?Sized> BoundGc<'a, T> {
-    pub fn bind(value: Gc<T>) -> Self {
+    pub unsafe fn bind(value: Gc<T>) -> Self {
         BoundGc {
             gc: value,
             marker: PhantomData,
