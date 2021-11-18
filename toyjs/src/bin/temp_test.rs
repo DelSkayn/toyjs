@@ -34,7 +34,7 @@ fn main() -> Result<(), io::Error> {
     let bytecode = Compiler::compile_script(&script, &variables, &interner, &realm.gc, Global);
     let bytecode = realm.gc.allocate(bytecode);
 
-    println!("{:?}", realm.eval(bytecode).unwrap());
+    println!("{:?}", unsafe { realm.eval(bytecode).unwrap() });
     //while realm.execute_pending_task() {}
 
     Ok(())

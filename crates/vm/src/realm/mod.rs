@@ -1,14 +1,20 @@
-use std::alloc::Global;
+use std::{alloc::Global, marker::PhantomData};
 
 use ast::SymbolTable;
 use common::interner::Interner;
 
-use crate::{gc::Trace, instructions::ByteCode, object::Object, Gc, GcArena, Value};
+use crate::{
+    function::Function, gc::Trace, instructions::ByteCode, object::Object, value::BoundValue, Gc,
+    GcArena, Value,
+};
 
 mod reader;
 mod stack;
 use stack::Stack;
+mod ctx;
 mod exec;
+pub use ctx::{Arguments, RealmCtx};
+mod env;
 
 pub struct Realm {
     pub symbol_table: SymbolTable<Global>,
@@ -25,19 +31,51 @@ impl Realm {
         let gc = GcArena::new();
         let global = gc.allocate(Object::new());
         let stack = Stack::new();
-        Realm {
+        let mut this = Realm {
             symbol_table,
             interner,
             gc,
             global,
             stack,
+        };
+        unsafe { env::init(this.context()) };
+        this
+    }
+
+    pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
+        let reader = reader::InstructionReader::from_bc(bc, 0);
+        self.stack.enter(bc.functions[0].registers);
+        self.execute(reader)
+    }
+
+    pub unsafe fn global(&self) -> Gc<Object> {
+        self.global
+    }
+
+    pub unsafe fn create_object(&self) -> Gc<Object> {
+        self.gc.allocate(Object::new())
+    }
+
+    pub unsafe fn create_string(&self, s: String) -> Gc<String> {
+        self.gc.allocate(s)
+    }
+
+    pub unsafe fn create_function<F>(&self, f: F) -> Gc<Function>
+    where
+        F: for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
+    {
+        self.gc.allocate(Function::from_native(f))
+    }
+
+    pub(crate) unsafe fn context<'a>(&'_ mut self) -> RealmCtx<'a> {
+        RealmCtx {
+            realm: self,
+            marker: PhantomData,
         }
     }
 
-    pub fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
-        let reader = reader::InstructionReader::from_bc(bc, 0);
-        self.stack.enter(bc.functions[0].registers);
-        unsafe { self.execute(reader) }
+    pub(crate) unsafe fn arguments<'a>(&'_ mut self) -> Arguments<'a> {
+        self.stack.arguments()
     }
 }
 

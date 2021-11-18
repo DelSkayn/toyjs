@@ -1,10 +1,17 @@
-use crate::{gc::Trace, instructions::ByteCode, object::Object, Gc, Realm, Value};
+use crate::{
+    gc::Trace,
+    instructions::ByteCode,
+    object::Object,
+    realm::{Arguments, RealmCtx},
+    value::BoundValue,
+    Gc,
+};
 use std::cell::RefCell;
 
 pub const RECURSIVE_FUNC_PANIC: &'static str = "tried to call mutable function recursively";
 
-pub type MutableFn = Box<dyn FnMut(&mut Realm) -> Value>;
-pub type NativeFn = Box<dyn Fn(&mut Realm) -> Value>;
+pub type MutableFn = Box<dyn for<'a> FnMut(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
+pub type NativeFn = Box<dyn for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
 
 pub enum FunctionKind {
     Runtime { bc: Gc<ByteCode>, function: u32 },
@@ -41,7 +48,7 @@ impl Function {
     /// The function call.
     pub fn from_native_mut<F>(f: F) -> Self
     where
-        F: FnMut(&mut Realm) -> Value + 'static,
+        F: for<'a> FnMut(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
     {
         let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
         Function {
@@ -53,7 +60,7 @@ impl Function {
     /// Create a function from a immutable rust closure.
     pub fn from_native<F>(f: F) -> Self
     where
-        F: Fn(&mut Realm) -> Value + 'static,
+        F: for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
     {
         let kind = FunctionKind::Native(Box::new(f));
         Function {
@@ -67,19 +74,6 @@ impl Function {
         Function {
             kind: FunctionKind::Runtime { bc, function: func },
             object: Object::new(),
-        }
-    }
-
-    pub unsafe fn call(&self, realm: &mut Realm, _args: u8) -> Value {
-        match self.kind {
-            FunctionKind::Native(ref x) => x(realm),
-            FunctionKind::Runtime { .. } => {
-                todo!()
-            }
-            FunctionKind::Mutable(ref x) => {
-                (*x.try_borrow_mut()
-                    .expect("tried to recursively call native function"))(realm)
-            }
         }
     }
 

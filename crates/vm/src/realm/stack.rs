@@ -1,17 +1,19 @@
 use std::{
     alloc::{self, GlobalAlloc, Layout, System},
+    convert::TryInto,
+    marker::PhantomData,
     mem,
     ptr::{self, NonNull},
 };
 
 use crate::{gc::Trace, Value};
 
-use super::reader::InstructionReader;
+use super::{reader::InstructionReader, Arguments};
 
 pub enum Frame {
     /// A frame which signifies an entry into the interperter.
     /// If this frame is popped the interperter should return from the execution loop
-    Entry { registers: u8 },
+    Entry { registers: u32 },
     /// A call created from the interperter
     Call { registers: u8, data: CallFrameData },
     /// An exception guard, if an excreption is thrown execution should contin
@@ -40,7 +42,7 @@ pub struct Stack {
 
     frames: Vec<Frame>,
 
-    num_registers: u8,
+    cur_frame_size: u32,
     capacity: usize,
 }
 
@@ -52,7 +54,7 @@ impl Stack {
             stack: root.as_ptr(),
             root,
             frames: Vec::new(),
-            num_registers: 0,
+            cur_frame_size: 0,
             capacity: 0,
         }
     }
@@ -65,16 +67,16 @@ impl Stack {
             if new_used > self.capacity {
                 self.grow(new_used)
             }
-            self.frame = self.frame.add(self.num_registers as usize);
             self.frames.push(Frame::Entry {
-                registers: self.num_registers,
+                registers: self.cur_frame_size,
             });
+            self.frame = self.frame.add(self.cur_frame_size as usize);
             let new_stack = self.frame.add(registers as usize);
             while self.stack < new_stack {
                 self.stack.write(Value::undefined());
                 self.stack = self.stack.add(1);
             }
-            self.num_registers = registers;
+            self.cur_frame_size = registers as u32;
         }
     }
 
@@ -84,7 +86,7 @@ impl Stack {
             if new_used > self.capacity {
                 self.grow(new_used)
             }
-            self.frame = self.frame.add(self.num_registers as usize);
+            self.frame = self.frame.add(self.cur_frame_size as usize);
             let mut cur = self.stack;
             self.stack = self.frame.add(registers as usize);
             while cur < self.stack {
@@ -95,7 +97,7 @@ impl Stack {
                 registers,
                 data: frame,
             });
-            self.num_registers = registers;
+            self.cur_frame_size = registers as u32;
         }
     }
 
@@ -117,7 +119,7 @@ impl Stack {
             match self.frames.pop() {
                 Some(Frame::Try(x)) => return Some(x),
                 Some(Frame::Call { registers, .. }) => {
-                    self.restore_frame(registers);
+                    self.restore_frame(registers as u32);
                 }
                 Some(Frame::Entry { registers, .. }) => {
                     self.restore_frame(registers);
@@ -133,11 +135,11 @@ impl Stack {
             match self.frames.pop() {
                 Some(Frame::Try(_)) => {}
                 Some(Frame::Call { registers, data }) => {
-                    self.restore_frame(registers);
+                    self.restore_frame(registers as u32);
                     return Some(data);
                 }
                 Some(Frame::Entry { registers, .. }) => {
-                    self.restore_frame(registers);
+                    self.restore_frame(registers as u32);
                     return None;
                 }
                 None => panic!("tried to pop no existant stack"),
@@ -148,7 +150,7 @@ impl Stack {
     #[inline]
     pub fn push(&mut self, v: Value) {
         let used = self.used();
-        if used + 1 < self.capacity {
+        if used + 1 > self.capacity {
             self.grow(used + 1)
         }
         unsafe {
@@ -157,12 +159,28 @@ impl Stack {
         }
     }
 
+    pub fn push_temp(&mut self, v: Value) {
+        let used = self.used();
+        if used + 1 > self.capacity {
+            self.grow(used + 1)
+        }
+        unsafe {
+            self.stack.write(v);
+            self.stack = self.stack.add(1);
+            self.cur_frame_size = self
+                .stack
+                .offset_from(self.frame)
+                .try_into()
+                .expect("frame size execeded u32")
+        }
+    }
+
     #[inline]
-    fn restore_frame(&mut self, registers: u8) {
+    fn restore_frame(&mut self, registers: u32) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
-            self.num_registers = registers;
+            self.cur_frame_size = registers;
         }
     }
 
@@ -204,14 +222,23 @@ impl Stack {
 
     #[inline(always)]
     pub fn read(&self, register: u8) -> Value {
-        debug_assert!(register < self.num_registers);
+        debug_assert!((register as u32) < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).read() }
     }
 
     #[inline(always)]
     pub fn write(&mut self, register: u8, v: Value) {
-        debug_assert!(register < self.num_registers);
+        debug_assert!((register as u32) < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).write(v) }
+    }
+
+    pub unsafe fn arguments<'a>(&self) -> Arguments<'a> {
+        let size = self.stack.offset_from(self.frame);
+        Arguments {
+            end: self.frame.add(size as usize),
+            frame: self.frame,
+            marker: PhantomData,
+        }
     }
 }
 
