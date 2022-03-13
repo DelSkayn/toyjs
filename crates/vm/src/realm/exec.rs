@@ -1,53 +1,47 @@
 use crate::{
     function::{Function, FunctionKind, RECURSIVE_FUNC_PANIC},
-    instructions::opcode,
-    instructions::InstructionOpcode,
+    instructions::Instruction,
     object::Object,
     Value,
 };
 
 use super::{reader::InstructionReader, stack::CallFrameData, Realm};
 
+pub enum NumericOperator {
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Pow,
+}
+
 impl Realm {
     pub unsafe fn execute(&mut self, mut instr: InstructionReader) -> Result<Value, ()> {
         loop {
-            let op = instr.read_u8();
-            match op {
-                opcode::LoadConst => {
-                    let dst = instr.read_u8();
-                    let cons = instr.read_u16();
+            match instr.next() {
+                Instruction::LoadConst { dst, cons } => {
                     self.stack.write(dst, instr.constant(cons as u32));
                 }
-                opcode::LoadGlobal => {
-                    let dst = instr.read_u8();
-                    instr.read_u16();
+                Instruction::LoadGlobal { dst } => {
                     self.stack.write(dst, Value::from(self.global));
                 }
-                opcode::LoadFunction => {
+                Instruction::LoadFunction { dst, func } => {
                     self.gc.collect_debt(&(&*self, instr));
-                    let dst = instr.read_u8();
-                    let tgt = instr.read_u16();
-                    let func = instr.function(tgt as u32);
+                    let func = instr.function(func as u32);
                     let res = Value::from(self.gc.allocate(func));
                     self.stack.write(dst, res);
                 }
-                opcode::Move => {
-                    let dst = instr.read_u8();
-                    let src = instr.read_u16() as u8;
-                    self.stack.write(dst, self.stack.read(src))
-                }
-                opcode::CreateObject => {
+                Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src as u8)),
+                Instruction::CreateObject { dst } => {
                     self.gc.collect_debt(&(&*self, instr));
-                    let dst = instr.read_u8();
-                    instr.read_u16();
                     let object = Object::new();
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
                 }
-                opcode::IndexAssign => {
-                    let obj = self.stack.read(instr.read_u8());
-                    let key = self.stack.read(instr.read_u8());
-                    let val = self.stack.read(instr.read_u8());
+                Instruction::IndexAssign { obj, key, val } => {
+                    let obj = self.stack.read(obj);
+                    let key = self.stack.read(key);
+                    let val = self.stack.read(val);
 
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
@@ -57,10 +51,9 @@ impl Realm {
                         todo!()
                     }
                 }
-                opcode::Index => {
-                    let dst = instr.read_u8();
-                    let obj = self.stack.read(instr.read_u8());
-                    let key = self.stack.read(instr.read_u8());
+                Instruction::Index { dst, obj, key } => {
+                    let obj = self.stack.read(obj);
+                    let key = self.stack.read(key);
                     if obj.is_object() {
                         let res = obj.unsafe_cast_object().unsafe_index(key, self.context());
                         self.stack.write(dst, res)
@@ -68,10 +61,9 @@ impl Realm {
                         todo!()
                     }
                 }
-                opcode::Add => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::Add { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     if Self::both_int(left, right) {
                         let res =
                             Self::coerce_int(left.cast_int() as i64 + right.cast_int() as i64);
@@ -81,102 +73,89 @@ impl Realm {
                         self.stack.write(dst, res);
                     }
                 }
-                opcode::Sub => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::Sub { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     if Self::both_int(left, right) {
                         let res =
                             Self::coerce_int(left.cast_int() as i64 - right.cast_int() as i64);
                         self.stack.write(dst, res);
                     } else {
-                        let res = self.numeric_operator(left, right, InstructionOpcode::Sub);
+                        let res = self.numeric_operator(left, right, NumericOperator::Sub);
                         self.stack.write(dst, res);
                     }
                 }
-                opcode::Mul => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
-                    let res = self.numeric_operator(left, right, InstructionOpcode::Mul);
+                Instruction::Mul { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.numeric_operator(left, right, NumericOperator::Mul);
                     self.stack.write(dst, res);
                 }
-                opcode::Div => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
-                    let res = self.numeric_operator(left, right, InstructionOpcode::Div);
+                Instruction::Div { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.numeric_operator(left, right, NumericOperator::Div);
                     self.stack.write(dst, res);
                 }
-                opcode::Mod => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
-                    let res = self.numeric_operator(left, right, InstructionOpcode::Mod);
+                Instruction::Mod { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.numeric_operator(left, right, NumericOperator::Mod);
                     self.stack.write(dst, res);
                 }
-                opcode::Pow => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
-                    let res = self.numeric_operator(left, right, InstructionOpcode::Pow);
+                Instruction::Pow { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.numeric_operator(left, right, NumericOperator::Pow);
                     self.stack.write(dst, res);
                 }
 
-                opcode::ShiftLeft => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::ShiftLeft { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     let left = self.convert_int(left);
                     let right = self.convert_int(right) as u32 % 32;
                     self.stack.write(dst, Value::from(left << right));
                 }
-                opcode::ShiftRight => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::ShiftRight { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     let left = self.convert_int(left);
                     let right = self.convert_int(right) as u32 % 32;
                     self.stack.write(dst, Value::from(left >> right));
                 }
-                opcode::ShiftUnsigned => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::ShiftUnsigned { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     let left = self.convert_int(left) as u32;
                     let right = self.convert_int(right) as u32 % 32;
                     self.stack.write(dst, Value::from((left >> right) as i32));
                 }
-                opcode::SEqual => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::SEqual { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     let res = self.strict_equal(left, right);
                     self.stack.write(dst, Value::from(res));
                 }
-                opcode::SNotEqual => {
-                    let dst = instr.read_u8();
-                    let left = self.stack.read(instr.read_u8());
-                    let right = self.stack.read(instr.read_u8());
+                Instruction::SNotEqual { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
                     let res = !self.strict_equal(left, right);
                     self.stack.write(dst, Value::from(res));
                 }
 
-                opcode::IsNullish => {
-                    let dst = instr.read_u8();
-                    let src = self.stack.read(instr.read_u16() as u8);
+                Instruction::IsNullish { dst, op } => {
+                    let src = self.stack.read(op as u8);
                     let nullish = self.is_nullish(src);
                     self.stack.write(dst, Value::from(nullish))
                 }
-                opcode::Not => {
-                    let dst = instr.read_u8();
-                    let src = self.stack.read(instr.read_u16() as u8);
+                Instruction::Not { dst, src } => {
+                    let src = self.stack.read(src as u8);
                     let falsish = self.is_falsish(src);
                     self.stack.write(dst, Value::from(falsish))
                 }
-                opcode::Negative => {
-                    let dst = instr.read_u8();
-                    let src = self.stack.read(instr.read_u16() as u8);
+                Instruction::Negative { dst, op } => {
+                    let src = self.stack.read(op);
                     let number = self.coerce_number(src);
                     if number.is_int() {
                         let number = -(number.cast_int() as i64);
@@ -189,36 +168,26 @@ impl Realm {
                         self.stack.write(dst, Value::from(-number.cast_float()))
                     }
                 }
-                opcode::Jump => {
-                    instr.read_u8();
-                    let tgt = instr.read_i16();
-                    instr.jump(tgt as i32)
-                }
-                opcode::JumpFalse => {
-                    let cond = self.stack.read(instr.read_u8());
-                    let tgt = instr.read_i16();
+                Instruction::Jump { tgt } => instr.jump(tgt),
+                Instruction::JumpFalse { cond, tgt } => {
+                    let cond = self.stack.read(cond);
                     if self.is_falsish(cond) {
-                        instr.jump(tgt as i32)
+                        instr.jump(tgt)
                     }
                 }
-                opcode::JumpTrue => {
-                    let cond = self.stack.read(instr.read_u8());
-                    let tgt = instr.read_i16();
+                Instruction::JumpTrue { cond, tgt } => {
+                    let cond = self.stack.read(cond);
                     if !self.is_falsish(cond) {
-                        instr.jump(tgt as i32)
+                        instr.jump(tgt)
                     }
                 }
-                opcode::Push => {
-                    let src = instr.read_u8();
-                    let _null = instr.read_u16();
+                Instruction::Push { src } => {
                     let src = self.stack.read(src);
                     self.stack.push(src);
                 }
 
-                opcode::Call => {
-                    let dst = instr.read_u8();
-                    let func = self.stack.read(instr.read_u8());
-                    let _num = instr.read_u8();
+                Instruction::Call { dst, func } => {
+                    let func = self.stack.read(func);
                     if func.is_function() {
                         if let Some(value) =
                             self.call(&func.unsafe_cast_function(), &mut instr, dst)
@@ -229,15 +198,15 @@ impl Realm {
                         todo!()
                     }
                 }
-                opcode::ReturnUndefined => match self.stack.pop() {
+                Instruction::ReturnUndefined { .. } => match self.stack.pop() {
                     Some(x) => {
                         instr = x.reader;
                         self.stack.write(x.dst, Value::undefined());
                     }
                     None => return Ok(Value::undefined()),
                 },
-                opcode::Return => {
-                    let return_value = self.stack.read(instr.read_u8());
+                Instruction::Return { ret } => {
+                    let return_value = self.stack.read(ret);
                     match self.stack.pop() {
                         Some(x) => {
                             instr = x.reader;
@@ -246,7 +215,7 @@ impl Realm {
                         None => return Ok(return_value),
                     }
                 }
-                x => panic!("invalid opcode {}", x),
+                x => panic!("invalid Instruction {}", x),
             }
         }
     }
@@ -428,7 +397,7 @@ impl Realm {
         &mut self,
         left: Value,
         right: Value,
-        op: InstructionOpcode,
+        op: NumericOperator,
     ) -> Value {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
@@ -453,12 +422,11 @@ impl Realm {
             }
         };
         let res = match op {
-            InstructionOpcode::Sub => left - right,
-            InstructionOpcode::Mul => left * right,
-            InstructionOpcode::Div => left / right,
-            InstructionOpcode::Mod => left % right,
-            InstructionOpcode::Pow => left.powf(right),
-            _ => panic!("invalid operator"),
+            NumericOperator::Sub => left - right,
+            NumericOperator::Mul => left * right,
+            NumericOperator::Div => left / right,
+            NumericOperator::Mod => left % right,
+            NumericOperator::Pow => left.powf(right),
         };
         if res as i32 as f64 == res {
             Value::from(res as i32)

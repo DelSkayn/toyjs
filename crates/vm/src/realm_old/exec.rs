@@ -1,33 +1,22 @@
 use crate::{
-    function::{Function, FunctionKind},
-    instructions::{opcode, ByteFunction, InstructionOpcode, InstructionReader},
-    realm::Realm,
-    stack2::{CallFrameData, FrameData},
-    Object, Value,
+    function::{Function, FunctionKind, RECURSIVE_FUNC_PANIC},
+    instructions::opcode,
+    instructions::InstructionOpcode,
+    object::Object,
+    Value,
 };
 
-impl Realm {
-    pub unsafe fn execute(&mut self, frame: FrameData) -> Value {
-        let mut bc = frame.instructions;
-        let mut byte_func: ByteFunction = *frame
-            .instructions
-            .functions
-            .get_unchecked(frame.function as usize);
-        self.stack.enter(byte_func.registers);
-        let mut instr = InstructionReader::new(
-            &frame.instructions.instructions,
-            byte_func.offset,
-            byte_func.size,
-        );
+use super::{reader::InstructionReader, stack::CallFrameData, Realm};
 
+impl Realm {
+    pub unsafe fn execute(&mut self, mut instr: InstructionReader) -> Result<Value, ()> {
         loop {
             let op = instr.read_u8();
             match op {
                 opcode::LoadConst => {
                     let dst = instr.read_u8();
                     let cons = instr.read_u16();
-                    self.stack
-                        .write(dst, *bc.constants.get_unchecked(cons as usize));
+                    self.stack.write(dst, instr.constant(cons as u32));
                 }
                 opcode::LoadGlobal => {
                     let dst = instr.read_u8();
@@ -35,10 +24,10 @@ impl Realm {
                     self.stack.write(dst, Value::from(self.global));
                 }
                 opcode::LoadFunction => {
-                    self.gc.collect_debt(&(&*self, bc));
+                    self.gc.collect_debt(&(&*self, instr));
                     let dst = instr.read_u8();
                     let tgt = instr.read_u16();
-                    let func = Function::from_bc(bc, tgt as usize);
+                    let func = instr.function(tgt as u32);
                     let res = Value::from(self.gc.allocate(func));
                     self.stack.write(dst, res);
                 }
@@ -48,7 +37,7 @@ impl Realm {
                     self.stack.write(dst, self.stack.read(src))
                 }
                 opcode::CreateObject => {
-                    self.gc.collect_debt(&(&*self, bc));
+                    self.gc.collect_debt(&(&*self, instr));
                     let dst = instr.read_u8();
                     instr.read_u16();
                     let object = Object::new();
@@ -63,7 +52,7 @@ impl Realm {
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
                         self.gc.write_barrier(obj);
-                        obj.unsafe_index_set(key, val, self);
+                        obj.unsafe_index_set(key, val, self.context());
                     } else {
                         todo!()
                     }
@@ -73,7 +62,7 @@ impl Realm {
                     let obj = self.stack.read(instr.read_u8());
                     let key = self.stack.read(instr.read_u8());
                     if obj.is_object() {
-                        let res = obj.unsafe_cast_object().unsafe_index(key, self);
+                        let res = obj.unsafe_cast_object().unsafe_index(key, self.context());
                         self.stack.write(dst, res)
                     } else {
                         todo!()
@@ -229,84 +218,32 @@ impl Realm {
                 opcode::Call => {
                     let dst = instr.read_u8();
                     let func = self.stack.read(instr.read_u8());
-                    let num = instr.read_u8();
+                    let _num = instr.read_u8();
                     if func.is_function() {
-                        let func = func.unsafe_cast_function();
-                        let res = match func.kind {
-                            FunctionKind::Native(x) => {
-                                self.stack.enter(0);
-                                let res = x(self);
-                                self.stack.pop();
-                                res
-                            }
-                            FunctionKind::Mutable(x) => {
-                                self.stack.enter(0);
-                                let res =
-                                    x.try_borrow_mut().expect(
-                                        "tried to call mutable native function recursively",
-                                    )(self);
-                                self.stack.pop();
-                                res
-                            }
-                            FunctionKind::Runtime {
-                                bc: new_bc,
-                                function: new_function,
-                            } => {
-                                let new_func: ByteFunction =
-                                    *bc.functions.get_unchecked(new_function as usize);
-                                self.stack.enter_call(
-                                    new_func.registers,
-                                    CallFrameData {
-                                        dst,
-                                        data: FrameData {
-                                            offset: instr.offset(),
-                                            instructions: bc,
-                                            function: frame.function,
-                                        },
-                                    },
-                                );
-                                bc = new_bc;
-                                byte_func = new_func;
-                                let mut instr = InstructionReader::new(
-                                    &frame.instructions.instructions,
-                                    byte_func.offset,
-                                    byte_func.offset + byte_func.size,
-                                );
-                                continue;
-                            }
-                        };
-                        self.stack.write(dst, res);
+                        if let Some(value) =
+                            self.call(&func.unsafe_cast_function(), &mut instr, dst)
+                        {
+                            self.stack.write(dst, value);
+                        }
                     } else {
                         todo!()
                     }
                 }
                 opcode::ReturnUndefined => match self.stack.pop() {
                     Some(x) => {
-                        bc = x.data.instructions;
-                        byte_func = bc.functions[x.data.function as usize];
-                        instr = InstructionReader::new(
-                            &frame.instructions.instructions,
-                            x.data.offset,
-                            byte_func.offset + byte_func.size,
-                        );
+                        instr = x.reader;
                         self.stack.write(x.dst, Value::undefined());
                     }
-                    None => return Value::undefined(),
+                    None => return Ok(Value::undefined()),
                 },
                 opcode::Return => {
                     let return_value = self.stack.read(instr.read_u8());
                     match self.stack.pop() {
                         Some(x) => {
-                            bc = x.data.instructions;
-                            byte_func = bc.functions[x.data.function as usize];
-                            instr = InstructionReader::new(
-                                &frame.instructions.instructions,
-                                x.data.offset,
-                                byte_func.offset + byte_func.size,
-                            );
+                            instr = x.reader;
                             self.stack.write(x.dst, return_value);
                         }
-                        None => return return_value,
+                        None => return Ok(return_value),
                     }
                 }
                 x => panic!("invalid opcode {}", x),
@@ -331,6 +268,8 @@ impl Realm {
     pub unsafe fn coerce_string(&mut self, value: Value) -> String {
         if value.is_int() {
             format!("{}", value.cast_int())
+        } else if value.is_float() {
+            format!("{}", value.cast_float())
         } else if value.is_null() {
             "null".to_string()
         } else if value.is_undefined() {
@@ -545,6 +484,44 @@ impl Realm {
             Value::from(int as i32)
         } else {
             Value::from(int as f64)
+        }
+    }
+
+    unsafe fn call(
+        &mut self,
+        function: &Function,
+        instr: &mut InstructionReader,
+        dst: u8,
+    ) -> Option<Value> {
+        match function.kind {
+            FunctionKind::Runtime { bc, function } => {
+                let byte_func = bc.functions.get_unchecked(function as usize);
+                self.stack.enter_call(
+                    byte_func.registers,
+                    CallFrameData {
+                        dst,
+                        reader: *instr,
+                    },
+                );
+                *instr = InstructionReader::from_bc(bc, function as u32);
+                None
+            }
+            FunctionKind::Mutable(ref x) => {
+                self.stack.enter(0);
+                let ctx = self.context();
+                let args = self.arguments();
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(ctx, args);
+                self.stack.pop();
+                Some(res.unbind())
+            }
+            FunctionKind::Native(ref x) => {
+                self.stack.enter(0);
+                let ctx = self.context();
+                let args = self.arguments();
+                let res = (*x)(ctx, args);
+                self.stack.pop();
+                Some(res.unbind())
+            }
         }
     }
 }

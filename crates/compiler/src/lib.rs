@@ -11,7 +11,7 @@ use constants::Constants;
 use lexical_info::LexicalInfo;
 use vm::{
     gc::GcArena,
-    instructions::{ByteCode, ByteFunction, Instruction, InstructionBuffer},
+    instructions::{ByteCode, ByteFunction, Instruction},
 };
 
 use std::{
@@ -106,13 +106,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .last()
             .flatten();
         if let Some(res) = res {
-            this.instructions.push(Instruction::Return {
-                ret: res.0,
-                null: 0,
-            });
+            this.instructions.push(Instruction::Return { ret: res.0 });
         } else {
             this.instructions
-                .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+                .push(Instruction::ReturnUndefined { _ignore: () });
         }
 
         let function = &mut this.functions[0];
@@ -125,7 +122,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
 
         let constants = this.constants.into_constants();
-        let instructions = InstructionBuffer::from_instructions(&this.instructions);
+        let instructions = this
+            .instructions
+            .into_vec()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
 
         ByteCode {
             constants,
@@ -148,7 +150,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Some(Instruction::Return { .. }) | Some(Instruction::ReturnUndefined { .. }) => {}
             _ => {
                 self.instructions
-                    .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+                    .push(Instruction::ReturnUndefined { _ignore: () });
             }
         }
         self.functions[func.id.0 as usize].registers = self.registers.registers_needed();
@@ -184,41 +186,17 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn patch_jump(&mut self, id: InstructionId, to: InstructionId) {
         let jump = to.0 as i64 - id.0 as i64;
         match self.instructions[id] {
-            Instruction::JumpTrue { cond, ref mut tgt } => {
-                if let Ok(x) = jump.try_into() {
-                    *tgt = x;
-                } else {
-                    // TODO; propagate error
-                    self.instructions[id] = Instruction::JumpTrueL {
-                        cond,
-                        null: 0,
-                        tgt: jump.try_into().unwrap(),
-                    }
-                }
+            Instruction::JumpTrue { ref mut tgt, .. } => {
+                let x = jump.try_into().unwrap();
+                *tgt = x;
             }
-            Instruction::JumpFalse { cond, ref mut tgt } => {
-                if let Ok(x) = jump.try_into() {
-                    *tgt = x;
-                } else {
-                    // TODO; propagate error
-                    self.instructions[id] = Instruction::JumpFalseL {
-                        cond,
-                        null: 0,
-                        tgt: jump.try_into().unwrap(),
-                    }
-                }
+            Instruction::JumpFalse { ref mut tgt, .. } => {
+                let x = jump.try_into().unwrap();
+                *tgt = x;
             }
             Instruction::Jump { ref mut tgt, .. } => {
-                if let Ok(x) = jump.try_into() {
-                    *tgt = x;
-                } else {
-                    // TODO; propagate error
-                    self.instructions[id] = Instruction::JumpL {
-                        nul0: 0,
-                        nul1: 0,
-                        tgt: jump.try_into().unwrap(),
-                    }
-                }
+                let x = jump.try_into().unwrap();
+                *tgt = x;
             }
             _ => panic!("instruction is not a patchable jump"),
         }
