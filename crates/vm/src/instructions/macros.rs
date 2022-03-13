@@ -6,6 +6,7 @@ macro_rules! define_instructions {
         )* }
     ) => {
         /// Full instruction representation with operands.
+        #[derive(Clone,Copy,Eq,PartialEq,Debug)]
         pub enum Instruction{
             $(
                 $(#[doc = $com])*
@@ -14,228 +15,88 @@ macro_rules! define_instructions {
         }
 
 
-        #[derive(Debug)]
-        #[repr(u8)]
-        /// Instruction representated as just there opcode
-        pub enum InstructionOpcode{
-            $(
-                $(#[doc = $com])*
-                $name,
-            )*
-        }
-
-        /// Module containing instruction opcodes as `u8` constants.
-        pub mod opcode{
-            #![allow(non_upper_case_globals)]
-
-            $(
-                $(#[doc = $com])*
-                pub const $name:u8 = super::InstructionOpcode::$name as u8;)*
-        }
-
-        impl Instruction{
-            /// Returns the kind of instruction
-            pub fn kind(&self) -> InstructionKind{
-                match *self{
-                    $(
-                        Instruction::$name{..} => define_instructions!( @kind $($arg)+),
-                    )*
-                }
-            }
-
-            /// Returns the opcode of the instruction
-            pub fn opcode(&self) -> InstructionOpcode{
-                match *self{
-                    $(
-                        Instruction::$name{..} => InstructionOpcode::$name,
-                    )*
-                }
-            }
-
-            /// Writes the current instruction to a buffer in compact form.
-            pub fn write_to_buffer(&self, buffer: &mut Vec<u32>){
+        impl std::fmt::Display for Instruction{
+            fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result{
                 $(
-                    define_instructions!(@write self, buffer, $name => $($arg)+);
+                    define_instructions!( @format fmt,*self, $name => $($arg)*);
                 )*
-            }
-
-            pub fn format_byte_instruction(fmt: &mut std::fmt::Formatter, reader: &mut InstructionReader) -> std::fmt::Result{
-                let op = reader.try_read_u8().unwrap();
-                write!(fmt,"{:3} ",op)?;
-                match op {
-                    $(
-                    opcode::$name => define_instructions!(@format fmt,reader,$name => $($arg)+),
-                    )*
-                    _ => panic!("invalid opcode")
-                }
-}
-        }
-
-        impl InstructionOpcode{
-            pub fn from_u8(v: u8) -> Option<Self>{
-                match v {
-                    $(
-                        opcode::$name => Some(InstructionOpcode::$name),
-                    )*
-                    _ => None
-                }
+                Ok(())
             }
         }
     };
 
-
-    (@kind $a:ident :u8, $b:ident :u8,$c:ident :u8) => {
-        InstructionKind::A
-    };
-    (@kind $a:ident :u8, $d:ident :u16) => {
-        InstructionKind::D
-    };
-    (@kind $a:ident :u8, $d:ident :i16) => {
-        InstructionKind::D
-    };
-    (@kind $a:ident :u8, $d:ident :u16, $l:ident :u32) => {
-        InstructionKind::L
-    };
-    (@kind $a:ident :u8, $d:ident :u16, $l:ident :i32) => {
-        InstructionKind::L
-    };
-    (@kind $a:ident :u8, $d:ident :i16, $l:ident :u32) => {
-        InstructionKind::L
-    };
-    (@kind $a:ident :u8, $d:ident :i16, $l:ident :i32) => {
-        InstructionKind::L
-    };
-
-    (@kind $($arg:tt)*) => {
-        compile_error!("invalid instruction variant")
-    };
-
-
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $b:ident :u8,$c:ident :u8) => {
-        if let Instruction::$name{ $a, $b, $c } = *$this {
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a, $b,$c]));
-            return;
-        }
-    };
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :u16) => {
-        if let Instruction::$name{ $a, $d } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            return;
-        }
-    };
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :i16) => {
-        if let Instruction::$name{ $a, $d } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            return;
-        }
-    };
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident :u32) => {
-        if let Instruction::$name{ $a, $d,  $l } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            $buffer.push($l);
-            return;
-        }
-    };
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident :i32) => {
-        if let Instruction::$name{ $a, $d, $l } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            $buffer.push($l as u32);
-            return;
-        }
-    };
-
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident :u32) => {
-        if let Instruction::$name{ $a, $d,  $l } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            $buffer.push($l);
-            return;
-        }
-    };
-    (@write $this:expr, $buffer:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident :i32) => {
-        if let Instruction::$name{ $a, $d, $l } = *$this {
-            let [b,c] = $d.to_le_bytes();
-            $buffer.push(u32::from_le_bytes([$this.opcode() as u8, $a,b,c]));
-            $buffer.push($l as u32);
-            return;
-        }
-    };
-
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $b:ident :u8, $c:ident :u8) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  {:>4}:0x{:<2x}  {:>4}:{:#x}",
+    (@format $w:expr,$v:expr, $name:ident => $a:ident :u8, $b:ident :u8, $c:ident :u8) => {
+        if let Instruction::$name{ $a, $b,$c} = $v{
+            return write!($w,"{:15}  {:>4}:0x{:<2x}  {:>4}:0x{:<2x}  {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
+            $a,
             stringify!($b),
-            $reader.try_read_u8().unwrap(),
+            $b,
             stringify!($c),
-            $reader.try_read_u8().unwrap()
+            $c,
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:#x}",
+    (@format $w:expr,$v:expr, $name:ident => $a:ident :u8, $d:ident :u16) => {
+        if let Instruction::$name {$a, $d } = $v{
+            return write!($w,"{:15}  {:>4}:0x{:<2x}      :      {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
+            $a,
             stringify!($d),
-            $reader.try_read_u16().unwrap()
+            $d
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:#x}",
+    (@format $w:expr,$v:expr,  $name:ident => $a:ident :u8, $d:ident :i16) => {
+        if let Instruction::$name {$a, $d } = $v{
+            return write!($w,"{:15}  {:>4}:0x{:<2x}      :      {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
+            $a,
             stringify!($d),
-            $reader.try_read_i16().unwrap()
+            $d
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident: u32) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
+
+    (@format $w:expr,$v:expr,  $name:ident => $a:ident :u8, $d:ident :u8) => {
+        if let Instruction::$name {$a, $d } = $v{
+            return write!($w,"{:15}  {:>4}:0x{:<2x}  {:>4}:0x{:<2x}      :    ",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
+            $a,
             stringify!($d),
-            $reader.try_read_u16().unwrap(),
-            stringify!($l),
-            $reader.try_read_u32().unwrap()
+            $d
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :u16, $l:ident: i32) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
+
+    (@format $w:expr,$v:expr,  $name:ident => $a:ident :u8) => {
+        if let Instruction::$name {$a} = $v{
+            return write!($w,"{:15}  {:>4}:0x{:<2x}      :          :    ",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
-            stringify!($d),
-            $reader.try_read_u16().unwrap(),
-            stringify!($l),
-            $reader.try_read_i32().unwrap()
+            $a,
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident: u32) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
+    (@format $w:expr,$v:expr,  $name:ident => $a:ident :i16) => {
+        if let Instruction::$name {$a} = $v{
+            return write!($w,"{:15}      :          :      {:>4}:{:#x}",
             stringify!($name),
             stringify!($a),
-            $reader.try_read_u8().unwrap(),
-            stringify!($d),
-            $reader.try_read_i16().unwrap(),
-            stringify!($l),
-            $reader.try_read_u32().unwrap()
+            $a,
             )
+        }
     };
-    (@format $w:expr, $reader:expr, $name:ident => $a:ident :u8, $d:ident :i16, $l:ident: i32) => {
-        write!($w,"{:15}  {:>4}:0x{:<2x}  ____:____  {:>4}:{:<6x}    {:>4}:{:#x}",
+
+    (@format $w:expr,$v:expr,  $name:ident => _ignore:()) => {
+        if let Instruction::$name{ _ignore} = $v{
+            return write!($w,"{:15}      :          :          :    ",
             stringify!($name),
-            stringify!($a),
-            $reader.try_read_u8().unwrap(),
-            stringify!($d),
-            $reader.try_read_i16().unwrap(),
-            stringify!($l),
-            $reader.try_read_i32().unwrap()
             )
-    };
+        }
+    }
 }

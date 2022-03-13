@@ -56,10 +56,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         Literal::String(self.symbol_table.symbols()[*symbol].ident),
                     );
                     let reg = self.registers.alloc_temp();
-                    self.instructions.push(Instruction::LoadGlobal {
-                        dst: reg.0,
-                        null: 0,
-                    });
+                    self.instructions
+                        .push(Instruction::LoadGlobal { dst: reg.0 });
                     self.instructions.push(Instruction::IndexAssign {
                         obj: reg.0,
                         key: name.0,
@@ -80,21 +78,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let tmp = self.registers.alloc_temp();
                 let glob = self.registers.alloc_temp();
                 if id.requires_long() {
-                    self.instructions.push(Instruction::LoadFunctionL {
-                        dst: tmp.0,
-                        null: 0,
-                        func: id.0,
-                    });
+                    todo!()
                 } else {
                     self.instructions.push(Instruction::LoadFunction {
                         dst: tmp.0,
                         func: id.0 as u16,
                     });
                 }
-                self.instructions.push(Instruction::LoadGlobal {
-                    dst: glob.0,
-                    null: 0,
-                });
+                self.instructions
+                    .push(Instruction::LoadGlobal { dst: glob.0 });
                 let key = self.compile_literal(
                     None,
                     Literal::String(self.symbol_table.symbols()[*symbol].ident),
@@ -113,13 +105,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 if let Some(expr) = expr {
                     let reg = self.compile_expressions(None, expr).eval(self);
                     self.registers.free_temp(reg);
-                    self.instructions.push(Instruction::Return {
-                        ret: reg.0,
-                        null: 0,
-                    });
+                    self.instructions.push(Instruction::Return { ret: reg.0 });
                 } else {
                     self.instructions
-                        .push(Instruction::ReturnUndefined { nul0: 0, nul1: 0 });
+                        .push(Instruction::ReturnUndefined { _ignore: () });
                 }
 
                 None
@@ -146,9 +135,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         self.compile_stmt(r#if).map(|r| self.registers.free_temp(r));
         if let Some(r#else) = r#else {
-            let patch_else = self
-                .instructions
-                .push(Instruction::Jump { tgt: 1, null: 0 });
+            let patch_else = self.instructions.push(Instruction::Jump { tgt: 1 });
             expr.false_list
                 .into_iter()
                 .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
@@ -177,9 +164,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         self.compile_stmt(block)
             .map(|r| self.registers.free_temp(r));
-        let back_jump = self
-            .instructions
-            .push(Instruction::Jump { null: 0, tgt: 1 });
+        let back_jump = self.instructions.push(Instruction::Jump { tgt: 1 });
         self.patch_jump(back_jump, before_cond);
         self.patch_jump(patch_while, self.next_instruction_id());
         expr.false_list
@@ -232,9 +217,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.compile_stmt(block);
         let reg = self.compile_expr(None, post).eval(self);
         self.registers.free_temp(reg);
-        let back_jump = self
-            .instructions
-            .push(Instruction::Jump { tgt: 1, null: 0 });
+        let back_jump = self.instructions.push(Instruction::Jump { tgt: 1 });
         self.patch_jump(back_jump, before_cond);
         self.patch_jump(patch_cond, self.next_instruction_id());
         cond.false_list

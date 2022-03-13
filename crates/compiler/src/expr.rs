@@ -121,10 +121,8 @@ impl AssignmentTarget {
                         None,
                         Literal::String(this.symbol_table.symbols()[x].ident),
                     );
-                    this.instructions.push(Instruction::LoadGlobal {
-                        dst: global.0,
-                        null: 0,
-                    });
+                    this.instructions
+                        .push(Instruction::LoadGlobal { dst: global.0 });
                     this.registers.free_temp(global);
                     this.registers.free_temp(name);
 
@@ -258,7 +256,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         if x == value {
                             let new_value = self.registers.alloc_temp();
                             self.instructions.push(Instruction::Move {
-                                src: value.0 as u16,
+                                src: value.0,
                                 dst: new_value.0,
                             });
                             value = new_value;
@@ -286,7 +284,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         if x == value {
                             let new_value = self.registers.alloc_temp();
                             self.instructions.push(Instruction::Move {
-                                src: value.0 as u16,
+                                src: value.0,
                                 dst: new_value.0,
                             });
                             value = new_value;
@@ -315,7 +313,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     self.registers.free_temp(expr);
                     self.instructions.push(Instruction::Not {
                         dst: dst.0,
-                        src: expr.0 as u16,
+                        src: expr.0,
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -325,7 +323,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     self.registers.free_temp(expr);
                     self.instructions.push(Instruction::Negative {
                         dst: dst.0,
-                        op: expr.0 as u16,
+                        op: expr.0,
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -348,7 +346,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     match (placement, tgt_placement) {
                         (Some(to), Some(from)) => {
                             self.instructions.push(Instruction::Move {
-                                src: from.0 as u16,
+                                src: from.0,
                                 dst: to.0,
                             });
                         }
@@ -375,7 +373,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     match (placement, tgt_placement) {
                         (Some(to), Some(from)) => {
                             self.instructions.push(Instruction::Move {
-                                src: from.0 as u16,
+                                src: from.0,
                                 dst: to.0,
                             });
                         }
@@ -451,7 +449,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_expr(Some(dst), left).eval(self);
                 let tmp = self.registers.alloc_temp();
                 self.instructions.push(Instruction::IsNullish {
-                    op: dst.0 as u16,
+                    op: dst.0,
                     dst: tmp.0,
                 });
                 self.registers.free_temp(tmp);
@@ -476,9 +474,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.registers.free_temp(reg);
                 let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
                 self.compile_expr(Some(dst), inner).eval(self);
-                let jump_after = self
-                    .instructions
-                    .push(Instruction::Jump { null: 0, tgt: 1 });
+                let jump_after = self.instructions.push(Instruction::Jump { tgt: 1 });
                 left.false_list
                     .into_iter()
                     .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
@@ -579,7 +575,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             if let Some(src) = place {
                 self.instructions.push(Instruction::Move {
                     dst: x.0,
-                    src: src.0 as u16,
+                    src: src.0,
                 });
             }
         }
@@ -610,11 +606,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
                 let id = self.push_pending_function(*scope, args, stmts);
                 if id.requires_long() {
-                    self.instructions.push(Instruction::LoadFunctionL {
-                        dst: dst.0,
-                        null: 0,
-                        func: id.0,
-                    });
+                    todo!()
                 } else {
                     self.instructions.push(Instruction::LoadFunction {
                         dst: dst.0,
@@ -637,10 +629,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             SymbolInfo::Global => {
                 let name = self.compile_literal(None, Literal::String(symbol.ident));
                 let global = self.registers.alloc_temp();
-                self.instructions.push(Instruction::LoadGlobal {
-                    dst: global.0,
-                    null: 0,
-                });
+                self.instructions
+                    .push(Instruction::LoadGlobal { dst: global.0 });
                 self.registers.free_temp(global);
                 if let Some(place) = placement {
                     self.registers.free_temp(name);
@@ -666,7 +656,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     if reg != place {
                         self.instructions.push(Instruction::Move {
                             dst: place.0,
-                            src: reg.0 as u16,
+                            src: reg.0,
                         });
                     }
                     return place;
@@ -679,7 +669,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     if reg != place {
                         self.instructions.push(Instruction::Move {
                             dst: place.0,
-                            src: reg.0 as u16,
+                            src: reg.0,
                         });
                     }
                     return place;
@@ -706,11 +696,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 cons: constant.0 as u16,
             });
         } else {
-            self.instructions.push(Instruction::LoadConstL {
-                dst: register.0,
-                null: 0,
-                cons: constant.0,
-            });
+            panic!("To many constants")
         }
         register
     }
@@ -721,10 +707,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         bindings: &'a Vec<(StringId, Expr<A>), A>,
     ) -> Register {
         let object = placement.unwrap_or_else(|| self.registers.alloc_temp());
-        self.instructions.push(Instruction::CreateObject {
-            dst: object.0,
-            null: 0,
-        });
+        self.instructions
+            .push(Instruction::CreateObject { dst: object.0 });
         for (name, value) in bindings {
             let expr = self.compile_expr(None, value).eval(self);
             let key = self.compile_literal(None, Literal::String(*name));
@@ -753,17 +737,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             let reg = self.compile_expr(None, arg).eval(self);
             self.registers.free_temp(reg);
-            self.instructions.push(Instruction::Push {
-                src: reg.0,
-                null: 0,
-            });
+            self.instructions.push(Instruction::Push { src: reg.0 });
         }
         self.registers.free_temp(func);
         let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
         self.instructions.push(Instruction::Call {
             dst: dst.0,
             func: func.0,
-            num: args.len() as u8,
         });
         dst
     }

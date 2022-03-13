@@ -8,13 +8,14 @@ use crate::{
     GcArena, Value,
 };
 
-mod reader;
 mod stack;
 use stack::Stack;
 mod ctx;
 mod exec;
 pub use ctx::{Arguments, RealmCtx};
 mod env;
+mod reader;
+pub use reader::InstructionReader;
 
 pub struct Realm {
     pub symbol_table: SymbolTable<Global>,
@@ -43,8 +44,8 @@ impl Realm {
     }
 
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
-        let reader = reader::InstructionReader::from_bc(bc, 0);
         self.stack.enter(bc.functions[0].registers);
+        let reader = InstructionReader::from_bc(bc, 0);
         self.execute(reader)
     }
 
