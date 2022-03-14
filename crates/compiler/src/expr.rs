@@ -6,11 +6,7 @@ use ast::{
 use common::interner::StringId;
 use vm::instructions::Instruction;
 
-use crate::{
-    lexical_info::{ArgAllocInfo, SymbolInfo},
-    register::Register,
-    Compiler, InstructionId,
-};
+use crate::{register::Register, Compiler, InstructionId};
 use std::{alloc::Allocator, convert::TryInto};
 
 pub struct ExprValue<A: Allocator> {
@@ -29,12 +25,14 @@ impl<A: Allocator + Clone> ExprValue<A> {
     }
 
     pub fn eval(self, this: &mut Compiler<A>) -> Register {
-        self.true_list
-            .into_iter()
-            .for_each(|x| this.patch_jump(x, this.next_instruction_id()));
-        self.false_list
-            .into_iter()
-            .for_each(|x| this.patch_jump(x, this.next_instruction_id()));
+        self.true_list.into_iter().for_each(|x| {
+            this.builder
+                .patch_jump(x, this.builder.next_instruction_id())
+        });
+        self.false_list.into_iter().for_each(|x| {
+            this.builder
+                .patch_jump(x, this.builder.next_instruction_id())
+        });
         self.register
     }
 }
@@ -76,7 +74,7 @@ impl AssignmentTarget {
             Self::Variable(x) => this.compile_symbol_use(placement, *x),
             Self::Dot(register, string) => {
                 let reg = this.compile_literal(placement, Literal::String(*string));
-                this.instructions.push(Instruction::Index {
+                this.builder.push(Instruction::Index {
                     dst: reg.0,
                     obj: register.0,
                     key: reg.0,
@@ -84,8 +82,8 @@ impl AssignmentTarget {
                 reg
             }
             Self::Index(obj, key) => {
-                let dst = placement.unwrap_or_else(|| this.registers.alloc_temp());
-                this.instructions.push(Instruction::Index {
+                let dst = placement.unwrap_or_else(|| this.builder.alloc_temp());
+                this.builder.push(Instruction::Index {
                     dst: dst.0,
                     obj: obj.0,
                     key: key.0,
@@ -98,62 +96,56 @@ impl AssignmentTarget {
     /// Returns an optional placement register if the assignment target is an local register.
     pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = self {
-            match this.lexical_info.symbol_info[*x] {
-                SymbolInfo::Local => Some(this.registers.alloc_symbol(*x)),
-                SymbolInfo::Argument(ArgAllocInfo::Register(reg)) => Some(reg),
-                _ => None,
+            let symbol = &this.symbol_table.symbols()[*x];
+            if symbol.decl_type.is_local() && this.symbol_table.in_scope(*x, this.builder.scope()) {
+                Some(this.builder.alloc_symbol(*x))
+            } else {
+                None
             }
         } else {
             None
         }
     }
 
-    /// Compiles the code for assigning this target its value from the given registers
+    /// Compiles the code for assigning this target its value from the given builder
     /// If the target is a local variable the value should already be in the corresponding
     /// register.
     pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, src: Register) {
         match *self {
-            Self::Variable(x) => match this.lexical_info.symbol_info[x] {
-                SymbolInfo::Local => {}
-                SymbolInfo::Global => {
-                    let global = this.registers.alloc_temp();
+            Self::Variable(x) => {
+                let symbol = &this.symbol_table.symbols()[x];
+                if !symbol.decl_type.is_local() {
+                    let global = this.builder.alloc_temp();
                     let name = this.compile_literal(
                         None,
                         Literal::String(this.symbol_table.symbols()[x].ident),
                     );
-                    this.instructions
-                        .push(Instruction::LoadGlobal { dst: global.0 });
-                    this.registers.free_temp(global);
-                    this.registers.free_temp(name);
+                    this.builder.push(Instruction::LoadGlobal { dst: global.0 });
+                    this.builder.free_temp(global);
+                    this.builder.free_temp(name);
 
-                    this.instructions.push(Instruction::IndexAssign {
+                    this.builder.push(Instruction::IndexAssign {
                         obj: global.0,
                         val: src.0,
                         key: name.0,
                     });
-                }
-                SymbolInfo::Upvalue(_x) => todo!(),
-                SymbolInfo::Argument(ArgAllocInfo::Register(arg)) => {
-                    if src != arg {
-                        this.instructions.push(Instruction::Move {
-                            dst: arg.0,
-                            src: src.0,
-                        });
+                } else {
+                    if !this.symbol_table.in_scope(x, this.builder.scope()) {
+                        todo!()
                     }
                 }
-                SymbolInfo::Argument(_) => todo!(),
-            },
+            }
             Self::Dot(obj, name) => {
                 let name = this.compile_literal(None, Literal::String(name));
-                this.registers.free_temp(name);
-                this.instructions.push(Instruction::IndexAssign {
+                this.builder.free_temp(name);
+                this.builder.push(Instruction::IndexAssign {
                     obj: obj.0,
                     val: src.0,
                     key: name.0,
                 });
             }
             Self::Index(obj, index) => {
-                this.instructions.push(Instruction::IndexAssign {
+                this.builder.push(Instruction::IndexAssign {
                     obj: obj.0,
                     val: src.0,
                     key: index.0,
@@ -166,11 +158,11 @@ impl AssignmentTarget {
         match *self {
             Self::Variable(_) => {}
             Self::Index(a, b) => {
-                this.registers.free_temp(a);
-                this.registers.free_temp(b);
+                this.builder.free_temp(a);
+                this.builder.free_temp(b);
             }
             Self::Dot(a, _) => {
-                this.registers.free_temp(a);
+                this.builder.free_temp(a);
             }
         }
     }
@@ -181,7 +173,7 @@ macro_rules! match_binary_instruction{
 
         match $m{
             $(
-                BinaryOperator::$op => {$this.instructions.push(Instruction::$instr{
+                BinaryOperator::$op => {$this.builder.push(Instruction::$instr{
                     dst: $dst.0,
                     left: $left.0,
                     righ: $right.0,
@@ -202,7 +194,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     ) -> ExprValue<A> {
         for e in expr[..expr.len() - 1].iter() {
             let expr = self.compile_expr(None, e).eval(self);
-            self.registers.free_temp(expr);
+            self.builder.free_temp(expr);
         }
         self.compile_expr(
             placment,
@@ -229,10 +221,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 PostfixOperator::Dot(name) => {
                     let expr = self.compile_expr(None, expr).eval(self);
                     let key = self.compile_literal(None, Literal::String(name));
-                    self.registers.free_temp(expr);
-                    self.registers.free_temp(key);
-                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.instructions.push(Instruction::Index {
+                    self.builder.free_temp(expr);
+                    self.builder.free_temp(key);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.push(Instruction::Index {
                         dst: dst.0,
                         obj: expr.0,
                         key: key.0,
@@ -246,10 +238,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 PostfixOperator::Index(ref key) => {
                     let expr = self.compile_expr(None, expr).eval(self);
                     let key = self.compile_expr(None, key).eval(self);
-                    self.registers.free_temp(expr);
-                    self.registers.free_temp(key);
-                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.instructions.push(Instruction::Index {
+                    self.builder.free_temp(expr);
+                    self.builder.free_temp(key);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.push(Instruction::Index {
                         dst: dst.0,
                         obj: expr.0,
                         key: key.0,
@@ -262,26 +254,26 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     let mut value = ass.compile_use(placement, self);
                     if let Some(x) = ass.placement(self) {
                         if x == value {
-                            let new_value = self.registers.alloc_temp();
-                            self.instructions.push(Instruction::Move {
+                            let new_value = self.builder.alloc_temp();
+                            self.builder.push(Instruction::Move {
                                 src: value.0,
                                 dst: new_value.0,
                             });
                             value = new_value;
                         }
                     }
-                    self.registers.free_temp(one);
+                    self.builder.free_temp(one);
                     let dst = ass
                         .placement(self)
-                        .unwrap_or_else(|| self.registers.alloc_temp());
+                        .unwrap_or_else(|| self.builder.alloc_temp());
 
-                    self.instructions.push(Instruction::Add {
+                    self.builder.push(Instruction::Add {
                         dst: dst.0,
                         left: value.0,
                         righ: one.0,
                     });
                     ass.compile_assign(self, dst);
-                    self.registers.free_temp(dst);
+                    self.builder.free_temp(dst);
                     ExprValue::new_in(value, self.alloc.clone())
                 }
                 PostfixOperator::SubtractOne => {
@@ -290,26 +282,26 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     let mut value = ass.compile_use(placement, self);
                     if let Some(x) = ass.placement(self) {
                         if x == value {
-                            let new_value = self.registers.alloc_temp();
-                            self.instructions.push(Instruction::Move {
+                            let new_value = self.builder.alloc_temp();
+                            self.builder.push(Instruction::Move {
                                 src: value.0,
                                 dst: new_value.0,
                             });
                             value = new_value;
                         }
                     }
-                    self.registers.free_temp(one);
+                    self.builder.free_temp(one);
                     let dst = ass
                         .placement(self)
-                        .unwrap_or_else(|| self.registers.alloc_temp());
+                        .unwrap_or_else(|| self.builder.alloc_temp());
 
-                    self.instructions.push(Instruction::Sub {
+                    self.builder.push(Instruction::Sub {
                         dst: dst.0,
                         left: value.0,
                         righ: one.0,
                     });
                     ass.compile_assign(self, dst);
-                    self.registers.free_temp(dst);
+                    self.builder.free_temp(dst);
                     ExprValue::new_in(value, self.alloc.clone())
                 }
             },
@@ -317,9 +309,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 PrefixOperator::Not => {
                     // It seems that binary expressions do not shortcut through a not evaluation.
                     let expr = self.compile_expr(None, expr).eval(self);
-                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.registers.free_temp(expr);
-                    self.instructions.push(Instruction::Not {
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.free_temp(expr);
+                    self.builder.push(Instruction::Not {
                         dst: dst.0,
                         src: expr.0,
                     });
@@ -327,9 +319,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 }
                 PrefixOperator::Negative => {
                     let expr = self.compile_expr(None, expr).eval(self);
-                    let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                    self.registers.free_temp(expr);
-                    self.instructions.push(Instruction::Negative {
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.free_temp(expr);
+                    self.builder.push(Instruction::Negative {
                         dst: dst.0,
                         op: expr.0,
                     });
@@ -339,21 +331,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     let ass = AssignmentTarget::from_expr(self, expr);
                     let value = ass.compile_use(None, self);
                     let one = self.compile_literal(None, Literal::Integer(1));
-                    self.registers.free_temp(value);
-                    self.registers.free_temp(one);
+                    self.builder.free_temp(value);
+                    self.builder.free_temp(one);
                     let tgt_placement = ass.placement(self);
                     let dst = tgt_placement
                         .or(placement)
-                        .unwrap_or_else(|| self.registers.alloc_temp());
+                        .unwrap_or_else(|| self.builder.alloc_temp());
 
-                    self.instructions.push(Instruction::Add {
+                    self.builder.push(Instruction::Add {
                         dst: dst.0,
                         left: value.0,
                         righ: one.0,
                     });
                     match (placement, tgt_placement) {
                         (Some(to), Some(from)) => {
-                            self.instructions.push(Instruction::Move {
+                            self.builder.push(Instruction::Move {
                                 src: from.0,
                                 dst: to.0,
                             });
@@ -366,21 +358,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     let ass = AssignmentTarget::from_expr(self, expr);
                     let value = ass.compile_use(None, self);
                     let one = self.compile_literal(None, Literal::Integer(1));
-                    self.registers.free_temp(value);
-                    self.registers.free_temp(one);
+                    self.builder.free_temp(value);
+                    self.builder.free_temp(one);
                     let tgt_placement = ass.placement(self);
                     let dst = tgt_placement
                         .or(placement)
-                        .unwrap_or_else(|| self.registers.alloc_temp());
+                        .unwrap_or_else(|| self.builder.alloc_temp());
 
-                    self.instructions.push(Instruction::Sub {
+                    self.builder.push(Instruction::Sub {
                         dst: dst.0,
                         left: value.0,
                         righ: one.0,
                     });
                     match (placement, tgt_placement) {
                         (Some(to), Some(from)) => {
-                            self.instructions.push(Instruction::Move {
+                            self.builder.push(Instruction::Move {
                                 src: from.0,
                                 dst: to.0,
                             });
@@ -405,12 +397,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             BinaryOperator::And => {
                 let mut left = self.compile_expr(None, left);
                 left.false_list
-                    .push(self.instructions.push(Instruction::JumpFalse {
+                    .push(self.builder.push(Instruction::JumpFalse {
                         cond: left.register.0,
                         tgt: 1,
                     }));
                 for i in left.true_list.iter().copied() {
-                    self.patch_jump(i, self.next_instruction_id());
+                    self.builder
+                        .patch_jump(i, self.builder.next_instruction_id());
                 }
                 let mut right = self.compile_expr(Some(left.register), right);
                 left.false_list.append(&mut right.false_list);
@@ -423,12 +416,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             BinaryOperator::Or => {
                 let mut left = self.compile_expr(None, left);
                 left.true_list
-                    .push(self.instructions.push(Instruction::JumpTrue {
+                    .push(self.builder.push(Instruction::JumpTrue {
                         cond: left.register.0,
                         tgt: 1,
                     }));
                 for i in left.false_list.iter().copied() {
-                    self.patch_jump(i, self.next_instruction_id());
+                    self.builder
+                        .patch_jump(i, self.builder.next_instruction_id());
                 }
                 let mut right = self.compile_expr(Some(left.register), right);
                 left.true_list.append(&mut right.true_list);
@@ -441,10 +435,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             BinaryOperator::Index => {
                 let left = self.compile_expr(None, left).eval(self);
                 let right = self.compile_expr(None, right).eval(self);
-                self.registers.free_temp(left);
-                self.registers.free_temp(right);
-                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                self.instructions.push(Instruction::Index {
+                self.builder.free_temp(left);
+                self.builder.free_temp(right);
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::Index {
                     obj: left.0,
                     key: right.0,
                     dst: dst.0,
@@ -453,42 +447,47 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             BinaryOperator::TenaryNull => todo!(),
             BinaryOperator::NullCoalessing => {
-                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 self.compile_expr(Some(dst), left).eval(self);
-                let tmp = self.registers.alloc_temp();
-                self.instructions.push(Instruction::IsNullish {
+                let tmp = self.builder.alloc_temp();
+                self.builder.push(Instruction::IsNullish {
                     op: dst.0,
                     dst: tmp.0,
                 });
-                self.registers.free_temp(tmp);
-                let jump = self.instructions.push(Instruction::JumpFalse {
+                self.builder.free_temp(tmp);
+                let jump = self.builder.push(Instruction::JumpFalse {
                     cond: tmp.0,
                     tgt: 1,
                 });
                 self.compile_expr(Some(dst), right).eval(self);
-                self.patch_jump(jump, self.next_instruction_id());
+                self.builder
+                    .patch_jump(jump, self.builder.next_instruction_id());
                 return ExprValue::new_in(dst, self.alloc.clone());
             }
             BinaryOperator::Ternary(inner) => {
                 let left = self.compile_expr(None, left);
-                left.true_list
-                    .into_iter()
-                    .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+                left.true_list.into_iter().for_each(|x| {
+                    self.builder
+                        .patch_jump(x, self.builder.next_instruction_id())
+                });
                 let reg = left.register;
-                let jump = self.instructions.push(Instruction::JumpFalse {
+                let jump = self.builder.push(Instruction::JumpFalse {
                     cond: reg.0,
                     tgt: 1,
                 });
-                self.registers.free_temp(reg);
-                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
+                self.builder.free_temp(reg);
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 self.compile_expr(Some(dst), inner).eval(self);
-                let jump_after = self.instructions.push(Instruction::Jump { tgt: 1 });
-                left.false_list
-                    .into_iter()
-                    .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
-                self.patch_jump(jump, self.next_instruction_id());
+                let jump_after = self.builder.push(Instruction::Jump { tgt: 1 });
+                left.false_list.into_iter().for_each(|x| {
+                    self.builder
+                        .patch_jump(x, self.builder.next_instruction_id())
+                });
+                self.builder
+                    .patch_jump(jump, self.builder.next_instruction_id());
                 self.compile_expr(Some(dst), right).eval(self);
-                self.patch_jump(jump_after, self.next_instruction_id());
+                self.builder
+                    .patch_jump(jump_after, self.builder.next_instruction_id());
                 return ExprValue::new_in(dst, self.alloc.clone());
             }
             _ => {}
@@ -497,13 +496,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let left = self.compile_expr(None, left);
         let left = left.eval(self);
         let right = self.compile_expr(None, right).eval(self);
-        let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-        self.registers.free_temp(left);
-        self.registers.free_temp(right);
+        let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        self.builder.free_temp(left);
+        self.builder.free_temp(right);
         // Simple macro to shorten repetitive code.
         // each entry results in roughly
         // ```
-        // self.instructions.push(Instruction::value{
+        // self.builder.push(Instruction::value{
         //  ...
         // });
         // return dst
@@ -553,21 +552,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let expr = self.compile_expr(None, value).eval(self);
         let dst = place
             .or(placement)
-            .unwrap_or_else(|| self.registers.alloc_temp());
-        self.registers.free_temp(assign_value);
-        self.registers.free_temp(expr);
+            .unwrap_or_else(|| self.builder.alloc_temp());
+        self.builder.free_temp(assign_value);
+        self.builder.free_temp(expr);
 
         match op {
             AssignOperator::Assign => unreachable!(),
             AssignOperator::Add => {
-                self.instructions.push(Instruction::Add {
+                self.builder.push(Instruction::Add {
                     dst: dst.0,
                     left: assign_value.0,
                     righ: expr.0,
                 });
             }
             AssignOperator::Subtract => {
-                self.instructions.push(Instruction::Sub {
+                self.builder.push(Instruction::Sub {
                     dst: dst.0,
                     left: assign_value.0,
                     righ: expr.0,
@@ -581,7 +580,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         if let Some(x) = placement {
             if let Some(src) = place {
-                self.instructions.push(Instruction::Move {
+                self.builder.push(Instruction::Move {
                     dst: x.0,
                     src: src.0,
                 });
@@ -611,9 +610,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.alloc.clone(),
             ),
             PrimeExpr::Function(scope, symbol, args, stmts) => {
-                let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-                let id = self.push_pending_function(*scope, args, stmts);
-                self.instructions.push(Instruction::LoadFunction {
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                let id = self.compile_function_decl(*scope, args, stmts);
+
+                self.builder.push(Instruction::LoadFunction {
                     dst: dst.0,
                     func: id.0.try_into().unwrap(),
                 });
@@ -632,59 +632,45 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
-        match self.lexical_info.symbol_info[symbol_id] {
-            SymbolInfo::Global => {
-                let name = self.compile_literal(None, Literal::String(symbol.ident));
-                let global = self.registers.alloc_temp();
-                self.instructions
-                    .push(Instruction::LoadGlobal { dst: global.0 });
-                self.registers.free_temp(global);
+        if symbol.decl_type.is_local() {
+            if self.symbol_table.in_scope(symbol_id, self.builder.scope()) {
                 if let Some(place) = placement {
-                    self.registers.free_temp(name);
-                    self.instructions.push(Instruction::Index {
-                        dst: place.0,
-                        key: name.0,
-                        obj: global.0,
-                    });
-                    return place;
-                } else {
-                    // Just reuse name temp instruction.
-                    self.instructions.push(Instruction::Index {
-                        dst: name.0,
-                        key: name.0,
-                        obj: global.0,
-                    });
-                    return name;
-                }
-            }
-            SymbolInfo::Local => {
-                if let Some(place) = placement {
-                    let reg = self.registers.alloc_symbol(symbol_id);
+                    let reg = self.builder.alloc_symbol(symbol_id);
                     if reg != place {
-                        self.instructions.push(Instruction::Move {
+                        self.builder.push(Instruction::Move {
                             dst: place.0,
                             src: reg.0,
                         });
                     }
                     return place;
                 } else {
-                    return self.registers.alloc_symbol(symbol_id);
+                    return self.builder.alloc_symbol(symbol_id);
                 }
+            } else {
+                todo!()
             }
-            SymbolInfo::Argument(ArgAllocInfo::Register(reg)) => {
-                if let Some(place) = placement {
-                    if reg != place {
-                        self.instructions.push(Instruction::Move {
-                            dst: place.0,
-                            src: reg.0,
-                        });
-                    }
-                    return place;
-                } else {
-                    return reg;
-                }
+        } else {
+            let name = self.compile_literal(None, Literal::String(symbol.ident));
+            let global = self.builder.alloc_temp();
+            self.builder.push(Instruction::LoadGlobal { dst: global.0 });
+            self.builder.free_temp(global);
+            if let Some(place) = placement {
+                self.builder.free_temp(name);
+                self.builder.push(Instruction::Index {
+                    dst: place.0,
+                    key: name.0,
+                    obj: global.0,
+                });
+                return place;
+            } else {
+                // Just reuse name temp instruction.
+                self.builder.push(Instruction::Index {
+                    dst: name.0,
+                    key: name.0,
+                    obj: global.0,
+                });
+                return name;
             }
-            _ => todo!(),
         }
     }
 
@@ -695,10 +681,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         placement: Option<Register>,
         literal: Literal,
     ) -> Register {
-        let register = placement.unwrap_or_else(|| self.registers.alloc_temp());
+        let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
         let constant = self.constants.push_constant(literal);
         if constant.0 < u16::MAX as u32 {
-            self.instructions.push(Instruction::LoadConst {
+            self.builder.push(Instruction::LoadConst {
                 dst: register.0,
                 cons: constant.0 as u16,
             });
@@ -713,15 +699,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         placement: Option<Register>,
         bindings: &'a Vec<(StringId, Expr<A>), A>,
     ) -> Register {
-        let object = placement.unwrap_or_else(|| self.registers.alloc_temp());
-        self.instructions
+        let object = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        self.builder
             .push(Instruction::CreateObject { dst: object.0 });
         for (name, value) in bindings {
             let expr = self.compile_expr(None, value).eval(self);
             let key = self.compile_literal(None, Literal::String(*name));
-            self.registers.free_temp(expr);
-            self.registers.free_temp(key);
-            self.instructions.push(Instruction::IndexAssign {
+            self.builder.free_temp(expr);
+            self.builder.free_temp(key);
+            self.builder.push(Instruction::IndexAssign {
                 obj: object.0,
                 val: expr.0,
                 key: key.0,
@@ -743,12 +729,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 todo!()
             }
             let reg = self.compile_expr(None, arg).eval(self);
-            self.registers.free_temp(reg);
-            self.instructions.push(Instruction::Push { src: reg.0 });
+            self.builder.free_temp(reg);
+            self.builder.push(Instruction::Push { src: reg.0 });
         }
-        self.registers.free_temp(func);
-        let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
-        self.instructions.push(Instruction::Call {
+        self.builder.free_temp(func);
+        let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        self.builder.push(Instruction::Call {
             dst: dst.0,
             func: func.0,
         });

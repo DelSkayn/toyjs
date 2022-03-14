@@ -7,8 +7,8 @@ use common::{
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
-use constants::Constants;
-use lexical_info::LexicalInfo;
+//use constants::Constants;
+//use lexical_info::LexicalInfo;
 use vm::{
     gc::GcArena,
     instructions::{ByteCode, ByteFunction, Instruction},
@@ -19,50 +19,167 @@ use std::{
     convert::TryInto,
 };
 
-mod expr;
 mod register;
-use register::Registers;
+use register::{Register, Registers};
 mod constants;
-mod lexical_info;
+use constants::Constants;
+
+mod expr;
 mod stmt;
 
 newtype_key! {
     pub struct InstructionId(u32);
 }
 
-impl InstructionId {
-    pub fn requires_long(self) -> bool {
-        self.0 as u16 as u32 == self.0
-    }
-}
-
 newtype_key! {
-    pub struct FunctionId(u32);
+    pub struct FunctionId(u16);
 }
 
-impl FunctionId {
-    pub fn requires_long(self) -> bool {
-        self.0 as u16 as u32 != self.0
-    }
-}
-
-pub struct PendingFunction<'a, A: Allocator> {
-    id: FunctionId,
+struct BuilderFunction<A: Allocator + Clone> {
+    parent: Option<FunctionId>,
     scope: ScopeId,
-    args: &'a Params<A>,
-    stmts: &'a Vec<Stmt<A>, A>,
-}
-
-pub struct Compiler<'a, A: Allocator> {
-    symbol_table: &'a SymbolTable<A>,
     instructions: SlotStack<Instruction, InstructionId, A>,
     registers: Registers,
-    functions: Vec<ByteFunction>,
-    pending_functions: Vec<PendingFunction<'a, A>, A>,
-    next_function_id: u32,
-    constants: Constants<'a, Global>,
-    lexical_info: LexicalInfo<A>,
+}
+
+pub struct ScriptBuilder<A: Allocator + Clone> {
+    functions: Vec<BuilderFunction<A>, A>,
+    current_function: FunctionId,
     alloc: A,
+}
+
+impl<A: Allocator + Clone> ScriptBuilder<A> {
+    pub fn new_in(alloc: A, start_scope: ScopeId) -> Self {
+        let mut functions = Vec::with_capacity_in(1, alloc.clone());
+        functions.push(BuilderFunction {
+            parent: None,
+            scope: start_scope,
+            instructions: SlotStack::new_in(alloc.clone()),
+            registers: Registers::new(),
+        });
+
+        ScriptBuilder {
+            functions,
+            current_function: FunctionId(0),
+            alloc,
+        }
+    }
+
+    pub fn push_function(&mut self, scope: ScopeId, params: &Params<A>) -> FunctionId {
+        let res = self.functions.len().try_into().expect("to many functions");
+        let mut registers = Registers::new();
+
+        for (idx, p) in params.0.iter().enumerate() {
+            if idx >= 16 {
+                todo!()
+            }
+            registers.alloc_arg(*p);
+        }
+
+        self.functions.push(BuilderFunction {
+            parent: Some(self.current_function),
+            scope,
+            instructions: SlotStack::new_in(self.alloc.clone()),
+            registers,
+        });
+        self.current_function = FunctionId(res);
+        self.current_function
+    }
+
+    pub fn pop_function(&mut self) {
+        self.current_function = self.functions[self.current_function.0 as usize]
+            .parent
+            .expect("tried to pop parent function");
+    }
+
+    pub fn push(&mut self, instr: Instruction) -> InstructionId {
+        self.functions[self.current_function.0 as usize]
+            .instructions
+            .push(instr)
+    }
+
+    pub fn scope(&self) -> ScopeId {
+        self.functions[self.current_function.0 as usize].scope
+    }
+
+    pub fn patch_jump(&mut self, id: InstructionId, to: InstructionId) {
+        let jump = to.0 as i64 - id.0 as i64;
+        let x = jump.try_into().unwrap();
+        match self.functions[self.current_function.0 as usize].instructions[id] {
+            Instruction::JumpTrue { ref mut tgt, .. } => {
+                *tgt = x;
+            }
+            Instruction::JumpFalse { ref mut tgt, .. } => {
+                *tgt = x;
+            }
+            Instruction::Jump { ref mut tgt, .. } => {
+                *tgt = x;
+            }
+            _ => panic!("instruction is not a patchable jump"),
+        }
+    }
+
+    pub fn next_instruction_id(&self) -> InstructionId {
+        InstructionId::new(self.instructions().len())
+    }
+
+    pub fn free_temp(&mut self, register: Register) {
+        self.registers().free_temp(register);
+    }
+
+    pub fn alloc_temp(&mut self) -> Register {
+        self.registers().alloc_temp()
+    }
+
+    pub fn alloc_symbol(&mut self, symbol: SymbolId) -> Register {
+        self.registers().alloc_symbol(symbol)
+    }
+
+    pub fn registers(&mut self) -> &mut Registers {
+        &mut self.functions[self.current_function.0 as usize].registers
+    }
+
+    pub fn instructions(&self) -> &SlotStack<Instruction, InstructionId, A> {
+        &self.functions[self.current_function.0 as usize].instructions
+    }
+
+    pub fn instructions_mut(&mut self) -> &mut SlotStack<Instruction, InstructionId, A> {
+        &mut self.functions[self.current_function.0 as usize].instructions
+    }
+
+    pub fn build(self) -> (Box<[ByteFunction]>, Box<[Instruction]>) {
+        let mut instructions = Vec::new();
+        let mut functions = Vec::new();
+        for f in self.functions {
+            let registers = f.registers.registers_needed();
+            let func_instructions = f.instructions.into_vec();
+            let size = func_instructions
+                .len()
+                .try_into()
+                .expect("too many instructions");
+            let offset = instructions
+                .len()
+                .try_into()
+                .expect("too many instructions");
+            functions.push(ByteFunction {
+                registers,
+                size,
+                offset,
+            });
+            instructions.extend_from_slice(&func_instructions);
+        }
+        (
+            functions.into_boxed_slice(),
+            instructions.into_boxed_slice(),
+        )
+    }
+}
+
+pub struct Compiler<'a, A: Allocator + Clone> {
+    alloc: A,
+    symbol_table: &'a SymbolTable<A>,
+    constants: Constants<'a, Global>,
+    builder: ScriptBuilder<A>,
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -74,19 +191,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         alloc: A,
     ) -> Self {
         Compiler {
-            lexical_info: LexicalInfo::new_in(root, &symbol_table, alloc.clone()),
             symbol_table,
-            instructions: SlotStack::new_in(alloc.clone()),
-            registers: Registers::new(),
-            functions: vec![ByteFunction {
-                offset: 0,
-                size: 0,
-                registers: 0,
-                //upvalues: 0,
-            }],
-            pending_functions: Vec::new_in(alloc.clone()),
-            next_function_id: 1,
             constants: Constants::new_in(interner, gc, Global),
+            builder: ScriptBuilder::new_in(alloc.clone(), root),
             alloc,
         }
     }
@@ -106,105 +213,25 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .map(|stmt| this.compile_stmt(stmt))
             .last()
             .flatten();
+
         if let Some(res) = res {
-            this.instructions.push(Instruction::Return { ret: res.0 });
+            this.builder.push(Instruction::Return { ret: res.0 });
         } else {
-            this.instructions
+            this.builder
                 .push(Instruction::ReturnUndefined { _ignore: () });
         }
 
-        let function = &mut this.functions[0];
-        function.registers = this.registers.registers_needed();
-        //TODO: propagate size errors
-        function.size = this.instructions.len().try_into().unwrap();
-
-        while let Some(x) = this.pending_functions.pop() {
-            this.compile_function(x);
-        }
-
         let constants = this.constants.into_constants();
-        let instructions = this
-            .instructions
-            .into_vec()
-            .into_iter()
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let (functions, instructions) = this.builder.build();
 
         ByteCode {
             constants,
-            functions: this.functions.into_boxed_slice(),
             instructions,
+            functions,
         }
     }
 
-    fn compile_function(&mut self, func: PendingFunction<'a, A>) {
-        self.registers.clear();
-        //TODO: propagate size errors
-        self.functions[func.id.0 as usize].offset = self.instructions.len().try_into().unwrap();
-
-        self.compile_params(func.args);
-
-        func.stmts.iter().for_each(|stmt| {
-            self.compile_stmt(stmt);
-        });
-        match self.instructions.last() {
-            Some(Instruction::Return { .. }) | Some(Instruction::ReturnUndefined { .. }) => {}
-            _ => {
-                self.instructions
-                    .push(Instruction::ReturnUndefined { _ignore: () });
-            }
-        }
-        self.functions[func.id.0 as usize].registers = self.registers.registers_needed();
-        //TODO: propagate size errors
-        self.functions[func.id.0 as usize].size = (self.instructions.len()
-            - self.functions[func.id.0 as usize].offset as usize)
-            .try_into()
-            .unwrap();
-    }
-
-    fn push_pending_function(
-        &mut self,
-        scope: ScopeId,
-        args: &'a Params<A>,
-        stmts: &'a Vec<Stmt<A>, A>,
-    ) -> FunctionId {
-        let id = FunctionId(self.next_function_id);
-        self.next_function_id = self.next_function_id.checked_add(1).unwrap();
-        self.functions.push(ByteFunction {
-            offset: 0,
-            size: 0,
-            registers: 0,
-            //upvalues: 0,
-        });
-        self.pending_functions.push(PendingFunction {
-            id,
-            scope,
-            args,
-            stmts,
-        });
-        id
-    }
-
-    fn patch_jump(&mut self, id: InstructionId, to: InstructionId) {
-        let jump = to.0 as i64 - id.0 as i64;
-        match self.instructions[id] {
-            Instruction::JumpTrue { ref mut tgt, .. } => {
-                let x = jump.try_into().unwrap();
-                *tgt = x;
-            }
-            Instruction::JumpFalse { ref mut tgt, .. } => {
-                let x = jump.try_into().unwrap();
-                *tgt = x;
-            }
-            Instruction::Jump { ref mut tgt, .. } => {
-                let x = jump.try_into().unwrap();
-                *tgt = x;
-            }
-            _ => panic!("instruction is not a patchable jump"),
-        }
-    }
-
-    fn next_instruction_id(&self) -> InstructionId {
-        InstructionId::new(self.instructions.len())
+    fn compile_function(&mut self) {
+        todo!()
     }
 }
