@@ -1,8 +1,30 @@
 use crate::{gc::Trace, Gc, Value};
 
+pub enum UpValue {
+    Closed(Value),
+    Open(u8),
+    UpValue(u8),
+}
+
+unsafe impl Trace for UpValue {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: crate::gc::Ctx) {
+        match *self {
+            UpValue::Closed(x) => x.trace(ctx),
+            _ => {}
+        }
+    }
+}
+
 pub struct Environment {
     parent: Option<Gc<Environment>>,
-    upvalues: Vec<Value>,
+    upvalues: Vec<UpValue>,
 }
 
 unsafe impl Trace for Environment {
@@ -22,9 +44,16 @@ unsafe impl Trace for Environment {
 }
 
 impl Environment {
-    pub fn new(parent: Option<Gc<Environment>>) -> Self {
+    pub fn new(parent: Gc<Environment>) -> Self {
         Environment {
-            parent,
+            parent: Some(parent),
+            upvalues: Vec::new(),
+        }
+    }
+
+    pub fn root() -> Self {
+        Environment {
+            parent: None,
             upvalues: Vec::new(),
         }
     }

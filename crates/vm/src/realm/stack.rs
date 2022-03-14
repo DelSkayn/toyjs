@@ -37,7 +37,9 @@ pub struct TryFrameData {
 /// The vm stack implementation.
 pub struct Stack {
     root: NonNull<Value>,
+    /// points to the start of the current frame i.e. the first register in use.
     frame: *mut Value,
+    /// points one past the last value in use.
     stack: *mut Value,
 
     frames: Vec<Frame>,
@@ -188,7 +190,7 @@ impl Stack {
         unsafe {
             let capacity = capacity.next_power_of_two();
             if self.capacity == 0 {
-                let layout = Layout::array::<Value>(capacity).unwrap();
+                let layout = Layout::array::<Value>(capacity.max(8)).unwrap();
                 let ptr = System.alloc(layout);
                 if ptr == ptr::null_mut() {
                     alloc::handle_alloc_error(layout);
