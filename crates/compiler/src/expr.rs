@@ -11,7 +11,7 @@ use crate::{
     register::Register,
     Compiler, InstructionId,
 };
-use std::alloc::Allocator;
+use std::{alloc::Allocator, convert::TryInto};
 
 pub struct ExprValue<A: Allocator> {
     pub register: Register,
@@ -98,10 +98,10 @@ impl AssignmentTarget {
     /// Returns an optional placement register if the assignment target is an local register.
     pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = self {
-            if let SymbolInfo::Local = this.lexical_info.symbol_info[*x] {
-                Some(this.registers.alloc_symbol(*x))
-            } else {
-                None
+            match this.lexical_info.symbol_info[*x] {
+                SymbolInfo::Local => Some(this.registers.alloc_symbol(*x)),
+                SymbolInfo::Argument(ArgAllocInfo::Register(reg)) => Some(reg),
+                _ => None,
             }
         } else {
             None
@@ -111,7 +111,7 @@ impl AssignmentTarget {
     /// Compiles the code for assigning this target its value from the given registers
     /// If the target is a local variable the value should already be in the corresponding
     /// register.
-    pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, dst: Register) {
+    pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, src: Register) {
         match *self {
             Self::Variable(x) => match this.lexical_info.symbol_info[x] {
                 SymbolInfo::Local => {}
@@ -128,11 +128,19 @@ impl AssignmentTarget {
 
                     this.instructions.push(Instruction::IndexAssign {
                         obj: global.0,
-                        val: dst.0,
+                        val: src.0,
                         key: name.0,
                     });
                 }
-                SymbolInfo::Captured(_x) => todo!(),
+                SymbolInfo::Upvalue(_x) => todo!(),
+                SymbolInfo::Argument(ArgAllocInfo::Register(arg)) => {
+                    if src != arg {
+                        this.instructions.push(Instruction::Move {
+                            dst: arg.0,
+                            src: src.0,
+                        });
+                    }
+                }
                 SymbolInfo::Argument(_) => todo!(),
             },
             Self::Dot(obj, name) => {
@@ -140,14 +148,14 @@ impl AssignmentTarget {
                 this.registers.free_temp(name);
                 this.instructions.push(Instruction::IndexAssign {
                     obj: obj.0,
-                    val: dst.0,
+                    val: src.0,
                     key: name.0,
                 });
             }
             Self::Index(obj, index) => {
                 this.instructions.push(Instruction::IndexAssign {
                     obj: obj.0,
-                    val: dst.0,
+                    val: src.0,
                     key: index.0,
                 });
             }
@@ -605,18 +613,17 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             PrimeExpr::Function(scope, symbol, args, stmts) => {
                 let dst = placement.unwrap_or_else(|| self.registers.alloc_temp());
                 let id = self.push_pending_function(*scope, args, stmts);
-                if id.requires_long() {
-                    todo!()
-                } else {
-                    self.instructions.push(Instruction::LoadFunction {
-                        dst: dst.0,
-                        func: id.0 as u16,
-                    });
-                }
+                self.instructions.push(Instruction::LoadFunction {
+                    dst: dst.0,
+                    func: id.0.try_into().unwrap(),
+                });
                 if let Some(_) = symbol {
                     todo!()
                 }
                 ExprValue::new_in(dst, self.alloc.clone())
+            }
+            PrimeExpr::Eval(_args) => {
+                todo!()
             }
         }
     }

@@ -13,9 +13,10 @@ use stack::Stack;
 mod ctx;
 mod exec;
 pub use ctx::{Arguments, RealmCtx};
-mod env;
 mod reader;
+mod runtime;
 pub use reader::InstructionReader;
+mod environment;
 
 pub struct Realm {
     pub symbol_table: SymbolTable<Global>,
@@ -39,7 +40,7 @@ impl Realm {
             global,
             stack,
         };
-        unsafe { env::init(this.context()) };
+        unsafe { runtime::init(this.context()) };
         this
     }
 
