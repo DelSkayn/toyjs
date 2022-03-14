@@ -16,6 +16,8 @@ pub use ctx::{Arguments, RealmCtx};
 mod reader;
 mod runtime;
 pub use reader::InstructionReader;
+
+use self::environment::Environment;
 mod environment;
 
 pub struct Realm {
@@ -24,6 +26,7 @@ pub struct Realm {
     pub gc: GcArena,
     pub global: Gc<Object>,
     pub stack: Stack,
+    pub root: Gc<Environment>,
 }
 
 impl Realm {
@@ -36,9 +39,10 @@ impl Realm {
         let mut this = Realm {
             symbol_table,
             interner,
-            gc,
             global,
             stack,
+            root: gc.allocate(Environment::root()),
+            gc,
         };
         unsafe { runtime::init(this.context()) };
         this
