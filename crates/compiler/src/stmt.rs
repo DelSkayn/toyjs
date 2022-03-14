@@ -1,12 +1,7 @@
-use ast::{Expr, ForDecl, Literal, Params, Stmt};
+use ast::{Expr, ForDecl, Literal, Params, ScopeId, Stmt};
 use vm::instructions::Instruction;
 
-use crate::{
-    expr::ExprValue,
-    lexical_info::{ArgAllocInfo, SymbolInfo},
-    register::Register,
-    Compiler,
-};
+use crate::{expr::ExprValue, register::Register, Compiler, FunctionId};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -14,7 +9,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         match stmt {
             Stmt::Expr(x) => {
                 let reg = self.compile_expressions(None, x).eval(self);
-                self.registers.free_temp(reg);
+                self.builder.free_temp(reg);
                 Some(reg)
             }
             Stmt::If(cond, r#if, r#else) => {
@@ -34,7 +29,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 None
             }
             Stmt::Let(symbol, expr) => {
-                let reg = self.registers.alloc_symbol(*symbol);
+                let reg = self.builder.registers().alloc_symbol(*symbol);
                 //TODO captured variables
                 if let Some(x) = expr.as_ref() {
                     Some(self.compile_expr(Some(reg), x).eval(self))
@@ -44,7 +39,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 }
             }
             Stmt::Const(symbol, expr) => {
-                let reg = self.registers.alloc_symbol(*symbol);
+                let reg = self.builder.alloc_symbol(*symbol);
                 //TODO captured variables
                 Some(self.compile_expr(Some(reg), expr).eval(self))
             }
@@ -55,17 +50,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         None,
                         Literal::String(self.symbol_table.symbols()[*symbol].ident),
                     );
-                    let reg = self.registers.alloc_temp();
-                    self.instructions
-                        .push(Instruction::LoadGlobal { dst: reg.0 });
-                    self.instructions.push(Instruction::IndexAssign {
+                    let reg = self.builder.alloc_temp();
+                    self.builder.push(Instruction::LoadGlobal { dst: reg.0 });
+                    self.builder.push(Instruction::IndexAssign {
                         obj: reg.0,
                         key: name.0,
                         val: expr.0,
                     });
-                    self.registers.free_temp(reg);
-                    self.registers.free_temp(expr);
-                    self.registers.free_temp(name);
+                    self.builder.free_temp(reg);
+                    self.builder.free_temp(expr);
+                    self.builder.free_temp(name);
                     Some(expr)
                 } else {
                     None
@@ -73,41 +67,36 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
             Stmt::Function(scope, symbol, params, stmts) => {
-                let id = self.push_pending_function(*scope, params, stmts);
+                let id = self.compile_function_decl(*scope, params, stmts);
                 //TODO local functions stmts
-                let tmp = self.registers.alloc_temp();
-                let glob = self.registers.alloc_temp();
-                if id.requires_long() {
-                    todo!()
-                } else {
-                    self.instructions.push(Instruction::LoadFunction {
-                        dst: tmp.0,
-                        func: id.0 as u16,
-                    });
-                }
-                self.instructions
-                    .push(Instruction::LoadGlobal { dst: glob.0 });
+                let tmp = self.builder.registers().alloc_temp();
+                let glob = self.builder.registers().alloc_temp();
+                self.builder.push(Instruction::LoadFunction {
+                    dst: tmp.0,
+                    func: id.0,
+                });
+                self.builder.push(Instruction::LoadGlobal { dst: glob.0 });
                 let key = self.compile_literal(
                     None,
                     Literal::String(self.symbol_table.symbols()[*symbol].ident),
                 );
-                self.instructions.push(Instruction::IndexAssign {
+                self.builder.push(Instruction::IndexAssign {
                     obj: glob.0,
                     key: key.0,
                     val: tmp.0,
                 });
-                self.registers.free_temp(key);
-                self.registers.free_temp(glob);
-                self.registers.free_temp(tmp);
+                self.builder.free_temp(key);
+                self.builder.free_temp(glob);
+                self.builder.free_temp(tmp);
                 None
             }
             Stmt::Return(expr) => {
                 if let Some(expr) = expr {
                     let reg = self.compile_expressions(None, expr).eval(self);
-                    self.registers.free_temp(reg);
-                    self.instructions.push(Instruction::Return { ret: reg.0 });
+                    self.builder.free_temp(reg);
+                    self.builder.push(Instruction::Return { ret: reg.0 });
                 } else {
-                    self.instructions
+                    self.builder
                         .push(Instruction::ReturnUndefined { _ignore: () });
                 }
 
@@ -125,68 +114,99 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     ) {
         let expr = self.compile_expressions(None, cond);
 
-        let patch_if = self.instructions.push(Instruction::JumpFalse {
+        let patch_if = self.builder.push(Instruction::JumpFalse {
             cond: expr.register.0,
             tgt: 1,
         });
-        expr.true_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+        expr.true_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
 
-        self.compile_stmt(r#if).map(|r| self.registers.free_temp(r));
+        self.compile_stmt(r#if).map(|r| self.builder.free_temp(r));
         if let Some(r#else) = r#else {
-            let patch_else = self.instructions.push(Instruction::Jump { tgt: 1 });
-            expr.false_list
-                .into_iter()
-                .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
-            self.patch_jump(patch_if, self.next_instruction_id());
-            self.compile_stmt(r#else)
-                .map(|r| self.registers.free_temp(r));
-            self.patch_jump(patch_else, self.next_instruction_id());
+            let patch_else = self.builder.push(Instruction::Jump { tgt: 1 });
+            expr.false_list.into_iter().for_each(|x| {
+                self.builder
+                    .patch_jump(x, self.builder.next_instruction_id())
+            });
+            self.builder
+                .patch_jump(patch_if, self.builder.next_instruction_id());
+            self.compile_stmt(r#else).map(|r| self.builder.free_temp(r));
+            self.builder
+                .patch_jump(patch_else, self.builder.next_instruction_id());
         } else {
-            expr.false_list
-                .into_iter()
-                .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
-            self.patch_jump(patch_if, self.next_instruction_id());
+            expr.false_list.into_iter().for_each(|x| {
+                self.builder
+                    .patch_jump(x, self.builder.next_instruction_id())
+            });
+            self.builder
+                .patch_jump(patch_if, self.builder.next_instruction_id());
         }
     }
 
     pub fn compile_while(&mut self, cond: &'a Vec<Expr<A>, A>, block: &'a Stmt<A>) {
-        let before_cond = self.next_instruction_id();
+        let before_cond = self.builder.next_instruction_id();
         let expr = self.compile_expressions(None, cond);
-        let patch_while = self.instructions.push(Instruction::JumpFalse {
+        let patch_while = self.builder.push(Instruction::JumpFalse {
             cond: expr.register.0,
             tgt: 1,
         });
-        expr.true_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+        expr.true_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
 
-        self.compile_stmt(block)
-            .map(|r| self.registers.free_temp(r));
-        let back_jump = self.instructions.push(Instruction::Jump { tgt: 1 });
-        self.patch_jump(back_jump, before_cond);
-        self.patch_jump(patch_while, self.next_instruction_id());
-        expr.false_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+        self.compile_stmt(block).map(|r| self.builder.free_temp(r));
+        let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
+        self.builder.patch_jump(back_jump, before_cond);
+        self.builder
+            .patch_jump(patch_while, self.builder.next_instruction_id());
+        expr.false_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
     }
 
     pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a Vec<Expr<A>, A>) {
-        let before_stmt = self.next_instruction_id();
+        let before_stmt = self.builder.next_instruction_id();
         self.compile_stmt(block);
         let res = self.compile_expressions(None, cond);
-        let back_jump = self.instructions.push(Instruction::JumpTrue {
+        let back_jump = self.builder.push(Instruction::JumpTrue {
             cond: res.register.0,
             tgt: 1,
         });
-        self.patch_jump(back_jump, before_stmt);
+        self.builder.patch_jump(back_jump, before_stmt);
         res.true_list
             .into_iter()
-            .for_each(|x| self.patch_jump(x, before_stmt));
-        res.false_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+            .for_each(|x| self.builder.patch_jump(x, before_stmt));
+        res.false_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
+    }
+
+    pub fn compile_function_decl(
+        &mut self,
+        scope: ScopeId,
+        params: &'a Params<A>,
+        block: &'a Vec<Stmt<A>, A>,
+    ) -> FunctionId {
+        let id = self.builder.push_function(scope, params);
+        for s in block.iter() {
+            self.compile_stmt(s);
+        }
+
+        match self.builder.instructions_mut().last() {
+            Some(Instruction::Return { .. }) => {}
+            Some(Instruction::ReturnUndefined { .. }) => {}
+            _ => {
+                self.builder
+                    .push(Instruction::ReturnUndefined { _ignore: () });
+            }
+        }
+        self.builder.pop_function();
+        id
     }
 
     pub fn compile_for(
@@ -202,46 +222,29 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             ForDecl::Expr(x) => {
                 let reg = self.compile_expr(None, x).eval(self);
-                self.registers.free_temp(reg);
+                self.builder.free_temp(reg);
             }
         }
-        let before_cond = self.next_instruction_id();
+        let before_cond = self.builder.next_instruction_id();
         let cond = self.compile_expr(None, cond);
-        let patch_cond = self.instructions.push(Instruction::JumpFalse {
+        let patch_cond = self.builder.push(Instruction::JumpFalse {
             cond: cond.register.0,
             tgt: 1,
         });
-        cond.true_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
+        cond.true_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
         self.compile_stmt(block);
         let reg = self.compile_expr(None, post).eval(self);
-        self.registers.free_temp(reg);
-        let back_jump = self.instructions.push(Instruction::Jump { tgt: 1 });
-        self.patch_jump(back_jump, before_cond);
-        self.patch_jump(patch_cond, self.next_instruction_id());
-        cond.false_list
-            .into_iter()
-            .for_each(|x| self.patch_jump(x, self.next_instruction_id()));
-    }
-
-    pub fn compile_params(&mut self, params: &'a Params<A>) {
-        for (i, p) in params.0.iter().enumerate() {
-            if i >= 16 {
-                todo!();
-            }
-            match self.lexical_info.symbol_info[*p] {
-                SymbolInfo::Argument(ref mut alloc) => {
-                    *alloc = ArgAllocInfo::Register(self.registers.alloc_arg(*p))
-                }
-                ref x => panic!(
-                    "argument symbol is not an argument in its corresponding info: {:?}",
-                    x
-                ),
-            }
-        }
-        if let Some(_) = params.1 {
-            todo!()
-        }
+        self.builder.free_temp(reg);
+        let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
+        self.builder.patch_jump(back_jump, before_cond);
+        self.builder
+            .patch_jump(patch_cond, self.builder.next_instruction_id());
+        cond.false_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
     }
 }

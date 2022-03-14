@@ -200,7 +200,7 @@ version = "0.1.0"
 dependencies = [
  "toyjs_ast",
  "toyjs_common",
- "toyjs_compiler2",
+ "toyjs_compiler",
  "toyjs_lexer",
  "toyjs_parser",
  "toyjs_token",
@@ -578,16 +578,6 @@ dependencies = [
 
 [[package]]
 name = "toyjs_compiler"
-version = "0.1.0"
-dependencies = [
- "bumpalo",
- "toyjs_ast",
- "toyjs_common",
- "toyjs_vm",
-]
-
-[[package]]
-name = "toyjs_compiler2"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
