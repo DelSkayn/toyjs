@@ -40,7 +40,13 @@ impl fmt::Display for ValidationError {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+pub enum Upvalue {
+    Local(u8),
+    Parent(u8),
+}
+
+#[derive(Clone, Debug, Copy)]
 pub struct ByteFunction {
     /// The offset into the instruction buffer where this function starts.
     pub offset: u32,
@@ -48,6 +54,8 @@ pub struct ByteFunction {
     pub size: u32,
     /// The amount of register this function uses.
     pub registers: u8,
+    // A list of index of capture upvalues in the function scope
+    //pub upvalues: Box<[Upvalue]>,
 }
 
 /// A generic set of instructions, functions and constants.

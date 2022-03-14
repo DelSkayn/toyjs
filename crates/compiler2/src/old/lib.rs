@@ -82,7 +82,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 offset: 0,
                 size: 0,
                 registers: 0,
-                //upvalues: 0,
+                upvalues: 0,
             }],
             pending_functions: Vec::new_in(alloc.clone()),
             next_function_id: 1,
@@ -174,7 +174,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             offset: 0,
             size: 0,
             registers: 0,
-            //upvalues: 0,
+            upvalues: 0,
         });
         self.pending_functions.push(PendingFunction {
             id,

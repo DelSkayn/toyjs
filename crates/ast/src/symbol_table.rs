@@ -26,6 +26,15 @@ pub enum DeclType {
     Argument,
 }
 
+impl DeclType {
+    pub fn is_local(self) -> bool {
+        match self {
+            DeclType::Let | DeclType::Const | DeclType::Argument => true,
+            DeclType::Var | DeclType::Implicit => false,
+        }
+    }
+}
+
 /// Data about a lexical symbol
 pub struct Symbol {
     /// type of symbol

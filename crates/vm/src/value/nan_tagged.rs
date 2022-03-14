@@ -137,19 +137,19 @@ impl Value {
     }
 
     #[inline]
-    pub fn undefined() -> Self {
+    pub const fn undefined() -> Self {
         Value(ValueUnion {
             bits: VALUE_UNDEFINED,
         })
     }
 
     #[inline]
-    pub fn null() -> Self {
+    pub const fn null() -> Self {
         Value(ValueUnion { bits: VALUE_NULL })
     }
 
     #[inline]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Value(ValueUnion { bits: VALUE_EMPTY })
     }
 
