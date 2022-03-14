@@ -2,7 +2,10 @@
 #![feature(allocator_api)]
 
 use ast::symbol_table::{SymbolTable, SymbolTableBuilder};
-use common::source::Span;
+use common::{
+    interner::{Interner, StringId},
+    source::Span,
+};
 use lexer::Lexer;
 use token::{t, Token, TokenKind};
 
@@ -19,6 +22,18 @@ mod prime;
 mod stmt;
 
 pub type Result<T> = StdResult<T, Error>;
+
+pub struct SpecialIdent {
+    pub eval: StringId,
+}
+
+impl SpecialIdent {
+    fn from_interner(int: &mut Interner) -> Self {
+        SpecialIdent {
+            eval: int.intern("eval"),
+        }
+    }
+}
 
 /// Parser state.
 ///
@@ -39,6 +54,7 @@ pub struct Parser<'source, A: Allocator> {
     symbol_table: SymbolTableBuilder<'source, A>,
     state: State,
     alloc: A,
+    special_ident: SpecialIdent,
 }
 
 impl<'source, A: Allocator + Clone> Parser<'source, A> {
@@ -48,6 +64,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
         alloc: A,
     ) -> Result<ast::Script<A>> {
         Parser {
+            special_ident: SpecialIdent::from_interner(lexer.interner),
             lexer,
             peek: None,
             last_span: Span { low: 0, hi: 0 },
@@ -68,6 +85,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
         alloc: A,
     ) -> Result<ast::Script<A>> {
         Parser {
+            special_ident: SpecialIdent::from_interner(lexer.interner),
             lexer,
             peek: None,
             last_span: Span { low: 0, hi: 0 },

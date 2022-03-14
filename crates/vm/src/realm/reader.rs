@@ -64,7 +64,12 @@ impl InstructionReader {
     }
 
     pub unsafe fn constant(&self, id: u32) -> Value {
-        debug_assert!(self.bc.constants.len() < id as usize);
+        debug_assert!(
+            (id as usize) < self.bc.constants.len(),
+            "assert `id as usize < assert self.bc.constants.len()` failed. len: `{}`, id: `{}`",
+            self.bc.constants.len(),
+            id
+        );
         *self.bc.constants.get_unchecked(id as usize)
     }
 

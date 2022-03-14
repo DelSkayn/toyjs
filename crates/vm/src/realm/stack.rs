@@ -16,7 +16,7 @@ pub enum Frame {
     Entry { registers: u32 },
     /// A call created from the interperter
     Call { registers: u8, data: CallFrameData },
-    /// An exception guard, if an excreption is thrown execution should contin
+    /// An exception guard, if an exception is thrown execution should contin
     Try(TryFrameData),
 }
 

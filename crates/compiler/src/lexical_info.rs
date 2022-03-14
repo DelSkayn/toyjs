@@ -18,7 +18,7 @@ pub enum ArgAllocInfo {
 pub enum SymbolInfo {
     Argument(ArgAllocInfo),
     Local,
-    Captured(u16),
+    Upvalue(u16),
     Global,
 }
 
@@ -81,7 +81,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
             for used in scope.used.iter().copied() {
                 match symbol_info.get(used) {
                     Some(SymbolInfo::Global)
-                    | Some(SymbolInfo::Captured(_))
+                    | Some(SymbolInfo::Upvalue(_))
                     | Some(SymbolInfo::Argument(_)) => continue,
                     _ => {}
                 }
@@ -95,7 +95,7 @@ impl<A: Allocator + Clone> LexicalInfo<A> {
                         let depth = table.scopes()[decl_function].function_depth;
                         // TODO: See if this unwrap can cause problems
                         // We're casting a u32 to u16 look into changing the u32 to a u16?
-                        symbol_info.insert(used, SymbolInfo::Captured(depth.try_into().unwrap()));
+                        symbol_info.insert(used, SymbolInfo::Upvalue(depth.try_into().unwrap()));
 
                         // Variable in function scope is captured so it needs an environment.
                         scope_info[decl_function].env_depth = Some(0);

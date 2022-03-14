@@ -33,6 +33,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             }
             TokenKind::Ident(x) => {
                 self.next()?;
+
+                if x == self.special_ident.eval {
+                    if let Some(x) = self.try_parse_eval()? {
+                        return Ok(x);
+                    }
+                }
+
                 let var = self.symbol_table.use_symbol(x);
                 Ok(PrimeExpr::Variable(var))
             }
@@ -53,6 +60,16 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("function") => self.parse_function_expression(),
             x => to_do!(self, x),
         }
+    }
+
+    fn try_parse_eval(&mut self) -> Result<Option<PrimeExpr<A>>> {
+        if self.peek_kind()? != Some(t!("(")) {
+            return Ok(None);
+        }
+        expect!(self, "(");
+        let expr = self.parse_expr()?;
+        expect!(self, ")");
+        Ok(Some(PrimeExpr::Eval(expr)))
     }
 
     pub(crate) fn parse_object(&mut self) -> Result<PrimeExpr<A>> {

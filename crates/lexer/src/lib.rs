@@ -44,7 +44,7 @@ pub type Result<T> = StdResult<T, Error>;
 
 pub struct Lexer<'a> {
     source: &'a Source,
-    interner: &'a mut Interner,
+    pub interner: &'a mut Interner,
     offset: usize,
     span_start: usize,
     // A buffer for rewriting escaped utf-8 secuences as the right bytes

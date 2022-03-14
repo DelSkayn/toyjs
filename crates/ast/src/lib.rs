@@ -140,6 +140,7 @@ impl<A: Allocator> Expr<A> {
         match *self {
             Expr::Prime(ref x) => match x {
                 PrimeExpr::Variable(_) => true,
+                PrimeExpr::Eval(_) => false,
                 PrimeExpr::Literal(_) => false,
                 PrimeExpr::Covered(_) => false,
                 PrimeExpr::Object(_) => false,
@@ -170,6 +171,8 @@ pub enum PrimeExpr<A: Allocator> {
     Covered(Vec<Expr<A>, A>),
     Object(Vec<(StringId, Expr<A>), A>),
     Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
+    // A direct eval call
+    Eval(Vec<Expr<A>, A>),
 }
 
 #[derive(Derivative, Clone, Copy)]

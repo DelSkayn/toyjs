@@ -435,6 +435,7 @@ impl Realm {
         }
     }
 
+    #[inline]
     pub unsafe fn to_primitive(&mut self, v: Value) -> Value {
         if v.is_object() || v.is_function() {
             todo!()
@@ -447,6 +448,7 @@ impl Realm {
         a.is_int() && b.is_int()
     }
 
+    #[inline]
     fn coerce_int(int: i64) -> Value {
         if int as i32 as i64 == int {
             Value::from(int as i32)
