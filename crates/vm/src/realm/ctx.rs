@@ -1,4 +1,4 @@
-use std::{cell::Cell, marker::PhantomData};
+use std::{borrow::Cow, cell::Cell, marker::PhantomData};
 
 use crate::{function::Function, gc::BoundGc, object::Object, value::BoundValue, Realm, Value};
 
@@ -78,7 +78,7 @@ impl<'a> RealmCtx<'a> {
         unsafe { BoundGc::bind((*self.realm).global) }
     }
 
-    pub fn coerce_string(&self, value: BoundValue<'a>) -> String {
+    pub fn coerce_string(&self, value: BoundValue<'a>) -> Cow<'a, str> {
         unsafe { (*self.realm).coerce_string(value.unbind()) }
     }
 

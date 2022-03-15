@@ -1,2 +1,4 @@
 /target
 test.js
+pref.dat*
+flamegraph.svg

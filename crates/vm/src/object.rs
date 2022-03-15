@@ -63,7 +63,7 @@ impl Object {
         }
         let string = realm.coerce_string(BoundValue::bind(key));
         (*self.values.get())
-            .get(&string)
+            .get(string.as_ref())
             .copied()
             .unwrap_or(Value::undefined())
     }
@@ -89,7 +89,7 @@ impl Object {
             }
         } else {
             let string = realm.coerce_string(BoundValue::bind(key));
-            (*self.values.get()).insert(string, value);
+            (*self.values.get()).insert(string.to_string(), value);
         }
     }
 }

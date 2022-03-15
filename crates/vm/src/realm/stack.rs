@@ -1,41 +1,103 @@
 use std::{
     alloc::{self, GlobalAlloc, Layout, System},
+    cell::{Cell, UnsafeCell},
     convert::TryInto,
     marker::PhantomData,
     mem,
     ptr::{self, NonNull},
 };
 
-use crate::{gc::Trace, Value};
+use crate::{function::Function, gc::Trace, Gc, GcArena, Value};
 
 use super::{reader::InstructionReader, Arguments};
 
+#[derive(Debug)]
+pub struct UpvalueObject {
+    location: Cell<*mut Value>,
+    closed: UnsafeCell<Value>,
+}
+
+unsafe impl Trace for UpvalueObject {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: crate::gc::Ctx) {
+        unsafe {
+            (*self.closed.get()).trace(ctx);
+        }
+    }
+}
+
+impl UpvalueObject {
+    #[inline]
+    pub unsafe fn close(&self) {
+        (*self.closed.get()) = self.location.get().read();
+        self.location.set(self.closed.get())
+    }
+
+    #[inline]
+    pub unsafe fn write(&self, value: Value) {
+        self.location.get().write(value);
+    }
+
+    #[inline]
+    pub unsafe fn read(&self) -> Value {
+        self.location.get().read()
+    }
+
+    pub unsafe fn rebase(&self, original: *mut Value, new: *mut Value) {
+        debug_assert!((*self.closed.get()) == Value::empty());
+        self.location
+            .set(new.offset(self.location.get().offset_from(original)));
+    }
+}
+
 pub enum Frame {
-    /// A frame which signifies an entry into the interperter.
-    /// If this frame is popped the interperter should return from the execution loop
-    Entry { registers: u32 },
-    /// A call created from the interperter
-    Call { registers: u8, data: CallFrameData },
-    /// An exception guard, if an exception is thrown execution should contin
-    Try(TryFrameData),
+    /// An entry frame from rust into the interperter.
+    /// If this frame is popped the interperter should return to rust.
+    Entry {
+        // Size in number of registers of the frame.
+        registers: u8,
+        frame_offset: u8,
+        open_upvalues: Vec<Gc<UpvalueObject>>,
+    },
+    /// A frame of a javascript function call.
+    Call {
+        // Size in number of registers of the frame.
+        registers: u8,
+        /// Number of try frames between the current call frame and the previous.
+        frame_offset: u8,
+        open_upvalues: Vec<Gc<UpvalueObject>>,
+        data: CallFrameData,
+    },
+    Try {
+        data: TryFrameData,
+    },
 }
 
 pub struct CallFrameData {
-    /// The destination to place the return value in.
+    /// The register to put the return value into.
     pub dst: u8,
-    /// The data of the this frame.
+    /// The instruction reader
     pub reader: InstructionReader,
+    /// The function object of the previous frame.
+    pub function: Gc<Function>,
 }
 
 pub struct TryFrameData {
     /// The destination to place to put the exception .
     pub dst: u8,
     /// The data of the this frame.
-    pub jump: *mut u8,
+    pub ip_offset: usize,
 }
 
 /// The vm stack implementation.
 pub struct Stack {
+    /// Start of the stack array.
     root: NonNull<Value>,
     /// points to the start of the current frame i.e. the first register in use.
     frame: *mut Value,
@@ -44,8 +106,11 @@ pub struct Stack {
 
     frames: Vec<Frame>,
 
-    cur_frame_size: u32,
+    cur_frame_size: u8,
+    /// Amount of values allocated for the stack
     capacity: usize,
+    /// Number of try frames between the current call frame and the previous.
+    frame_offset: u8,
 }
 
 impl Stack {
@@ -58,6 +123,7 @@ impl Stack {
             frames: Vec::new(),
             cur_frame_size: 0,
             capacity: 0,
+            frame_offset: 0,
         }
     }
 
@@ -70,61 +136,90 @@ impl Stack {
                 self.grow(new_used)
             }
             self.frames.push(Frame::Entry {
+                frame_offset: self.frame_offset,
                 registers: self.cur_frame_size,
+                open_upvalues: Vec::new(),
             });
+            self.frame_offset = 0;
             self.frame = self.frame.add(self.cur_frame_size as usize);
             let new_stack = self.frame.add(registers as usize);
             while self.stack < new_stack {
                 self.stack.write(Value::undefined());
                 self.stack = self.stack.add(1);
             }
-            self.cur_frame_size = registers as u32;
+            self.cur_frame_size = registers;
         }
     }
 
-    pub fn enter_call(&mut self, registers: u8, frame: CallFrameData) {
+    pub fn enter_call(
+        &mut self,
+        new_registers: u8,
+        dst: u8,
+        reader: InstructionReader,
+        function: Gc<Function>,
+    ) {
         unsafe {
-            let new_used = self.used() + registers as usize;
+            let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity {
                 self.grow(new_used)
             }
             self.frame = self.frame.add(self.cur_frame_size as usize);
             let mut cur = self.stack;
-            self.stack = self.frame.add(registers as usize);
+            self.stack = self.frame.add(new_registers as usize);
             while cur < self.stack {
                 cur.write(Value::undefined());
                 cur = cur.add(1);
             }
             self.frames.push(Frame::Call {
-                registers,
-                data: frame,
+                registers: self.cur_frame_size,
+                data: CallFrameData {
+                    dst,
+                    reader,
+                    function,
+                },
+                open_upvalues: Vec::new(),
+                frame_offset: self.frame_offset,
             });
-            self.cur_frame_size = registers as u32;
+            self.frame_offset = 0;
+            self.cur_frame_size = new_registers;
         }
     }
 
-    pub fn guard(&mut self, frame: TryFrameData) {
-        self.frames.push(Frame::Try(frame));
+    pub fn push_try(&mut self, dst: u8, ip_offset: usize) {
+        self.frames.push(Frame::Try {
+            data: TryFrameData { dst, ip_offset },
+        });
+        self.frame_offset += 1;
     }
 
-    pub unsafe fn unguard(&mut self) {
+    pub unsafe fn pop_try(&mut self) -> TryFrameData {
         let frame = self.frames.pop();
-        #[cfg(debug_assertions)]
         match frame {
-            Some(Frame::Try(_)) => {}
+            Some(Frame::Try { data }) => data,
             _ => panic!("tried to unguard stack which was not guarded"),
         }
     }
 
-    pub fn unwind(&mut self) -> Option<TryFrameData> {
+    pub unsafe fn unwind(&mut self) -> Option<TryFrameData> {
         loop {
             match self.frames.pop() {
-                Some(Frame::Try(x)) => return Some(x),
-                Some(Frame::Call { registers, .. }) => {
-                    self.restore_frame(registers as u32);
+                Some(Frame::Try { data }) => return Some(data),
+                Some(Frame::Call {
+                    registers,
+                    frame_offset,
+                    open_upvalues,
+                    ..
+                }) => {
+                    open_upvalues.into_iter().for_each(|x| x.close());
+                    self.restore_frame(registers, frame_offset);
                 }
-                Some(Frame::Entry { registers, .. }) => {
-                    self.restore_frame(registers);
+                Some(Frame::Entry {
+                    registers,
+                    frame_offset,
+                    open_upvalues,
+                }) => {
+                    open_upvalues.into_iter().for_each(|x| x.close());
+                    self.restore_frame(registers, frame_offset);
                     return None;
                 }
                 None => panic!("root frame was not an entry frame"),
@@ -132,21 +227,55 @@ impl Stack {
         }
     }
 
-    pub fn pop(&mut self) -> Option<CallFrameData> {
+    pub unsafe fn pop(&mut self) -> Option<CallFrameData> {
         loop {
             match self.frames.pop() {
-                Some(Frame::Try(_)) => {}
-                Some(Frame::Call { registers, data }) => {
-                    self.restore_frame(registers as u32);
+                Some(Frame::Try { .. }) => {}
+                Some(Frame::Call {
+                    registers,
+                    data,
+                    frame_offset,
+                    open_upvalues,
+                }) => {
+                    open_upvalues.into_iter().for_each(|x| x.close());
+                    self.restore_frame(registers, frame_offset);
                     return Some(data);
                 }
-                Some(Frame::Entry { registers, .. }) => {
-                    self.restore_frame(registers as u32);
+                Some(Frame::Entry {
+                    registers,
+                    frame_offset,
+                    open_upvalues,
+                }) => {
+                    open_upvalues.into_iter().for_each(|x| x.close());
+                    self.restore_frame(registers, frame_offset);
+                    self.frame_offset = 0;
                     return None;
                 }
                 None => panic!("tried to pop no existant stack"),
             }
         }
+    }
+
+    pub unsafe fn create_upvalue(&mut self, register: u8, gc: &GcArena) -> Gc<UpvalueObject> {
+        let upvalue = gc.allocate(UpvalueObject {
+            location: Cell::new(self.frame.add(register as usize)),
+            closed: UnsafeCell::new(Value::empty()),
+        });
+        let frame_idx = self.frames.len() - self.frame_offset as usize - 1;
+        match self.frames[frame_idx] {
+            Frame::Call {
+                ref mut open_upvalues,
+                ..
+            }
+            | Frame::Entry {
+                ref mut open_upvalues,
+                ..
+            } => {
+                open_upvalues.push(upvalue);
+            }
+            _ => panic!(),
+        }
+        upvalue
     }
 
     #[inline]
@@ -178,11 +307,12 @@ impl Stack {
     }
 
     #[inline]
-    fn restore_frame(&mut self, registers: u32) {
+    fn restore_frame(&mut self, registers: u8, frame_offset: u8) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
             self.cur_frame_size = registers;
+            self.frame_offset = frame_offset
         }
     }
 
@@ -210,6 +340,25 @@ impl Stack {
                 if ptr != self.root.as_ptr() {
                     self.stack = ptr.offset(self.stack.offset_from(self.root.as_ptr()));
                     self.frame = ptr.offset(self.frame.offset_from(self.root.as_ptr()));
+
+                    // rebase all the open upvalue objects
+                    let original = self.root.as_ptr();
+                    for f in self.frames.iter_mut() {
+                        match *f {
+                            Frame::Entry {
+                                ref mut open_upvalues,
+                                ..
+                            }
+                            | Frame::Call {
+                                ref mut open_upvalues,
+                                ..
+                            } => open_upvalues
+                                .iter_mut()
+                                .for_each(|x| x.rebase(original, ptr)),
+                            _ => {}
+                        }
+                    }
+
                     self.root = NonNull::new_unchecked(ptr);
                 }
             }
@@ -224,13 +373,13 @@ impl Stack {
 
     #[inline(always)]
     pub fn read(&self, register: u8) -> Value {
-        debug_assert!((register as u32) < self.cur_frame_size);
+        debug_assert!(register < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).read() }
     }
 
     #[inline(always)]
     pub fn write(&mut self, register: u8, v: Value) {
-        debug_assert!((register as u32) < self.cur_frame_size);
+        debug_assert!(register < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).write(v) }
     }
 
@@ -256,8 +405,11 @@ unsafe impl Trace for Stack {
         for f in self.frames.iter() {
             match *f {
                 Frame::Entry { .. } => {}
-                Frame::Try(_) => {}
-                Frame::Call { ref data, .. } => data.reader.trace(ctx),
+                Frame::Try { .. } => {}
+                Frame::Call { ref data, .. } => {
+                    data.reader.trace(ctx);
+                    ctx.mark(data.function);
+                }
             }
         }
 

@@ -9,7 +9,7 @@ use crate::{
 };
 
 mod stack;
-use stack::Stack;
+pub use stack::{Stack, UpvalueObject};
 mod ctx;
 mod exec;
 pub use ctx::{Arguments, RealmCtx};
@@ -51,7 +51,8 @@ impl Realm {
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
         self.stack.enter(bc.functions[0].registers);
         let reader = InstructionReader::from_bc(bc, 0);
-        self.execute(reader)
+        let func = self.construct_function_root(&reader);
+        self.execute(reader, func)
     }
 
     pub unsafe fn global(&self) -> Gc<Object> {
