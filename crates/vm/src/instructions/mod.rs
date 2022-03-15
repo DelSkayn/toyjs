@@ -35,18 +35,18 @@ pub enum ValidationError {}
 impl Error for ValidationError {}
 
 impl fmt::Display for ValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {}
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub enum Upvalue {
     Local(u8),
-    Parent(u8),
+    Parent(u16),
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug)]
 pub struct ByteFunction {
     /// The offset into the instruction buffer where this function starts.
     pub offset: u32,
@@ -55,7 +55,7 @@ pub struct ByteFunction {
     /// The amount of register this function uses.
     pub registers: u8,
     // A list of index of capture upvalues in the function scope
-    //pub upvalues: Box<[Upvalue]>,
+    pub upvalues: Box<[Upvalue]>,
 }
 
 /// A generic set of instructions, functions and constants.
@@ -120,22 +120,44 @@ impl fmt::Display for ByteCode {
             writeln!(f, "{:>4}: {:?}", idx, c)?;
         }
         writeln!(f)?;
-        writeln!(f, "> INSTRUCTIONS")?;
+        writeln!(f, "> FUNCTIONS")?;
         for (idx, func) in self.functions.iter().enumerate() {
             writeln!(
                 f,
-                "= FUNC:{:<4} registers:{:<2} instructions:{}",
-                idx, func.registers, func.size
+                "= FUNC:{:<4} registers:{:<2} instructions:{} upvalues:{}",
+                idx,
+                func.registers,
+                func.size,
+                func.upvalues.len()
             )?;
+
+            if !func.upvalues.is_empty() {
+                writeln!(f, "- UPVALUES")?;
+            }
+
+            for (idx, u) in func.upvalues.iter().copied().enumerate() {
+                write!(f, "{:>4}: ", idx)?;
+                match u {
+                    Upvalue::Local(x) => {
+                        writeln!(f, "LOCAL 0x{:x}", x)?;
+                    }
+                    Upvalue::Parent(x) => {
+                        writeln!(f, "PARENT 0x{:x}", x)?;
+                    }
+                }
+            }
 
             let start = func.offset as usize;
             let end = start + func.size as usize;
+
+            writeln!(f, "- INSTRUCTIONS")?;
 
             for (idx, instr) in self.instructions[start..end].iter().enumerate() {
                 write!(f, "{:>4}: ", idx)?;
                 write!(f, "{}", instr)?;
                 writeln!(f)?;
             }
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -158,6 +180,9 @@ define_instructions! {
 
         IndexAssign{obj: u8,key: u8, val:u8},
         Index{dst: u8,obj: u8, key:u8},
+
+        Upvalue{dst: u8, slot: u16},
+        UpvalueAssign{src: u8, slot: u16},
 
         EnvAssign{env: u8, val:u8, key:u8},
         EnvIndex{dst: u8, env:u8, key:u8},

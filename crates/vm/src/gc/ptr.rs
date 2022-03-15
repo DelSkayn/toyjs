@@ -58,6 +58,12 @@ impl<T: Trace + 'static> Gc<T> {
         }
     }
 
+    #[inline]
+    pub unsafe fn ref_static(&self) -> &'static T {
+        &(*self.0.as_ref().value.get())
+    }
+
+    #[inline]
     pub fn ptr_eq(self, other: Self) -> bool {
         self.0.as_ptr() == other.0.as_ptr()
     }
@@ -66,6 +72,7 @@ impl<T: Trace + 'static> Gc<T> {
 impl<T: Trace> Deref for Gc<T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { &(*self.0.as_ref().value.get()) }
     }
@@ -102,6 +109,7 @@ pub struct BoundGc<'a, T: Trace + ?Sized> {
 impl<'a, T: Trace + ?Sized> Deref for BoundGc<'a, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { &(*self.gc.0.as_ref().value.get()) }
     }

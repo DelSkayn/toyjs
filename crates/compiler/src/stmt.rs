@@ -1,7 +1,7 @@
 use ast::{Expr, ForDecl, Literal, Params, ScopeId, Stmt};
 use vm::instructions::Instruction;
 
-use crate::{expr::ExprValue, register::Register, Compiler, FunctionId};
+use crate::{builder::FunctionId, expr::ExprValue, register::Register, Compiler};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -29,7 +29,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 None
             }
             Stmt::Let(symbol, expr) => {
-                let reg = self.builder.registers().alloc_symbol(*symbol);
+                let reg = self.builder.alloc_symbol(*symbol);
                 //TODO captured variables
                 if let Some(x) = expr.as_ref() {
                     Some(self.compile_expr(Some(reg), x).eval(self))
@@ -69,8 +69,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Stmt::Function(scope, symbol, params, stmts) => {
                 let id = self.compile_function_decl(*scope, params, stmts);
                 //TODO local functions stmts
-                let tmp = self.builder.registers().alloc_temp();
-                let glob = self.builder.registers().alloc_temp();
+                let tmp = self.builder.alloc_temp();
+                let glob = self.builder.alloc_temp();
                 self.builder.push(Instruction::LoadFunction {
                     dst: tmp.0,
                     func: id.0,
@@ -197,7 +197,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.compile_stmt(s);
         }
 
-        match self.builder.instructions_mut().last() {
+        match self.builder.instructions().last() {
             Some(Instruction::Return { .. }) => {}
             Some(Instruction::ReturnUndefined { .. }) => {}
             _ => {

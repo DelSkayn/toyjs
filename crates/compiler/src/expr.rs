@@ -131,7 +131,11 @@ impl AssignmentTarget {
                     });
                 } else {
                     if !this.symbol_table.in_scope(x, this.builder.scope()) {
-                        todo!()
+                        let upvalue = this.builder.capture_upvalue(x, symbol.decl_scope);
+                        this.builder.push(Instruction::UpvalueAssign {
+                            src: src.0,
+                            slot: upvalue.0,
+                        });
                     }
                 }
             }
@@ -647,7 +651,13 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     return self.builder.alloc_symbol(symbol_id);
                 }
             } else {
-                todo!()
+                let upvalue = self.builder.capture_upvalue(symbol_id, symbol.decl_scope);
+                let place = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::Upvalue {
+                    dst: place.0,
+                    slot: upvalue.0,
+                });
+                return place;
             }
         } else {
             let name = self.compile_literal(None, Literal::String(symbol.ident));

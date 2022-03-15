@@ -1,15 +1,14 @@
 use std::convert::TryInto;
 
 use crate::{
-    function::Function,
     gc::Trace,
-    instructions::{ByteCode, Instruction},
+    instructions::{ByteCode, ByteFunction, Instruction},
     Gc, Value,
 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct InstructionReader {
-    bc: Gc<ByteCode>,
+    pub(crate) bc: Gc<ByteCode>,
     cur: *const Instruction,
     #[cfg(debug_assertions)]
     first: *const Instruction,
@@ -31,8 +30,8 @@ unsafe impl Trace for InstructionReader {
 }
 
 impl InstructionReader {
-    pub fn from_bc(bc: Gc<ByteCode>, function: u32) -> Self {
-        let func = bc.functions[function as usize];
+    pub fn from_bc(bc: Gc<ByteCode>, function: u16) -> Self {
+        let func = &bc.functions[function as usize];
         unsafe {
             let first = bc.instructions.as_ptr().add(func.offset as usize);
             Self {
@@ -73,7 +72,7 @@ impl InstructionReader {
         *self.bc.constants.get_unchecked(id as usize)
     }
 
-    pub unsafe fn function(&self, id: u32) -> Function {
-        Function::from_bc(self.bc, id)
+    pub unsafe fn function(&self, id: u16) -> &ByteFunction {
+        &self.bc.functions[id as usize]
     }
 }

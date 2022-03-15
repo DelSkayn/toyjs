@@ -1,11 +1,13 @@
+use std::borrow::Cow;
+
 use crate::{
-    function::{Function, FunctionKind, RECURSIVE_FUNC_PANIC},
-    instructions::Instruction,
+    function::{Function, FunctionKind, VmFunction, RECURSIVE_FUNC_PANIC},
+    instructions::{Instruction, Upvalue},
     object::Object,
-    Value,
+    Gc, Value,
 };
 
-use super::{reader::InstructionReader, stack::CallFrameData, Realm};
+use super::{reader::InstructionReader, Realm};
 
 pub enum NumericOperator {
     Sub,
@@ -16,7 +18,11 @@ pub enum NumericOperator {
 }
 
 impl Realm {
-    pub unsafe fn execute(&mut self, mut instr: InstructionReader) -> Result<Value, ()> {
+    pub unsafe fn execute(
+        &mut self,
+        mut instr: InstructionReader,
+        mut function: Gc<Function>,
+    ) -> Result<Value, ()> {
         loop {
             match instr.next() {
                 Instruction::LoadConst { dst, cons } => {
@@ -26,14 +32,14 @@ impl Realm {
                     self.stack.write(dst, Value::from(self.global));
                 }
                 Instruction::LoadFunction { dst, func } => {
-                    self.gc.collect_debt(&(&*self, instr));
-                    let func = instr.function(func as u32);
+                    self.gc.collect_debt(&(&*self, instr, function));
+                    let func = self.construct_function(func, &instr, function);
                     let res = Value::from(self.gc.allocate(func));
                     self.stack.write(dst, res);
                 }
-                Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src as u8)),
+                Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
-                    self.gc.collect_debt(&(&*self, instr));
+                    self.gc.collect_debt(&(&*self, instr, function));
                     let object = Object::new();
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
@@ -61,6 +67,16 @@ impl Realm {
                         todo!()
                     }
                 }
+                Instruction::Upvalue { dst, slot } => {
+                    let value = function.as_vm_function().upvalues[slot as usize].read();
+                    self.stack.write(dst, value);
+                }
+
+                Instruction::UpvalueAssign { src, slot } => {
+                    let value = self.stack.read(src);
+                    function.as_vm_function().upvalues[slot as usize].write(value);
+                }
+
                 Instruction::Add { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
@@ -190,7 +206,7 @@ impl Realm {
                     let func = self.stack.read(func);
                     if func.is_function() {
                         if let Some(value) =
-                            self.call(&func.unsafe_cast_function(), &mut instr, dst)
+                            self.call(func.unsafe_cast_function(), &mut function, &mut instr, dst)
                         {
                             self.stack.write(dst, value);
                         }
@@ -201,6 +217,7 @@ impl Realm {
                 Instruction::ReturnUndefined { .. } => match self.stack.pop() {
                     Some(x) => {
                         instr = x.reader;
+                        function = x.function;
                         self.stack.write(x.dst, Value::undefined());
                     }
                     None => return Ok(Value::undefined()),
@@ -210,6 +227,7 @@ impl Realm {
                     match self.stack.pop() {
                         Some(x) => {
                             instr = x.reader;
+                            function = x.function;
                             self.stack.write(x.dst, return_value);
                         }
                         None => return Ok(return_value),
@@ -234,23 +252,25 @@ impl Realm {
         value.is_null() || value.is_undefined()
     }
 
-    pub unsafe fn coerce_string(&mut self, value: Value) -> String {
+    pub unsafe fn coerce_string<'a>(&mut self, value: Value) -> Cow<'a, str> {
         if value.is_int() {
-            format!("{}", value.cast_int())
+            Cow::Owned(value.cast_int().to_string())
         } else if value.is_float() {
-            format!("{}", value.cast_float())
+            Cow::Owned(value.cast_float().to_string())
         } else if value.is_null() {
-            "null".to_string()
+            Cow::Borrowed("null")
         } else if value.is_undefined() {
-            "undefined".to_string()
+            Cow::Borrowed("undefined")
         } else if value.is_true() {
-            "true".to_string()
+            Cow::Borrowed("true")
         } else if value.is_false() {
-            "false".to_string()
+            Cow::Borrowed("false")
         } else if value.is_string() {
-            (*value.unsafe_cast_string()).clone()
+            Cow::Borrowed(value.unsafe_cast_string().ref_static().as_ref())
         } else if value.is_object() {
-            "[object Object]".to_string()
+            Cow::Borrowed("[object Object]")
+        } else if value.is_function() {
+            Cow::Borrowed("[function Function]")
         } else {
             todo!()
         }
@@ -457,23 +477,62 @@ impl Realm {
         }
     }
 
+    pub(crate) unsafe fn construct_function(
+        &mut self,
+        function_id: u16,
+        reader: &InstructionReader,
+        function: Gc<Function>,
+    ) -> Function {
+        let bc_function = reader.function(function_id);
+        let function = function.as_vm_function();
+        let upvalues = bc_function
+            .upvalues
+            .iter()
+            .copied()
+            .map(|x| match x {
+                Upvalue::Local(register) => self.stack.create_upvalue(register, &self.gc),
+                Upvalue::Parent(slot) => {
+                    debug_assert!(function.upvalues.len() > slot as usize);
+                    *function.upvalues.get_unchecked(slot as usize)
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Function::from_vm(VmFunction {
+            bc: reader.bc,
+            function: function_id,
+            upvalues,
+        })
+    }
+
+    pub(crate) unsafe fn construct_function_root(
+        &mut self,
+        reader: &InstructionReader,
+    ) -> Gc<Function> {
+        let bc_function = reader.function(0);
+        debug_assert!(bc_function.upvalues.is_empty());
+        self.gc.allocate(Function::from_vm(VmFunction {
+            bc: reader.bc,
+            function: 0,
+            upvalues: Box::new([]),
+        }))
+    }
+
     unsafe fn call(
         &mut self,
-        function: &Function,
+        call_function: Gc<Function>,
+        current_function: &mut Gc<Function>,
         instr: &mut InstructionReader,
         dst: u8,
     ) -> Option<Value> {
-        match function.kind {
-            FunctionKind::Runtime { bc, function } => {
-                let byte_func = bc.functions.get_unchecked(function as usize);
-                self.stack.enter_call(
-                    byte_func.registers,
-                    CallFrameData {
-                        dst,
-                        reader: *instr,
-                    },
-                );
-                *instr = InstructionReader::from_bc(bc, function as u32);
+        match call_function.kind {
+            FunctionKind::Vm(ref func) => {
+                let bc = func.bc;
+                let bc_function = &bc.functions[func.function as usize];
+                self.stack
+                    .enter_call(bc_function.registers, dst, *instr, *current_function);
+                *current_function = call_function;
+                *instr = InstructionReader::from_bc(bc, func.function);
                 None
             }
             FunctionKind::Mutable(ref x) => {
