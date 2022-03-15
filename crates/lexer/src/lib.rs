@@ -56,7 +56,7 @@ pub struct Lexer<'a> {
 fn is_radix(byte: u8, radix: u8) -> bool {
     match radix {
         2 => byte == b'0' || byte == b'1',
-        8 => byte >= b'0' && byte <= b'7',
+        8 => (b'0'..b'7').contains(&byte),
         16 => byte.is_ascii_hexdigit(),
         _ => panic!("invalid radix"),
     }
@@ -93,9 +93,8 @@ impl<'a> Lexer<'a> {
             match self.next_byte() {
                 Some(chars::LF) => return Ok(()),
                 Some(chars::CR) => {
-                    match self.peek_byte() {
-                        Some(chars::LF) => self.eat_byte(),
-                        _ => {}
+                    if let Some(chars::LF) = self.peek_byte() {
+                        self.eat_byte()
                     }
                     return Ok(());
                 }
@@ -218,7 +217,7 @@ impl<'a> Lexer<'a> {
             }
         }
         if let Some(x) = Self::match_keyword(&self.source.source()[start..self.offset]) {
-            return Ok(self.token(TokenKind::Keyword(x)));
+            Ok(self.token(TokenKind::Keyword(x)))
         } else {
             let string_id = self
                 .interner
@@ -253,9 +252,8 @@ impl<'a> Lexer<'a> {
         let token = match byte {
             chars::LF => self.token(t!("\n")),
             chars::CR => {
-                match self.peek_byte() {
-                    Some(chars::LF) => self.eat_byte(),
-                    _ => {}
+                if let Some(chars::LF) = self.peek_byte() {
+                    self.eat_byte();
                 }
                 self.token(t!("\n"))
             }

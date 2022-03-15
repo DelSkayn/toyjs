@@ -50,6 +50,11 @@ macro_rules! newtype_key{
 ///
 /// Implementation will guarentee that a key will not be created
 /// with a value larger then indicated by `max()`
+///
+/// # Safety
+///
+/// The implementation must guarentee that the index returned are the same as the index given via
+/// new.
 pub unsafe trait SlotKey:
     Copy + Clone + Default + PartialEq + Eq + Hash + fmt::Debug
 {
@@ -190,6 +195,12 @@ pub struct SlotVec<T, Idx: SlotKey = usize, A: Allocator = Global> {
     free: Option<Idx>,
 }
 
+impl<T, Idx: SlotKey> Default for SlotVec<T, Idx> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, Idx: SlotKey> SlotVec<T, Idx> {
     /// Create a new list.
     pub fn new() -> Self {
@@ -317,14 +328,14 @@ impl<T, Idx: SlotKey, A: Allocator> SlotVec<T, Idx, A> {
     }
 
     /// Returns an iterator over all present values.
-    pub fn iter<'a>(&'a self) -> Iter<'a, T, Idx> {
+    pub fn iter(&self) -> Iter<T, Idx> {
         Iter {
             v: self.values.iter(),
         }
     }
 
     /// Returns an iterator over all present values.
-    pub fn iter_mut<'a>(&'a mut self) -> IterMut<'a, T, Idx> {
+    pub fn iter_mut(&mut self) -> IterMut<T, Idx> {
         IterMut {
             v: self.values.iter_mut(),
         }
@@ -416,6 +427,12 @@ pub struct SlotStack<T, K, A: Allocator = Global> {
     marker: marker::PhantomData<K>,
 }
 
+impl<T, K: SlotKey> Default for SlotStack<T, K> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T, K: SlotKey> SlotStack<T, K, Global> {
     pub fn new() -> Self {
         Self::new_in(Global)
@@ -481,6 +498,12 @@ pub struct SlotMap<T, K: SlotKey, A: Allocator = Global> {
 impl<T, K: SlotKey> SlotMap<T, K> {
     pub fn new() -> Self {
         Self::new_in(Global)
+    }
+}
+
+impl<T, K: SlotKey> Default for SlotMap<T, K> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

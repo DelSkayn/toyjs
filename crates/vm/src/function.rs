@@ -8,7 +8,7 @@ use crate::{
 };
 use std::cell::RefCell;
 
-pub const RECURSIVE_FUNC_PANIC: &'static str = "tried to call mutable function recursively";
+pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
 pub type MutableFn = Box<dyn for<'a> FnMut(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
 pub type NativeFn = Box<dyn for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
@@ -38,12 +38,9 @@ unsafe impl Trace for Function {
         true
     }
     fn trace(&self, ctx: crate::gc::Ctx) {
-        match self.kind {
-            FunctionKind::Vm(ref func) => {
-                ctx.mark(func.bc);
-                func.upvalues.iter().for_each(|x| ctx.mark(*x))
-            }
-            _ => {}
+        if let FunctionKind::Vm(ref func) = self.kind {
+            ctx.mark(func.bc);
+            func.upvalues.iter().for_each(|x| ctx.mark(*x))
         }
         self.object.trace(ctx);
     }

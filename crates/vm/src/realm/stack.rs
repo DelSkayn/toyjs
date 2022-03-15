@@ -4,7 +4,7 @@ use std::{
     convert::TryInto,
     marker::PhantomData,
     mem,
-    ptr::{self, NonNull},
+    ptr::NonNull,
 };
 
 use crate::{function::Function, gc::Trace, Gc, GcArena, Value};
@@ -322,7 +322,7 @@ impl Stack {
             if self.capacity == 0 {
                 let layout = Layout::array::<Value>(capacity.max(8)).unwrap();
                 let ptr = System.alloc(layout);
-                if ptr == ptr::null_mut() {
+                if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
                 self.root = NonNull::new_unchecked(ptr.cast());
@@ -331,10 +331,10 @@ impl Stack {
             } else {
                 let layout = Layout::array::<Value>(self.capacity).unwrap();
                 let size = capacity * mem::size_of::<Value>();
-                let ptr = System
+                let ptr: *mut Value = System
                     .realloc(self.root.as_ptr().cast(), layout, size)
                     .cast();
-                if ptr == ptr::null_mut() {
+                if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
                 if ptr != self.root.as_ptr() {

@@ -103,12 +103,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 }
             })
             .map(|x| {
-                self.symbol_table
-                    .define(x, DeclType::Var)
-                    .ok_or_else(|| Error {
-                        kind: ErrorKind::RedeclaredVariable,
-                        origin: self.last_span,
-                    })
+                self.symbol_table.define(x, DeclType::Var).ok_or(Error {
+                    kind: ErrorKind::RedeclaredVariable,
+                    origin: self.last_span,
+                })
             })
             .transpose()?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);

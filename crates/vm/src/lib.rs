@@ -20,6 +20,8 @@
 //!
 
 #![allow(dead_code)]
+#![allow(clippy::missing_safety_doc)]
+#![allow(clippy::new_without_default)]
 #![feature(allocator_api)]
 
 pub mod gc;

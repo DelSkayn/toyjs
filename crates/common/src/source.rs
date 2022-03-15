@@ -218,7 +218,7 @@ impl Source {
         }
         writeln!(w, "|")?;
         write!(w, "{} | ", line_str)?;
-        for c in buffer.iter().copied() {
+        for c in buffer.iter() {
             write!(w, "{}", c)?;
         }
         writeln!(w)?;

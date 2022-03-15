@@ -116,6 +116,9 @@ impl<'a, T: Trace + ?Sized> Deref for BoundGc<'a, T> {
 }
 
 impl<'a, T: Trace + ?Sized> BoundGc<'a, T> {
+    /// # Safety
+    ///
+    /// The gc pointer must be valid for the entire lifetime it will be bound to.
     pub unsafe fn bind(value: Gc<T>) -> Self {
         BoundGc {
             gc: value,
@@ -123,7 +126,7 @@ impl<'a, T: Trace + ?Sized> BoundGc<'a, T> {
         }
     }
 
-    pub unsafe fn unbind(self) -> Gc<T> {
+    pub fn unbind(self) -> Gc<T> {
         self.gc
     }
 }

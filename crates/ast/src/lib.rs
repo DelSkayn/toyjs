@@ -190,18 +190,10 @@ impl PartialEq for Literal {
     fn eq(&self, other: &Self) -> bool {
         match self {
             Literal::Null => {
-                if let Literal::Null = other {
-                    true
-                } else {
-                    false
-                }
+                matches!(other, Literal::Null)
             }
             Literal::Undefined => {
-                if let Literal::Undefined = other {
-                    true
-                } else {
-                    false
-                }
+                matches!(other, Literal::Undefined)
             }
             Literal::Float(a) => {
                 if let Literal::Float(b) = other {

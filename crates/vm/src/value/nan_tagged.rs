@@ -26,7 +26,7 @@ pub const TAG_INT: u64 = 0x0006_0000_0000_0000;
 pub const TAG_STACK_VALUE: u64 = 0x0007_0000_0000_0000;
 
 const MIN_FLOAT: u64 = 0x0008_0000_0000_0000;
-const MIN_NUMBER: u64 = (TAG_INT as u64) << 48;
+const MIN_NUMBER: u64 = TAG_INT;
 const TAG_MASK: u64 = 0xffff_0000_0000_0000;
 const PTR_MASK: u64 = 0x0000_ffff_ffff_ffff;
 
@@ -133,7 +133,7 @@ impl Value {
 
     pub fn into_stack_value(self) -> u64 {
         debug_assert!(self.is_stack_value());
-        return unsafe { self.0.bits & !TAG_MASK };
+        unsafe { self.0.bits & !TAG_MASK }
     }
 
     #[inline]

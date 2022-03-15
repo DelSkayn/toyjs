@@ -242,7 +242,7 @@ impl Realm {
         if value.is_int() {
             value.cast_int() == 0
         } else if value.is_string() {
-            *value.unsafe_cast_string() == ""
+            value.unsafe_cast_string().is_empty()
         } else {
             value.is_null() || value.is_undefined() || value.is_false()
         }
@@ -302,18 +302,18 @@ impl Realm {
     pub unsafe fn convert_int(&mut self, value: Value) -> i32 {
         let number = self.coerce_number(value);
         if number.is_int() {
-            return number.cast_int();
+            number.cast_int()
         } else if number.is_float() {
             let f = number.cast_float();
             if f.is_normal() {
                 let res = f.abs().floor() as i32;
                 if f.is_sign_positive() {
-                    return res;
+                    res
                 } else {
-                    return -res;
+                    -res
                 }
             } else {
-                return 0;
+                0
             }
         } else {
             todo!()
@@ -388,21 +388,17 @@ impl Realm {
         let right = self.coerce_number(right);
         let left = if left.is_int() {
             left.cast_int() as f64
+        } else if left.is_float() {
+            left.cast_float()
         } else {
-            if left.is_float() {
-                left.cast_float()
-            } else {
-                todo!()
-            }
+            todo!()
         };
         let right = if right.is_int() {
             right.cast_int() as f64
+        } else if right.is_float() {
+            right.cast_float()
         } else {
-            if right.is_float() {
-                right.cast_float()
-            } else {
-                todo!()
-            }
+            todo!()
         };
         let res = left + right;
         if res as i32 as f64 == res {
@@ -425,21 +421,17 @@ impl Realm {
         let right = self.coerce_number(right);
         let left = if left.is_int() {
             left.cast_int() as f64
+        } else if left.is_float() {
+            left.cast_float()
         } else {
-            if left.is_float() {
-                left.cast_float()
-            } else {
-                todo!()
-            }
+            todo!()
         };
         let right = if right.is_int() {
             right.cast_int() as f64
+        } else if right.is_float() {
+            right.cast_float()
         } else {
-            if right.is_float() {
-                right.cast_float()
-            } else {
-                todo!()
-            }
+            todo!()
         };
         let res = match op {
             NumericOperator::Sub => left - right,
@@ -460,7 +452,7 @@ impl Realm {
         if v.is_object() || v.is_function() {
             todo!()
         }
-        return v;
+        v
     }
 
     #[inline]

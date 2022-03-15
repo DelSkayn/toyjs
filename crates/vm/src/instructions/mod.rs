@@ -85,6 +85,9 @@ impl ByteCode {
         todo!()
     }
 
+    // # Safety
+    //
+    // One should guarentee that the bytecode is valid.
     pub unsafe fn assume_valid(self) -> ValidByteCode {
         ValidByteCode(self)
     }
