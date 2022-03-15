@@ -77,6 +77,21 @@ impl Realm {
                         todo!()
                     }
                 }
+
+                Instruction::GlobalIndex { dst, key } => {
+                    let key = self.stack.read(key);
+                    let src = self.global().unsafe_index(key, self.context());
+                    self.stack.write(dst, src);
+                }
+
+                Instruction::GlobalAssign { key, src } => {
+                    self.global().unsafe_index_set(
+                        self.stack.read(key),
+                        self.stack.read(src),
+                        self.context(),
+                    );
+                }
+
                 Instruction::Upvalue { dst, slot } => {
                     let value = function.as_vm_function().upvalues[slot as usize].read();
                     self.stack.write(dst, value);

@@ -120,18 +120,18 @@ impl fmt::Display for ByteCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "> CONSTANTS")?;
         for (idx, c) in self.constants.iter().enumerate() {
-            writeln!(f, "{:>4}: {:?}", idx, c)?;
+            writeln!(f, "{:>5}: {:?}", idx, c)?;
         }
         writeln!(f)?;
         writeln!(f, "> FUNCTIONS")?;
         for (idx, func) in self.functions.iter().enumerate() {
             writeln!(
                 f,
-                "= FUNC:{:<4} registers:{:<2} instructions:{} upvalues:{}",
+                "= FUNC:{:<4} regs:{:<2} upvalues:{:<2} instr:{:<3}",
                 idx,
                 func.registers,
+                func.upvalues.len(),
                 func.size,
-                func.upvalues.len()
             )?;
 
             if !func.upvalues.is_empty() {
@@ -139,10 +139,10 @@ impl fmt::Display for ByteCode {
             }
 
             for (idx, u) in func.upvalues.iter().copied().enumerate() {
-                write!(f, "{:>4}: ", idx)?;
+                write!(f, "{:>5}: ", idx)?;
                 match u {
                     Upvalue::Local(x) => {
-                        writeln!(f, "LOCAL 0x{:x}", x)?;
+                        writeln!(f, "LOCAL  0x{:x}", x)?;
                     }
                     Upvalue::Parent(x) => {
                         writeln!(f, "PARENT 0x{:x}", x)?;
@@ -156,7 +156,7 @@ impl fmt::Display for ByteCode {
             writeln!(f, "- INSTRUCTIONS")?;
 
             for (idx, instr) in self.instructions[start..end].iter().enumerate() {
-                write!(f, "{:>4}: ", idx)?;
+                write!(f, "{:>5}: ", idx)?;
                 write!(f, "{}", instr)?;
                 writeln!(f)?;
             }
@@ -172,8 +172,6 @@ define_instructions! {
         LoadConst{dst: u8,cons: u16},
         /// Load the global object.
         LoadGlobal{dst: u8},
-        /// Load the execution environment of a certain depth.
-        LoadEnv{dst: u8,depth: u16},
         /// Load a function from the current module.
         LoadFunction{ dst: u8, func: u16},
 
@@ -186,6 +184,9 @@ define_instructions! {
         IndexAssign{obj: u8,key: u8, val:u8},
         Index{dst: u8,obj: u8, key:u8},
 
+        GlobalAssign{key: u8, src:u8},
+        GlobalIndex{dst: u8, key:u8},
+
         Upvalue{dst: u8, slot: u16},
         UpvalueAssign{src: u8, slot: u16},
 
@@ -194,6 +195,7 @@ define_instructions! {
 
         In{dst: u8, left:u8, righ:u8},
         InstanceOf{dst: u8, left:u8, righ:u8},
+        TypeOf{ dst: u8, src: u8},
 
         New{ dst: u8, src: u8},
 
@@ -234,6 +236,9 @@ define_instructions! {
         JumpTrue{cond: u8, tgt:i16},
         JumpFalse{cond: u8, tgt:i16},
         Jump{tgt:i16},
+
+        Try{ dst: u8, tgt: i16},
+        Untry{ _ignore: ()},
 
         Push{ src: u8},
 
