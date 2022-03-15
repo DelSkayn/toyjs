@@ -75,18 +75,16 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     pub(crate) fn parse_object(&mut self) -> Result<PrimeExpr<A>> {
         expect!(self, "{");
         let mut exprs = Vec::new_in(self.alloc.clone());
-        if self.peek_kind()? != Some(t!("}")) {
-            loop {
-                expect_bind!(self, let bind = "ident");
-                expect!(self, ":");
-                let expr = self.parse_single_expr()?;
-                exprs.push((bind, expr));
-                if !self.eat(t!(","))? {
-                    break;
-                }
+        while self.peek_kind()? != Some(t!("}")) {
+            expect_bind!(self, let bind = "ident");
+            expect!(self, ":");
+            let expr = self.parse_single_expr()?;
+            exprs.push((bind, expr));
+            if !self.eat(t!(","))? {
+                break;
             }
         }
-        expect!(self,"}" => "expected object to end here, missing comma?");
+        expect!(self,"}" => "expected object to end here, missing a comma?");
         Ok(PrimeExpr::Object(exprs))
     }
 
