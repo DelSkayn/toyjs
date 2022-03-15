@@ -385,6 +385,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     }
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+                PrefixOperator::New => {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.free_temp(expr);
+                    self.builder.push(Instruction::New {
+                        dst: dst.0,
+                        src: expr.0,
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
                 _ => todo!(),
             },
         }
@@ -614,16 +624,38 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.alloc.clone(),
             ),
             PrimeExpr::Function(scope, symbol, args, stmts) => {
-                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 let id = self.compile_function_decl(*scope, args, stmts);
+                if let Some(symbol) = symbol {
+                    let tgt = AssignmentTarget::Variable(*symbol);
+                    let symbol_placement = tgt.placement(self);
+                    let dst = symbol_placement
+                        .or(placement)
+                        .unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.push(Instruction::LoadFunction {
+                        dst: dst.0,
+                        func: id.0.try_into().unwrap(),
+                    });
+                    if let Some(x) = symbol_placement.and(placement) {
+                        self.builder.push(Instruction::Move {
+                            dst: x.0,
+                            src: dst.0,
+                        });
+                    }
+                    tgt.compile_assign(self, dst);
+                    ExprValue::new_in(dst, self.alloc.clone())
+                } else {
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
 
-                self.builder.push(Instruction::LoadFunction {
-                    dst: dst.0,
-                    func: id.0.try_into().unwrap(),
-                });
-                if let Some(_) = symbol {
-                    todo!()
+                    self.builder.push(Instruction::LoadFunction {
+                        dst: dst.0,
+                        func: id.0.try_into().unwrap(),
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
                 }
+            }
+            PrimeExpr::This => {
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::LoadThis { dst: dst.0 });
                 ExprValue::new_in(dst, self.alloc.clone())
             }
             PrimeExpr::Eval(_args) => {

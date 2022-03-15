@@ -78,9 +78,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("delete") => PrefixOperator::Delete,
                 t!("void") => PrefixOperator::Void,
                 t!("typeof") => PrefixOperator::TypeOf,
-                t!("new") => {
-                    to_do!(self);
-                }
+                t!("new") => PrefixOperator::New,
                 t!("+") => PrefixOperator::Positive,
                 t!("-") => PrefixOperator::Negative,
                 t!("!") => PrefixOperator::Not,

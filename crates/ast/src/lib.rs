@@ -32,6 +32,7 @@ pub enum Stmt<A: Allocator> {
     Var(SymbolId, Option<Expr<A>>),
     Const(SymbolId, Expr<A>),
     Expr(Vec<Expr<A>, A>),
+    Throw(Expr<A>),
     Break,
     Continue,
     If(Vec<Expr<A>, A>, Box<Stmt<A>, A>, Option<Box<Stmt<A>, A>>),
@@ -113,6 +114,7 @@ pub enum PrefixOperator {
     BinaryNot,
     AddOne,
     SubtractOne,
+    New,
 }
 
 #[derive(Derivative, PartialEq)]
@@ -145,6 +147,7 @@ impl<A: Allocator> Expr<A> {
                 PrimeExpr::Covered(_) => false,
                 PrimeExpr::Object(_) => false,
                 PrimeExpr::Function(_, _, _, _) => false,
+                PrimeExpr::This => false,
             },
             Expr::Assign(ref left, ref op, _) => match op {
                 AssignOperator::Assign => left.is_assignable(),
@@ -173,6 +176,7 @@ pub enum PrimeExpr<A: Allocator> {
     Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
     // A direct eval call
     Eval(Vec<Expr<A>, A>),
+    This,
 }
 
 #[derive(Derivative, Clone, Copy)]

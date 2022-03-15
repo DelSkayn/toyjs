@@ -53,6 +53,10 @@ impl Realm {
                         let obj = obj.unsafe_cast_object();
                         self.gc.write_barrier(obj);
                         obj.unsafe_index_set(key, val, self.context());
+                    } else if obj.is_function() {
+                        let func = obj.unsafe_cast_function();
+                        self.gc.write_barrier(func);
+                        func.as_object().unsafe_index_set(key, val, self.context());
                     } else {
                         todo!()
                     }
@@ -62,6 +66,12 @@ impl Realm {
                     let key = self.stack.read(key);
                     if obj.is_object() {
                         let res = obj.unsafe_cast_object().unsafe_index(key, self.context());
+                        self.stack.write(dst, res)
+                    } else if obj.is_function() {
+                        let res = obj
+                            .unsafe_cast_function()
+                            .as_object()
+                            .unsafe_index(key, self.context());
                         self.stack.write(dst, res)
                     } else {
                         todo!()
