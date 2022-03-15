@@ -68,6 +68,12 @@ pub struct GcArena {
     allocation_debt: Cell<f64>,
 }
 
+impl Default for GcArena {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GcArena {
     pub fn new() -> Self {
         GcArena {
@@ -223,6 +229,11 @@ impl GcArena {
             .set((self.allocation_debt.get() - work_done as f64).max(0.0));
     }
 
+    /// Will collect all gc pointers
+    ///
+    /// # Safety
+    ///
+    /// One should ensure that no more pointer remain after calling this function.
     pub unsafe fn collect_all(&self) {
         self.collect_full(&());
         self.collect_full(&());

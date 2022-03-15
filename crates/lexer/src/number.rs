@@ -1,5 +1,4 @@
 use super::*;
-use std::str;
 use token::{Literal, Number, TokenKind};
 
 impl<'a> Lexer<'a> {
@@ -75,8 +74,7 @@ impl<'a> Lexer<'a> {
         if big {
             // We have no good way to lex big numbers yet so for now we just handle them with
             // strings.
-            let s =
-                str::from_utf8(&self.source.source().as_bytes()[str_start..self.offset]).unwrap();
+            let s = &self.source.source()[str_start..self.offset];
             let s = self.interner.intern(s);
             Ok(self.token_num(Number::Big(s)))
         } else {
@@ -169,8 +167,7 @@ impl<'a> Lexer<'a> {
             self.next_byte();
             big = true;
         }
-        let s =
-            str::from_utf8(&self.source.source().as_bytes()[str_start + 2..self.offset]).unwrap();
+        let s = &self.source.source()[str_start + 2..self.offset];
         if big {
             let s = self.interner.intern(s);
             Ok(self.token_num(Number::Big(s)))

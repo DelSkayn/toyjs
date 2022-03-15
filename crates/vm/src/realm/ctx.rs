@@ -20,8 +20,13 @@ impl<'a> Arguments<'a> {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         unsafe { self.end.offset_from(self.frame) as usize }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn iter(&self) -> ArgumentsIter<'a> {

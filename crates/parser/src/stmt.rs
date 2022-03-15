@@ -90,12 +90,12 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let stmt = self.parse_stmt()?;
         self.symbol_table.pop_scope();
 
-        return Ok(ast::Stmt::For(
+        Ok(ast::Stmt::For(
             decl,
             cond,
             post,
             Box::new_in(stmt, self.alloc.clone()),
-        ));
+        ))
     }
 
     fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
@@ -106,13 +106,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         } else {
             None
         };
-        let var = self
-            .symbol_table
-            .define(id, DeclType::Let)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
+        let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         Ok(ast::Stmt::Let(var, expr))
     }
 
@@ -124,13 +121,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         } else {
             None
         };
-        let var = self
-            .symbol_table
-            .define(id, DeclType::Var)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
+        let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         Ok(ast::Stmt::Var(var, expr))
     }
 
@@ -139,13 +133,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect_bind!(self, let id = "ident");
         expect!(self, "=" => "constant needs to be initialized");
         let expr = self.parse_single_expr()?;
-        let var = self
-            .symbol_table
-            .define(id, DeclType::Const)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
+        let var = self.symbol_table.define(id, DeclType::Const).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         Ok(ast::Stmt::Const(var, expr))
     }
 
@@ -163,13 +154,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     fn parse_function(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "function");
         expect_bind!(self, let name = "ident");
-        let var = self
-            .symbol_table
-            .define(name, DeclType::Var)
-            .ok_or_else(|| Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
+        let var = self.symbol_table.define(name, DeclType::Var).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
         let params = self.parse_params()?;
         expect!(self, "{");
@@ -191,35 +179,30 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "(");
         let mut stmt = Vec::new_in(self.alloc.clone());
         let mut rest = None;
-        loop {
-            let peek = if let Some(x) = self.peek_kind()? {
-                x
-            } else {
-                break;
-            };
+        while let Some(peek) = self.peek_kind()? {
             match peek {
                 t!("...") => {
                     self.next()?;
                     expect_bind!(self, let arg = "ident");
-                    let arg_var = self
-                        .symbol_table
-                        .define(arg, DeclType::Argument)
-                        .ok_or_else(|| Error {
-                            kind: ErrorKind::RedeclaredVariable,
-                            origin: self.last_span,
-                        })?;
+                    let arg_var =
+                        self.symbol_table
+                            .define(arg, DeclType::Argument)
+                            .ok_or(Error {
+                                kind: ErrorKind::RedeclaredVariable,
+                                origin: self.last_span,
+                            })?;
                     rest = Some(ast::Rest::BindingIdent(arg_var));
                     break;
                 }
                 t!("ident", arg) => {
                     self.next()?;
-                    let arg_var = self
-                        .symbol_table
-                        .define(arg, DeclType::Argument)
-                        .ok_or_else(|| Error {
-                            kind: ErrorKind::RedeclaredVariable,
-                            origin: self.last_span,
-                        })?;
+                    let arg_var =
+                        self.symbol_table
+                            .define(arg, DeclType::Argument)
+                            .ok_or(Error {
+                                kind: ErrorKind::RedeclaredVariable,
+                                origin: self.last_span,
+                            })?;
                     stmt.push(arg_var);
                     if self.eat(t!(","))? {
                         continue;

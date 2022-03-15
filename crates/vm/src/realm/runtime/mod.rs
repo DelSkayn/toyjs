@@ -28,7 +28,7 @@ pub fn console_error<'a>(ctx: RealmCtx<'a>, args: Arguments<'a>) -> BoundValue<'
     BoundValue::undefined()
 }
 
-pub unsafe fn init<'a>(ctx: RealmCtx<'a>) {
+pub unsafe fn init(ctx: RealmCtx) {
     let global = ctx.global();
     ctx.frame(|ctx| {
         let console = ctx.create_object();

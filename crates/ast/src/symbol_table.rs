@@ -131,6 +131,12 @@ pub struct SymbolTable<A: Allocator> {
     alloc: A,
 }
 
+impl Default for SymbolTable<Global> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable<Global> {
     pub fn new() -> Self {
         Self::new_in(Global)
@@ -328,7 +334,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 self.table
                     .symbols_by_ident
                     .insert((self.current_scope, name), new_symbol);
-                return Some(new_symbol);
+                Some(new_symbol)
             }
             // Arguments and globals are always declared at function scope
             DeclType::Argument | DeclType::Var => {
@@ -343,7 +349,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 self.table
                     .symbols_by_ident
                     .insert((self.current_function, name), new_symbol);
-                return Some(new_symbol);
+                Some(new_symbol)
             }
             DeclType::Implicit => panic!("can't define variables explicitly implicit."),
         }
@@ -372,7 +378,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             .used
             .insert(new_symbol);
 
-        return new_symbol;
+        new_symbol
     }
 
     /// Push a new scope onto the stack

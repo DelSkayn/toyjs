@@ -6,10 +6,10 @@ fn from_ascii_digit(digit: u8) -> u8 {
     if digit.is_ascii_digit() {
         return digit - b'0';
     }
-    if digit >= b'a' && digit <= b'f' {
+    if (b'a'..b'f').contains(&digit) {
         return digit - b'a' + 0xa;
     }
-    if digit >= b'A' && digit <= b'F' {
+    if (b'A'..b'F').contains(&digit) {
         return digit - b'A' + 0xa;
     }
     panic!("invalid digit");

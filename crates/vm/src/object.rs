@@ -29,7 +29,7 @@ impl Object {
         K: Into<BoundValue<'a>>,
         R: From<BoundValue<'a>>,
     {
-        let key: BoundValue<'a> = key.into();
+        let key: BoundValue<'a> = key;
         unsafe { BoundValue::bind(self.unsafe_index(key.unbind(), realm)).into() }
     }
 
@@ -48,7 +48,7 @@ impl Object {
     /// # Safety
     ///
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index<'a>(&self, key: Value, realm: RealmCtx<'a>) -> Value {
+    pub unsafe fn unsafe_index(&self, key: Value, realm: RealmCtx) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -73,7 +73,7 @@ impl Object {
     /// # Safety
     ///
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index_set<'a>(&self, key: Value, value: Value, realm: RealmCtx<'a>) {
+    pub unsafe fn unsafe_index_set(&self, key: Value, value: Value, realm: RealmCtx) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -85,7 +85,7 @@ impl Object {
                 if (*self.array.get()).len() <= idx {
                     (*self.array.get()).resize(idx + 1, Value::undefined())
                 }
-                return (*self.array.get())[idx] = value;
+                (*self.array.get())[idx] = value
             }
         } else {
             let string = realm.coerce_string(BoundValue::bind(key));
