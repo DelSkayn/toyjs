@@ -102,6 +102,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
                 None
             }
+            Stmt::Throw(expr) => {
+                let reg = self.compile_expr(None, expr).eval(self);
+                self.builder.free_temp(reg);
+                self.builder.push(Instruction::Throw { src: reg.0 });
+                None
+            }
             _ => todo!(),
         }
     }
@@ -200,6 +206,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         match self.builder.instructions().last() {
             Some(Instruction::Return { .. }) => {}
             Some(Instruction::ReturnUndefined { .. }) => {}
+            Some(Instruction::Throw { .. }) => {}
             _ => {
                 self.builder
                     .push(Instruction::ReturnUndefined { _ignore: () });

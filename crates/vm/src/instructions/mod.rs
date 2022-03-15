@@ -177,6 +177,8 @@ define_instructions! {
         /// Load a function from the current module.
         LoadFunction{ dst: u8, func: u16},
 
+        LoadThis{ dst: u8},
+
         Move{ dst: u8, src: u8},
 
         CreateObject{ dst: u8},
@@ -192,6 +194,8 @@ define_instructions! {
 
         In{dst: u8, left:u8, righ:u8},
         InstanceOf{dst: u8, left:u8, righ:u8},
+
+        New{ dst: u8, src: u8},
 
         Add{dst: u8, left: u8, righ:u8},
         Sub{dst: u8, left: u8, righ:u8},
@@ -234,6 +238,8 @@ define_instructions! {
         Push{ src: u8},
 
         Call{dst:u8, func:u8},
+
+        Throw{ src: u8 },
 
         Return{ret: u8},
         ReturnUndefined{ _ignore:()},

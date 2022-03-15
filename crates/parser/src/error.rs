@@ -140,7 +140,13 @@ impl FormattedError<'_> {
                 self.source
                     .format_span_block(&mut w, self.error.origin, reason)?;
             }
-            ErrorKind::LexerError(_) => todo!(),
+            ErrorKind::LexerError(LexerErrorKind::InvalidNumber) => {
+                writeln!(w, "could not parse number")?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
+            }
+            _ => todo!(),
         }
         Ok(())
     }

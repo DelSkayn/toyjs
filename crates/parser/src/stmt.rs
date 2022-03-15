@@ -17,6 +17,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("var") => self.parse_var_binding(),
             t!("const") => self.parse_const_binding(),
             t!("return") => self.parse_return(),
+            t!("throw") => self.parse_throw(),
             t!(";") => Ok(ast::Stmt::Empty),
             t!("{") => self.parse_block(),
             t!("function") => self.parse_function(),
@@ -224,5 +225,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "return");
         let expr = self.parse_expr().ok();
         Ok(ast::Stmt::Return(expr))
+    }
+
+    fn parse_throw(&mut self) -> Result<ast::Stmt<A>> {
+        expect!(self, "throw");
+        let expr = self.parse_single_expr()?;
+        Ok(ast::Stmt::Throw(expr))
     }
 }

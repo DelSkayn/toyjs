@@ -204,7 +204,7 @@ impl<'a> Lexer<'a> {
         loop {
             match self.peek_byte() {
                 Some(b'_') => self.eat_byte(),
-                Some(x) if x.is_ascii_alphabetic() => self.eat_byte(),
+                Some(x) if x.is_ascii_alphanumeric() => self.eat_byte(),
                 Some(x) if !x.is_ascii() => {
                     if self.peek_char(x)?.is_xid_continue() {
                         self.next_char(x).unwrap();

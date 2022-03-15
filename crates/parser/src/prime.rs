@@ -27,9 +27,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 self.next()?;
                 Ok(PrimeExpr::Literal(Literal::Boolean(false)))
             }
-            t!("null") => {
+            t!("null") => Ok(PrimeExpr::Literal(Literal::Null)),
+            t!("this") => {
                 self.next()?;
-                Ok(PrimeExpr::Literal(Literal::Null))
+                Ok(PrimeExpr::This)
             }
             TokenKind::Ident(x) => {
                 self.next()?;
