@@ -115,18 +115,14 @@ impl AssignmentTarget {
             Self::Variable(x) => {
                 let symbol = &this.symbol_table.symbols()[x];
                 if !symbol.decl_type.is_local() {
-                    let global = this.builder.alloc_temp();
                     let name = this.compile_literal(
                         None,
                         Literal::String(this.symbol_table.symbols()[x].ident),
                     );
-                    this.builder.push(Instruction::LoadGlobal { dst: global.0 });
-                    this.builder.free_temp(global);
                     this.builder.free_temp(name);
 
-                    this.builder.push(Instruction::IndexAssign {
-                        obj: global.0,
-                        val: src.0,
+                    this.builder.push(Instruction::GlobalAssign {
+                        src: src.0,
                         key: name.0,
                     });
                 } else {
@@ -395,7 +391,20 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
-                _ => todo!(),
+                PrefixOperator::TypeOf => {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.free_temp(expr);
+                    self.builder.push(Instruction::TypeOf {
+                        dst: dst.0,
+                        src: expr.0,
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
+                x => {
+                    println!("ast: {:#?}", x);
+                    todo!()
+                }
             },
         }
     }
@@ -693,23 +702,18 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
         } else {
             let name = self.compile_literal(None, Literal::String(symbol.ident));
-            let global = self.builder.alloc_temp();
-            self.builder.push(Instruction::LoadGlobal { dst: global.0 });
-            self.builder.free_temp(global);
             if let Some(place) = placement {
                 self.builder.free_temp(name);
-                self.builder.push(Instruction::Index {
+                self.builder.push(Instruction::GlobalIndex {
                     dst: place.0,
                     key: name.0,
-                    obj: global.0,
                 });
                 return place;
             } else {
                 // Just reuse name temp instruction.
-                self.builder.push(Instruction::Index {
+                self.builder.push(Instruction::GlobalIndex {
                     dst: name.0,
                     key: name.0,
-                    obj: global.0,
                 });
                 return name;
             }

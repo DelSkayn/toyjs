@@ -43,6 +43,10 @@ impl<'a> BoundValue<'a> {
         unsafe { Self::bind(Value::undefined()) }
     }
 
+    pub fn null() -> BoundValue<'a> {
+        unsafe { Self::bind(Value::null()) }
+    }
+
     pub fn unbind(self) -> Value {
         self.value
     }

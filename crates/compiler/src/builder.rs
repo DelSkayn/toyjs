@@ -127,6 +127,9 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             Instruction::Jump { ref mut tgt, .. } => {
                 *tgt = x;
             }
+            Instruction::Try { ref mut tgt, .. } => {
+                *tgt = x;
+            }
             _ => panic!("instruction is not a patchable jump"),
         }
     }

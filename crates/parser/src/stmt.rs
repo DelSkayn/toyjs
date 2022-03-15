@@ -18,9 +18,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("const") => self.parse_const_binding(),
             t!("return") => self.parse_return(),
             t!("throw") => self.parse_throw(),
-            t!(";") => Ok(ast::Stmt::Empty),
+            t!(";") => {
+                self.next()?;
+                Ok(ast::Stmt::Empty)
+            }
             t!("{") => self.parse_block(),
             t!("function") => self.parse_function(),
+            t!("try") => self.parse_try(),
             _ => Ok(ast::Stmt::Expr(self.parse_expr()?)),
         };
         self.eat(t!(";"))?;
@@ -231,5 +235,39 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "throw");
         let expr = self.parse_single_expr()?;
         Ok(ast::Stmt::Throw(expr))
+    }
+
+    fn parse_try(&mut self) -> Result<ast::Stmt<A>> {
+        expect!(self, "try");
+        let r#try = Box::new_in(self.parse_block()?, self.alloc.clone());
+        let catch = if self.peek_kind()? == Some(t!("catch")) {
+            self.next()?;
+            let scope = self.symbol_table.push_scope(ScopeKind::Lexical);
+            let binding = if self.peek_kind()? == Some(t!("(")) {
+                self.next()?;
+                expect_bind!(self, let binding = "ident");
+                expect!(self, ")");
+                self.symbol_table.define(binding, DeclType::Let)
+            } else {
+                None
+            };
+            expect!(self, "{");
+            let mut stmts = Vec::new_in(self.alloc.clone());
+            while !self.eat(t!("}"))? {
+                stmts.push(self.parse_stmt()?)
+            }
+            self.symbol_table.pop_scope();
+            let stmt = Box::new_in(ast::Stmt::Block(scope, stmts), self.alloc.clone());
+            Some(ast::Catch { binding, stmt })
+        } else {
+            None
+        };
+        let finally = if self.peek_kind()? == Some(t!("finally")) {
+            Some(Box::new_in(self.parse_block()?, self.alloc.clone()))
+        } else {
+            None
+        };
+
+        Ok(ast::Stmt::Try(r#try, catch, finally))
     }
 }

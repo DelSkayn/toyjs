@@ -26,6 +26,13 @@ pub struct Params<A: Allocator>(pub Vec<SymbolId, A>, pub Option<Rest>);
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub struct Catch<A: Allocator> {
+    pub binding: Option<SymbolId>,
+    pub stmt: Box<Stmt<A>, A>,
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
     Let(SymbolId, Option<Expr<A>>),
@@ -42,6 +49,7 @@ pub enum Stmt<A: Allocator> {
     Block(ScopeId, Vec<Stmt<A>, A>),
     Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
     Return(Option<Vec<Expr<A>, A>>),
+    Try(Box<Stmt<A>, A>, Option<Catch<A>>, Option<Box<Stmt<A>, A>>),
 }
 
 #[derive(Derivative, PartialEq)]

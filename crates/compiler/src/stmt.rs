@@ -50,14 +50,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         None,
                         Literal::String(self.symbol_table.symbols()[*symbol].ident),
                     );
-                    let reg = self.builder.alloc_temp();
-                    self.builder.push(Instruction::LoadGlobal { dst: reg.0 });
-                    self.builder.push(Instruction::IndexAssign {
-                        obj: reg.0,
+                    self.builder.push(Instruction::GlobalAssign {
                         key: name.0,
-                        val: expr.0,
+                        src: expr.0,
                     });
-                    self.builder.free_temp(reg);
                     self.builder.free_temp(expr);
                     self.builder.free_temp(name);
                     Some(expr)
@@ -70,23 +66,19 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let id = self.compile_function_decl(*scope, params, stmts);
                 //TODO local functions stmts
                 let tmp = self.builder.alloc_temp();
-                let glob = self.builder.alloc_temp();
                 self.builder.push(Instruction::LoadFunction {
                     dst: tmp.0,
                     func: id.0,
                 });
-                self.builder.push(Instruction::LoadGlobal { dst: glob.0 });
                 let key = self.compile_literal(
                     None,
                     Literal::String(self.symbol_table.symbols()[*symbol].ident),
                 );
-                self.builder.push(Instruction::IndexAssign {
-                    obj: glob.0,
+                self.builder.push(Instruction::GlobalAssign {
                     key: key.0,
-                    val: tmp.0,
+                    src: tmp.0,
                 });
                 self.builder.free_temp(key);
-                self.builder.free_temp(glob);
                 self.builder.free_temp(tmp);
                 None
             }
@@ -108,7 +100,32 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.builder.push(Instruction::Throw { src: reg.0 });
                 None
             }
-            _ => todo!(),
+            Stmt::Try(r#try, catch, finally) => {
+                let dst = catch
+                    .as_ref()
+                    .and_then(|x| x.binding.map(|x| self.builder.alloc_symbol(x)))
+                    .unwrap_or(self.builder.alloc_temp());
+                let instr = self.builder.push(Instruction::Try { tgt: 0, dst: dst.0 });
+                self.compile_stmt(r#try);
+                self.builder.push(Instruction::Untry { _ignore: () });
+                if let Some(catch) = catch {
+                    let catch_jmp = self.builder.push(Instruction::Jump { tgt: 0 });
+                    self.builder
+                        .patch_jump(instr, self.builder.next_instruction_id());
+                    self.compile_stmt(&catch.stmt);
+                    self.builder
+                        .patch_jump(catch_jmp, self.builder.next_instruction_id());
+                }
+                if let Some(finally) = finally {
+                    self.compile_stmt(finally);
+                }
+
+                None
+            }
+            x => {
+                println!("ast: {:#?}", x);
+                todo!()
+            }
         }
     }
 

@@ -27,7 +27,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 self.next()?;
                 Ok(PrimeExpr::Literal(Literal::Boolean(false)))
             }
-            t!("null") => Ok(PrimeExpr::Literal(Literal::Null)),
+            t!("null") => {
+                self.next()?;
+                Ok(PrimeExpr::Literal(Literal::Null))
+            }
             t!("this") => {
                 self.next()?;
                 Ok(PrimeExpr::This)
@@ -116,6 +119,9 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             |this| {
                 let mut stmts = Vec::new_in(this.alloc.clone());
                 while !this.eat(t!("}"))? {
+                    if this.peek()?.is_none() {
+                        unexpected!(this, "expected statement or function end");
+                    }
                     stmts.push(this.parse_stmt()?);
                 }
                 Ok(stmts)
