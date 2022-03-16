@@ -16,6 +16,8 @@ pub use string::String;
 mod value;
 pub use value::Value;
 
+mod convert;
+
 mod runtime;
 
 pub struct Context {

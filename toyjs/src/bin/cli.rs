@@ -1,14 +1,17 @@
-//use std::io::{self, BufRead};
-use std::io;
-//use toyjs::{Context, ToyJs};
+use std::{
+    env,
+    io::{self, BufRead},
+};
+
+use toyjs::Context;
 
 fn main() -> io::Result<()> {
-    /*
-    let js = ToyJs::new();
-    let ctx = Context::new(&js);
-    //js.dump_bc(true);
-    //js.dump_ssa(true);
-    //js.dump_allocated_bytes(true);
+    let ctx = Context::new();
+    if let Some(x) = env::args().skip(1).next() {
+        let source = std::fs::read_to_string(x)?;
+        ctx.with(|ctx| println!("value: {:?}", ctx.eval(source).unwrap()));
+        return Ok(());
+    }
 
     let mut buffer = String::new();
     let stdin = io::stdin();
@@ -65,11 +68,8 @@ fn main() -> io::Result<()> {
             continue 'main;
         }
         last_length = 0;
-        ctx.with(|ctx| {
-            println!("value: {:?}", ctx.exec(buffer.clone(), true));
-        });
+        ctx.with(|ctx| println!("value: {:?}", ctx.eval(&buffer).unwrap()));
         buffer.clear();
     }
-    */
     Ok(())
 }
