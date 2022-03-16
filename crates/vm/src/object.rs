@@ -1,3 +1,5 @@
+//! Javascript object implementation.
+
 use std::cell::UnsafeCell;
 
 use crate::{
@@ -6,6 +8,7 @@ use crate::{
 };
 use common::collections::HashMap;
 
+/// A javascript object
 pub struct Object {
     prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, Value>>,
@@ -26,8 +29,9 @@ impl Object {
     ///
     /// # Safety
     ///
+    /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index(&self, key: Value, realm: &mut Realm) -> Value {
+    pub unsafe fn index(&self, key: Value, realm: &mut Realm) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -51,8 +55,9 @@ impl Object {
     ///
     /// # Safety
     ///
+    /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index_set(&self, key: Value, value: Value, realm: &mut Realm) {
+    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.

@@ -1,3 +1,5 @@
+//! Implements the realm within wich scripts are executed.
+
 use std::alloc::Global;
 
 use ast::SymbolTable;
