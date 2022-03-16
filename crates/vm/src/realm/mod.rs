@@ -1,20 +1,16 @@
-use std::{alloc::Global, marker::PhantomData};
+use std::alloc::Global;
 
 use ast::SymbolTable;
 use common::interner::Interner;
 
 use crate::{
-    function::Function, gc::Trace, instructions::ByteCode, object::Object, value::BoundValue, Gc,
-    GcArena, Value,
+    function::Function, gc::Trace, instructions::ByteCode, object::Object, Gc, GcArena, Value,
 };
 
 mod stack;
 pub use stack::{Stack, UpvalueObject};
-mod ctx;
 mod exec;
-pub use ctx::{Arguments, RealmCtx};
 mod reader;
-mod runtime;
 pub use reader::InstructionReader;
 
 use self::environment::Environment;
@@ -36,16 +32,14 @@ impl Realm {
         let gc = GcArena::new();
         let global = gc.allocate(Object::new());
         let stack = Stack::new();
-        let mut this = Realm {
+        Realm {
             symbol_table,
             interner,
             global,
             stack,
             root: gc.allocate(Environment::root()),
             gc,
-        };
-        unsafe { runtime::init(this.context()) };
-        this
+        }
     }
 
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
@@ -69,20 +63,9 @@ impl Realm {
 
     pub unsafe fn create_function<F>(&self, f: F) -> Gc<Function>
     where
-        F: for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
+        F: for<'a> Fn(&mut Realm) -> Value + 'static,
     {
         self.gc.allocate(Function::from_native(f))
-    }
-
-    pub(crate) unsafe fn context<'a>(&'_ mut self) -> RealmCtx<'a> {
-        RealmCtx {
-            realm: self,
-            marker: PhantomData,
-        }
-    }
-
-    pub(crate) unsafe fn arguments<'a>(&'_ mut self) -> Arguments<'a> {
-        self.stack.arguments()
     }
 }
 

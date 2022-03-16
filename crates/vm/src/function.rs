@@ -1,17 +1,12 @@
 use crate::{
-    gc::Trace,
-    instructions::ByteCode,
-    object::Object,
-    realm::{Arguments, RealmCtx, UpvalueObject},
-    value::BoundValue,
-    Gc,
+    gc::Trace, instructions::ByteCode, object::Object, realm::UpvalueObject, Gc, Realm, Value,
 };
 use std::cell::RefCell;
 
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
-pub type MutableFn = Box<dyn for<'a> FnMut(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
-pub type NativeFn = Box<dyn for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a>>;
+pub type MutableFn = Box<dyn FnMut(&mut Realm) -> Value>;
+pub type NativeFn = Box<dyn Fn(&mut Realm) -> Value>;
 
 pub struct VmFunction {
     pub bc: Gc<ByteCode>,
@@ -52,9 +47,9 @@ impl Function {
     /// Mutable closures cannot be called recursively.
     /// The implementation will panic in the case that the function is called from within
     /// The function call.
-    pub fn from_native_mut<F>(f: F) -> Self
+    pub unsafe fn from_native_mut<F>(f: F) -> Self
     where
-        F: for<'a> FnMut(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
+        F: FnMut(&mut Realm) -> Value + 'static,
     {
         let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
         Function {
@@ -64,9 +59,9 @@ impl Function {
     }
 
     /// Create a function from a immutable rust closure.
-    pub fn from_native<F>(f: F) -> Self
+    pub unsafe fn from_native<F>(f: F) -> Self
     where
-        F: for<'a> Fn(RealmCtx<'a>, Arguments<'a>) -> BoundValue<'a> + 'static,
+        F: Fn(&mut Realm) -> Value + 'static,
     {
         let kind = FunctionKind::Native(Box::new(f));
         Function {

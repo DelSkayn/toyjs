@@ -40,7 +40,7 @@ pub struct Compiler<'a, A: Allocator + Clone> {
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn new(
         symbol_table: &'a SymbolTable<A>,
-        interner: &'a Interner,
+        interner: &'a mut Interner,
         gc: &'a GcArena,
         root: ScopeId,
         alloc: A,
@@ -56,7 +56,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub fn compile_script(
         script: &'a Script<A>,
         symbol_table: &'a SymbolTable<A>,
-        interner: &'a Interner,
+        interner: &'a mut Interner,
         gc: &'a GcArena,
         alloc: A,
     ) -> ByteCode {

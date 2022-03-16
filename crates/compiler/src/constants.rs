@@ -17,11 +17,11 @@ pub struct Constants<'a, A: Allocator> {
     constants: SlotStack<Value, ConstantId, A>,
     map: HashMap<Literal, ConstantId>,
     gc: &'a GcArena,
-    interner: &'a Interner,
+    interner: &'a mut Interner,
 }
 
 impl<'a, A: Allocator> Constants<'a, A> {
-    pub fn new_in(interner: &'a Interner, gc: &'a GcArena, alloc: A) -> Self {
+    pub fn new_in(interner: &'a mut Interner, gc: &'a GcArena, alloc: A) -> Self {
         Constants {
             constants: SlotStack::new_in(alloc),
             map: HashMap::default(),
@@ -30,10 +30,15 @@ impl<'a, A: Allocator> Constants<'a, A> {
         }
     }
 
+    pub fn push_string(&mut self, s: impl AsRef<str>) -> ConstantId {
+        let id = self.interner.intern(s.as_ref());
+        self.push_constant(Literal::String(id))
+    }
+
     pub fn push_constant(&mut self, literal: Literal) -> ConstantId {
         let constants = &mut self.constants;
         let gc = self.gc;
-        let interner = self.interner;
+        let interner = &*self.interner;
         *self.map.entry(literal).or_insert_with(|| match literal {
             Literal::Null => constants.push(Value::null()),
             Literal::Undefined => constants.push(Value::undefined()),
