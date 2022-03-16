@@ -28,17 +28,8 @@ pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
 pub fn init<'js>(ctx: Ctx<'js>) {
     let global = ctx.global();
     let console = ctx.create_object();
-    console.set(
-        ctx.create_string("log").into(),
-        ctx.create_function(console_log).into(),
-    );
-    console.set(
-        ctx.create_string("input").into(),
-        ctx.create_function(console_in).into(),
-    );
-    global.set(ctx.create_string("console").into(), console.into());
-    global.set(
-        ctx.create_string("eval").into(),
-        ctx.create_function(eval).into(),
-    );
+    console.set("log", ctx.create_function(console_log));
+    console.set("input", ctx.create_function(console_in));
+    global.set("console", console);
+    global.set("eval", ctx.create_function(eval));
 }

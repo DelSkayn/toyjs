@@ -60,7 +60,9 @@ pub enum Frame {
     /// If this frame is popped the interperter should return to rust.
     Entry {
         // Size in number of registers of the frame.
-        registers: u8,
+        // A u32 because entry frames can contain a lot of values
+        // that where pushed by rust code
+        registers: u32,
         frame_offset: u8,
         open_upvalues: Vec<Gc<UpvalueObject>>,
     },
@@ -105,7 +107,7 @@ pub struct Stack {
 
     frames: Vec<Frame>,
 
-    cur_frame_size: u8,
+    cur_frame_size: u32,
     /// Amount of values allocated for the stack
     capacity: usize,
     /// Number of try frames between the current call frame and the previous.
@@ -146,7 +148,7 @@ impl Stack {
                 self.stack.write(Value::undefined());
                 self.stack = self.stack.add(1);
             }
-            self.cur_frame_size = registers;
+            self.cur_frame_size = registers as u32;
         }
     }
 
@@ -169,8 +171,12 @@ impl Stack {
                 cur.write(Value::undefined());
                 cur = cur.add(1);
             }
+            debug_assert!(
+                self.cur_frame_size < u8::MAX as u32,
+                "frame size to big to fit in u8"
+            );
             self.frames.push(Frame::Call {
-                registers: self.cur_frame_size,
+                registers: self.cur_frame_size as u8,
                 data: CallFrameData {
                     dst,
                     reader,
@@ -180,7 +186,7 @@ impl Stack {
                 frame_offset: self.frame_offset,
             });
             self.frame_offset = 0;
-            self.cur_frame_size = new_registers;
+            self.cur_frame_size = new_registers as u32;
         }
     }
 
@@ -210,7 +216,7 @@ impl Stack {
                     ..
                 }) => {
                     open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers, frame_offset);
+                    self.restore_frame(registers.into(), frame_offset);
                 }
                 Some(Frame::Entry {
                     registers,
@@ -237,7 +243,7 @@ impl Stack {
                     open_upvalues,
                 }) => {
                     open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers, frame_offset);
+                    self.restore_frame(registers.into(), frame_offset);
                     return Some(data);
                 }
                 Some(Frame::Entry {
@@ -306,7 +312,7 @@ impl Stack {
     }
 
     #[inline]
-    fn restore_frame(&mut self, registers: u8, frame_offset: u8) {
+    fn restore_frame(&mut self, registers: u32, frame_offset: u8) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
@@ -376,13 +382,13 @@ impl Stack {
 
     #[inline(always)]
     pub fn read(&self, register: u8) -> Value {
-        debug_assert!(register < self.cur_frame_size);
+        debug_assert!((register as u32) < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).read() }
     }
 
     #[inline(always)]
     pub fn write(&mut self, register: u8, v: Value) {
-        debug_assert!(register < self.cur_frame_size);
+        debug_assert!((register as u32) < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).write(v) }
     }
 }

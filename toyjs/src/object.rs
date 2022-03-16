@@ -1,6 +1,9 @@
 use vm::Gc;
 
-use crate::{Ctx, Value};
+use crate::{
+    convert::{FromJs, IntoJs},
+    Ctx, Value,
+};
 
 #[derive(Clone, Copy)]
 pub struct Object<'js> {
@@ -13,20 +16,31 @@ impl<'js> Object<'js> {
         Object { ctx, ptr }
     }
 
-    pub fn get(self, key: Value<'js>) -> Value<'js> {
+    pub fn get<K, V>(self, key: K) -> V
+    where
+        K: IntoJs<'js>,
+        V: FromJs<'js>,
+    {
         unsafe {
             let v = self
                 .ptr
-                .unsafe_index(key.into_vm(), &mut (*self.ctx.ctx).realm);
+                .unsafe_index(key.into_js(self.ctx).into_vm(), &mut (*self.ctx.ctx).realm);
             self.ctx.push_value(v);
-            Value::wrap(self.ctx, v)
+            V::from_js(self.ctx, Value::wrap(self.ctx, v))
         }
     }
 
-    pub fn set(self, key: Value<'js>, value: Value<'js>) {
+    pub fn set<K, V>(self, key: K, value: V)
+    where
+        K: IntoJs<'js>,
+        V: IntoJs<'js>,
+    {
         unsafe {
-            self.ptr
-                .unsafe_index_set(key.into_vm(), value.into_vm(), &mut (*self.ctx.ctx).realm);
+            self.ptr.unsafe_index_set(
+                key.into_js(self.ctx).into_vm(),
+                value.into_js(self.ctx).into_vm(),
+                &mut (*self.ctx.ctx).realm,
+            );
         }
     }
 }
