@@ -109,12 +109,12 @@ impl<'js> Ctx<'js> {
         }
     }
 
-    pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, ()> {
+    pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
             let lexer = Lexer::new(&source, &mut (*self.ctx).interner);
             let ast = Parser::parse_script(lexer, &mut (*self.ctx).symbol_table, Global)
-                .map_err(|_| ())?;
+                .map_err(|_| Value::undefined(self))?;
             let bytecode = Compiler::compile_script(
                 &ast,
                 &(*self.ctx).symbol_table,
@@ -124,7 +124,10 @@ impl<'js> Ctx<'js> {
             );
             let bytecode = (*self.ctx).realm.gc.allocate(bytecode);
             std::mem::drop(ast);
-            let value = (*self.ctx).realm.eval(bytecode)?;
+            let value = (*self.ctx).realm.eval(bytecode).map_err(|x| {
+                self.push_value(x);
+                Value::wrap(self, x)
+            })?;
             self.push_value(value);
             Ok(Value::wrap(self, value))
         }

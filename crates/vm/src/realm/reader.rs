@@ -62,6 +62,18 @@ impl InstructionReader {
         self.cur = self.cur.offset(offset.into());
     }
 
+    pub unsafe fn absolute_jump(&mut self, offset: usize) {
+        #[cfg(debug_assertions)]
+        debug_assert!(self.first.add(offset) < self.last);
+        self.cur = self.bc.instructions.as_ptr().add(offset);
+    }
+
+    pub unsafe fn absolute_offset(&self, relative: i16) -> isize {
+        self.cur
+            .offset(isize::from(relative) - 1)
+            .offset_from(self.bc.instructions.as_ptr())
+    }
+
     pub unsafe fn constant(&self, id: u32) -> Value {
         debug_assert!(
             (id as usize) < self.bc.constants.len(),

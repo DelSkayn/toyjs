@@ -263,6 +263,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             None
         };
         let finally = if self.peek_kind()? == Some(t!("finally")) {
+            self.next()?;
             Some(Box::new_in(self.parse_block()?, self.alloc.clone()))
         } else {
             None

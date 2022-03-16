@@ -205,30 +205,29 @@ impl Stack {
         }
     }
 
-    pub unsafe fn unwind(&mut self) -> Option<TryFrameData> {
-        loop {
-            match self.frames.pop() {
-                Some(Frame::Try { data }) => return Some(data),
-                Some(Frame::Call {
-                    registers,
-                    frame_offset,
-                    open_upvalues,
-                    ..
-                }) => {
-                    open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers.into(), frame_offset);
-                }
-                Some(Frame::Entry {
-                    registers,
-                    frame_offset,
-                    open_upvalues,
-                }) => {
-                    open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers, frame_offset);
-                    return None;
-                }
-                None => panic!("root frame was not an entry frame"),
+    pub unsafe fn unwind(&mut self) -> Option<Result<TryFrameData, CallFrameData>> {
+        match self.frames.pop() {
+            Some(Frame::Try { data }) => return Some(Ok(data)),
+            Some(Frame::Call {
+                registers,
+                frame_offset,
+                open_upvalues,
+                data,
+            }) => {
+                open_upvalues.into_iter().for_each(|x| x.close());
+                self.restore_frame(registers.into(), frame_offset);
+                return Some(Err(data));
             }
+            Some(Frame::Entry {
+                registers,
+                frame_offset,
+                open_upvalues,
+            }) => {
+                open_upvalues.into_iter().for_each(|x| x.close());
+                self.restore_frame(registers, frame_offset);
+                return None;
+            }
+            None => panic!("root frame was not an entry frame"),
         }
     }
 
@@ -382,13 +381,13 @@ impl Stack {
 
     #[inline(always)]
     pub fn read(&self, register: u8) -> Value {
-        debug_assert!((register as u32) < self.cur_frame_size);
+        debug_assert!((register as usize) < self.frame_size());
         unsafe { self.frame.add(register as usize).read() }
     }
 
     #[inline(always)]
     pub fn write(&mut self, register: u8, v: Value) {
-        debug_assert!((register as u32) < self.cur_frame_size);
+        debug_assert!((register as usize) < self.frame_size());
         unsafe { self.frame.add(register as usize).write(v) }
     }
 }
