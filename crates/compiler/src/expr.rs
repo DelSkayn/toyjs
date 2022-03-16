@@ -767,22 +767,29 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         placement: Option<Register>,
         bindings: &'a Vec<(StringId, Expr<A>), A>,
     ) -> Register {
-        let object = placement.unwrap_or_else(|| self.builder.alloc_temp());
-        self.builder
-            .push(Instruction::CreateObject { dst: object.0 });
+        let mut object = None;
         for (name, value) in bindings {
             let expr = self.compile_expr(None, value).eval(self);
             let key = self.compile_literal(None, Literal::String(*name));
+            if object.is_none() {
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::CreateObject { dst: dst.0 });
+                object = Some(dst);
+            }
             self.builder.free_temp(expr);
             self.builder.free_temp(key);
             self.builder.push(Instruction::IndexAssign {
-                obj: object.0,
+                obj: object.unwrap().0,
                 val: expr.0,
                 key: key.0,
             });
         }
-
-        object
+        if object.is_none() {
+            let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+            self.builder.push(Instruction::CreateObject { dst: dst.0 });
+            object = Some(dst);
+        }
+        object.unwrap()
     }
 
     fn compile_function_call(
