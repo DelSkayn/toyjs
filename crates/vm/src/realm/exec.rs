@@ -52,11 +52,11 @@ impl Realm {
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
                         self.gc.write_barrier(obj);
-                        obj.unsafe_index_set(key, val, self.context());
+                        obj.unsafe_index_set(key, val, self);
                     } else if obj.is_function() {
                         let func = obj.unsafe_cast_function();
                         self.gc.write_barrier(func);
-                        func.as_object().unsafe_index_set(key, val, self.context());
+                        func.as_object().unsafe_index_set(key, val, self);
                     } else {
                         todo!()
                     }
@@ -65,13 +65,13 @@ impl Realm {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
                     if obj.is_object() {
-                        let res = obj.unsafe_cast_object().unsafe_index(key, self.context());
+                        let res = obj.unsafe_cast_object().unsafe_index(key, self);
                         self.stack.write(dst, res)
                     } else if obj.is_function() {
                         let res = obj
                             .unsafe_cast_function()
                             .as_object()
-                            .unsafe_index(key, self.context());
+                            .unsafe_index(key, self);
                         self.stack.write(dst, res)
                     } else {
                         todo!()
@@ -80,7 +80,7 @@ impl Realm {
 
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
-                    let src = self.global().unsafe_index(key, self.context());
+                    let src = self.global().unsafe_index(key, self);
                     self.stack.write(dst, src);
                 }
 
@@ -88,7 +88,7 @@ impl Realm {
                     self.global().unsafe_index_set(
                         self.stack.read(key),
                         self.stack.read(src),
-                        self.context(),
+                        self,
                     );
                 }
 
@@ -554,19 +554,15 @@ impl Realm {
             }
             FunctionKind::Mutable(ref x) => {
                 self.stack.enter(0);
-                let ctx = self.context();
-                let args = self.arguments();
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(ctx, args);
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self);
                 self.stack.pop();
-                Some(res.unbind())
+                Some(res)
             }
             FunctionKind::Native(ref x) => {
                 self.stack.enter(0);
-                let ctx = self.context();
-                let args = self.arguments();
-                let res = (*x)(ctx, args);
+                let res = (*x)(self);
                 self.stack.pop();
-                Some(res.unbind())
+                Some(res)
             }
         }
     }

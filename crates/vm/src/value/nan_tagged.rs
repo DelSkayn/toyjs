@@ -67,6 +67,11 @@ impl Value {
     }
 
     #[inline]
+    pub fn requires_gc(self) -> bool {
+        self.is_object() || self.is_function() || self.is_string()
+    }
+
+    #[inline]
     pub fn is_bool(self) -> bool {
         unsafe { (self.0.bits & !1) == VALUE_FALSE }
     }

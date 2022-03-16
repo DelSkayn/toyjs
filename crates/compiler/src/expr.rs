@@ -667,8 +667,30 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.builder.push(Instruction::LoadThis { dst: dst.0 });
                 ExprValue::new_in(dst, self.alloc.clone())
             }
-            PrimeExpr::Eval(_args) => {
-                todo!()
+            PrimeExpr::Eval(args) => {
+                let expr = self.compile_expressions(None, args).eval(self);
+                self.builder.push(Instruction::Push { src: expr.0 });
+                self.builder.free_temp(expr);
+
+                let cons = self.constants.push_string("eval");
+                let tmp = self.builder.alloc_temp();
+                self.builder.push(Instruction::LoadConst {
+                    dst: tmp.0,
+                    cons: cons.0 as u16,
+                });
+                self.builder.push(Instruction::GlobalIndex {
+                    dst: tmp.0,
+                    key: tmp.0,
+                });
+                let dst = placement.unwrap_or(tmp);
+                self.builder.push(Instruction::Call {
+                    dst: dst.0,
+                    func: tmp.0,
+                });
+                if dst != tmp {
+                    self.builder.free_temp(tmp);
+                }
+                ExprValue::new_in(dst, self.alloc.clone())
             }
         }
     }

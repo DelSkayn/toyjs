@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use toyjs::ToyJs;
 
+/*
 fn expression(c: &mut Criterion) {
     const EXPRESSION: &str = "((2 + 2) ** 3 / 100 - 5 ** 3 * -1000) ** 2 + 100 - 8;";
     let mut toyjs = ToyJs::new();
@@ -27,3 +28,4 @@ criterion_group! {
     targets = expression
 }
 criterion_main!(benches);
+*/

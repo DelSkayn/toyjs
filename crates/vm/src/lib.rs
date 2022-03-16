@@ -32,8 +32,9 @@ pub mod instructions;
 pub mod value;
 pub use value::Value;
 pub mod object;
-use object::Object;
+pub use object::Object;
 mod function;
+pub use function::Function;
 
 pub mod realm;
 pub use realm::Realm;

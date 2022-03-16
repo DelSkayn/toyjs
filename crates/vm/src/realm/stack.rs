@@ -2,14 +2,13 @@ use std::{
     alloc::{self, GlobalAlloc, Layout, System},
     cell::{Cell, UnsafeCell},
     convert::TryInto,
-    marker::PhantomData,
     mem,
     ptr::NonNull,
 };
 
 use crate::{function::Function, gc::Trace, Gc, GcArena, Value};
 
-use super::{reader::InstructionReader, Arguments};
+use super::reader::InstructionReader;
 
 #[derive(Debug)]
 pub struct UpvalueObject {
@@ -366,6 +365,10 @@ impl Stack {
         }
     }
 
+    pub fn frame_size(&self) -> usize {
+        unsafe { self.stack.offset_from(self.frame) as usize }
+    }
+
     #[inline]
     fn used(&self) -> usize {
         unsafe { self.stack.offset_from(self.root.as_ptr()) as usize }
@@ -381,15 +384,6 @@ impl Stack {
     pub fn write(&mut self, register: u8, v: Value) {
         debug_assert!(register < self.cur_frame_size);
         unsafe { self.frame.add(register as usize).write(v) }
-    }
-
-    pub unsafe fn arguments<'a>(&self) -> Arguments<'a> {
-        let size = self.stack.offset_from(self.frame);
-        Arguments {
-            end: self.frame.add(size as usize),
-            frame: self.frame,
-            marker: PhantomData,
-        }
     }
 }
 

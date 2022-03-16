@@ -2,9 +2,7 @@ use std::cell::UnsafeCell;
 
 use crate::{
     gc::{Gc, Trace},
-    realm::RealmCtx,
-    value::BoundValue,
-    Value,
+    Realm, Value,
 };
 use common::collections::HashMap;
 
@@ -24,31 +22,12 @@ impl Object {
         }
     }
 
-    pub fn index<'a, K, R>(&self, key: BoundValue<'a>, realm: RealmCtx<'a>) -> R
-    where
-        K: Into<BoundValue<'a>>,
-        R: From<BoundValue<'a>>,
-    {
-        let key: BoundValue<'a> = key;
-        unsafe { BoundValue::bind(self.unsafe_index(key.unbind(), realm)).into() }
-    }
-
-    pub fn index_set<'a, K, V>(&self, key: K, value: V, realm: RealmCtx<'a>)
-    where
-        K: Into<BoundValue<'a>>,
-        V: Into<BoundValue<'a>>,
-    {
-        unsafe {
-            self.unsafe_index_set(key.into().unbind(), value.into().unbind(), realm);
-        }
-    }
-
     /// Index into the object and return the value assiociated with the key.
     ///
     /// # Safety
     ///
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index(&self, key: Value, realm: RealmCtx) -> Value {
+    pub unsafe fn unsafe_index(&self, key: Value, realm: &mut Realm) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -61,7 +40,7 @@ impl Object {
                     .unwrap_or(Value::undefined());
             }
         }
-        let string = realm.coerce_string(BoundValue::bind(key));
+        let string = realm.coerce_string(key);
         (*self.values.get())
             .get(string.as_ref())
             .copied()
@@ -73,7 +52,7 @@ impl Object {
     /// # Safety
     ///
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn unsafe_index_set(&self, key: Value, value: Value, realm: RealmCtx) {
+    pub unsafe fn unsafe_index_set(&self, key: Value, value: Value, realm: &mut Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -88,7 +67,7 @@ impl Object {
                 (*self.array.get())[idx] = value
             }
         } else {
-            let string = realm.coerce_string(BoundValue::bind(key));
+            let string = realm.coerce_string(key);
             (*self.values.get()).insert(string.to_string(), value);
         }
     }
