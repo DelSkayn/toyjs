@@ -193,9 +193,8 @@ impl Realm {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
                     let res = self.less_then(left, right, false);
-
-                    self.stack
-                        .write(dst, (!res.is_true() && !res.is_undefined()).into())
+                    let res = res.is_false() && !res.is_undefined();
+                    self.stack.write(dst, res.into())
                 }
 
                 Instruction::Less { dst, left, righ } => {
@@ -212,9 +211,8 @@ impl Realm {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
                     let res = self.less_then(left, right, true);
-
-                    self.stack
-                        .write(dst, (!res.is_true() && !res.is_undefined()).into())
+                    let res = res.is_false() && !res.is_undefined();
+                    self.stack.write(dst, res.into())
                 }
 
                 Instruction::IsNullish { dst, op } => {
@@ -474,9 +472,9 @@ impl Realm {
 
     pub unsafe fn less_then(&mut self, left: Value, right: Value, swap: bool) -> Value {
         let (left, right) = if swap {
-            let right = self.to_primitive(left);
-            let left = self.to_primitive(right);
-            (left, right)
+            let r = self.to_primitive(left);
+            let l = self.to_primitive(right);
+            (l, r)
         } else {
             (self.to_primitive(left), self.to_primitive(right))
         };
