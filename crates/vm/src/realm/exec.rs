@@ -22,7 +22,7 @@ impl Realm {
         &mut self,
         mut instr: InstructionReader,
         mut function: Gc<Function>,
-    ) -> Result<Value, ()> {
+    ) -> Result<Value, Value> {
         loop {
             match instr.next() {
                 Instruction::LoadConst { dst, cons } => {
@@ -222,6 +222,15 @@ impl Realm {
                         instr.jump(tgt)
                     }
                 }
+
+                Instruction::Try { dst, tgt } => self
+                    .stack
+                    .push_try(dst, instr.absolute_offset(tgt) as usize),
+
+                Instruction::Untry { _ignore: () } => {
+                    self.stack.pop_try();
+                }
+
                 Instruction::Push { src } => {
                     let src = self.stack.read(src);
                     self.stack.push(src);
@@ -239,6 +248,12 @@ impl Realm {
                         todo!()
                     }
                 }
+
+                Instruction::Throw { src } => {
+                    let error = self.stack.read(src);
+                    self.unwind(&mut instr, &mut function, error)?;
+                }
+
                 Instruction::ReturnUndefined { .. } => match self.stack.pop() {
                     Some(x) => {
                         instr = x.reader;
@@ -259,6 +274,30 @@ impl Realm {
                     }
                 }
                 x => panic!("invalid Instruction {}", x),
+            }
+        }
+    }
+
+    pub unsafe fn unwind(
+        &mut self,
+        instr: &mut InstructionReader,
+        function: &mut Gc<Function>,
+        error: Value,
+    ) -> Result<(), Value> {
+        loop {
+            match self.stack.unwind() {
+                Some(Ok(catch)) => {
+                    self.stack.write(catch.dst, error);
+                    instr.absolute_jump(catch.ip_offset);
+                    return Ok(());
+                }
+                Some(Err(frame)) => {
+                    *instr = frame.reader;
+                    *function = frame.function;
+                }
+                None => {
+                    return Err(error);
+                }
             }
         }
     }

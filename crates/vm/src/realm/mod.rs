@@ -42,7 +42,7 @@ impl Realm {
         }
     }
 
-    pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, ()> {
+    pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, Value> {
         self.stack.enter(bc.functions[0].registers);
         let reader = InstructionReader::from_bc(bc, 0);
         let func = self.construct_function_root(&reader);
