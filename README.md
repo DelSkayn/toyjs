@@ -22,3 +22,10 @@ This will produce a binary in the target directory which can execute javascript 
 ```
 cargo run --release --bin cli ./script.js 
 ```
+
+## Crates
+The toyjs interpreter consists of various crates.
+The primary crate is `toyjs` crate in the repository root.
+This crate implements a 'safe', high level interface over the various functions of the interpreter, as well as the javascript runtime.
+
+The implementation of the interpreter itself can be found in the various crates under the `crates` directory.
