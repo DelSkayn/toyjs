@@ -1,7 +1,4 @@
-use std::{
-    env,
-    io::{self, BufRead},
-};
+use std::{env, io};
 
 use toyjs::Context;
 
@@ -15,11 +12,10 @@ fn main() -> io::Result<()> {
 
     let mut buffer = String::new();
     let stdin = io::stdin();
-    let mut handle = stdin.lock();
     let mut delims = Vec::new();
     let mut last_length = 0;
     'main: loop {
-        if handle.read_line(&mut buffer)? == 0 {
+        if stdin.read_line(&mut buffer)? == 0 {
             break;
         }
         for c in buffer[last_length..].chars() {

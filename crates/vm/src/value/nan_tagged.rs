@@ -277,6 +277,8 @@ unsafe impl Trace for Value {
             unsafe { ctx.mark(self.unsafe_cast_object()) }
         } else if self.is_string() {
             unsafe { ctx.mark(self.unsafe_cast_string()) }
+        } else if self.is_function() {
+            unsafe { ctx.mark(self.unsafe_cast_function()) }
         }
     }
 }
