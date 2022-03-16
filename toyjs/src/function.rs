@@ -12,4 +12,6 @@ impl<'js> Function<'js> {
     pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Function>) -> Self {
         Function { ctx, ptr }
     }
+
+    //pub fn call(self) -> Result<Value<'js>, Value<'js>> {}
 }

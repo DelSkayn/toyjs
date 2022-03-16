@@ -28,8 +28,10 @@ pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
 pub fn init<'js>(ctx: Ctx<'js>) {
     let global = ctx.global();
     let console = ctx.create_object();
+
     console.set("log", ctx.create_function(console_log));
     console.set("input", ctx.create_function(console_in));
+
     global.set("console", console);
     global.set("eval", ctx.create_function(eval));
 }

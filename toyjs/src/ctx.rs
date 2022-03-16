@@ -9,7 +9,7 @@ use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
 
-use crate::{ffi::Arguments, Function, Object, String, Value};
+use crate::{ffi::Arguments, Context, Function, Object, String, Value};
 
 pub(crate) struct ContextInner {
     pub symbol_table: SymbolTable<Global>,
@@ -41,7 +41,7 @@ impl ContextInner {
 pub struct Ctx<'js> {
     // If created this pointer should remain valid for the entire duration of 'js
     pub(crate) ctx: *mut ContextInner,
-    marker: PhantomData<Cell<&'js ()>>,
+    marker: PhantomData<Cell<&'js Context>>,
 }
 
 impl<'js> Ctx<'js> {
@@ -63,6 +63,7 @@ impl<'js> Ctx<'js> {
         }
     }
 
+    /// Returns the global object of the current context.
     pub fn global(self) -> Object<'js> {
         unsafe {
             let object = (*self.ctx).realm.global();
@@ -70,6 +71,7 @@ impl<'js> Ctx<'js> {
         }
     }
 
+    /// Creates a javascript string from a rust string.
     pub fn create_string(self, s: impl Into<StdString>) -> String<'js> {
         unsafe {
             let string = (*self.ctx).realm.create_string(s.into());
@@ -78,6 +80,7 @@ impl<'js> Ctx<'js> {
         }
     }
 
+    /// Creates a new empty object
     pub fn create_object(self) -> Object<'js> {
         unsafe {
             let object = (*self.ctx).realm.create_object();
@@ -86,10 +89,12 @@ impl<'js> Ctx<'js> {
         }
     }
 
+    /// Coerces a javascript value into a string
     pub fn coerce_string(self, v: Value<'js>) -> Cow<'js, str> {
         unsafe { (*self.ctx).realm.coerce_string(v.into_vm()) }
     }
 
+    /// Creates a new function from a rust closure
     pub fn create_function<F>(self, f: F) -> Function<'js>
     where
         F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Value<'a> + 'static,
@@ -109,6 +114,7 @@ impl<'js> Ctx<'js> {
         }
     }
 
+    /// Evaluates the given value as a script
     pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
@@ -132,6 +138,8 @@ impl<'js> Ctx<'js> {
             Ok(Value::wrap(self, value))
         }
     }
+
+    //pub fn compile_function(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {}
 }
 
 /*
