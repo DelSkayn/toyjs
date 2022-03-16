@@ -179,6 +179,44 @@ impl Realm {
                     self.stack.write(dst, Value::from(res));
                 }
 
+                Instruction::Greater { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.less_then(left, right, true);
+                    if res.is_undefined() {
+                        self.stack.write(dst, false.into());
+                    } else {
+                        self.stack.write(dst, res);
+                    }
+                }
+                Instruction::GreaterEq { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.less_then(left, right, false);
+
+                    self.stack
+                        .write(dst, (!res.is_true() && !res.is_undefined()).into())
+                }
+
+                Instruction::Less { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.less_then(left, right, false);
+                    if res.is_undefined() {
+                        self.stack.write(dst, false.into());
+                    } else {
+                        self.stack.write(dst, res.into());
+                    }
+                }
+                Instruction::LessEq { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.less_then(left, right, true);
+
+                    self.stack
+                        .write(dst, (!res.is_true() && !res.is_undefined()).into())
+                }
+
                 Instruction::IsNullish { dst, op } => {
                     let src = self.stack.read(op as u8);
                     let nullish = self.is_nullish(src);
@@ -432,6 +470,68 @@ impl Realm {
             };
         }
         todo!()
+    }
+
+    pub unsafe fn less_then(&mut self, left: Value, right: Value, swap: bool) -> Value {
+        let (left, right) = if swap {
+            let right = self.to_primitive(left);
+            let left = self.to_primitive(right);
+            (left, right)
+        } else {
+            (self.to_primitive(left), self.to_primitive(right))
+        };
+        if left.is_string() || right.is_string() {
+            let left = self.coerce_string(left);
+            let right = self.coerce_string(right);
+            if left.as_ref().starts_with(right.as_ref()) {
+                return false.into();
+            }
+            if right.as_ref().starts_with(left.as_ref()) {
+                return true.into();
+            }
+            let mut left = left.as_ref().chars();
+            let mut right = right.as_ref().chars();
+            loop {
+                let left = left.next().unwrap();
+                let right = right.next().unwrap();
+                if left != right {
+                    return (left < right).into();
+                }
+            }
+        }
+
+        let left = self.coerce_number(left);
+        let right = self.coerce_number(right);
+        if left.is_int() && right.is_string() {
+            return (left.cast_int() < right.cast_int()).into();
+        }
+        let left = if left.is_float() {
+            left.cast_float()
+        } else {
+            left.cast_int() as f64
+        };
+        let right = if right.is_float() {
+            right.cast_float()
+        } else {
+            right.cast_int() as f64
+        };
+
+        if left.is_nan() || right.is_nan() {
+            return Value::undefined();
+        }
+
+        if left.to_bits() == f64::NEG_INFINITY.to_bits()
+            || right.to_bits() == f64::INFINITY.to_bits()
+        {
+            return true.into();
+        }
+
+        if left.to_bits() == f64::INFINITY.to_bits()
+            || right.to_bits() == f64::NEG_INFINITY.to_bits()
+        {
+            return false.into();
+        }
+        (left < right).into()
     }
 
     pub unsafe fn add(&mut self, left: Value, right: Value) -> Value {
