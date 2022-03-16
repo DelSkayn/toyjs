@@ -7,6 +7,7 @@ use super::Ctx;
 /// the function trace must both call trace on objects which require a trace
 /// and mark all gc pointers directly contained by the structure.
 pub unsafe trait Trace {
+    /// Return wether this type of value needs a trace.
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -14,8 +15,16 @@ pub unsafe trait Trace {
         true
     }
 
+    /// Trace all values.
+    ///
+    /// # Safety
+    ///
+    /// This function should trace and mark **all** traceble and `Gc` pointer values inside this
+    /// object.
     fn trace(&self, ctx: Ctx);
 
+    /// Returns the type name.
+    /// Usefull for debugging gc bugs.
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }

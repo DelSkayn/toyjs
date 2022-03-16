@@ -23,7 +23,7 @@ pub const TAG_BIGINT: u64 = 0x0003_0000_0000_0000;
 pub const TAG_SYMBOL: u64 = 0x0004_0000_0000_0000; //?
 pub const TAG_FUNCTION: u64 = 0x0005_0000_0000_0000; //?
 pub const TAG_INT: u64 = 0x0006_0000_0000_0000;
-pub const TAG_STACK_VALUE: u64 = 0x0007_0000_0000_0000;
+pub const TAG_UNUSED: u64 = 0x0007_0000_0000_0000;
 
 const MIN_FLOAT: u64 = 0x0008_0000_0000_0000;
 const MIN_NUMBER: u64 = TAG_INT;
@@ -66,81 +66,85 @@ impl Value {
         }
     }
 
+    /// Is this value a gc allocated value.
     #[inline]
     pub fn requires_gc(self) -> bool {
         self.is_object() || self.is_function() || self.is_string()
     }
 
+    /// Is this value a boolean.
     #[inline]
     pub fn is_bool(self) -> bool {
         unsafe { (self.0.bits & !1) == VALUE_FALSE }
     }
 
+    /// Is this value the value false.
     #[inline]
     pub fn is_false(self) -> bool {
         unsafe { self.0.bits == VALUE_FALSE }
     }
 
+    /// Is this value the value true.
     #[inline]
     pub fn is_true(self) -> bool {
         unsafe { self.0.bits == VALUE_TRUE }
     }
 
+    /// Is this value the value null.
     #[inline]
     pub fn is_null(self) -> bool {
         unsafe { self.0.bits == VALUE_NULL }
     }
 
+    /// Is this value the value null.
     #[inline]
     pub fn is_undefined(self) -> bool {
         unsafe { self.0.bits == VALUE_UNDEFINED }
     }
 
+    /// Is this value null like.
     #[inline]
     pub fn is_nullish(self) -> bool {
         unsafe { (self.0.bits & !8) == VALUE_NULL }
     }
 
+    /// Is this value a number type.
     #[inline]
     pub fn is_number(self) -> bool {
         unsafe { self.0.bits >= MIN_NUMBER }
     }
 
+    /// Is this value a number integer.
     #[inline]
     pub fn is_int(self) -> bool {
         unsafe { self.0.bits & TAG_MASK == TAG_INT }
     }
 
+    /// Is this value a number float.
     #[inline]
     pub fn is_float(self) -> bool {
         unsafe { self.0.bits >= MIN_FLOAT }
     }
 
+    /// Is this value a object.
     #[inline]
     pub fn is_object(self) -> bool {
         unsafe { self.0.bits & TAG_MASK == TAG_OBJECT }
     }
 
+    /// Is this value a string.
     #[inline]
     pub fn is_string(self) -> bool {
         unsafe { self.0.bits & TAG_MASK == TAG_STRING }
     }
 
+    /// Is this value a function.
     #[inline]
     pub fn is_function(self) -> bool {
         unsafe { self.0.bits & TAG_MASK == TAG_FUNCTION }
     }
 
-    #[inline]
-    pub fn is_stack_value(self) -> bool {
-        unsafe { self.0.bits & TAG_MASK == TAG_STACK_VALUE }
-    }
-
-    pub fn into_stack_value(self) -> u64 {
-        debug_assert!(self.is_stack_value());
-        unsafe { self.0.bits & !TAG_MASK }
-    }
-
+    /// Create a new value containing the undefined javascript value.
     #[inline]
     pub const fn undefined() -> Self {
         Value(ValueUnion {
@@ -148,22 +152,24 @@ impl Value {
         })
     }
 
+    /// Create a new value containing the null javascript value.
     #[inline]
     pub const fn null() -> Self {
         Value(ValueUnion { bits: VALUE_NULL })
     }
 
+    /// Create a new value which is empty.
+    /// This value is vm internal only and should not be exposed outside of the vm.
     #[inline]
     pub const fn empty() -> Self {
         Value(ValueUnion { bits: VALUE_EMPTY })
     }
 
-    pub fn stack_value(v: u64) -> Self {
-        Value(ValueUnion {
-            bits: (v & !TAG_MASK) | TAG_STACK_VALUE,
-        })
-    }
-
+    /// Convert the value to `bool`
+    ///
+    /// # Safety
+    ///
+    /// Will return arbitrary values if `is_bool` returns false
     #[inline]
     pub fn cast_bool(self) -> bool {
         unsafe {
@@ -172,6 +178,11 @@ impl Value {
         }
     }
 
+    /// Convert the value to `i32`
+    ///
+    /// # Safety
+    ///
+    /// Will return arbitrary values if `is_int` returns false
     #[inline]
     pub fn cast_int(self) -> i32 {
         unsafe {
@@ -180,6 +191,11 @@ impl Value {
         }
     }
 
+    /// Convert the value to `f64`
+    ///
+    /// # Safety
+    ///
+    /// Will return arbitrary values if `is_float` returns false
     #[inline]
     pub fn cast_float(mut self) -> f64 {
         unsafe {
@@ -189,18 +205,33 @@ impl Value {
         }
     }
 
+    /// Convert the value to [`Object`]
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarentee that the value is an object
     #[inline]
     pub unsafe fn unsafe_cast_object(self) -> Gc<Object> {
         debug_assert!(self.is_object());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
 
+    /// Convert the value to [`Function`]
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarentee that the value is an function
     #[inline]
     pub unsafe fn unsafe_cast_function(self) -> Gc<Function> {
         debug_assert!(self.is_function());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
 
+    /// Convert the value to `String`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarentee that the value is an string
     #[inline]
     pub unsafe fn unsafe_cast_string(self) -> Gc<String> {
         debug_assert!(self.is_string());

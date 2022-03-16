@@ -24,7 +24,7 @@ impl<'js> Object<'js> {
         unsafe {
             let v = self
                 .ptr
-                .unsafe_index(key.into_js(self.ctx).into_vm(), &mut (*self.ctx.ctx).realm);
+                .index(key.into_js(self.ctx).into_vm(), &mut (*self.ctx.ctx).realm);
             self.ctx.push_value(v);
             V::from_js(self.ctx, Value::wrap(self.ctx, v))
         }
@@ -36,7 +36,7 @@ impl<'js> Object<'js> {
         V: IntoJs<'js>,
     {
         unsafe {
-            self.ptr.unsafe_index_set(
+            self.ptr.index_set(
                 key.into_js(self.ctx).into_vm(),
                 value.into_js(self.ctx).into_vm(),
                 &mut (*self.ctx.ctx).realm,

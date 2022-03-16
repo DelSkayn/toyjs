@@ -1,23 +1,21 @@
 //! This library contains the vm and the runtime of the toyjs interpreter.
 //!
-//!
 //! ### Safety
 //!
-//! The toyjs runtime is not written to be implemented in completely safe rust code.
-//! This decision stems from the fact that a safe vm runtime would need to track and handle code
-//! variants which should never happen in general use. This would both slow down the interpreter as
-//! well as complicate the implementation,
+//! The toyjs vm contains lots and lots of unsafe code.
+//! Overall we have found that it is very difficult to implement a interpreter in safe rust without
+//! implementing lots of code just to check wether operations which should be safe actually are.
 //!
-//! There are two primary assumptions the vm makes which causes code to be unsafe:
+//! For example: this VM implements a trace and sweep garbage collector. Inorder to trace a GC
+//! needs to know what the root values are which indicate that a values is still alive.
+//! In the interpreter these roots are pretty easy to find, there the global object and all the
+//! values on currently on the stack. However we cannot guaruantee that those are the only values.
+//! If we wanted to implement this GC completely safe we would need to keep track of all the roots,
+//! Track when values are moved into value which is alive or out of a value which is alive track
+//! when roots are dropped,etc. This would all be pretty intensive checking while instead we could
+//! require that all the roots are present and handed to the gc when doing collection.
 //!
-//! 1. Bytecode being run in the vm is correct.
-//! 2. Gc pointers are correctly traced.
-//!
-//! For further explanation of these assumptions see the [`instructions`] and [`gc`] modules respectively.
-//!
-//! All code assumes that these two statemets hold during exection. This makes a lot of the runtime
-//! unsafe as violating any of these two assumptions will result in undefined behaviour,
-//!
+//! So in order to avoid complicating design this crate is largely unsafe.
 
 #![allow(dead_code)]
 #![allow(clippy::missing_safety_doc)]
@@ -25,7 +23,6 @@
 #![feature(allocator_api)]
 
 pub mod gc;
-use std::{cell::Cell, marker::PhantomData};
 
 pub use gc::{Gc, GcArena};
 pub mod instructions;
@@ -33,13 +30,8 @@ pub mod value;
 pub use value::Value;
 pub mod object;
 pub use object::Object;
-mod function;
+pub mod function;
 pub use function::Function;
 
 pub mod realm;
 pub use realm::Realm;
-
-pub struct Context<'a> {
-    vm: &'a mut Realm,
-    marker: PhantomData<Cell<&'a ()>>,
-}
