@@ -65,7 +65,7 @@ impl Realm {
 
     pub unsafe fn create_function<F>(&self, f: F) -> Gc<Function>
     where
-        F: for<'a> Fn(&mut Realm) -> Value + 'static,
+        F: for<'a> Fn(&mut Realm) -> Result<Value, Value> + 'static,
     {
         self.gc.allocate(Function::from_native(f))
     }

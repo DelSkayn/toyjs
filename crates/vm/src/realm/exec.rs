@@ -166,6 +166,19 @@ impl Realm {
                     let right = self.convert_int(right) as u32 % 32;
                     self.stack.write(dst, Value::from((left >> right) as i32));
                 }
+                Instruction::Equal { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = self.equal(left, right);
+                    self.stack.write(dst, Value::from(res));
+                }
+                Instruction::NotEqual { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let res = !self.equal(left, right);
+                    self.stack.write(dst, Value::from(res));
+                }
+
                 Instruction::SEqual { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
@@ -269,10 +282,13 @@ impl Realm {
                 Instruction::Call { dst, func } => {
                     let func = self.stack.read(func);
                     if func.is_function() {
-                        if let Some(value) =
-                            self.call(func.unsafe_cast_function(), &mut function, &mut instr, dst)
+                        match self.call(func.unsafe_cast_function(), &mut function, &mut instr, dst)
                         {
-                            self.stack.write(dst, value);
+                            Ok(Some(value)) => self.stack.write(dst, value),
+                            Ok(None) => {}
+                            Err(error) => {
+                                self.unwind(&mut instr, &mut function, error)?;
+                            }
                         }
                     } else {
                         todo!()
@@ -439,35 +455,41 @@ impl Realm {
     }
 
     pub unsafe fn equal(&mut self, left: Value, right: Value) -> bool {
-        if self.strict_equal(left, right) {
+        if left.same_type(right) {
+            return self.strict_equal(left, right);
+        }
+
+        if left.is_undefined() && right.is_null() {
             return true;
         }
-        if left.is_undefined() || left.is_null() {
-            return right.is_undefined() || right.is_null();
+        if right.is_undefined() && left.is_null() {
+            return true;
         }
-        if left.is_float() || left.is_int() && right.is_string() {
-            return if let Ok(v) = right.unsafe_cast_string().parse::<f64>() {
-                if v as i32 as f64 == v {
-                    left.cast_float() == v
-                } else {
-                    left.cast_int() == v as i32
-                }
-            } else {
-                false
-            };
+        if left.is_number() && right.is_string() {
+            let right = self.coerce_number(right);
+            return self.equal(left, right);
         }
-        if right.is_float() || right.is_int() && left.is_string() {
-            return if let Ok(v) = left.unsafe_cast_string().parse::<f64>() {
-                if v as i32 as f64 == v {
-                    right.cast_float() == v
-                } else {
-                    right.cast_int() == v as i32
-                }
-            } else {
-                false
-            };
+        if right.is_number() && left.is_string() {
+            let left = self.coerce_number(left);
+            return self.equal(left, right);
         }
-        todo!()
+        if left.is_bool() {
+            let left = self.coerce_number(left);
+            return self.equal(left, right);
+        }
+        if right.is_bool() {
+            let right = self.coerce_number(right);
+            return self.equal(left, right);
+        }
+        if !left.is_object() && !left.is_function() && right.is_object() {
+            let right = self.to_primitive(right);
+            return self.equal(left, right);
+        }
+        if !right.is_object() && !right.is_function() && left.is_object() {
+            let left = self.to_primitive(left);
+            return self.equal(left, right);
+        }
+        false
     }
 
     pub unsafe fn less_then(&mut self, left: Value, right: Value, swap: bool) -> Value {
@@ -672,7 +694,7 @@ impl Realm {
         current_function: &mut Gc<Function>,
         instr: &mut InstructionReader,
         dst: u8,
-    ) -> Option<Value> {
+    ) -> Result<Option<Value>, Value> {
         match call_function.kind {
             FunctionKind::Vm(ref func) => {
                 let bc = func.bc;
@@ -681,19 +703,19 @@ impl Realm {
                     .enter_call(bc_function.registers, dst, *instr, *current_function);
                 *current_function = call_function;
                 *instr = InstructionReader::from_bc(bc, func.function);
-                None
+                Ok(None)
             }
             FunctionKind::Mutable(ref x) => {
                 self.stack.enter(0);
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self);
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self)?;
                 self.stack.pop();
-                Some(res)
+                Ok(Some(res))
             }
             FunctionKind::Native(ref x) => {
                 self.stack.enter(0);
-                let res = (*x)(self);
+                let res = (*x)(self)?;
                 self.stack.pop();
-                Some(res)
+                Ok(Some(res))
             }
         }
     }
