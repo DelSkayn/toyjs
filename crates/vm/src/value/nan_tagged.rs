@@ -165,6 +165,15 @@ impl Value {
         Value(ValueUnion { bits: VALUE_EMPTY })
     }
 
+    #[inline]
+    pub const fn nan() -> Self {
+        unsafe {
+            Value(ValueUnion {
+                bits: std::mem::transmute::<f64, u64>(f64::NAN) + MIN_FLOAT,
+            })
+        }
+    }
+
     /// Convert the value to `bool`
     ///
     /// # Safety
@@ -260,11 +269,9 @@ impl From<i32> for Value {
 impl From<f64> for Value {
     #[inline]
     fn from(v: f64) -> Value {
-        unsafe {
-            let mut val = ValueUnion { float: v };
-            val.bits += MIN_FLOAT;
-            Value(val)
-        }
+        Value(ValueUnion {
+            bits: v.to_bits() + MIN_FLOAT,
+        })
     }
 }
 

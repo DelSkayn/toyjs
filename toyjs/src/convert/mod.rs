@@ -62,3 +62,9 @@ impl<'js> IntoJs<'js> for i32 {
         unsafe { Value::wrap(ctx, vm::Value::from(self)) }
     }
 }
+
+impl<'js> IntoJs<'js> for bool {
+    fn into_js(self, ctx: Ctx<'js>) -> Value<'js> {
+        unsafe { Value::wrap(ctx, vm::Value::from(self)) }
+    }
+}

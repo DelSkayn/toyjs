@@ -389,6 +389,8 @@ impl Realm {
     pub unsafe fn coerce_number(&mut self, value: Value) -> Value {
         if value.is_int() || value.is_float() {
             value
+        } else if value.is_undefined() {
+            Value::nan()
         } else if value.is_null() || value.is_undefined() || value.is_false() {
             Value::from(0i32)
         } else if value.is_string() {

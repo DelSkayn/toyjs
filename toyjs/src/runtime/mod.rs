@@ -29,8 +29,8 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     let num = args.get(0);
     let radix = args.get(1);
     let str = ctx.coerce_string(num.unwrap_or(Value::undefined(ctx)));
-    let radix = if let Some(radix) = radix {
-        ctx.coerce_integer(dbg!(radix))
+    let mut radix = if let Some(radix) = radix {
+        ctx.coerce_integer(radix)
     } else {
         0
     };
@@ -41,6 +41,8 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
         if radix < 2 || radix > 36 {
             return Ok(Value::nan(ctx));
         }
+    } else {
+        radix = 10
     }
     let mut radix = radix as u32;
 
@@ -85,6 +87,13 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     Ok(result.into_js(ctx))
 }
 
+pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+    Ok(ctx
+        .coerce_number(args.get(0).unwrap_or(Value::undefined(ctx)))
+        .is_nan()
+        .into_js(ctx))
+}
+
 pub fn init<'js>(ctx: Ctx<'js>) {
     let global = ctx.global();
     let console = ctx.create_object();
@@ -97,4 +106,5 @@ pub fn init<'js>(ctx: Ctx<'js>) {
     global.set("undefined", Value::undefined(ctx));
     global.set("NaN", f64::NAN);
     global.set("parseInt", ctx.create_function(parse_int));
+    global.set("isNaN", ctx.create_function(is_nan));
 }
