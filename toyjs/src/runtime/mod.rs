@@ -1,6 +1,6 @@
 use crate::{convert::IntoJs, ffi::Arguments, value::Value, Ctx};
 
-pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
+pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let mut idx = 0;
     while let Some(x) = args.get(0) {
         if idx != 0 {
@@ -10,28 +10,27 @@ pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
         idx += 1;
     }
     println!();
-    Value::undefined(ctx)
+    Ok(Value::undefined(ctx))
 }
 
-pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Value<'js> {
+pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let mut buf = String::new();
     match std::io::stdin().read_line(&mut buf) {
-        Ok(_) => ctx.create_string(buf).into(),
-        Err(_) => Value::null(ctx),
+        Ok(_) => Ok(ctx.create_string(buf).into()),
+        Err(_) => Ok(Value::null(ctx)),
     }
 }
 
-pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
+pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     ctx.eval(ctx.coerce_string(args.get(0).unwrap_or(Value::undefined(ctx))))
-        .unwrap_or(Value::undefined(ctx))
 }
 
-pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
+pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let num = args.get(0);
     let radix = args.get(1);
     let str = ctx.coerce_string(num.unwrap_or(Value::undefined(ctx)));
     let radix = if let Some(radix) = radix {
-        ctx.coerce_integer(radix)
+        ctx.coerce_integer(dbg!(radix))
     } else {
         0
     };
@@ -40,7 +39,7 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
     if radix != 0 {
         strip_prefix = radix == 16;
         if radix < 2 || radix > 36 {
-            return Value::nan(ctx);
+            return Ok(Value::nan(ctx));
         }
     }
     let mut radix = radix as u32;
@@ -65,7 +64,7 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
             Some(x) => x,
             None => {
                 if idx == 0 {
-                    return Value::nan(ctx);
+                    return Ok(Value::nan(ctx));
                 }
                 break;
             }
@@ -74,16 +73,16 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
             Some(x) => x,
             None => break,
         };
-        result = match result.checked_add(d.into()) {
+        result = match result.checked_add(x as i32) {
             Some(x) => x,
             None => break,
         };
     }
 
     if neg {
-        return (-result).into_js(ctx);
+        return Ok((-result).into_js(ctx));
     }
-    result.into_js(ctx)
+    Ok(result.into_js(ctx))
 }
 
 pub fn init<'js>(ctx: Ctx<'js>) {

@@ -106,7 +106,7 @@ impl<'js> Ctx<'js> {
     /// Creates a new function from a rust closure
     pub fn create_function<F>(self, f: F) -> Function<'js>
     where
-        F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Value<'a> + 'static,
+        F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
     {
         unsafe {
             let inner = self.ctx;
@@ -116,7 +116,7 @@ impl<'js> Ctx<'js> {
                     marker: PhantomData,
                 };
                 let args = Arguments::from_ctx(ctx);
-                f(ctx, args).into_vm()
+                f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)
             });
             (*self.ctx).realm.stack.push(function.into());
             Function::wrap(self, function)
