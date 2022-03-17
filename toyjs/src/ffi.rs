@@ -15,7 +15,7 @@ impl<'js> Arguments<'js> {
     }
 
     pub fn get(self, idx: usize) -> Option<Value<'js>> {
-        if idx > u8::MAX as usize || idx > self.len {
+        if idx > u8::MAX as usize || idx >= self.len {
             return None;
         }
         unsafe {

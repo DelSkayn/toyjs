@@ -2,7 +2,7 @@ use crate::{convert::IntoJs, ffi::Arguments, value::Value, Ctx};
 
 pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let mut idx = 0;
-    while let Some(x) = args.get(0) {
+    while let Some(x) = args.get(idx) {
         if idx != 0 {
             print!(" ");
         }
