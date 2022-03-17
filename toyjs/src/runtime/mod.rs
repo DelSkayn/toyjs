@@ -1,8 +1,13 @@
-use crate::{ffi::Arguments, value::Value, Ctx};
+use crate::{convert::IntoJs, ffi::Arguments, value::Value, Ctx};
 
 pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
-    if let Some(arg) = args.get(0) {
-        print!("{}", ctx.coerce_string(arg));
+    let mut idx = 0;
+    while let Some(x) = args.get(0) {
+        if idx != 0 {
+            print!(" ");
+        }
+        print!("{}", ctx.coerce_string(x));
+        idx += 1;
     }
     println!();
     Value::undefined(ctx)
@@ -17,12 +22,68 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Value<'js> {
 }
 
 pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
-    if let Some(arg) = args.get(0) {
-        ctx.eval(ctx.coerce_string(arg))
-            .unwrap_or(Value::undefined(ctx))
+    ctx.eval(ctx.coerce_string(args.get(0).unwrap_or(Value::undefined(ctx))))
+        .unwrap_or(Value::undefined(ctx))
+}
+
+pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Value<'js> {
+    let num = args.get(0);
+    let radix = args.get(1);
+    let str = ctx.coerce_string(num.unwrap_or(Value::undefined(ctx)));
+    let radix = if let Some(radix) = radix {
+        ctx.coerce_integer(radix)
     } else {
-        Value::undefined(ctx)
+        0
+    };
+
+    let mut strip_prefix = true;
+    if radix != 0 {
+        strip_prefix = radix == 16;
+        if radix < 2 || radix > 36 {
+            return Value::nan(ctx);
+        }
     }
+    let mut radix = radix as u32;
+
+    let mut trim = str.as_ref().trim();
+    let neg = trim.starts_with("-");
+    if neg || trim.starts_with("+") {
+        trim = &trim[1..];
+    }
+
+    if strip_prefix {
+        if trim.starts_with("0x") || trim.starts_with("0X") {
+            trim = &trim[2..];
+            radix = 16;
+        }
+    }
+
+    let mut result: i32 = 0;
+    let digits = trim.as_bytes();
+    for (idx, d) in digits.into_iter().copied().enumerate() {
+        let x = match (d as char).to_digit(radix) {
+            Some(x) => x,
+            None => {
+                if idx == 0 {
+                    return Value::nan(ctx);
+                }
+                break;
+            }
+        };
+        result = match result.checked_mul(radix as i32) {
+            Some(x) => x,
+            None => break,
+        };
+        result = match result.checked_add(d.into()) {
+            Some(x) => x,
+            None => break,
+        };
+    }
+
+    if neg {
+        return (-result).into_js(ctx);
+    }
+    result.into_js(ctx)
 }
 
 pub fn init<'js>(ctx: Ctx<'js>) {
@@ -34,4 +95,7 @@ pub fn init<'js>(ctx: Ctx<'js>) {
 
     global.set("console", console);
     global.set("eval", ctx.create_function(eval));
+    global.set("undefined", Value::undefined(ctx));
+    global.set("NaN", f64::NAN);
+    global.set("parseInt", ctx.create_function(parse_int));
 }

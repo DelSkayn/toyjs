@@ -50,3 +50,15 @@ impl<'js> IntoJs<'js> for StdString {
         ctx.create_string(self).into()
     }
 }
+
+impl<'js> IntoJs<'js> for f64 {
+    fn into_js(self, ctx: Ctx<'js>) -> Value<'js> {
+        unsafe { Value::wrap(ctx, vm::Value::from(self)) }
+    }
+}
+
+impl<'js> IntoJs<'js> for i32 {
+    fn into_js(self, ctx: Ctx<'js>) -> Value<'js> {
+        unsafe { Value::wrap(ctx, vm::Value::from(self)) }
+    }
+}
