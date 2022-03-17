@@ -32,7 +32,7 @@ impl Realm {
         let symbol_table = SymbolTable::new();
         let interner = Interner::new();
         let gc = GcArena::new();
-        let global = gc.allocate(Object::new());
+        let global = gc.allocate(Object::new(None));
         let stack = Stack::new();
         Realm {
             symbol_table,
@@ -56,7 +56,7 @@ impl Realm {
     }
 
     pub unsafe fn create_object(&self) -> Gc<Object> {
-        self.gc.allocate(Object::new())
+        self.gc.allocate(Object::new(None))
     }
 
     pub unsafe fn create_string(&self, s: String) -> Gc<String> {

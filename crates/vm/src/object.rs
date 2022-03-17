@@ -17,7 +17,7 @@ pub struct Object {
 
 impl Object {
     /// Create a new object.
-    pub fn new() -> Self {
+    pub fn new(prototype: Option<Gc<Object>>) -> Self {
         Object {
             prototype: None,
             values: UnsafeCell::new(HashMap::default()),
@@ -44,7 +44,7 @@ impl Object {
                     .unwrap_or(Value::undefined());
             }
         }
-        let string = realm.coerce_string(key);
+        let string = realm.to_string(key);
         (*self.values.get())
             .get(string.as_ref())
             .copied()
@@ -72,7 +72,7 @@ impl Object {
                 (*self.array.get())[idx] = value
             }
         } else {
-            let string = realm.coerce_string(key);
+            let string = realm.to_string(key);
             (*self.values.get()).insert(string.to_string(), value);
         }
     }
