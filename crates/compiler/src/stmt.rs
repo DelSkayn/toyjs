@@ -221,6 +221,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.compile_stmt(block);
         let flow_scope = self.builder.pop_flow_scope();
 
+        flow_scope.patch_continue.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
+
         let res = self.compile_expressions(None, cond);
         let back_jump = self.builder.push(Instruction::JumpTrue {
             cond: res.register.0,
@@ -239,11 +244,6 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
         });
-
-        flow_scope
-            .patch_continue
-            .into_iter()
-            .for_each(|x| self.builder.patch_jump(x, before_stmt));
     }
 
     pub fn compile_function_decl(
