@@ -28,6 +28,21 @@ impl<'js> Value<'js> {
             value: vm::Value::null(),
         }
     }
+
+    pub fn nan(ctx: Ctx<'js>) -> Value<'js> {
+        Value {
+            ctx,
+            value: f64::NAN.into(),
+        }
+    }
+
+    pub fn is_undefined(self) -> bool {
+        self.value.is_undefined()
+    }
+
+    pub fn is_null(self) -> bool {
+        self.value.is_null()
+    }
 }
 
 impl<'js> From<String<'js>> for Value<'js> {
