@@ -81,9 +81,11 @@ impl<'js> Ctx<'js> {
     }
 
     /// Creates a new empty object
-    pub fn create_object(self) -> Object<'js> {
+    pub fn create_object(self, prototype: Option<Object<'js>>) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).realm.create_object();
+            let object = (*self.ctx)
+                .realm
+                .create_object(prototype.map(|x| x.into_vm()));
             (*self.ctx).realm.stack.push(object.into());
             Object::wrap(self, object)
         }

@@ -16,6 +16,10 @@ impl<'js> Object<'js> {
         Object { ctx, ptr }
     }
 
+    pub(crate) unsafe fn into_vm(self) -> Gc<vm::Object> {
+        self.ptr
+    }
+
     pub fn get<K, V>(self, key: K) -> V
     where
         K: IntoJs<'js>,

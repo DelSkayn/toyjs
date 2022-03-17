@@ -15,7 +15,7 @@ mod exec;
 mod reader;
 pub use reader::InstructionReader;
 
-use self::environment::Environment;
+use self::{environment::Environment, exec::ExecutionContext};
 mod environment;
 
 pub struct Realm {
@@ -46,17 +46,22 @@ impl Realm {
 
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, Value> {
         self.stack.enter(bc.functions[0].registers);
-        let reader = InstructionReader::from_bc(bc, 0);
-        let func = self.construct_function_root(&reader);
-        self.execute(reader, func)
+        let instr = InstructionReader::from_bc(bc, 0);
+        let context = ExecutionContext {
+            function: self.construct_function_root(&instr),
+            instr,
+            this: self.global.into(),
+            new_target: Value::null(),
+        };
+        self.execute(context)
     }
 
     pub unsafe fn global(&self) -> Gc<Object> {
         self.global
     }
 
-    pub unsafe fn create_object(&self) -> Gc<Object> {
-        self.gc.allocate(Object::new(None))
+    pub unsafe fn create_object(&self, prototype: Option<Gc<Object>>) -> Gc<Object> {
+        self.gc.allocate(Object::new(prototype))
     }
 
     pub unsafe fn create_string(&self, s: String) -> Gc<String> {

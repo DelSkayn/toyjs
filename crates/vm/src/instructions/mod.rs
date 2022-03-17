@@ -243,6 +243,7 @@ define_instructions! {
         Push{ src: u8},
 
         Call{dst:u8, func:u8},
+        Construct{dst: u8, func: u8, obj: u8},
 
         Throw{ src: u8 },
 
