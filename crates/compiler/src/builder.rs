@@ -34,12 +34,20 @@ pub enum UpvalueKind {
     Parent(UpvalueSlot),
 }
 
+pub struct LoopFlowScope<A: Allocator> {
+    /// The first instruction of the loop
+    pub patch_break: Vec<InstructionId, A>,
+    /// jumps which need to be patched to the end of the loop.
+    pub patch_continue: Vec<InstructionId, A>,
+}
+
 struct BuilderFunction<A: Allocator + Clone> {
     parent: Option<FunctionId>,
     scope: ScopeId,
     instructions: SlotStack<Instruction, InstructionId, A>,
     upvalues: SlotStack<Upvalue, UpvalueSlot, A>,
     registers: Registers,
+    flow_scope: Vec<LoopFlowScope<A>, A>,
 }
 
 impl<A: Allocator + Clone> BuilderFunction<A> {
@@ -69,6 +77,7 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             instructions: SlotStack::new_in(alloc.clone()),
             registers: Registers::new(),
             upvalues: SlotStack::new_in(alloc.clone()),
+            flow_scope: Vec::new_in(alloc.clone()),
         });
 
         ScriptBuilder {
@@ -95,6 +104,7 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             instructions: SlotStack::new_in(self.alloc.clone()),
             registers,
             upvalues: SlotStack::new_in(self.alloc.clone()),
+            flow_scope: Vec::new_in(self.alloc.clone()),
         });
         self.current = FunctionId(res);
         self.current
@@ -110,7 +120,41 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
         self.functions[self.current].instructions.push(instr)
     }
 
-    pub fn scope(&self) -> ScopeId {
+    pub fn push_flow_scope(&mut self) {
+        self.functions[self.current].flow_scope.push(LoopFlowScope {
+            patch_break: Vec::new_in(self.alloc.clone()),
+            patch_continue: Vec::new_in(self.alloc.clone()),
+        });
+    }
+
+    pub fn push_break(&mut self) {
+        let id = self.push(Instruction::Jump { tgt: 0 });
+        self.functions[self.current]
+            .flow_scope
+            .last_mut()
+            .expect("no active control flow scope")
+            .patch_break
+            .push(id);
+    }
+
+    pub fn push_continue(&mut self) {
+        let id = self.push(Instruction::Jump { tgt: 0 });
+        self.functions[self.current]
+            .flow_scope
+            .last_mut()
+            .expect("no active control flow scope")
+            .patch_continue
+            .push(id);
+    }
+
+    pub fn pop_flow_scope(&mut self) -> LoopFlowScope<A> {
+        self.functions[self.current]
+            .flow_scope
+            .pop()
+            .expect("no active control flow scope")
+    }
+
+    pub fn lexical_scope(&self) -> ScopeId {
         self.functions[self.current].scope
     }
 

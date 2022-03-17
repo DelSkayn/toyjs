@@ -66,16 +66,18 @@ impl Source {
         } else {
             &self.source
         };
-        let base = self.source.as_ptr() as usize;
-        split.lines().for_each(|s| {
-            let line = s.trim();
-            let low = line.as_ptr() as usize;
-            let hi = low + line.len() - 1;
-            lines.push(Span {
-                low: u32::try_from(low - base).expect("source to big for span"),
-                hi: u32::try_from(hi - base).expect("source to big for span"),
+        unsafe {
+            let base = self.source.as_ptr();
+            split.lines().for_each(|s| {
+                let line = s.trim();
+                let low = line.as_ptr();
+                let hi = low.add(line.len());
+                lines.push(Span {
+                    low: u32::try_from(low.offset_from(base)).expect("source to big for span"),
+                    hi: u32::try_from(hi.offset_from(base)).expect("source to big for span"),
+                })
             })
-        })
+        }
     }
 
     fn get_source_position(&self, span: Span) -> Pos {

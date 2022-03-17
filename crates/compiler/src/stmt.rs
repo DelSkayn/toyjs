@@ -28,6 +28,14 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_for(decl, cond, post, block);
                 None
             }
+            Stmt::Continue => {
+                self.builder.push_continue();
+                None
+            }
+            Stmt::Break => {
+                self.builder.push_break();
+                None
+            }
             Stmt::Let(symbol, expr) => {
                 let reg = self.builder.alloc_symbol(*symbol);
                 //TODO captured variables
@@ -180,12 +188,27 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 .patch_jump(x, self.builder.next_instruction_id())
         });
 
+        self.builder.push_flow_scope();
         self.compile_stmt(block).map(|r| self.builder.free_temp(r));
+        let flow_scope = self.builder.pop_flow_scope();
         let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
+
+        // patch jump back to condition
         self.builder.patch_jump(back_jump, before_cond);
+        // patch jump from condition
         self.builder
             .patch_jump(patch_while, self.builder.next_instruction_id());
         expr.false_list.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
+
+        flow_scope
+            .patch_continue
+            .into_iter()
+            .for_each(|x| self.builder.patch_jump(x, before_cond));
+
+        flow_scope.patch_break.into_iter().for_each(|x| {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
         });
@@ -193,7 +216,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a Vec<Expr<A>, A>) {
         let before_stmt = self.builder.next_instruction_id();
+
+        self.builder.push_flow_scope();
         self.compile_stmt(block);
+        let flow_scope = self.builder.pop_flow_scope();
+
         let res = self.compile_expressions(None, cond);
         let back_jump = self.builder.push(Instruction::JumpTrue {
             cond: res.register.0,
@@ -207,6 +234,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
         });
+
+        flow_scope.patch_break.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
+
+        flow_scope
+            .patch_continue
+            .into_iter()
+            .for_each(|x| self.builder.patch_jump(x, before_stmt));
     }
 
     pub fn compile_function_decl(
@@ -255,11 +292,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             cond: cond.register.0,
             tgt: 1,
         });
+
         cond.true_list.into_iter().for_each(|x| {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
         });
+
+        self.builder.push_flow_scope();
         self.compile_stmt(block);
+        let flow_scope = self.builder.pop_flow_scope();
+
+        flow_scope.patch_continue.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        });
+
         let reg = self.compile_expr(None, post).eval(self);
         self.builder.free_temp(reg);
         let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
@@ -270,5 +317,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
         });
+
+        flow_scope.patch_break.into_iter().for_each(|x| {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id())
+        })
     }
 }
