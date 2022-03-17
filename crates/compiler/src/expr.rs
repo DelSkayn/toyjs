@@ -97,7 +97,9 @@ impl AssignmentTarget {
     pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = self {
             let symbol = &this.symbol_table.symbols()[*x];
-            if symbol.decl_type.is_local() && this.symbol_table.in_scope(*x, this.builder.scope()) {
+            if symbol.decl_type.is_local()
+                && this.symbol_table.in_scope(*x, this.builder.lexical_scope())
+            {
                 Some(this.builder.alloc_symbol(*x))
             } else {
                 None
@@ -126,7 +128,7 @@ impl AssignmentTarget {
                         key: name.0,
                     });
                 } else {
-                    if !this.symbol_table.in_scope(x, this.builder.scope()) {
+                    if !this.symbol_table.in_scope(x, this.builder.lexical_scope()) {
                         let upvalue = this.builder.capture_upvalue(x, symbol.decl_scope);
                         this.builder.push(Instruction::UpvalueAssign {
                             src: src.0,
@@ -700,7 +702,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
         if symbol.decl_type.is_local() {
-            if self.symbol_table.in_scope(symbol_id, self.builder.scope()) {
+            if self
+                .symbol_table
+                .in_scope(symbol_id, self.builder.lexical_scope())
+            {
                 if let Some(place) = placement {
                     let reg = self.builder.alloc_symbol(symbol_id);
                     if reg != place {

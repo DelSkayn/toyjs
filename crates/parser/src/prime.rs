@@ -115,7 +115,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let params = self.parse_params()?;
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
-            |s| s.r#return = true,
+            |s| {
+                s.r#return = true;
+                s.r#break = false;
+                s.r#continue = false;
+            },
             |this| {
                 let mut stmts = Vec::new_in(this.alloc.clone());
                 while !this.eat(t!("}"))? {

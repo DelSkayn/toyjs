@@ -22,6 +22,20 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 self.next()?;
                 Ok(ast::Stmt::Empty)
             }
+            t!("break") => {
+                if !self.state.r#break {
+                    unexpected!(self => "`break` is disallowed in this scope");
+                }
+                self.next()?;
+                Ok(ast::Stmt::Break)
+            }
+            t!("continue") => {
+                if !self.state.r#continue {
+                    unexpected!(self => "`continue` is disallowed in this scope");
+                }
+                self.next()?;
+                Ok(ast::Stmt::Continue)
+            }
             t!("{") => self.parse_block(),
             t!("function") => self.parse_function(),
             t!("try") => self.parse_try(),
@@ -52,7 +66,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "(");
         let expr = self.parse_expr()?;
         expect!(self, ")");
-        let stmt = self.parse_stmt()?;
+        let stmt = self.alter_state(
+            |x| {
+                x.r#continue = true;
+                x.r#break = true;
+            },
+            |this| this.parse_stmt(),
+        )?;
         Ok(ast::Stmt::While(
             expr,
             Box::new_in(stmt, self.alloc.clone()),
@@ -61,7 +81,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
 
     fn parse_do_while(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "do");
-        let stmt = self.parse_stmt()?;
+        let stmt = self.alter_state(
+            |x| {
+                x.r#continue = true;
+                x.r#break = true;
+            },
+            |this| this.parse_stmt(),
+        )?;
         expect!(self, "while");
         expect!(self, "(");
         let expr = self.parse_expr()?;
@@ -91,8 +117,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, ";");
         let post = self.parse_single_expr()?;
         expect!(self, ")");
-
-        let stmt = self.parse_stmt()?;
+        let stmt = self.alter_state(
+            |x| {
+                x.r#continue = true;
+                x.r#break = true;
+            },
+            |this| this.parse_stmt(),
+        )?;
         self.symbol_table.pop_scope();
 
         Ok(ast::Stmt::For(
@@ -167,7 +198,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let params = self.parse_params()?;
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
-            |s| s.r#return = true,
+            |s| {
+                s.r#return = true;
+                s.r#continue = false;
+                s.r#break = false;
+            },
             |this| {
                 let mut stmts = Vec::new_in(this.alloc.clone());
                 while !this.eat(t!("}"))? {
