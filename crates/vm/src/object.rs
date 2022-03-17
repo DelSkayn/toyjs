@@ -19,7 +19,7 @@ impl Object {
     /// Create a new object.
     pub fn new(prototype: Option<Gc<Object>>) -> Self {
         Object {
-            prototype: None,
+            prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
         }
@@ -38,17 +38,29 @@ impl Object {
         if key.is_int() {
             let idx = key.cast_int();
             if idx >= 0 {
-                return (*self.array.get())
-                    .get(idx as usize)
-                    .copied()
-                    .unwrap_or(Value::undefined());
+                return match (*self.array.get()).get(idx as usize).copied() {
+                    Some(x) => x,
+                    None => {
+                        if let Some(proto) = self.prototype {
+                            proto.index(key, realm)
+                        } else {
+                            Value::undefined()
+                        }
+                    }
+                };
             }
         }
         let string = realm.to_string(key);
-        (*self.values.get())
-            .get(string.as_ref())
-            .copied()
-            .unwrap_or(Value::undefined())
+        match (*self.values.get()).get(string.as_ref()).copied() {
+            Some(x) => return x,
+            None => {
+                if let Some(x) = self.prototype {
+                    x.index(key, realm)
+                } else {
+                    Value::undefined()
+                }
+            }
+        }
     }
 
     /// Index into the object and set the value assiociated with the key.
