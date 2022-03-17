@@ -384,13 +384,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
                 PrefixOperator::New => {
-                    let expr = self.compile_expr(None, expr).eval(self);
-                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
-                    self.builder.free_temp(expr);
-                    self.builder.push(Instruction::New {
-                        dst: dst.0,
-                        src: expr.0,
-                    });
+                    let dst = self.compile_new(placement, expr);
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
                 PrefixOperator::TypeOf => {
@@ -795,6 +789,31 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             object = Some(dst);
         }
         object.unwrap()
+    }
+
+    fn compile_new(&mut self, placement: Option<Register>, rhs: &'a Expr<A>) -> Register {
+        let func = if let Expr::UnaryPostfix(expr, PostfixOperator::Call(args)) = rhs {
+            let func = self.compile_expr(None, expr).eval(self);
+            for (idx, arg) in args.iter().enumerate() {
+                if idx >= 16 {
+                    todo!()
+                }
+                let reg = self.compile_expr(None, arg).eval(self);
+                self.builder.free_temp(reg);
+                self.builder.push(Instruction::Push { src: reg.0 });
+            }
+            func
+        } else {
+            self.compile_expr(None, rhs).eval(self)
+        };
+        self.builder.free_temp(func);
+        let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        self.builder.push(Instruction::Construct {
+            dst: dst.0,
+            func: func.0,
+            obj: func.0,
+        });
+        dst
     }
 
     fn compile_function_call(

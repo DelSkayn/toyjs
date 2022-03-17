@@ -95,8 +95,10 @@ pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Va
 }
 
 pub fn init<'js>(ctx: Ctx<'js>) {
+    let object_class = ctx.create_object(None);
+
     let global = ctx.global();
-    let console = ctx.create_object();
+    let console = ctx.create_object(Some(object_class));
 
     console.set("log", ctx.create_function(console_log));
     console.set("input", ctx.create_function(console_in));

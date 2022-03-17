@@ -6,9 +6,9 @@ use std::{
     ptr::NonNull,
 };
 
-use crate::{function::Function, gc::Trace, Gc, GcArena, Value};
+use crate::{gc::Trace, Gc, GcArena, Value};
 
-use super::reader::InstructionReader;
+use super::ExecutionContext;
 
 #[derive(Debug)]
 pub struct UpvalueObject {
@@ -84,9 +84,7 @@ pub struct CallFrameData {
     /// The register to put the return value into.
     pub dst: u8,
     /// The instruction reader
-    pub reader: InstructionReader,
-    /// The function object of the previous frame.
-    pub function: Gc<Function>,
+    pub ctx: ExecutionContext,
 }
 
 pub struct TryFrameData {
@@ -152,13 +150,7 @@ impl Stack {
         }
     }
 
-    pub fn enter_call(
-        &mut self,
-        new_registers: u8,
-        dst: u8,
-        reader: InstructionReader,
-        function: Gc<Function>,
-    ) {
+    pub fn enter_call(&mut self, new_registers: u8, dst: u8, ctx: ExecutionContext) {
         unsafe {
             let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity {
@@ -177,11 +169,7 @@ impl Stack {
             );
             self.frames.push(Frame::Call {
                 registers: self.cur_frame_size as u8,
-                data: CallFrameData {
-                    dst,
-                    reader,
-                    function,
-                },
+                data: CallFrameData { dst, ctx },
                 open_upvalues: Vec::new(),
                 frame_offset: self.frame_offset,
             });
@@ -406,8 +394,7 @@ unsafe impl Trace for Stack {
                 Frame::Entry { .. } => {}
                 Frame::Try { .. } => {}
                 Frame::Call { ref data, .. } => {
-                    data.reader.trace(ctx);
-                    ctx.mark(data.function);
+                    data.ctx.trace(ctx);
                 }
             }
         }

@@ -7,6 +7,7 @@ pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursive
 
 pub type MutableFn = Box<dyn FnMut(&mut Realm) -> Result<Value, Value>>;
 pub type NativeFn = Box<dyn Fn(&mut Realm) -> Result<Value, Value>>;
+pub type ConstructorFn = fn(&mut Realm, Value, Value) -> Result<Value, Value>;
 
 pub struct VmFunction {
     pub bc: Gc<ByteCode>,
@@ -18,10 +19,12 @@ pub enum FunctionKind {
     Vm(VmFunction),
     Mutable(RefCell<MutableFn>),
     Native(NativeFn),
+    Constructor(ConstructorFn),
 }
 
 pub struct Function {
     pub kind: FunctionKind,
+    pub constructor: bool,
     object: Object,
 }
 
@@ -54,6 +57,7 @@ impl Function {
         let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
         Function {
             kind,
+            constructor: false,
             object: Object::new(None),
         }
     }
@@ -66,6 +70,7 @@ impl Function {
         let kind = FunctionKind::Native(Box::new(f));
         Function {
             kind,
+            constructor: false,
             object: Object::new(None),
         }
     }
@@ -74,6 +79,7 @@ impl Function {
     pub fn from_vm(vm: VmFunction) -> Self {
         Function {
             kind: FunctionKind::Vm(vm),
+            constructor: false,
             object: Object::new(None),
         }
     }

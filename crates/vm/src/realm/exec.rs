@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     function::{Function, FunctionKind, VmFunction, RECURSIVE_FUNC_PANIC},
+    gc::Trace,
     instructions::{Instruction, Upvalue},
     object::Object,
     Gc, Value,
@@ -17,29 +18,49 @@ pub enum NumericOperator {
     Pow,
 }
 
+#[derive(Clone, Copy)]
+pub struct ExecutionContext {
+    pub instr: InstructionReader,
+    pub function: Gc<Function>,
+    pub this: Value,
+    pub new_target: Value,
+}
+
+unsafe impl Trace for ExecutionContext {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: crate::gc::Ctx) {
+        ctx.mark(self.function);
+        self.trace(ctx);
+        self.new_target.trace(ctx);
+    }
+}
+
 impl Realm {
-    pub unsafe fn execute(
-        &mut self,
-        mut instr: InstructionReader,
-        mut function: Gc<Function>,
-    ) -> Result<Value, Value> {
+    pub unsafe fn execute(&mut self, mut ctx: ExecutionContext) -> Result<Value, Value> {
         loop {
-            match instr.next() {
+            match ctx.instr.next() {
                 Instruction::LoadConst { dst, cons } => {
-                    self.stack.write(dst, instr.constant(cons as u32));
+                    self.stack.write(dst, ctx.instr.constant(cons as u32));
                 }
                 Instruction::LoadGlobal { dst } => {
                     self.stack.write(dst, Value::from(self.global));
                 }
                 Instruction::LoadFunction { dst, func } => {
-                    self.gc.collect_debt(&(&*self, instr, function));
-                    let func = self.construct_function(func, &instr, function);
+                    self.gc.collect_debt(&(&*self, &ctx));
+                    let func = self.construct_function(func, &ctx.instr, ctx.function);
                     let res = Value::from(self.gc.allocate(func));
                     self.stack.write(dst, res);
                 }
+                Instruction::LoadThis { dst } => self.stack.write(dst, ctx.this),
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
-                    self.gc.collect_debt(&(&*self, instr, function));
+                    self.gc.collect_debt(&(&*self, ctx.instr, ctx.function));
                     let object = Object::new(None);
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
@@ -87,13 +108,13 @@ impl Realm {
                 }
 
                 Instruction::Upvalue { dst, slot } => {
-                    let value = function.as_vm_function().upvalues[slot as usize].read();
+                    let value = ctx.function.as_vm_function().upvalues[slot as usize].read();
                     self.stack.write(dst, value);
                 }
 
                 Instruction::UpvalueAssign { src, slot } => {
                     let value = self.stack.read(src);
-                    function.as_vm_function().upvalues[slot as usize].write(value);
+                    ctx.function.as_vm_function().upvalues[slot as usize].write(value);
                 }
 
                 Instruction::Add { dst, left, righ } => {
@@ -252,23 +273,23 @@ impl Realm {
                         self.stack.write(dst, Value::from(-number.cast_float()))
                     }
                 }
-                Instruction::Jump { tgt } => instr.jump(tgt),
+                Instruction::Jump { tgt } => ctx.instr.jump(tgt),
                 Instruction::JumpFalse { cond, tgt } => {
                     let cond = self.stack.read(cond);
                     if self.is_falsish(cond) {
-                        instr.jump(tgt)
+                        ctx.instr.jump(tgt)
                     }
                 }
                 Instruction::JumpTrue { cond, tgt } => {
                     let cond = self.stack.read(cond);
                     if !self.is_falsish(cond) {
-                        instr.jump(tgt)
+                        ctx.instr.jump(tgt)
                     }
                 }
 
                 Instruction::Try { dst, tgt } => self
                     .stack
-                    .push_try(dst, instr.absolute_offset(tgt) as usize),
+                    .push_try(dst, ctx.instr.absolute_offset(tgt) as usize),
 
                 Instruction::Untry { _ignore: () } => {
                     self.stack.pop_try();
@@ -281,40 +302,46 @@ impl Realm {
 
                 Instruction::Call { dst, func } => {
                     let func = self.stack.read(func);
-                    if func.is_function() {
-                        match self.call(func.unsafe_cast_function(), &mut function, &mut instr, dst)
-                        {
-                            Ok(Some(value)) => self.stack.write(dst, value),
-                            Ok(None) => {}
-                            Err(error) => {
-                                self.unwind(&mut instr, &mut function, error)?;
-                            }
+                    match self.call(func, &mut ctx, dst) {
+                        Ok(Some(value)) => {
+                            self.stack.write(dst, value);
                         }
-                    } else {
-                        todo!()
+                        Ok(None) => {}
+                        Err(error) => {
+                            self.unwind_error(&mut ctx, error)?;
+                        }
+                    }
+                }
+                Instruction::Construct { dst, func, obj } => {
+                    let func = self.stack.read(func);
+                    let obj = self.stack.read(obj);
+                    match self.construct(func, obj, &mut ctx) {
+                        Ok(Some(value)) => self.stack.write(dst, value),
+                        Ok(None) => {}
+                        Err(error) => {
+                            self.unwind_error(&mut ctx, error)?;
+                        }
                     }
                 }
 
                 Instruction::Throw { src } => {
                     let error = self.stack.read(src);
-                    self.unwind(&mut instr, &mut function, error)?;
+                    self.unwind_error(&mut ctx, error)?;
                 }
 
                 Instruction::ReturnUndefined { .. } => match self.stack.pop() {
-                    Some(x) => {
-                        instr = x.reader;
-                        function = x.function;
-                        self.stack.write(x.dst, Value::undefined());
+                    Some(frame) => {
+                        ctx = frame.ctx;
+                        self.stack.write(frame.dst, Value::undefined());
                     }
                     None => return Ok(Value::undefined()),
                 },
                 Instruction::Return { ret } => {
                     let return_value = self.stack.read(ret);
                     match self.stack.pop() {
-                        Some(x) => {
-                            instr = x.reader;
-                            function = x.function;
-                            self.stack.write(x.dst, return_value);
+                        Some(frame) => {
+                            ctx = frame.ctx;
+                            self.stack.write(frame.dst, return_value);
                         }
                         None => return Ok(return_value),
                     }
@@ -324,22 +351,38 @@ impl Realm {
         }
     }
 
-    pub unsafe fn unwind(
+    pub unsafe fn unwind<R, O, F>(
         &mut self,
-        instr: &mut InstructionReader,
-        function: &mut Gc<Function>,
+        ctx: &mut ExecutionContext,
+        f: F,
+    ) -> Result<Option<O>, Value>
+    where
+        F: FnOnce(&mut Realm, &mut ExecutionContext) -> Result<R, Value>,
+        R: Into<Option<O>>,
+    {
+        match f(self, ctx) {
+            Ok(x) => Ok(x.into()),
+            Err(e) => {
+                self.unwind_error(ctx, e)?;
+                Ok(None)
+            }
+        }
+    }
+
+    pub unsafe fn unwind_error(
+        &mut self,
+        ctx: &mut ExecutionContext,
         error: Value,
     ) -> Result<(), Value> {
         loop {
             match self.stack.unwind() {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
-                    instr.absolute_jump(catch.ip_offset);
+                    ctx.instr.absolute_jump(catch.ip_offset);
                     return Ok(());
                 }
                 Some(Err(frame)) => {
-                    *instr = frame.reader;
-                    *function = frame.function;
+                    *ctx = frame.ctx;
                 }
                 None => {
                     return Err(error);
@@ -695,33 +738,77 @@ impl Realm {
 
     unsafe fn call(
         &mut self,
-        call_function: Gc<Function>,
-        current_function: &mut Gc<Function>,
-        instr: &mut InstructionReader,
+        function: Value,
+        ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
-        match call_function.kind {
-            FunctionKind::Vm(ref func) => {
-                let bc = func.bc;
-                let bc_function = &bc.functions[func.function as usize];
-                self.stack
-                    .enter_call(bc_function.registers, dst, *instr, *current_function);
-                *current_function = call_function;
-                *instr = InstructionReader::from_bc(bc, func.function);
-                Ok(None)
+        self.unwind(ctx, |this, ctx| {
+            if !function.is_function() {
+                todo!()
             }
-            FunctionKind::Mutable(ref x) => {
-                self.stack.enter(0);
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self)?;
-                self.stack.pop();
-                Ok(Some(res))
+
+            let function = function.unsafe_cast_function();
+            match function.kind {
+                FunctionKind::Vm(ref func) => {
+                    let bc = func.bc;
+                    let bc_function = &bc.functions[func.function as usize];
+                    this.stack.enter_call(bc_function.registers, dst, *ctx);
+                    ctx.function = function;
+                    ctx.instr = InstructionReader::from_bc(bc, func.function);
+                    return Ok(None);
+                }
+                FunctionKind::Mutable(ref x) => {
+                    this.stack.enter(0);
+                    let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this)?;
+                    this.stack.pop();
+                    Ok(Some(res))
+                }
+                FunctionKind::Native(ref x) => {
+                    this.stack.enter(0);
+                    let res = (*x)(this)?;
+                    this.stack.pop();
+                    Ok(Some(res))
+                }
+                FunctionKind::Constructor(func) => {
+                    Ok(Some(func(this, Value::undefined(), Value::undefined())?))
+                }
             }
-            FunctionKind::Native(ref x) => {
-                self.stack.enter(0);
-                let res = (*x)(self)?;
-                self.stack.pop();
-                Ok(Some(res))
+        })
+    }
+
+    unsafe fn construct(
+        &mut self,
+        function: Value,
+        target_obj: Value,
+        ctx: &mut ExecutionContext,
+    ) -> Result<Option<Value>, Value> {
+        self.unwind(ctx, |this, _| {
+            if !function.is_function() {
+                todo!()
             }
-        }
+
+            let function = function.unsafe_cast_function();
+            match function.kind {
+                FunctionKind::Vm(ref func) => {
+                    let bc = func.bc;
+                    let bc_function = &bc.functions[func.function as usize];
+                    this.stack.enter(bc_function.registers);
+                    let this_object = this.create_object(None);
+                    let res = this.execute(ExecutionContext {
+                        function,
+                        this: this_object.into(),
+                        instr: InstructionReader::from_bc(bc, func.function),
+                        new_target: target_obj,
+                    })?;
+                    if res.is_object() {
+                        Ok(res)
+                    } else {
+                        Ok(this_object.into())
+                    }
+                }
+                FunctionKind::Constructor(func) => Ok(func(this, function.into(), target_obj)?),
+                _ => todo!(),
+            }
+        })
     }
 }
