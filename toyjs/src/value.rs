@@ -32,7 +32,7 @@ impl<'js> Value<'js> {
     pub fn nan(ctx: Ctx<'js>) -> Value<'js> {
         Value {
             ctx,
-            value: f64::NAN.into(),
+            value: vm::Value::nan(),
         }
     }
 
@@ -42,6 +42,14 @@ impl<'js> Value<'js> {
 
     pub fn is_null(self) -> bool {
         self.value.is_null()
+    }
+
+    pub fn is_nan(self) -> bool {
+        if self.value.is_float() {
+            self.value.cast_float().is_nan()
+        } else {
+            false
+        }
     }
 }
 
