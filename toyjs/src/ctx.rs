@@ -91,16 +91,16 @@ impl<'js> Ctx<'js> {
 
     /// Coerces a javascript value into a string
     pub fn coerce_string(self, v: Value<'js>) -> Cow<'js, str> {
-        unsafe { (*self.ctx).realm.coerce_string(v.into_vm()) }
+        unsafe { (*self.ctx).realm.to_string(v.into_vm()) }
     }
 
     /// Coerces a javascript value into a string
     pub fn coerce_number(self, v: Value<'js>) -> Value<'js> {
-        unsafe { Value::wrap(self, (*self.ctx).realm.coerce_number(v.into_vm())) }
+        unsafe { Value::wrap(self, (*self.ctx).realm.to_number(v.into_vm())) }
     }
 
     pub fn coerce_integer(self, v: Value<'js>) -> i32 {
-        unsafe { (*self.ctx).realm.convert_int(v.into_vm()) }
+        unsafe { (*self.ctx).realm.to_int32(v.into_vm()) }
     }
 
     /// Creates a new function from a rust closure

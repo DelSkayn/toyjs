@@ -40,7 +40,7 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.gc.collect_debt(&(&*self, instr, function));
-                    let object = Object::new();
+                    let object = Object::new(None);
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
                 }
@@ -148,22 +148,22 @@ impl Realm {
                 Instruction::ShiftLeft { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.convert_int(left);
-                    let right = self.convert_int(right) as u32 % 32;
+                    let left = self.to_int32(left);
+                    let right = self.to_int32(right) as u32 % 32;
                     self.stack.write(dst, Value::from(left << right));
                 }
                 Instruction::ShiftRight { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.convert_int(left);
-                    let right = self.convert_int(right) as u32 % 32;
+                    let left = self.to_int32(left);
+                    let right = self.to_int32(right) as u32 % 32;
                     self.stack.write(dst, Value::from(left >> right));
                 }
                 Instruction::ShiftUnsigned { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.convert_int(left) as u32;
-                    let right = self.convert_int(right) as u32 % 32;
+                    let left = self.to_int32(left) as u32;
+                    let right = self.to_int32(right) as u32 % 32;
                     self.stack.write(dst, Value::from((left >> right) as i32));
                 }
                 Instruction::Equal { dst, left, righ } => {
@@ -240,7 +240,7 @@ impl Realm {
                 }
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
-                    let number = self.coerce_number(src);
+                    let number = self.to_number(src);
                     if number.is_int() {
                         let number = -(number.cast_int() as i64);
                         if number as i32 as i64 == number {
@@ -362,7 +362,8 @@ impl Realm {
         value.is_null() || value.is_undefined()
     }
 
-    pub unsafe fn coerce_string<'a>(&mut self, value: Value) -> Cow<'a, str> {
+    /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
+    pub unsafe fn to_string<'a>(&mut self, value: Value) -> Cow<'a, str> {
         if value.is_int() {
             Cow::Owned(value.cast_int().to_string())
         } else if value.is_float() {
@@ -386,7 +387,8 @@ impl Realm {
         }
     }
 
-    pub unsafe fn coerce_number(&mut self, value: Value) -> Value {
+    /// Implements type conversion [`ToNumber`](https://tc39.es/ecma262/#sec-tonumber)
+    pub unsafe fn to_number(&mut self, value: Value) -> Value {
         if value.is_int() || value.is_float() {
             value
         } else if value.is_undefined() {
@@ -405,14 +407,15 @@ impl Realm {
             }
         } else if value.is_object() || value.is_function() {
             let prim = self.to_primitive(value);
-            self.coerce_number(prim)
+            self.to_number(prim)
         } else {
             todo!()
         }
     }
 
-    pub unsafe fn convert_int(&mut self, value: Value) -> i32 {
-        let number = self.coerce_number(value);
+    /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
+    pub unsafe fn to_int32(&mut self, value: Value) -> i32 {
+        let number = self.to_number(value);
         if number.is_int() {
             number.cast_int()
         } else if number.is_float() {
@@ -468,19 +471,19 @@ impl Realm {
             return true;
         }
         if left.is_number() && right.is_string() {
-            let right = self.coerce_number(right);
+            let right = self.to_number(right);
             return self.equal(left, right);
         }
         if right.is_number() && left.is_string() {
-            let left = self.coerce_number(left);
+            let left = self.to_number(left);
             return self.equal(left, right);
         }
         if left.is_bool() {
-            let left = self.coerce_number(left);
+            let left = self.to_number(left);
             return self.equal(left, right);
         }
         if right.is_bool() {
-            let right = self.coerce_number(right);
+            let right = self.to_number(right);
             return self.equal(left, right);
         }
         if !left.is_object() && !left.is_function() && right.is_object() {
@@ -503,8 +506,8 @@ impl Realm {
             (self.to_primitive(left), self.to_primitive(right))
         };
         if left.is_string() || right.is_string() {
-            let left = self.coerce_string(left);
-            let right = self.coerce_string(right);
+            let left = self.to_string(left);
+            let right = self.to_string(right);
             if left.as_ref().starts_with(right.as_ref()) {
                 return false.into();
             }
@@ -522,8 +525,8 @@ impl Realm {
             }
         }
 
-        let left = self.coerce_number(left);
-        let right = self.coerce_number(right);
+        let left = self.to_number(left);
+        let right = self.to_number(right);
         if left.is_int() && right.is_string() {
             return (left.cast_int() < right.cast_int()).into();
         }
@@ -560,12 +563,12 @@ impl Realm {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
         if left.is_string() || right.is_string() {
-            let left = self.coerce_string(left);
-            let right = self.coerce_string(right);
+            let left = self.to_string(left);
+            let right = self.to_string(right);
             return Value::from(self.gc.allocate(left.to_string() + &right.to_string()));
         }
-        let left = self.coerce_number(left);
-        let right = self.coerce_number(right);
+        let left = self.to_number(left);
+        let right = self.to_number(right);
         let left = if left.is_int() {
             left.cast_int() as f64
         } else if left.is_float() {
@@ -597,8 +600,8 @@ impl Realm {
     ) -> Value {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
-        let left = self.coerce_number(left);
-        let right = self.coerce_number(right);
+        let left = self.to_number(left);
+        let right = self.to_number(right);
         let left = if left.is_int() {
             left.cast_int() as f64
         } else if left.is_float() {

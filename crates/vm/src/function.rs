@@ -54,7 +54,7 @@ impl Function {
         let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
         Function {
             kind,
-            object: Object::new(),
+            object: Object::new(None),
         }
     }
 
@@ -66,7 +66,7 @@ impl Function {
         let kind = FunctionKind::Native(Box::new(f));
         Function {
             kind,
-            object: Object::new(),
+            object: Object::new(None),
         }
     }
 
@@ -74,7 +74,7 @@ impl Function {
     pub fn from_vm(vm: VmFunction) -> Self {
         Function {
             kind: FunctionKind::Vm(vm),
-            object: Object::new(),
+            object: Object::new(None),
         }
     }
 
