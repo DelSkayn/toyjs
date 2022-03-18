@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use crate::{
     gc::Trace,
     instructions::{ByteCode, ByteFunction, Instruction},
