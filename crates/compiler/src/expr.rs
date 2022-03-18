@@ -95,12 +95,11 @@ impl AssignmentTarget {
 
     /// Returns an optional placement register if the assignment target is an local register.
     pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
-        if let Self::Variable(x) = self {
-            let symbol = &this.symbol_table.symbols()[*x];
-            if symbol.decl_type.is_local()
-                && this.symbol_table.in_scope(*x, this.builder.lexical_scope())
+        if let Self::Variable(x) = *self {
+            if this.symbol_table.is_symbol_local(x)
+                && this.symbol_table.in_scope(x, this.builder.lexical_scope())
             {
-                Some(this.builder.alloc_symbol(*x))
+                Some(this.builder.alloc_symbol(x))
             } else {
                 None
             }
@@ -114,12 +113,12 @@ impl AssignmentTarget {
     /// register.
     pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, src: Register) {
         match *self {
-            Self::Variable(x) => {
-                let symbol = &this.symbol_table.symbols()[x];
-                if !symbol.decl_type.is_local() {
+            Self::Variable(symbol_id) => {
+                let symbol = &this.symbol_table.symbols()[symbol_id];
+                if this.symbol_table.is_symbol_local(symbol_id) {
                     let name = this.compile_literal(
                         None,
-                        Literal::String(this.symbol_table.symbols()[x].ident),
+                        Literal::String(this.symbol_table.symbols()[symbol_id].ident),
                     );
                     this.builder.free_temp(name);
 
@@ -128,8 +127,11 @@ impl AssignmentTarget {
                         key: name.0,
                     });
                 } else {
-                    if !this.symbol_table.in_scope(x, this.builder.lexical_scope()) {
-                        let upvalue = this.builder.capture_upvalue(x, symbol.decl_scope);
+                    if !this
+                        .symbol_table
+                        .in_scope(symbol_id, this.builder.lexical_scope())
+                    {
+                        let upvalue = this.builder.capture_upvalue(symbol_id, symbol.decl_scope);
                         this.builder.push(Instruction::UpvalueAssign {
                             src: src.0,
                             slot: upvalue.0,
@@ -695,7 +697,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
         let symbol = &self.symbol_table.symbols()[symbol_id];
-        if symbol.decl_type.is_local() {
+        if self.symbol_table.is_symbol_local(symbol_id) {
             if self
                 .symbol_table
                 .in_scope(symbol_id, self.builder.lexical_scope())

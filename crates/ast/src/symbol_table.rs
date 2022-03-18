@@ -27,7 +27,7 @@ pub enum DeclType {
 }
 
 impl DeclType {
-    pub fn is_local(self) -> bool {
+    pub fn is_always_local(self) -> bool {
         match self {
             DeclType::Let | DeclType::Const | DeclType::Argument => true,
             DeclType::Var | DeclType::Implicit => false,
@@ -175,6 +175,15 @@ impl<A: Allocator> SymbolTable<A> {
     /// Returns the map containing all scopes
     pub fn scopes(&self) -> &Scopes<A> {
         &self.scopes
+    }
+
+    pub fn is_symbol_local(&self, symbol: SymbolId) -> bool {
+        let sym = &self.symbols[symbol];
+        if sym.decl_type.is_always_local() {
+            true
+        } else {
+            sym.decl_type == DeclType::Var && self.function_scope(sym.decl_scope) != self.global
+        }
     }
 
     /// Returns wether a scope is the child of an other scope directly or indirectly.

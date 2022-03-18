@@ -36,7 +36,7 @@ unsafe impl Trace for ExecutionContext {
 
     fn trace(&self, ctx: crate::gc::Ctx) {
         ctx.mark(self.function);
-        self.trace(ctx);
+        self.this.trace(ctx);
         self.new_target.trace(ctx);
     }
 }
