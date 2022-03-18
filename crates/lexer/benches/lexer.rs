@@ -1,3 +1,4 @@
+/*
 #![allow(unused)]
 use common::{interner::Interner, source::Source};
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
@@ -36,3 +37,4 @@ pub fn benchmark(c: &mut Criterion) {
 
 criterion_group!(benches, benchmark);
 criterion_main!(benches);
+*/

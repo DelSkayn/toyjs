@@ -11,6 +11,16 @@ impl<'js> FromJs<'js> for Value<'js> {
     }
 }
 
+impl<'js> FromJs<'js> for f64 {
+    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Self {
+        let value = ctx.coerce_number(value);
+        value
+            .into_f64()
+            .or_else(|| value.into_i32().map(|x| x.into()))
+            .expect("coerce number did not return a number")
+    }
+}
+
 pub trait IntoJs<'js> {
     fn into_js(self, ctx: Ctx<'js>) -> Value<'js>;
 }

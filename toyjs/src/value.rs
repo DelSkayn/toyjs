@@ -1,6 +1,6 @@
 use crate::{Ctx, Function, Object, String};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Value<'js> {
     ctx: Ctx<'js>,
     value: vm::Value,
@@ -49,6 +49,22 @@ impl<'js> Value<'js> {
             self.value.cast_float().is_nan()
         } else {
             false
+        }
+    }
+
+    pub fn into_f64(self) -> Option<f64> {
+        if self.value.is_float() {
+            Some(self.value.cast_float())
+        } else {
+            None
+        }
+    }
+
+    pub fn into_i32(self) -> Option<i32> {
+        if self.value.is_int() {
+            Some(self.value.cast_int())
+        } else {
+            None
         }
     }
 }

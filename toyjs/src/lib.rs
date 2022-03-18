@@ -16,7 +16,7 @@ pub use string::String;
 mod value;
 pub use value::Value;
 
-mod convert;
+pub mod convert;
 
 mod runtime;
 
@@ -33,7 +33,10 @@ impl Context {
         res
     }
 
-    pub fn with<'js, F: FnOnce(Ctx<'js>) -> R, R>(&self, f: F) -> R {
+    pub fn with<F, R>(&self, f: F) -> R
+    where
+        F: for<'js> FnOnce(Ctx<'js>) -> R,
+    {
         let mut guard = self.inner.borrow_mut();
         unsafe {
             guard.push_frame();
