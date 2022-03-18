@@ -6,7 +6,10 @@ use ast::SymbolTable;
 use common::interner::Interner;
 
 use crate::{
-    function::Function, gc::Trace, instructions::ByteCode, object::Object, Gc, GcArena, Value,
+    gc::Trace,
+    instructions::ByteCode,
+    object::{ConstructorFn, Object},
+    Gc, GcArena, Value,
 };
 
 mod stack;
@@ -15,8 +18,10 @@ mod exec;
 mod reader;
 pub use reader::InstructionReader;
 
-use self::{environment::Environment, exec::ExecutionContext};
+use self::{builtin::Builtin, environment::Environment, exec::ExecutionContext};
 mod environment;
+
+mod builtin;
 
 pub struct Realm {
     pub symbol_table: SymbolTable<Global>,
@@ -25,6 +30,7 @@ pub struct Realm {
     pub global: Gc<Object>,
     pub stack: Stack,
     pub root: Gc<Environment>,
+    pub builtin: Builtin,
 }
 
 impl Realm {
@@ -34,14 +40,19 @@ impl Realm {
         let gc = GcArena::new();
         let global = gc.allocate(Object::new(None));
         let stack = Stack::new();
-        Realm {
+        let mut res = Realm {
+            builtin: Builtin::new(),
             symbol_table,
             interner,
             global,
             stack,
             root: gc.allocate(Environment::root()),
             gc,
+        };
+        unsafe {
+            res.init_builtin();
         }
+        res
     }
 
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, Value> {
@@ -64,15 +75,23 @@ impl Realm {
         self.gc.allocate(Object::new(prototype))
     }
 
+    pub unsafe fn create_base_object(&self) -> Gc<Object> {
+        self.create_object(self.builtin.object_proto)
+    }
+
     pub unsafe fn create_string(&self, s: String) -> Gc<String> {
         self.gc.allocate(s)
     }
 
-    pub unsafe fn create_function<F>(&self, f: F) -> Gc<Function>
+    pub unsafe fn create_shared_function<F>(&self, f: F) -> Gc<Object>
     where
         F: for<'a> Fn(&mut Realm) -> Result<Value, Value> + 'static,
     {
-        self.gc.allocate(Function::from_native(f))
+        self.gc.allocate(Object::from_shared(self, f))
+    }
+
+    pub unsafe fn create_constructor(&self, f: ConstructorFn) -> Gc<Object> {
+        self.gc.allocate(Object::from_constructor(self, f))
     }
 }
 

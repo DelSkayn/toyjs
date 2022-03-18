@@ -8,11 +8,15 @@ use crate::{
 };
 use common::collections::HashMap;
 
+mod function;
+pub use function::*;
+
 /// A javascript object
 pub struct Object {
     prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, Value>>,
     array: UnsafeCell<Vec<Value>>,
+    pub function: Option<FunctionKind>,
 }
 
 impl Object {
@@ -22,6 +26,7 @@ impl Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
+            function: None,
         }
     }
 

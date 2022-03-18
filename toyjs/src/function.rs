@@ -5,11 +5,11 @@ use crate::Ctx;
 #[derive(Clone, Copy)]
 pub struct Function<'js> {
     pub(crate) ctx: Ctx<'js>,
-    pub(crate) ptr: Gc<vm::Function>,
+    pub(crate) ptr: Gc<vm::Object>,
 }
 
 impl<'js> Function<'js> {
-    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Function>) -> Self {
+    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object>) -> Self {
         Function { ctx, ptr }
     }
 
