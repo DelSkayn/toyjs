@@ -24,14 +24,14 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             }
             t!("break") => {
                 if !self.state.r#break {
-                    unexpected!(self => "`break` is disallowed in this scope");
+                    unexpected!(self => "`break` is disallowed in this scope.");
                 }
                 self.next()?;
                 Ok(ast::Stmt::Break)
             }
             t!("continue") => {
                 if !self.state.r#continue {
-                    unexpected!(self => "`continue` is disallowed in this scope");
+                    unexpected!(self => "`continue` is disallowed in this scope.");
                 }
                 self.next()?;
                 Ok(ast::Stmt::Continue)
@@ -39,7 +39,15 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("{") => self.parse_block(),
             t!("function") => self.parse_function(),
             t!("try") => self.parse_try(),
-            _ => Ok(ast::Stmt::Expr(self.parse_expr()?)),
+            _ => {
+                let expr = self.parse_expr()?;
+                if !self.eat(t!(";"))? {
+                    if self.peek()?.is_some() {
+                        unexpected!(self,";" => "naked expression only allowed at the end of a script.")
+                    }
+                }
+                Ok(ast::Stmt::Expr(expr))
+            }
         };
         self.eat(t!(";"))?;
         res
