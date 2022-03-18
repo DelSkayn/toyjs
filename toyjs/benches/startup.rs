@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use toyjs::{Context, Value};
+use toyjs::Context;
 
 fn startup(c: &mut Criterion) {
     c.bench_function("startup", |b| {

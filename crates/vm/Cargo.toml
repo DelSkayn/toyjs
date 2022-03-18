@@ -10,4 +10,4 @@ edition = "2018"
 common = { package="toyjs_common",path = "../common/" }
 token = { package="toyjs_token",path = "../token/" }
 lexer = { package="toyjs_lexer",path = "../lexer/" }
-ast = { package="toyjs_ast",path = "../ast/" }
+# ast = { package="toyjs_ast",path = "../ast/" }

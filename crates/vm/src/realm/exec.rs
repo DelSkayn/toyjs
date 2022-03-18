@@ -17,15 +17,21 @@ pub enum NumericOperator {
     Pow,
 }
 
-#[derive(Clone, Copy)]
-pub struct ExecutionContext {
+pub struct ExecutionContext<U: 'static> {
     pub instr: InstructionReader,
-    pub function: Gc<Object>,
+    pub function: Gc<Object<U>>,
     pub this: Value,
     pub new_target: Value,
 }
 
-unsafe impl Trace for ExecutionContext {
+impl<U> Copy for ExecutionContext<U> {}
+impl<U> Clone for ExecutionContext<U> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+unsafe impl<U> Trace for ExecutionContext<U> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -40,8 +46,8 @@ unsafe impl Trace for ExecutionContext {
     }
 }
 
-impl Realm {
-    pub unsafe fn execute(&mut self, mut ctx: ExecutionContext) -> Result<Value, Value> {
+impl<U: Trace> Realm<U> {
+    pub unsafe fn execute(&mut self, mut ctx: ExecutionContext<U>) -> Result<Value, Value> {
         loop {
             match ctx.instr.next() {
                 Instruction::LoadConst { dst, cons } => {
@@ -60,7 +66,7 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.gc.collect_debt(&(&*self, ctx.instr, ctx.function));
-                    let object = Object::new(None);
+                    let object = Object::<U>::new(None);
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
                 }
@@ -345,11 +351,11 @@ impl Realm {
 
     pub unsafe fn unwind<R, O, F>(
         &mut self,
-        ctx: &mut ExecutionContext,
+        ctx: &mut ExecutionContext<U>,
         f: F,
     ) -> Result<Option<O>, Value>
     where
-        F: FnOnce(&mut Realm, &mut ExecutionContext) -> Result<R, Value>,
+        F: FnOnce(&mut Self, &mut ExecutionContext<U>) -> Result<R, Value>,
         R: Into<Option<O>>,
     {
         match f(self, ctx) {
@@ -363,7 +369,7 @@ impl Realm {
 
     pub unsafe fn unwind_error(
         &mut self,
-        ctx: &mut ExecutionContext,
+        ctx: &mut ExecutionContext<U>,
         error: Value,
     ) -> Result<(), Value> {
         loop {
@@ -420,9 +426,9 @@ impl Realm {
         }
     }
 
-    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object> {
+    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object<U>> {
         if value.is_null() || value.is_undefined() {
-            return self.create_base_object();
+            return self.create_object();
         }
         todo!()
     }
@@ -486,7 +492,9 @@ impl Realm {
             return left.unsafe_cast_string() == right.unsafe_cast_string();
         }
         if left.is_object() {
-            return left.unsafe_cast_object().ptr_eq(right.unsafe_cast_object());
+            return left
+                .unsafe_cast_object::<U>()
+                .ptr_eq(right.unsafe_cast_object());
         }
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();
@@ -691,8 +699,8 @@ impl Realm {
         &mut self,
         function_id: u16,
         reader: &InstructionReader,
-        function: Gc<Object>,
-    ) -> Object {
+        function: Gc<Object<U>>,
+    ) -> Object<U> {
         let bc_function = reader.function(function_id);
         let function = function.as_vm_function();
         let upvalues = bc_function
@@ -721,7 +729,7 @@ impl Realm {
     pub(crate) unsafe fn construct_function_root(
         &mut self,
         reader: &InstructionReader,
-    ) -> Gc<Object> {
+    ) -> Gc<Object<U>> {
         let bc_function = reader.function(0);
         debug_assert!(bc_function.upvalues.is_empty());
         self.gc.allocate(Object::from_vm(
@@ -737,7 +745,7 @@ impl Realm {
     unsafe fn call(
         &mut self,
         function: Value,
-        ctx: &mut ExecutionContext,
+        ctx: &mut ExecutionContext<U>,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
         self.unwind(ctx, |this, ctx| {
@@ -788,7 +796,7 @@ impl Realm {
         &mut self,
         function: Value,
         target_obj: Value,
-        ctx: &mut ExecutionContext,
+        ctx: &mut ExecutionContext<U>,
     ) -> Result<Option<Value>, Value> {
         self.unwind(ctx, |this, _| {
             if !function.is_object() {
@@ -806,7 +814,7 @@ impl Realm {
                     let bc = func.bc;
                     let bc_function = &bc.functions[func.function as usize];
                     this.stack.enter(bc_function.registers);
-                    let this_object = this.create_object(None);
+                    let this_object = this.create_object();
                     let res = this.execute(ExecutionContext {
                         function,
                         this: this_object.into(),

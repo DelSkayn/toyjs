@@ -5,8 +5,8 @@ use std::cell::RefCell;
 
 mod ctx;
 mod ffi;
-use ctx::ContextInner;
 pub use ctx::Ctx;
+use ctx::UserData;
 mod function;
 pub use function::Function;
 mod object;
@@ -21,13 +21,13 @@ pub mod convert;
 mod runtime;
 
 pub struct Context {
-    inner: RefCell<ContextInner>,
+    inner: RefCell<vm::Realm<UserData>>,
 }
 
 impl Context {
     pub fn new() -> Self {
         let res = Context {
-            inner: RefCell::new(ContextInner::new()),
+            inner: RefCell::new(vm::Realm::new_with_user_data(UserData::new())),
         };
         res.with(runtime::init);
         res
@@ -39,10 +39,10 @@ impl Context {
     {
         let mut guard = self.inner.borrow_mut();
         unsafe {
-            guard.push_frame();
-            let ctx = Ctx::wrap(&mut *guard);
+            let mut ctx = Ctx::wrap(&mut *guard);
+            ctx.push_frame();
             let res = f(ctx);
-            guard.pop_frame();
+            ctx.pop_frame();
             res
         }
     }
