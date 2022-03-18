@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
 use crate::{
-    function::{Function, FunctionKind, VmFunction, RECURSIVE_FUNC_PANIC},
     gc::Trace,
     instructions::{Instruction, Upvalue},
-    object::Object,
+    object::{FunctionKind, Object, VmFunction, RECURSIVE_FUNC_PANIC},
     Gc, Value,
 };
 
@@ -21,7 +20,7 @@ pub enum NumericOperator {
 #[derive(Clone, Copy)]
 pub struct ExecutionContext {
     pub instr: InstructionReader,
-    pub function: Gc<Function>,
+    pub function: Gc<Object>,
     pub this: Value,
     pub new_target: Value,
 }
@@ -74,10 +73,6 @@ impl Realm {
                         let obj = obj.unsafe_cast_object();
                         self.gc.write_barrier(obj);
                         obj.index_set(key, val, self);
-                    } else if obj.is_function() {
-                        let func = obj.unsafe_cast_function();
-                        self.gc.write_barrier(func);
-                        func.as_object().index_set(key, val, self);
                     } else {
                         todo!()
                     }
@@ -87,9 +82,6 @@ impl Realm {
                     let key = self.stack.read(key);
                     if obj.is_object() {
                         let res = obj.unsafe_cast_object().index(key, self);
-                        self.stack.write(dst, res)
-                    } else if obj.is_function() {
-                        let res = obj.unsafe_cast_function().as_object().index(key, self);
                         self.stack.write(dst, res)
                     } else {
                         todo!()
@@ -423,11 +415,16 @@ impl Realm {
             Cow::Borrowed(value.unsafe_cast_string().ref_static().as_ref())
         } else if value.is_object() {
             Cow::Borrowed("[object Object]")
-        } else if value.is_function() {
-            Cow::Borrowed("[function Function]")
         } else {
             todo!()
         }
+    }
+
+    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object> {
+        if value.is_null() || value.is_undefined() {
+            return self.create_base_object();
+        }
+        todo!()
     }
 
     /// Implements type conversion [`ToNumber`](https://tc39.es/ecma262/#sec-tonumber)
@@ -448,7 +445,7 @@ impl Realm {
             } else {
                 Value::from(f64::NAN)
             }
-        } else if value.is_object() || value.is_function() {
+        } else if value.is_object() {
             let prim = self.to_primitive(value);
             self.to_number(prim)
         } else {
@@ -491,11 +488,6 @@ impl Realm {
         if left.is_object() {
             return left.unsafe_cast_object().ptr_eq(right.unsafe_cast_object());
         }
-        if left.is_function() {
-            return left
-                .unsafe_cast_function()
-                .ptr_eq(right.unsafe_cast_function());
-        }
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();
         }
@@ -529,11 +521,11 @@ impl Realm {
             let right = self.to_number(right);
             return self.equal(left, right);
         }
-        if !left.is_object() && !left.is_function() && right.is_object() {
+        if !left.is_object() && right.is_object() {
             let right = self.to_primitive(right);
             return self.equal(left, right);
         }
-        if !right.is_object() && !right.is_function() && left.is_object() {
+        if !right.is_object() && left.is_object() {
             let left = self.to_primitive(left);
             return self.equal(left, right);
         }
@@ -675,7 +667,7 @@ impl Realm {
 
     #[inline]
     pub unsafe fn to_primitive(&mut self, v: Value) -> Value {
-        if v.is_object() || v.is_function() {
+        if v.is_object() {
             todo!()
         }
         v
@@ -699,8 +691,8 @@ impl Realm {
         &mut self,
         function_id: u16,
         reader: &InstructionReader,
-        function: Gc<Function>,
-    ) -> Function {
+        function: Gc<Object>,
+    ) -> Object {
         let bc_function = reader.function(function_id);
         let function = function.as_vm_function();
         let upvalues = bc_function
@@ -716,24 +708,30 @@ impl Realm {
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        Function::from_vm(VmFunction {
-            bc: reader.bc,
-            function: function_id,
-            upvalues,
-        })
+        Object::from_vm(
+            self,
+            VmFunction {
+                bc: reader.bc,
+                function: function_id,
+                upvalues,
+            },
+        )
     }
 
     pub(crate) unsafe fn construct_function_root(
         &mut self,
         reader: &InstructionReader,
-    ) -> Gc<Function> {
+    ) -> Gc<Object> {
         let bc_function = reader.function(0);
         debug_assert!(bc_function.upvalues.is_empty());
-        self.gc.allocate(Function::from_vm(VmFunction {
-            bc: reader.bc,
-            function: 0,
-            upvalues: Box::new([]),
-        }))
+        self.gc.allocate(Object::from_vm(
+            self,
+            VmFunction {
+                bc: reader.bc,
+                function: 0,
+                upvalues: Box::new([]),
+            },
+        ))
     }
 
     unsafe fn call(
@@ -743,12 +741,16 @@ impl Realm {
         dst: u8,
     ) -> Result<Option<Value>, Value> {
         self.unwind(ctx, |this, ctx| {
-            if !function.is_function() {
+            if !function.is_object() {
                 todo!()
             }
-
-            let function = function.unsafe_cast_function();
-            match function.kind {
+            let function = function.unsafe_cast_object();
+            let kind = if let Some(x) = function.function.as_ref() {
+                x
+            } else {
+                todo!()
+            };
+            match kind {
                 FunctionKind::Vm(ref func) => {
                     let bc = func.bc;
                     let bc_function = &bc.functions[func.function as usize];
@@ -757,13 +759,19 @@ impl Realm {
                     ctx.instr = InstructionReader::from_bc(bc, func.function);
                     return Ok(None);
                 }
+                FunctionKind::Static(x) => {
+                    this.stack.enter(0);
+                    let res = x(this)?;
+                    this.stack.pop();
+                    Ok(Some(res))
+                }
                 FunctionKind::Mutable(ref x) => {
                     this.stack.enter(0);
                     let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this)?;
                     this.stack.pop();
                     Ok(Some(res))
                 }
-                FunctionKind::Native(ref x) => {
+                FunctionKind::Shared(ref x) => {
                     this.stack.enter(0);
                     let res = (*x)(this)?;
                     this.stack.pop();
@@ -783,12 +791,17 @@ impl Realm {
         ctx: &mut ExecutionContext,
     ) -> Result<Option<Value>, Value> {
         self.unwind(ctx, |this, _| {
-            if !function.is_function() {
+            if !function.is_object() {
                 todo!()
             }
 
-            let function = function.unsafe_cast_function();
-            match function.kind {
+            let function = function.unsafe_cast_object();
+            let kind = if let Some(x) = function.function.as_ref() {
+                x
+            } else {
+                todo!()
+            };
+            match kind {
                 FunctionKind::Vm(ref func) => {
                     let bc = func.bc;
                     let bc_function = &bc.functions[func.function as usize];

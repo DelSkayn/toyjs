@@ -112,7 +112,7 @@ impl<'js> Ctx<'js> {
     {
         unsafe {
             let inner = self.ctx;
-            let function = (*self.ctx).realm.create_function(move |_| {
+            let function = (*self.ctx).realm.create_shared_function(move |_| {
                 let ctx = Ctx {
                     ctx: inner,
                     marker: PhantomData,

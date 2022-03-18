@@ -1,5 +1,4 @@
 use crate::{
-    function::Function,
     gc::{Ctx, Gc, Trace},
     Object,
 };
@@ -21,8 +20,8 @@ pub const TAG_OBJECT: u64 = 0x0001_0000_0000_0000;
 pub const TAG_STRING: u64 = 0x0002_0000_0000_0000;
 pub const TAG_BIGINT: u64 = 0x0003_0000_0000_0000;
 pub const TAG_SYMBOL: u64 = 0x0004_0000_0000_0000; //?
-pub const TAG_FUNCTION: u64 = 0x0005_0000_0000_0000; //?
-pub const TAG_UNUSED: u64 = 0x0007_0000_0000_0000;
+pub const TAG_UNUSED1: u64 = 0x0005_0000_0000_0000; //?
+pub const TAG_UNUSED2: u64 = 0x0007_0000_0000_0000;
 pub const TAG_INT: u64 = 0x0007_0000_0000_0000;
 
 const MIN_FLOAT: u64 = 0x0008_0000_0000_0000;
@@ -69,7 +68,7 @@ impl Value {
     /// Is this value a gc allocated value.
     #[inline]
     pub fn requires_gc(self) -> bool {
-        self.is_object() || self.is_function() || self.is_string()
+        self.is_object() || self.is_string()
     }
 
     /// Is this value a boolean.
@@ -140,8 +139,8 @@ impl Value {
 
     /// Is this value a function.
     #[inline]
-    pub fn is_function(self) -> bool {
-        unsafe { self.0.bits & TAG_MASK == TAG_FUNCTION }
+    pub unsafe fn is_function(self) -> bool {
+        self.is_object() && self.unsafe_cast_object().is_function()
     }
 
     /// Create a new value containing the undefined javascript value.
@@ -225,17 +224,6 @@ impl Value {
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
 
-    /// Convert the value to [`Function`]
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an function
-    #[inline]
-    pub unsafe fn unsafe_cast_function(self) -> Gc<Function> {
-        debug_assert!(self.is_function());
-        Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
-    }
-
     /// Convert the value to `String`
     ///
     /// # Safety
@@ -293,15 +281,6 @@ impl From<Gc<Object>> for Value {
     }
 }
 
-impl From<Gc<Function>> for Value {
-    #[inline]
-    fn from(v: Gc<Function>) -> Value {
-        Value(ValueUnion {
-            bits: TAG_FUNCTION | Gc::into_raw(v) as u64,
-        })
-    }
-}
-
 unsafe impl Trace for Value {
     fn needs_trace() -> bool
     where
@@ -315,8 +294,6 @@ unsafe impl Trace for Value {
             unsafe { ctx.mark(self.unsafe_cast_object()) }
         } else if self.is_string() {
             unsafe { ctx.mark(self.unsafe_cast_string()) }
-        } else if self.is_function() {
-            unsafe { ctx.mark(self.unsafe_cast_function()) }
         }
     }
 }
@@ -344,10 +321,6 @@ impl fmt::Debug for Value {
                 }
                 TAG_BIGINT => todo!(),
                 TAG_SYMBOL => todo!(),
-                TAG_FUNCTION => {
-                    let mut obj = f.debug_tuple("JSValue::Function");
-                    obj.finish()
-                }
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
                     .field(&self.cast_int())
