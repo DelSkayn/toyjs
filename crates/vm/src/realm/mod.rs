@@ -1,7 +1,5 @@
 //! Implements the realm within wich scripts are executed.
 
-use std::alloc::Global;
-
 use crate::{
     gc::Trace,
     instructions::ByteCode,

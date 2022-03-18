@@ -2,7 +2,7 @@
 name = "toyjs_parser"
 version = "0.1.0"
 authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,8 +15,8 @@ lexer = { package="toyjs_lexer",path = "../lexer/" }
 ast = { package="toyjs_ast",path = "../ast/" }
 
 [dev-dependencies]
-criterion = "0.3.3"
-bumpalo = { version = "3.4.0", features = ["allocator_api"]}
+criterion = "0.3.5"
+bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 
 [[bin]]
 name = "dump_ast"
