@@ -17,10 +17,10 @@ vm = { package="toyjs_vm",path = "../crates/vm/" }
 bumpalo = { version = "3.4.0", features = ["allocator_api"]}
 
 [dev-dependencies]
-criterion = "0.3.3"
+criterion = "0.3"
 
 [[bench]]
-name = "expr"
+name = "startup"
 harness = false
 
 
