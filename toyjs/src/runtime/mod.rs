@@ -1,4 +1,4 @@
-use crate::{convert::IntoJs, ffi::Arguments, value::Value, Ctx};
+use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx};
 
 pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let mut idx = 0;
@@ -95,18 +95,16 @@ pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Va
 }
 
 pub fn init<'js>(ctx: Ctx<'js>) {
-    let object_class = ctx.create_object(None);
-
     let global = ctx.global();
-    let console = ctx.create_object(Some(object_class));
+    let console = ctx.create_object();
 
-    console.set("log", ctx.create_function(console_log));
-    console.set("input", ctx.create_function(console_in));
+    console.set("log", create_static_fn!(ctx, console_log));
+    console.set("input", create_static_fn!(ctx, console_in));
 
     global.set("console", console);
-    global.set("eval", ctx.create_function(eval));
+    global.set("eval", create_static_fn!(ctx, eval));
     global.set("undefined", Value::undefined(ctx));
     global.set("NaN", f64::NAN);
-    global.set("parseInt", ctx.create_function(parse_int));
-    global.set("isNaN", ctx.create_function(is_nan));
+    global.set("parseInt", create_static_fn!(ctx, parse_int));
+    global.set("isNaN", create_static_fn!(ctx, is_nan));
 }

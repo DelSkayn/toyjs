@@ -139,8 +139,8 @@ impl Value {
 
     /// Is this value a function.
     #[inline]
-    pub unsafe fn is_function(self) -> bool {
-        self.is_object() && self.unsafe_cast_object().is_function()
+    pub unsafe fn is_function<U: 'static>(self) -> bool {
+        self.is_object() && self.unsafe_cast_object::<U>().is_function()
     }
 
     /// Create a new value containing the undefined javascript value.
@@ -219,7 +219,7 @@ impl Value {
     ///
     /// Caller must guarentee that the value is an object
     #[inline]
-    pub unsafe fn unsafe_cast_object(self) -> Gc<Object> {
+    pub unsafe fn unsafe_cast_object<U>(self) -> Gc<Object<U>> {
         debug_assert!(self.is_object());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
@@ -272,9 +272,9 @@ impl From<Gc<String>> for Value {
     }
 }
 
-impl From<Gc<Object>> for Value {
+impl<U> From<Gc<Object<U>>> for Value {
     #[inline]
-    fn from(v: Gc<Object>) -> Value {
+    fn from(v: Gc<Object<U>>) -> Value {
         Value(ValueUnion {
             bits: TAG_OBJECT | Gc::into_raw(v) as u64,
         })
@@ -291,7 +291,7 @@ unsafe impl Trace for Value {
 
     fn trace(&self, ctx: Ctx) {
         if self.is_object() {
-            unsafe { ctx.mark(self.unsafe_cast_object()) }
+            unsafe { ctx.mark(self.unsafe_cast_object::<()>()) }
         } else if self.is_string() {
             unsafe { ctx.mark(self.unsafe_cast_string()) }
         }

@@ -12,16 +12,16 @@ mod function;
 pub use function::*;
 
 /// A javascript object
-pub struct Object {
-    prototype: Option<Gc<Object>>,
+pub struct Object<U: 'static> {
+    prototype: Option<Gc<Object<U>>>,
     values: UnsafeCell<HashMap<String, Value>>,
     array: UnsafeCell<Vec<Value>>,
-    pub function: Option<FunctionKind>,
+    pub function: Option<FunctionKind<U>>,
 }
 
-impl Object {
+impl<U: Trace> Object<U> {
     /// Create a new object.
-    pub fn new(prototype: Option<Gc<Object>>) -> Self {
+    pub fn new(prototype: Option<Gc<Object<U>>>) -> Self {
         Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
@@ -36,7 +36,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index(&self, key: Value, realm: &mut Realm) -> Value {
+    pub unsafe fn index(&self, key: Value, realm: &mut Realm<U>) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -74,7 +74,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm) {
+    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm<U>) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -95,7 +95,7 @@ impl Object {
     }
 }
 
-unsafe impl Trace for Object {
+unsafe impl<U: 'static> Trace for Object<U> {
     fn needs_trace() -> bool
     where
         Self: Sized,

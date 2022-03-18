@@ -1,15 +1,15 @@
 use vm::Gc;
 
-use crate::Ctx;
+use crate::{ctx::UserData, Ctx};
 
 #[derive(Clone, Copy)]
 pub struct Function<'js> {
     pub(crate) ctx: Ctx<'js>,
-    pub(crate) ptr: Gc<vm::Object>,
+    pub(crate) ptr: Gc<vm::Object<UserData>>,
 }
 
 impl<'js> Function<'js> {
-    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object>) -> Self {
+    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object<UserData>>) -> Self {
         Function { ctx, ptr }
     }
 

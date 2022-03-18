@@ -8,46 +8,49 @@ use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
+use vm::gc::Trace;
 
 use crate::{ffi::Arguments, Context, Function, Object, String, Value};
 
-pub(crate) struct ContextInner {
+#[doc(hidden)]
+pub struct UserData {
     pub symbol_table: SymbolTable<Global>,
     pub interner: Interner,
     pub alloc: Bump,
-    pub realm: vm::Realm,
 }
 
-impl ContextInner {
+unsafe impl Trace for UserData {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    fn trace(&self, _: vm::gc::Ctx) {}
+}
+
+impl UserData {
     pub fn new() -> Self {
-        ContextInner {
+        UserData {
             symbol_table: SymbolTable::new(),
             interner: Interner::new(),
             alloc: Bump::new(),
-            realm: vm::Realm::new(),
         }
-    }
-
-    pub unsafe fn push_frame(&mut self) {
-        self.realm.stack.enter(0);
-    }
-
-    pub unsafe fn pop_frame(&mut self) {
-        self.realm.stack.pop();
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ctx<'js> {
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) ctx: *mut ContextInner,
+    pub(crate) ctx: *mut vm::Realm<UserData>,
     marker: PhantomData<Cell<&'js Context>>,
 }
 
 impl<'js> Ctx<'js> {
     // # Safety
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) unsafe fn wrap(ctx: &mut ContextInner) -> Self {
+    pub(crate) unsafe fn wrap(ctx: &mut vm::Realm<UserData>) -> Self {
         Ctx {
             ctx,
             marker: PhantomData,
@@ -55,18 +58,24 @@ impl<'js> Ctx<'js> {
     }
 
     // Push a value onto the vm stack inorder to keep the value alive
-    pub(crate) fn push_value(self, value: vm::Value) {
-        unsafe {
-            if value.requires_gc() {
-                (*self.ctx).realm.stack.push(value);
-            }
+    pub(crate) unsafe fn push_value(self, value: vm::Value) {
+        if value.requires_gc() {
+            (*self.ctx).stack.push(value);
         }
+    }
+
+    pub(crate) unsafe fn push_frame(&mut self) {
+        (*self.ctx).stack.enter(0);
+    }
+
+    pub(crate) unsafe fn pop_frame(&mut self) {
+        (*self.ctx).stack.pop();
     }
 
     /// Returns the global object of the current context.
     pub fn global(self) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).realm.global();
+            let object = (*self.ctx).global();
             Object::wrap(self, object)
         }
     }
@@ -74,53 +83,66 @@ impl<'js> Ctx<'js> {
     /// Creates a javascript string from a rust string.
     pub fn create_string(self, s: impl Into<StdString>) -> String<'js> {
         unsafe {
-            let string = (*self.ctx).realm.create_string(s.into());
-            (*self.ctx).realm.stack.push(string.into());
+            let string = (*self.ctx).create_string(s.into());
+            (*self.ctx).stack.push(string.into());
             String::wrap(self, string)
+        }
+    }
+    pub fn create_object(self) -> Object<'js> {
+        unsafe {
+            let object = (*self.ctx).create_object();
+            (*self.ctx).stack.push(object.into());
+            Object::wrap(self, object)
         }
     }
 
     /// Creates a new empty object
-    pub fn create_object(self, prototype: Option<Object<'js>>) -> Object<'js> {
+    pub fn create_object_proto(self, prototype: Option<Object<'js>>) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx)
-                .realm
-                .create_object(prototype.map(|x| x.into_vm()));
-            (*self.ctx).realm.stack.push(object.into());
+            let object = (*self.ctx).create_object_proto(prototype.map(|x| x.into_vm()));
+            (*self.ctx).stack.push(object.into());
             Object::wrap(self, object)
         }
     }
 
     /// Coerces a javascript value into a string
     pub fn coerce_string(self, v: Value<'js>) -> Cow<'js, str> {
-        unsafe { (*self.ctx).realm.to_string(v.into_vm()) }
+        unsafe { (*self.ctx).to_string(v.into_vm()) }
     }
 
     /// Coerces a javascript value into a string
     pub fn coerce_number(self, v: Value<'js>) -> Value<'js> {
-        unsafe { Value::wrap(self, (*self.ctx).realm.to_number(v.into_vm())) }
+        unsafe { Value::wrap(self, (*self.ctx).to_number(v.into_vm())) }
     }
 
     pub fn coerce_integer(self, v: Value<'js>) -> i32 {
-        unsafe { (*self.ctx).realm.to_int32(v.into_vm()) }
+        unsafe { (*self.ctx).to_int32(v.into_vm()) }
+    }
+
+    #[doc(hidden)]
+    /// Creates a new function from a rust closure
+    pub unsafe fn create_static_function(
+        self,
+        f: fn(&mut vm::Realm<UserData>) -> Result<vm::Value, vm::Value>,
+    ) -> Function<'js>
+where {
+        let function = (*self.ctx).create_static_function(f);
+        (*self.ctx).stack.push(function.into());
+        Function::wrap(self, function)
     }
 
     /// Creates a new function from a rust closure
-    pub fn create_function<F>(self, f: F) -> Function<'js>
+    pub fn create_shared_function<F>(self, f: F) -> Function<'js>
     where
         F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
     {
         unsafe {
-            let inner = self.ctx;
-            let function = (*self.ctx).realm.create_shared_function(move |_| {
-                let ctx = Ctx {
-                    ctx: inner,
-                    marker: PhantomData,
-                };
+            let function = (*self.ctx).create_shared_function(move |realm| {
+                let ctx = Ctx::wrap(realm);
                 let args = Arguments::from_ctx(ctx);
                 f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)
             });
-            (*self.ctx).realm.stack.push(function.into());
+            (*self.ctx).stack.push(function.into());
             Function::wrap(self, function)
         }
     }
@@ -129,19 +151,19 @@ impl<'js> Ctx<'js> {
     pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
-            let lexer = Lexer::new(&source, &mut (*self.ctx).interner);
-            let ast = Parser::parse_script(lexer, &mut (*self.ctx).symbol_table, Global)
+            let lexer = Lexer::new(&source, &mut (*self.ctx).user_data.interner);
+            let ast = Parser::parse_script(lexer, &mut (*self.ctx).user_data.symbol_table, Global)
                 .map_err(|_| Value::undefined(self))?;
             let bytecode = Compiler::compile_script(
                 &ast,
-                &(*self.ctx).symbol_table,
-                &mut (*self.ctx).interner,
-                &(*self.ctx).realm.gc,
+                &(*self.ctx).user_data.symbol_table,
+                &mut (*self.ctx).user_data.interner,
+                &(*self.ctx).gc,
                 Global,
             );
-            let bytecode = (*self.ctx).realm.gc.allocate(bytecode);
+            let bytecode = (*self.ctx).gc.allocate(bytecode);
             std::mem::drop(ast);
-            let value = (*self.ctx).realm.eval(bytecode).map_err(|x| {
+            let value = (*self.ctx).eval(bytecode).map_err(|x| {
                 self.push_value(x);
                 Value::wrap(self, x)
             })?;

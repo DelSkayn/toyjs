@@ -2,21 +2,22 @@ use vm::Gc;
 
 use crate::{
     convert::{FromJs, IntoJs},
+    ctx::UserData,
     Ctx, Value,
 };
 
 #[derive(Clone, Copy)]
 pub struct Object<'js> {
     pub(crate) ctx: Ctx<'js>,
-    pub(crate) ptr: Gc<vm::Object>,
+    pub(crate) ptr: Gc<vm::Object<UserData>>,
 }
 
 impl<'js> Object<'js> {
-    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object>) -> Self {
+    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object<UserData>>) -> Self {
         Object { ctx, ptr }
     }
 
-    pub(crate) unsafe fn into_vm(self) -> Gc<vm::Object> {
+    pub(crate) unsafe fn into_vm(self) -> Gc<vm::Object<UserData>> {
         self.ptr
     }
 
@@ -28,7 +29,7 @@ impl<'js> Object<'js> {
         unsafe {
             let v = self
                 .ptr
-                .index(key.into_js(self.ctx).into_vm(), &mut (*self.ctx.ctx).realm);
+                .index(key.into_js(self.ctx).into_vm(), &mut (*self.ctx.ctx));
             self.ctx.push_value(v);
             V::from_js(self.ctx, Value::wrap(self.ctx, v))
         }
@@ -43,7 +44,7 @@ impl<'js> Object<'js> {
             self.ptr.index_set(
                 key.into_js(self.ctx).into_vm(),
                 value.into_js(self.ctx).into_vm(),
-                &mut (*self.ctx.ctx).realm,
+                &mut (*self.ctx.ctx),
             );
         }
     }

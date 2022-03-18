@@ -55,7 +55,7 @@ impl UpvalueObject {
     }
 }
 
-pub enum Frame {
+pub enum Frame<U: 'static> {
     /// An entry frame from rust into the interperter.
     /// If this frame is popped the interperter should return to rust.
     Entry {
@@ -73,18 +73,18 @@ pub enum Frame {
         /// Number of try frames between the current call frame and the previous.
         frame_offset: u8,
         open_upvalues: Vec<Gc<UpvalueObject>>,
-        data: CallFrameData,
+        data: CallFrameData<U>,
     },
     Try {
         data: TryFrameData,
     },
 }
 
-pub struct CallFrameData {
+pub struct CallFrameData<U: 'static> {
     /// The register to put the return value into.
     pub dst: u8,
     /// The instruction reader
-    pub ctx: ExecutionContext,
+    pub ctx: ExecutionContext<U>,
 }
 
 pub struct TryFrameData {
@@ -95,7 +95,7 @@ pub struct TryFrameData {
 }
 
 /// The vm stack implementation.
-pub struct Stack {
+pub struct Stack<U: 'static> {
     /// Start of the stack array.
     root: NonNull<Value>,
     /// points to the start of the current frame i.e. the first register in use.
@@ -103,7 +103,7 @@ pub struct Stack {
     /// points one past the last value in use.
     stack: *mut Value,
 
-    frames: Vec<Frame>,
+    frames: Vec<Frame<U>>,
 
     cur_frame_size: u32,
     /// Amount of values allocated for the stack
@@ -112,7 +112,7 @@ pub struct Stack {
     frame_offset: u8,
 }
 
-impl Stack {
+impl<U> Stack<U> {
     pub fn new() -> Self {
         let root = NonNull::dangling();
         Stack {
@@ -150,7 +150,7 @@ impl Stack {
         }
     }
 
-    pub fn enter_call(&mut self, new_registers: u8, dst: u8, ctx: ExecutionContext) {
+    pub fn enter_call(&mut self, new_registers: u8, dst: u8, ctx: ExecutionContext<U>) {
         unsafe {
             let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity {
@@ -193,7 +193,7 @@ impl Stack {
         }
     }
 
-    pub unsafe fn unwind(&mut self) -> Option<Result<TryFrameData, CallFrameData>> {
+    pub unsafe fn unwind(&mut self) -> Option<Result<TryFrameData, CallFrameData<U>>> {
         match self.frames.pop() {
             Some(Frame::Try { data }) => return Some(Ok(data)),
             Some(Frame::Call {
@@ -219,7 +219,7 @@ impl Stack {
         }
     }
 
-    pub unsafe fn pop(&mut self) -> Option<CallFrameData> {
+    pub unsafe fn pop(&mut self) -> Option<CallFrameData<U>> {
         loop {
             match self.frames.pop() {
                 Some(Frame::Try { .. }) => {}
@@ -380,7 +380,7 @@ impl Stack {
     }
 }
 
-unsafe impl Trace for Stack {
+unsafe impl<U> Trace for Stack<U> {
     fn needs_trace() -> bool
     where
         Self: Sized,
