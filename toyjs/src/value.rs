@@ -52,6 +52,10 @@ impl<'js> Value<'js> {
         }
     }
 
+    pub fn is_falseish(self) -> bool {
+        unsafe { (*self.ctx.ctx).is_falsish(self.value) }
+    }
+
     pub fn into_f64(self) -> Option<f64> {
         if self.value.is_float() {
             Some(self.value.cast_float())

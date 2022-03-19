@@ -1,5 +1,16 @@
 use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx};
 
+pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+    let mut idx = 0;
+    while let Some(x) = args.get(idx) {
+        if x.is_falseish() {
+            return Err(Value::undefined(ctx));
+        }
+        idx += 1;
+    }
+    Ok(Value::undefined(ctx))
+}
+
 pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let mut idx = 0;
     while let Some(x) = args.get(idx) {
@@ -107,4 +118,5 @@ pub fn init<'js>(ctx: Ctx<'js>) {
     global.set("NaN", f64::NAN);
     global.set("parseInt", create_static_fn!(ctx, parse_int));
     global.set("isNaN", create_static_fn!(ctx, is_nan));
+    global.set("assert", create_static_fn!(ctx, assert));
 }

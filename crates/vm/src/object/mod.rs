@@ -18,6 +18,7 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Debug)]
 /// A javascript object
 pub struct Object<U: 'static> {
     prototype: Option<Gc<Object<U>>>,

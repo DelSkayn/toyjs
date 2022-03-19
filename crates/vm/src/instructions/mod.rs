@@ -12,8 +12,7 @@
 //! Bytecode which is correct should make sure that the following statements hold.
 //!
 //! - No pointer to an instruction, be it a jump or a offset into the instructions from a
-//! bytefuction, should point to a value outside of the instruction buffer.
-//! - All constants and functions id's in the bytecode should be valid id's for the current
+//! bytefuction, should point to a value outside of the instruction buffer. - All constants and functions id's in the bytecode should be valid id's for the current
 //! bytecode.
 //! - No instructions references a register larger then the amount of registers the current
 //! function has defined.
@@ -245,7 +244,7 @@ define_instructions! {
         Push{ src: u8},
 
         Call{dst:u8, func:u8},
-        Construct{dst: u8, func: u8, obj: u8},
+        CallConstruct{dst: u8, func: u8, obj: u8},
 
         Throw{ src: u8 },
 

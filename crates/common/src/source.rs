@@ -116,7 +116,7 @@ impl Source {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```text
     /// --> location/of/file:line:column
     /// ```
     pub fn format_span_line<W: Write>(&self, mut w: W, span: Span) -> fmt::Result {
@@ -137,7 +137,7 @@ impl Source {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```text
     ///     |
     /// num |  ...some_source_code().somewhere
     ///     |                        ^^^^^^^^^ optional message

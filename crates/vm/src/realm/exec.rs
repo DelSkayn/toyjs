@@ -17,6 +17,7 @@ pub enum NumericOperator {
     Pow,
 }
 
+#[derive(Debug)]
 pub struct ExecutionContext<U: 'static> {
     pub instr: InstructionReader,
     pub function: Gc<Object<U>>,
@@ -292,7 +293,7 @@ impl<U: Trace> Realm<U> {
 
                 Instruction::Try { dst, tgt } => self
                     .stack
-                    .push_try(dst, ctx.instr.absolute_offset(tgt) as usize),
+                    .push_try(dst, dbg!(ctx.instr.absolute_offset(tgt)) as usize),
 
                 Instruction::Untry { _ignore: () } => {
                     self.stack.pop_try();
@@ -315,10 +316,10 @@ impl<U: Trace> Realm<U> {
                         }
                     }
                 }
-                Instruction::Construct { dst, func, obj } => {
+                Instruction::CallConstruct { dst, func, obj } => {
                     let func = self.stack.read(func);
                     let obj = self.stack.read(obj);
-                    match self.construct(func, obj, &mut ctx) {
+                    match self.call_construct(func, obj, &mut ctx) {
                         Ok(Some(value)) => self.stack.write(dst, value),
                         Ok(None) => {}
                         Err(error) => {
@@ -381,7 +382,7 @@ impl<U: Trace> Realm<U> {
             match self.stack.unwind() {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
-                    ctx.instr.absolute_jump(catch.ip_offset);
+                    ctx.instr.absolute_jump(dbg!(catch.ip_offset));
                     return Ok(());
                 }
                 Some(Err(frame)) => {
@@ -741,10 +742,12 @@ impl<U: Trace> Realm<U> {
         function.flags |= ObjectFlags::CONSTRUCTOR;
         let function = self.gc.allocate(function);
         let proto = self.create_object();
-        let key = self.create_string("constructor").into();
-        proto.raw_index_set(key, function.into(), self);
-        let key = self.create_string("prototype").into();
-        function.raw_index_set(key, proto.into(), self);
+        proto.raw_index_set(
+            self.builtin.key_construct.unwrap().into(),
+            function.into(),
+            self,
+        );
+        function.raw_index_set(self.builtin.key_proto.unwrap().into(), proto.into(), self);
         function
     }
 
@@ -811,7 +814,7 @@ impl<U: Trace> Realm<U> {
         })
     }
 
-    unsafe fn construct(
+    unsafe fn call_construct(
         &mut self,
         function: Value,
         target_obj: Value,
@@ -831,12 +834,20 @@ impl<U: Trace> Realm<U> {
             if !function.is_constructor() {
                 todo!()
             }
+
             match kind {
                 FunctionKind::Vm(ref func) => {
                     let bc = func.bc;
                     let bc_function = &bc.functions[func.function as usize];
                     this.stack.enter(bc_function.registers);
-                    let this_object = this.create_object();
+
+                    let proto = function.index(this.builtin.key_proto.unwrap().into(), this);
+                    let this_object = if proto.is_object() {
+                        this.create_object_proto(Some(proto.unsafe_cast_object()))
+                    } else {
+                        this.create_object()
+                    };
+
                     let res = this.execute(ExecutionContext {
                         function,
                         this: this_object.into(),

@@ -115,7 +115,7 @@ impl AssignmentTarget {
         match *self {
             Self::Variable(symbol_id) => {
                 let symbol = &this.symbol_table.symbols()[symbol_id];
-                if this.symbol_table.is_symbol_local(symbol_id) {
+                if !this.symbol_table.is_symbol_local(symbol_id) {
                     let name = this.compile_literal(
                         None,
                         Literal::String(this.symbol_table.symbols()[symbol_id].ident),
@@ -826,7 +826,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         };
         self.builder.free_temp(func);
         let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
-        self.builder.push(Instruction::Construct {
+        self.builder.push(Instruction::CallConstruct {
             dst: dst.0,
             func: func.0,
             obj: func.0,
