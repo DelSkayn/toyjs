@@ -73,6 +73,12 @@ impl Value {
 
     /// Is this value a boolean.
     #[inline]
+    pub fn is_empty(self) -> bool {
+        unsafe { self.0.bits == VALUE_EMPTY }
+    }
+
+    /// Is this value a boolean.
+    #[inline]
     pub fn is_bool(self) -> bool {
         unsafe { (self.0.bits & !1) == VALUE_FALSE }
     }

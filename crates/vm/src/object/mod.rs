@@ -11,11 +11,19 @@ use common::collections::HashMap;
 mod function;
 pub use function::*;
 
+bitflags::bitflags! {
+    pub struct ObjectFlags: u8{
+        const ERROR = 0b1;
+        const CONSTRUCTOR = 0b10;
+    }
+}
+
 /// A javascript object
 pub struct Object<U: 'static> {
     prototype: Option<Gc<Object<U>>>,
     values: UnsafeCell<HashMap<String, Value>>,
     array: UnsafeCell<Vec<Value>>,
+    pub flags: ObjectFlags,
     pub function: Option<FunctionKind<U>>,
 }
 
@@ -26,6 +34,17 @@ impl<U: Trace> Object<U> {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
+            flags: ObjectFlags::empty(),
+            function: None,
+        }
+    }
+
+    pub fn new_error(prototype: Option<Gc<Object<U>>>) -> Self {
+        Object {
+            prototype,
+            values: UnsafeCell::new(HashMap::default()),
+            array: UnsafeCell::new(Vec::new()),
+            flags: ObjectFlags::ERROR,
             function: None,
         }
     }
@@ -92,6 +111,37 @@ impl<U: Trace> Object<U> {
             let string = realm.to_string(key);
             (*self.values.get()).insert(string.to_string(), value);
         }
+    }
+
+    /// Set a property of the object directly, skipping possible setters.
+    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &mut Realm<U>) {
+        // All uses of unsafe cell are save since no value can hold a reference to
+        // an value in the hashmap or vec.
+        // And object is not Sync nor Send.
+
+        if key.is_int() {
+            let idx = key.cast_int();
+            if idx >= 0 {
+                let idx = idx as usize;
+                if (*self.array.get()).len() <= idx {
+                    (*self.array.get()).resize(idx + 1, Value::undefined())
+                }
+                (*self.array.get())[idx] = value
+            }
+        } else {
+            let string = realm.to_string(key);
+            (*self.values.get()).insert(string.to_string(), value);
+        }
+    }
+
+    #[inline]
+    pub fn is_error(&self) -> bool {
+        self.flags.contains(ObjectFlags::ERROR)
+    }
+
+    #[inline]
+    pub fn is_constructor(&self) -> bool {
+        self.flags.contains(ObjectFlags::CONSTRUCTOR)
     }
 }
 

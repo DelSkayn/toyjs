@@ -123,7 +123,10 @@ impl<'js> Ctx<'js> {
     /// Creates a new function from a rust closure
     pub unsafe fn create_static_function(
         self,
-        f: fn(&mut vm::Realm<UserData>) -> Result<vm::Value, vm::Value>,
+        f: fn(
+            &mut vm::Realm<UserData>,
+            exec: &mut vm::realm::ExecutionContext<UserData>,
+        ) -> Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
         let function = (*self.ctx).create_static_function(f);
@@ -137,7 +140,7 @@ where {
         F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
     {
         unsafe {
-            let function = (*self.ctx).create_shared_function(move |realm| {
+            let function = (*self.ctx).create_shared_function(move |realm, _| {
                 let ctx = Ctx::wrap(realm);
                 let args = Arguments::from_ctx(ctx);
                 f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)

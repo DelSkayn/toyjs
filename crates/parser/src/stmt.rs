@@ -41,11 +41,6 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("try") => self.parse_try(),
             _ => {
                 let expr = self.parse_expr()?;
-                if !self.eat(t!(";"))? {
-                    if self.peek()?.is_some() {
-                        unexpected!(self,";" => "naked expression only allowed at the end of a script.")
-                    }
-                }
                 Ok(ast::Stmt::Expr(expr))
             }
         };

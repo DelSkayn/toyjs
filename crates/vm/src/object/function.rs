@@ -1,14 +1,21 @@
 use common::collections::HashMap;
 
-use crate::{instructions::ByteCode, object::Object, realm::UpvalueObject, Gc, Realm, Value};
+use crate::{
+    instructions::ByteCode,
+    object::Object,
+    realm::{ExecutionContext, UpvalueObject},
+    Gc, Realm, Value,
+};
 use std::cell::{RefCell, UnsafeCell};
+
+use super::ObjectFlags;
 
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
-pub type MutableFn<U> = Box<dyn FnMut(&mut Realm<U>) -> Result<Value, Value>>;
-pub type SharedFn<U> = Box<dyn Fn(&mut Realm<U>) -> Result<Value, Value>>;
-pub type StaticFn<U> = fn(&mut Realm<U>) -> Result<Value, Value>;
-pub type ConstructorFn<U> = fn(&mut Realm<U>, Value, Value) -> Result<Value, Value>;
+pub type MutableFn<U> =
+    Box<dyn FnMut(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value>>;
+pub type SharedFn<U> = Box<dyn Fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value>>;
+pub type StaticFn<U> = fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value>;
 
 pub struct VmFunction {
     pub bc: Gc<ByteCode>,
@@ -21,7 +28,6 @@ pub enum FunctionKind<U: 'static> {
     Mutable(RefCell<MutableFn<U>>),
     Shared(SharedFn<U>),
     Static(StaticFn<U>),
-    Constructor(ConstructorFn<U>),
 }
 
 impl<U: 'static> Object<U> {
@@ -30,6 +36,7 @@ impl<U: 'static> Object<U> {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
+            flags: ObjectFlags::empty(),
             function: Some(function),
         }
     }
@@ -41,7 +48,7 @@ impl<U: 'static> Object<U> {
     /// The function call.
     pub unsafe fn from_mutable<F>(realm: &Realm<U>, f: F) -> Self
     where
-        F: FnMut(&mut Realm<U>) -> Result<Value, Value> + 'static,
+        F: FnMut(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value> + 'static,
     {
         let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
         Self::new_function(kind, realm.builtin.function_proto)
@@ -50,7 +57,7 @@ impl<U: 'static> Object<U> {
     /// Create a function from a immutable rust closure.
     pub unsafe fn from_shared<F>(realm: &Realm<U>, f: F) -> Self
     where
-        F: Fn(&mut Realm<U>) -> Result<Value, Value> + 'static,
+        F: Fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value> + 'static,
     {
         let kind = FunctionKind::Shared(Box::new(f));
         Self::new_function(kind, realm.builtin.function_proto)
@@ -63,9 +70,15 @@ impl<U: 'static> Object<U> {
     }
 
     /// Create a functions from a function in a bytecode set.
-    pub fn from_constructor(realm: &Realm<U>, func: ConstructorFn<U>) -> Self {
-        let kind = FunctionKind::Constructor(func);
-        Self::new_function(kind, realm.builtin.function_proto)
+    pub fn from_constructor(realm: &Realm<U>, func: StaticFn<U>) -> Self {
+        let kind = FunctionKind::Static(func);
+        Self {
+            prototype: realm.builtin.function_proto,
+            values: UnsafeCell::new(HashMap::default()),
+            array: UnsafeCell::new(Vec::new()),
+            flags: ObjectFlags::CONSTRUCTOR,
+            function: Some(kind),
+        }
     }
 
     /// Create a functions from a function in a bytecode set.
