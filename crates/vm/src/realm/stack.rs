@@ -8,7 +8,7 @@ use std::{
 
 use crate::{gc::Trace, Gc, GcArena, Value};
 
-use super::ExecutionContext;
+use super::{ExecutionContext, InstructionReader};
 
 #[derive(Debug)]
 pub struct UpvalueObject {
@@ -84,6 +84,7 @@ pub struct CallFrameData<U: 'static> {
     /// The register to put the return value into.
     pub dst: u8,
     /// The instruction reader
+    pub instr: InstructionReader,
     pub ctx: ExecutionContext<U>,
 }
 
@@ -150,7 +151,13 @@ impl<U> Stack<U> {
         }
     }
 
-    pub fn enter_call(&mut self, new_registers: u8, dst: u8, ctx: ExecutionContext<U>) {
+    pub fn enter_call(
+        &mut self,
+        new_registers: u8,
+        dst: u8,
+        instr: InstructionReader,
+        ctx: ExecutionContext<U>,
+    ) {
         unsafe {
             let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity {
@@ -169,7 +176,7 @@ impl<U> Stack<U> {
             );
             self.frames.push(Frame::Call {
                 registers: self.cur_frame_size as u8,
-                data: CallFrameData { dst, ctx },
+                data: CallFrameData { dst, instr, ctx },
                 open_upvalues: Vec::new(),
                 frame_offset: self.frame_offset,
             });
@@ -243,7 +250,7 @@ impl<U> Stack<U> {
                     self.frame_offset = 0;
                     return None;
                 }
-                None => panic!("tried to pop no existant stack"),
+                None => panic!("tried to pop non-existant stack"),
             }
         }
     }

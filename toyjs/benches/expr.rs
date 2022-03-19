@@ -7,8 +7,9 @@ fn expression(c: &mut Criterion) {
     let ctx = Context::new();
     c.bench_function("eval_expression", move |b| {
         ctx.with(|ctx| {
+            let function = ctx.compile(EXPRESSION).unwrap();
             b.iter(|| {
-                let val = black_box(ctx.eval(EXPRESSION));
+                let val = black_box(function.call());
                 let val = val.map(|x| f64::from_js(ctx, x));
 
                 assert!(val.unwrap() == 15625160092.4096);

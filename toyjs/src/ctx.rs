@@ -150,6 +150,26 @@ where {
         }
     }
 
+    pub fn compile(self, s: impl Into<StdString>) -> Result<Function<'js>, Value<'js>> {
+        unsafe {
+            let source = Source::from_string(s.into());
+            let lexer = Lexer::new(&source, &mut (*self.ctx).user_data.interner);
+            let ast = Parser::parse_script(lexer, &mut (*self.ctx).user_data.symbol_table, Global)
+                .map_err(|_| Value::undefined(self))?;
+            let bytecode = Compiler::compile_script(
+                &ast,
+                &(*self.ctx).user_data.symbol_table,
+                &mut (*self.ctx).user_data.interner,
+                &(*self.ctx).gc,
+                Global,
+            );
+            let bytecode = (*self.ctx).gc.allocate(bytecode);
+            let function = (*self.ctx).construct_script_function(bytecode);
+            (*self.ctx).stack.push(function.into());
+            Ok(Function::wrap(self, function))
+        }
+    }
+
     /// Evaluates the given value as a script
     pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
