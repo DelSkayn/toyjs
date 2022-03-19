@@ -3,7 +3,7 @@
 use crate::{
     gc::Trace,
     instructions::ByteCode,
-    object::{ConstructorFn, Object},
+    object::{Object, StaticFn},
     Gc, GcArena, Value,
 };
 
@@ -13,7 +13,9 @@ mod exec;
 mod reader;
 pub use reader::InstructionReader;
 
-use self::{builtin::Builtin, environment::Environment, exec::ExecutionContext};
+use builtin::Builtin;
+use environment::Environment;
+pub use exec::ExecutionContext;
 mod environment;
 
 mod builtin;
@@ -76,25 +78,26 @@ impl<U: Trace> Realm<U> {
         self.create_object_proto(self.builtin.object_proto)
     }
 
-    pub unsafe fn create_string(&self, s: String) -> Gc<String> {
-        self.gc.allocate(s)
+    #[inline]
+    pub unsafe fn create_string(&self, s: impl Into<String>) -> Gc<String> {
+        self.gc.allocate(s.into())
     }
 
     pub unsafe fn create_shared_function<F>(&self, f: F) -> Gc<Object<U>>
     where
-        F: for<'a> Fn(&mut Realm<U>) -> Result<Value, Value> + 'static,
+        F: for<'a> Fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value> + 'static,
     {
         self.gc.allocate(Object::from_shared(self, f))
     }
 
     pub unsafe fn create_static_function(
         &self,
-        f: fn(&mut Realm<U>) -> Result<Value, Value>,
+        f: fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value>,
     ) -> Gc<Object<U>> {
         self.gc.allocate(Object::from_static(self, f))
     }
 
-    pub unsafe fn create_constructor(&self, f: ConstructorFn<U>) -> Gc<Object<U>> {
+    pub unsafe fn create_constructor(&self, f: StaticFn<U>) -> Gc<Object<U>> {
         self.gc.allocate(Object::from_constructor(self, f))
     }
 }

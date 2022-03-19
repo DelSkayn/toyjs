@@ -666,6 +666,7 @@ dependencies = [
 name = "toyjs_vm"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "toyjs_common",
  "toyjs_lexer",
  "toyjs_token",

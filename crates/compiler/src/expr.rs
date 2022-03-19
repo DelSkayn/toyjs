@@ -763,6 +763,22 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         register
     }
 
+    /// Compile the use of a string expression
+    /// Will put result of expression in given placement register if there is one.
+    pub(crate) fn compile_string(&mut self, placement: Option<Register>, string: &str) -> Register {
+        let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        let constant = self.constants.push_string(string);
+        if constant.0 < u16::MAX as u32 {
+            self.builder.push(Instruction::LoadConst {
+                dst: register.0,
+                cons: constant.0 as u16,
+            });
+        } else {
+            panic!("To many constants")
+        }
+        register
+    }
+
     fn compile_object_literal(
         &mut self,
         placement: Option<Register>,

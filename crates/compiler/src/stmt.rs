@@ -38,7 +38,6 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             Stmt::Let(symbol, expr) => {
                 let reg = self.builder.alloc_symbol(*symbol);
-                //TODO captured variables
                 if let Some(x) = expr.as_ref() {
                     Some(self.compile_expr(Some(reg), x).eval(self))
                 } else {
@@ -48,7 +47,6 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             }
             Stmt::Const(symbol, expr) => {
                 let reg = self.builder.alloc_symbol(*symbol);
-                //TODO captured variables
                 Some(self.compile_expr(Some(reg), expr).eval(self))
             }
             Stmt::Var(symbol, expr) => {
@@ -83,9 +81,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Stmt::Function(scope, symbol, params, stmts) => {
                 let id = self.compile_function_decl(*scope, params, stmts);
                 //TODO local functions stmts
-                let tmp = self.builder.alloc_temp();
-                self.builder.push(Instruction::LoadFunction {
-                    dst: tmp.0,
+                let fnc = self.builder.alloc_temp();
+                self.builder.push(Instruction::LoadConstructor {
+                    dst: fnc.0,
                     func: id.0,
                 });
                 let key = self.compile_literal(
@@ -94,10 +92,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 );
                 self.builder.push(Instruction::GlobalAssign {
                     key: key.0,
-                    src: tmp.0,
+                    src: fnc.0,
                 });
                 self.builder.free_temp(key);
-                self.builder.free_temp(tmp);
+                self.builder.free_temp(fnc);
                 None
             }
             Stmt::Return(expr) => {

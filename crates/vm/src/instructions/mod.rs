@@ -174,6 +174,8 @@ define_instructions! {
         LoadGlobal{dst: u8},
         /// Load a function from the current module.
         LoadFunction{ dst: u8, func: u16},
+        /// Load a function from the current module.
+        LoadConstructor{ dst: u8, func: u16},
 
         LoadThis{ dst: u8},
 

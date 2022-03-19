@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use crate::{
     gc::Trace,
     instructions::{Instruction, Upvalue},
-    object::{FunctionKind, Object, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{FunctionKind, Object, ObjectFlags, VmFunction, RECURSIVE_FUNC_PANIC},
     Gc, Value,
 };
 
@@ -61,6 +61,11 @@ impl<U: Trace> Realm<U> {
                     let func = self.construct_function(func, &ctx.instr, ctx.function);
                     let res = Value::from(self.gc.allocate(func));
                     self.stack.write(dst, res);
+                }
+                Instruction::LoadConstructor { dst, func } => {
+                    self.gc.collect_debt(&(&*self, &ctx));
+                    let func = self.construct_constructor(func, &ctx.instr, ctx.function);
+                    self.stack.write(dst, func.into());
                 }
                 Instruction::LoadThis { dst } => self.stack.write(dst, ctx.this),
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
@@ -726,6 +731,23 @@ impl<U: Trace> Realm<U> {
         )
     }
 
+    pub(crate) unsafe fn construct_constructor(
+        &mut self,
+        function_id: u16,
+        reader: &InstructionReader,
+        function: Gc<Object<U>>,
+    ) -> Gc<Object<U>> {
+        let mut function = self.construct_function(function_id, reader, function);
+        function.flags |= ObjectFlags::CONSTRUCTOR;
+        let function = self.gc.allocate(function);
+        let proto = self.create_object();
+        let key = self.create_string("constructor").into();
+        proto.raw_index_set(key, function.into(), self);
+        let key = self.create_string("prototype").into();
+        function.raw_index_set(key, proto.into(), self);
+        function
+    }
+
     pub(crate) unsafe fn construct_function_root(
         &mut self,
         reader: &InstructionReader,
@@ -769,24 +791,21 @@ impl<U: Trace> Realm<U> {
                 }
                 FunctionKind::Static(x) => {
                     this.stack.enter(0);
-                    let res = x(this)?;
+                    let res = x(this, ctx)?;
                     this.stack.pop();
                     Ok(Some(res))
                 }
                 FunctionKind::Mutable(ref x) => {
                     this.stack.enter(0);
-                    let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this)?;
+                    let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
                     this.stack.pop();
                     Ok(Some(res))
                 }
                 FunctionKind::Shared(ref x) => {
                     this.stack.enter(0);
-                    let res = (*x)(this)?;
+                    let res = (*x)(this, ctx)?;
                     this.stack.pop();
                     Ok(Some(res))
-                }
-                FunctionKind::Constructor(func) => {
-                    Ok(Some(func(this, Value::undefined(), Value::undefined())?))
                 }
             }
         })
@@ -798,7 +817,7 @@ impl<U: Trace> Realm<U> {
         target_obj: Value,
         ctx: &mut ExecutionContext<U>,
     ) -> Result<Option<Value>, Value> {
-        self.unwind(ctx, |this, _| {
+        self.unwind(ctx, |this, ctx| {
             if !function.is_object() {
                 todo!()
             }
@@ -809,6 +828,9 @@ impl<U: Trace> Realm<U> {
             } else {
                 todo!()
             };
+            if !function.is_constructor() {
+                todo!()
+            }
             match kind {
                 FunctionKind::Vm(ref func) => {
                     let bc = func.bc;
@@ -827,7 +849,7 @@ impl<U: Trace> Realm<U> {
                         Ok(this_object.into())
                     }
                 }
-                FunctionKind::Constructor(func) => Ok(func(this, function.into(), target_obj)?),
+                FunctionKind::Static(func) => Ok(func(this, ctx)?),
                 _ => todo!(),
             }
         })
