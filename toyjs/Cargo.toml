@@ -27,6 +27,10 @@ harness = false
 name = "expr"
 harness = false
 
+[[bench]]
+name = "scripts"
+harness = false
+
 
 [[bin]]
 name = "cli"

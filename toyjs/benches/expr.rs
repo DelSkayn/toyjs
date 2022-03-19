@@ -18,13 +18,5 @@ fn expression(c: &mut Criterion) {
     });
 }
 
-fn config() -> Criterion {
-    Criterion::default().sample_size(500)
-}
-
-criterion_group! {
-    name = benches;
-    config = config();
-    targets = expression
-}
+criterion_group!(benches, expression);
 criterion_main!(benches);

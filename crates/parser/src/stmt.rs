@@ -140,30 +140,30 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "let");
         expect_bind!(self, let id = "ident");
+        let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         let expr = if self.eat(t!("="))? {
             Some(self.parse_single_expr()?)
         } else {
             None
         };
-        let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
         Ok(ast::Stmt::Let(var, expr))
     }
 
     fn parse_var_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "var");
         expect_bind!(self, let id = "ident");
+        let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
+            kind: ErrorKind::RedeclaredVariable,
+            origin: self.last_span,
+        })?;
         let expr = if self.eat(t!("="))? {
             Some(self.parse_single_expr()?)
         } else {
             None
         };
-        let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
         Ok(ast::Stmt::Var(var, expr))
     }
 
@@ -171,11 +171,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "const");
         expect_bind!(self, let id = "ident");
         expect!(self, "=" => "constant needs to be initialized");
-        let expr = self.parse_single_expr()?;
         let var = self.symbol_table.define(id, DeclType::Const).ok_or(Error {
             kind: ErrorKind::RedeclaredVariable,
             origin: self.last_span,
         })?;
+        let expr = self.parse_single_expr()?;
         Ok(ast::Stmt::Const(var, expr))
     }
 

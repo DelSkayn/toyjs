@@ -11,13 +11,5 @@ fn startup(c: &mut Criterion) {
     });
 }
 
-fn config() -> Criterion {
-    Criterion::default()
-}
-
-criterion_group! {
-    name = benches;
-    config = config();
-    targets = startup
-}
+criterion_group!(benches, startup);
 criterion_main!(benches);
