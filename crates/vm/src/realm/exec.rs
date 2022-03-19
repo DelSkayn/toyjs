@@ -296,7 +296,7 @@ impl Realm {
 
                 Instruction::Try { dst, tgt } => self
                     .stack
-                    .push_try(dst, dbg!(instr.absolute_offset(tgt)) as usize),
+                    .push_try(dst, instr.absolute_offset(tgt) as usize),
 
                 Instruction::Untry { _ignore: () } => {
                     self.stack.pop_try();
@@ -389,7 +389,7 @@ impl Realm {
             match self.stack.unwind() {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
-                    instr.absolute_jump(dbg!(catch.ip_offset));
+                    instr.absolute_jump(catch.ip_offset);
                     return Ok(());
                 }
                 Some(Err(frame)) => {

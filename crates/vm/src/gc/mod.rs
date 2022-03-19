@@ -1,6 +1,7 @@
 //! A garbage collector based on the gc-arena crate.
 use std::{
     cell::{Cell, UnsafeCell},
+    //collections::HashSet,
     mem,
     ptr::NonNull,
 };
@@ -23,7 +24,9 @@ impl<'gc> Ctx<'gc> {
     #[inline]
     pub fn mark<T: Trace + 'static>(self, gc: Gc<T>) {
         unsafe {
-            dbg!(gc.name());
+            if gc.0.as_ref().color.get() != Color::White {
+                return;
+            }
             gc.0.as_ref().color.set(Color::Gray);
             if T::needs_trace() {
                 self.0.grays.push(gc.0);
@@ -164,6 +167,8 @@ impl GcArena {
         let work = self.allocation_debt.get();
         let mut work_done = 0usize;
 
+        //let mut tmp = HashSet::new();
+
         while work > work_done as f64 {
             match self.phase.get() {
                 Phase::Wake => {
@@ -177,12 +182,14 @@ impl GcArena {
                 }
                 Phase::Mark => {
                     if let Some(x) = self.grays.pop() {
+                        //assert!(tmp.insert(x.as_ptr()));
                         let size = mem::size_of_val(x.as_ref());
                         work_done += size;
                         // ???
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else if let Some(x) = self.grays_again.pop() {
+                        //assert!(!tmp.insert(x.as_ptr()));
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else {

@@ -37,6 +37,7 @@ unsafe impl Trace for FunctionKind {
     fn trace(&self, ctx: crate::gc::Ctx) {
         if let FunctionKind::Vm(ref x) = self {
             ctx.mark(x.bc);
+            x.upvalues.iter().copied().for_each(|x| ctx.mark(x));
         }
     }
 }
