@@ -2,6 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use toyjs::Context;
 
 const FIBBO_SOURCE: &str = include_str!("./fibbo.js");
+const OBJECT_INDEX_SOURCE: &str = include_str!("./objectIndex.js");
 
 fn scripts(c: &mut Criterion) {
     let ctx = Context::new();
@@ -11,6 +12,16 @@ fn scripts(c: &mut Criterion) {
             b.iter(|| {
                 let v = func.call().unwrap();
                 assert!(v.into_i32().unwrap() == 10946);
+            })
+        });
+    });
+    ctx.collect_all();
+    ctx.with(|ctx| {
+        let func = ctx.compile(OBJECT_INDEX_SOURCE).unwrap();
+        c.bench_function("object_index", |b| {
+            b.iter(|| {
+                let v = func.call().unwrap();
+                assert!(v.into_i32().unwrap() == 90000);
             })
         });
     });

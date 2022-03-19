@@ -43,14 +43,14 @@ impl UserData {
 #[derive(Clone, Copy, Debug)]
 pub struct Ctx<'js> {
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) ctx: *mut vm::Realm<UserData>,
+    pub(crate) ctx: *mut vm::Realm,
     marker: PhantomData<Cell<&'js Context>>,
 }
 
 impl<'js> Ctx<'js> {
     // # Safety
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) unsafe fn wrap(ctx: &mut vm::Realm<UserData>) -> Self {
+    pub(crate) unsafe fn wrap(ctx: &mut vm::Realm) -> Self {
         Ctx {
             ctx,
             marker: PhantomData,
@@ -70,6 +70,10 @@ impl<'js> Ctx<'js> {
 
     pub(crate) unsafe fn pop_frame(&mut self) {
         (*self.ctx).stack.pop();
+    }
+
+    pub(crate) unsafe fn user_data(self) -> *mut UserData {
+        (*self.ctx).user_data.downcast_mut().unwrap()
     }
 
     /// Returns the global object of the current context.
@@ -124,8 +128,8 @@ impl<'js> Ctx<'js> {
     pub unsafe fn create_static_function(
         self,
         f: fn(
-            &mut vm::Realm<UserData>,
-            exec: &mut vm::realm::ExecutionContext<UserData>,
+            &mut vm::Realm,
+            exec: &mut vm::realm::ExecutionContext,
         ) -> Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
@@ -153,13 +157,15 @@ where {
     pub fn compile(self, s: impl Into<StdString>) -> Result<Function<'js>, Value<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
-            let lexer = Lexer::new(&source, &mut (*self.ctx).user_data.interner);
-            let ast = Parser::parse_script(lexer, &mut (*self.ctx).user_data.symbol_table, Global)
+            let user_data = self.user_data();
+            let lexer = Lexer::new(&source, &mut (*user_data).interner);
+            let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
                 .map_err(|_| Value::undefined(self))?;
+
             let bytecode = Compiler::compile_script(
                 &ast,
-                &(*self.ctx).user_data.symbol_table,
-                &mut (*self.ctx).user_data.interner,
+                &(*user_data).symbol_table,
+                &mut (*user_data).interner,
                 &(*self.ctx).gc,
                 Global,
             );
@@ -174,13 +180,14 @@ where {
     pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
-            let lexer = Lexer::new(&source, &mut (*self.ctx).user_data.interner);
-            let ast = Parser::parse_script(lexer, &mut (*self.ctx).user_data.symbol_table, Global)
+            let user_data = self.user_data();
+            let lexer = Lexer::new(&source, &mut (*user_data).interner);
+            let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
                 .map_err(|_| Value::undefined(self))?;
             let bytecode = Compiler::compile_script(
                 &ast,
-                &(*self.ctx).user_data.symbol_table,
-                &mut (*self.ctx).user_data.interner,
+                &(*user_data).symbol_table,
+                &mut (*user_data).interner,
                 &(*self.ctx).gc,
                 Global,
             );

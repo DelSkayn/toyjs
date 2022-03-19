@@ -23,6 +23,7 @@ impl<'gc> Ctx<'gc> {
     #[inline]
     pub fn mark<T: Trace + 'static>(self, gc: Gc<T>) {
         unsafe {
+            dbg!(gc.name());
             gc.0.as_ref().color.set(Color::Gray);
             if T::needs_trace() {
                 self.0.grays.push(gc.0);
