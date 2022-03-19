@@ -1,5 +1,7 @@
 //! Implements the realm within wich scripts are executed.
 
+use std::any::Any;
+
 use crate::{
     gc::Trace,
     instructions::ByteCode,
@@ -14,19 +16,16 @@ mod reader;
 pub use reader::InstructionReader;
 
 use builtin::Builtin;
-use environment::Environment;
 pub use exec::ExecutionContext;
-mod environment;
 
 mod builtin;
 
-pub struct Realm<U: 'static = ()> {
+pub struct Realm {
     pub gc: GcArena,
-    pub global: Gc<Object<U>>,
-    pub stack: Stack<U>,
-    pub root: Gc<Environment>,
-    pub builtin: Builtin<U>,
-    pub user_data: U,
+    pub global: Gc<Object>,
+    pub stack: Stack,
+    pub builtin: Builtin,
+    pub user_data: Box<dyn Any>,
 }
 
 impl Realm {
@@ -35,8 +34,8 @@ impl Realm {
     }
 }
 
-impl<U: Trace> Realm<U> {
-    pub fn new_with_user_data(user_data: U) -> Self {
+impl Realm {
+    pub fn new_with_user_data<U: Any>(user_data: U) -> Self {
         let gc = GcArena::new();
         let global = gc.allocate(Object::new(None));
         let stack = Stack::new();
@@ -44,9 +43,8 @@ impl<U: Trace> Realm<U> {
             builtin: Builtin::new(),
             global,
             stack,
-            root: gc.allocate(Environment::root()),
             gc,
-            user_data,
+            user_data: Box::new(user_data),
         };
         unsafe {
             res.init_builtin();
@@ -54,7 +52,7 @@ impl<U: Trace> Realm<U> {
         res
     }
 
-    pub unsafe fn construct_script_function(&mut self, script: Gc<ByteCode>) -> Gc<Object<U>> {
+    pub unsafe fn construct_script_function(&mut self, script: Gc<ByteCode>) -> Gc<Object> {
         debug_assert!(script.functions[0].upvalues.is_empty());
         self.gc.allocate(Object::from_vm(
             self,
@@ -70,7 +68,7 @@ impl<U: Trace> Realm<U> {
     ///
     /// # panic
     /// Will panic if the object given is not a function
-    pub unsafe fn enter_call(&mut self, function: Gc<Object<U>>) -> Result<Value, Value> {
+    pub unsafe fn enter_call(&mut self, function: Gc<Object>) -> Result<Value, Value> {
         let this = self.global().into();
         match function.function {
             Some(FunctionKind::Vm(ref x)) => {
@@ -128,15 +126,15 @@ impl<U: Trace> Realm<U> {
         self.enter_call(func)
     }
 
-    pub unsafe fn global(&self) -> Gc<Object<U>> {
+    pub unsafe fn global(&self) -> Gc<Object> {
         self.global
     }
 
-    pub unsafe fn create_object_proto(&self, prototype: Option<Gc<Object<U>>>) -> Gc<Object<U>> {
+    pub unsafe fn create_object_proto(&self, prototype: Option<Gc<Object>>) -> Gc<Object> {
         self.gc.allocate(Object::new(prototype))
     }
 
-    pub unsafe fn create_object(&self) -> Gc<Object<U>> {
+    pub unsafe fn create_object(&self) -> Gc<Object> {
         self.create_object_proto(self.builtin.object_proto)
     }
 
@@ -145,26 +143,26 @@ impl<U: Trace> Realm<U> {
         self.gc.allocate(s.into())
     }
 
-    pub unsafe fn create_shared_function<F>(&self, f: F) -> Gc<Object<U>>
+    pub unsafe fn create_shared_function<F>(&self, f: F) -> Gc<Object>
     where
-        F: for<'a> Fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value> + 'static,
+        F: for<'a> Fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value> + 'static,
     {
         self.gc.allocate(Object::from_shared(self, f))
     }
 
     pub unsafe fn create_static_function(
         &self,
-        f: fn(&mut Realm<U>, &mut ExecutionContext<U>) -> Result<Value, Value>,
-    ) -> Gc<Object<U>> {
+        f: fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>,
+    ) -> Gc<Object> {
         self.gc.allocate(Object::from_static(self, f))
     }
 
-    pub unsafe fn create_constructor(&self, f: StaticFn<U>) -> Gc<Object<U>> {
+    pub unsafe fn create_constructor(&self, f: StaticFn) -> Gc<Object> {
         self.gc.allocate(Object::from_constructor(self, f))
     }
 }
 
-unsafe impl<U: Trace> Trace for Realm<U> {
+unsafe impl Trace for Realm {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -175,8 +173,6 @@ unsafe impl<U: Trace> Trace for Realm<U> {
     fn trace(&self, ctx: crate::gc::Ctx) {
         ctx.mark(self.global);
         self.stack.trace(ctx);
-        if U::needs_trace() {
-            self.user_data.trace(ctx);
-        }
+        self.builtin.trace(ctx);
     }
 }

@@ -2,20 +2,17 @@ use crate::{gc::Trace, object::FunctionKind, Gc, Object, Realm, Value};
 
 use super::ExecutionContext;
 
-pub struct Builtin<U: 'static> {
+pub struct Builtin {
     pub key_construct: Option<Gc<String>>,
     pub key_proto: Option<Gc<String>>,
     // the %Object% value
-    pub object_proto: Option<Gc<Object<U>>>,
-    pub object_construct: Option<Gc<Object<U>>>,
-    pub function_proto: Option<Gc<Object<U>>>,
-    pub error_proto: Option<Gc<Object<U>>>,
+    pub object_proto: Option<Gc<Object>>,
+    pub object_construct: Option<Gc<Object>>,
+    pub function_proto: Option<Gc<Object>>,
+    pub error_proto: Option<Gc<Object>>,
 }
 
-fn object_construct<U: Trace>(
-    realm: &mut Realm<U>,
-    exec: &mut ExecutionContext<U>,
-) -> Result<Value, Value> {
+fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     unsafe {
         if exec.new_target.is_empty()
             || exec.new_target.is_undefined()
@@ -52,14 +49,11 @@ fn object_construct<U: Trace>(
     }
 }
 
-fn function_proto<U: Trace>(_: &mut Realm<U>, _: &mut ExecutionContext<U>) -> Result<Value, Value> {
+fn function_proto(_: &mut Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
     Ok(Value::undefined())
 }
 
-fn error_construct<U: Trace>(
-    realm: &mut Realm<U>,
-    exec: &mut ExecutionContext<U>,
-) -> Result<Value, Value> {
+fn error_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     unsafe {
         let new_target = if exec.new_target.is_empty() {
             exec.function.into()
@@ -103,7 +97,7 @@ fn error_construct<U: Trace>(
     }
 }
 
-impl<U> Builtin<U> {
+impl Builtin {
     pub const fn new() -> Self {
         Self {
             key_proto: None,
@@ -116,7 +110,7 @@ impl<U> Builtin<U> {
     }
 }
 
-unsafe impl<U> Trace for Builtin<U> {
+unsafe impl Trace for Builtin {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -134,13 +128,13 @@ unsafe impl<U> Trace for Builtin<U> {
     }
 }
 
-impl<U> Default for Builtin<U> {
+impl Default for Builtin {
     fn default() -> Self {
         Builtin::new()
     }
 }
 
-impl<U: Trace> Realm<U> {
+impl Realm {
     pub unsafe fn init_builtin(&mut self) {
         let key_prototype = self.create_string("prototype");
         self.builtin.key_proto = Some(key_prototype);

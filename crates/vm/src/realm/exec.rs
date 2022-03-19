@@ -18,20 +18,20 @@ pub enum NumericOperator {
 }
 
 #[derive(Debug)]
-pub struct ExecutionContext<U: 'static> {
-    pub function: Gc<Object<U>>,
+pub struct ExecutionContext {
+    pub function: Gc<Object>,
     pub this: Value,
     pub new_target: Value,
 }
 
-impl<U> Copy for ExecutionContext<U> {}
-impl<U> Clone for ExecutionContext<U> {
+impl Copy for ExecutionContext {}
+impl Clone for ExecutionContext {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-unsafe impl<U> Trace for ExecutionContext<U> {
+unsafe impl Trace for ExecutionContext {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -46,11 +46,11 @@ unsafe impl<U> Trace for ExecutionContext<U> {
     }
 }
 
-impl<U: Trace> Realm<U> {
+impl Realm {
     pub unsafe fn execute(
         &mut self,
         mut instr: InstructionReader,
-        mut ctx: ExecutionContext<U>,
+        mut ctx: ExecutionContext,
     ) -> Result<Value, Value> {
         loop {
             match instr.next() {
@@ -75,7 +75,7 @@ impl<U: Trace> Realm<U> {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.gc.collect_debt(&(&*self, instr, ctx.function));
-                    let object = Object::<U>::new(None);
+                    let object = Object::new(None);
                     let res = Value::from(self.gc.allocate(object));
                     self.stack.write(dst, res)
                 }
@@ -363,11 +363,11 @@ impl<U: Trace> Realm<U> {
     pub unsafe fn unwind<R, O, F>(
         &mut self,
         instr: &mut InstructionReader,
-        ctx: &mut ExecutionContext<U>,
+        ctx: &mut ExecutionContext,
         f: F,
     ) -> Result<Option<O>, Value>
     where
-        F: FnOnce(&mut Self, &mut InstructionReader, &mut ExecutionContext<U>) -> Result<R, Value>,
+        F: FnOnce(&mut Self, &mut InstructionReader, &mut ExecutionContext) -> Result<R, Value>,
         R: Into<Option<O>>,
     {
         match f(self, instr, ctx) {
@@ -382,7 +382,7 @@ impl<U: Trace> Realm<U> {
     pub unsafe fn unwind_error(
         &mut self,
         instr: &mut InstructionReader,
-        ctx: &mut ExecutionContext<U>,
+        ctx: &mut ExecutionContext,
         error: Value,
     ) -> Result<(), Value> {
         loop {
@@ -440,7 +440,7 @@ impl<U: Trace> Realm<U> {
         }
     }
 
-    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object<U>> {
+    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object> {
         if value.is_null() || value.is_undefined() {
             return self.create_object();
         }
@@ -506,9 +506,7 @@ impl<U: Trace> Realm<U> {
             return left.unsafe_cast_string() == right.unsafe_cast_string();
         }
         if left.is_object() {
-            return left
-                .unsafe_cast_object::<U>()
-                .ptr_eq(right.unsafe_cast_object());
+            return left.unsafe_cast_object().ptr_eq(right.unsafe_cast_object());
         }
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();
@@ -713,8 +711,8 @@ impl<U: Trace> Realm<U> {
         &mut self,
         function_id: u16,
         reader: &InstructionReader,
-        function: Gc<Object<U>>,
-    ) -> Object<U> {
+        function: Gc<Object>,
+    ) -> Object {
         let bc_function = reader.function(function_id);
         let function = function.as_vm_function();
         let upvalues = bc_function
@@ -744,8 +742,8 @@ impl<U: Trace> Realm<U> {
         &mut self,
         function_id: u16,
         reader: &InstructionReader,
-        function: Gc<Object<U>>,
-    ) -> Gc<Object<U>> {
+        function: Gc<Object>,
+    ) -> Gc<Object> {
         let mut function = self.construct_function(function_id, reader, function);
         function.flags |= ObjectFlags::CONSTRUCTOR;
         let function = self.gc.allocate(function);
@@ -764,7 +762,7 @@ impl<U: Trace> Realm<U> {
         &mut self,
         function: Value,
         instr: &mut InstructionReader,
-        ctx: &mut ExecutionContext<U>,
+        ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, instr, ctx| {
@@ -820,7 +818,7 @@ impl<U: Trace> Realm<U> {
         function: Value,
         target_obj: Value,
         instr: &mut InstructionReader,
-        ctx: &mut ExecutionContext<U>,
+        ctx: &mut ExecutionContext,
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, _instr, ctx| {
             if !function.is_object() {

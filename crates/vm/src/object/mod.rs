@@ -20,17 +20,17 @@ bitflags::bitflags! {
 
 #[derive(Debug)]
 /// A javascript object
-pub struct Object<U: 'static> {
-    prototype: Option<Gc<Object<U>>>,
+pub struct Object {
+    prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, Value>>,
     array: UnsafeCell<Vec<Value>>,
     pub flags: ObjectFlags,
-    pub function: Option<FunctionKind<U>>,
+    pub function: Option<FunctionKind>,
 }
 
-impl<U: Trace> Object<U> {
+impl Object {
     /// Create a new object.
-    pub fn new(prototype: Option<Gc<Object<U>>>) -> Self {
+    pub fn new(prototype: Option<Gc<Object>>) -> Self {
         Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
@@ -40,7 +40,7 @@ impl<U: Trace> Object<U> {
         }
     }
 
-    pub fn new_error(prototype: Option<Gc<Object<U>>>) -> Self {
+    pub fn new_error(prototype: Option<Gc<Object>>) -> Self {
         Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
@@ -56,7 +56,7 @@ impl<U: Trace> Object<U> {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index(&self, key: Value, realm: &mut Realm<U>) -> Value {
+    pub unsafe fn index(&self, key: Value, realm: &mut Realm) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -94,7 +94,7 @@ impl<U: Trace> Object<U> {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm<U>) {
+    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -115,7 +115,7 @@ impl<U: Trace> Object<U> {
     }
 
     /// Set a property of the object directly, skipping possible setters.
-    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &mut Realm<U>) {
+    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &mut Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -146,7 +146,7 @@ impl<U: Trace> Object<U> {
     }
 }
 
-unsafe impl<U: 'static> Trace for Object<U> {
+unsafe impl Trace for Object {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -156,9 +156,10 @@ unsafe impl<U: 'static> Trace for Object<U> {
 
     fn trace(&self, ctx: crate::gc::Ctx) {
         unsafe {
-            if let Some(x) = self.prototype.as_ref() {
-                x.trace(ctx);
+            if let Some(x) = self.prototype {
+                ctx.mark(x);
             }
+            self.function.as_ref().map(|x| x.trace(ctx));
             for (_, v) in (*self.values.get()).iter() {
                 v.trace(ctx);
             }

@@ -21,7 +21,7 @@ pub mod convert;
 mod runtime;
 
 pub struct Context {
-    inner: RefCell<vm::Realm<UserData>>,
+    inner: RefCell<vm::Realm>,
 }
 
 impl Context {
@@ -31,6 +31,13 @@ impl Context {
         };
         res.with(runtime::init);
         res
+    }
+
+    pub fn collect_all(&self) {
+        let inner = self.inner.borrow_mut();
+        unsafe {
+            inner.gc.collect_full(&*inner);
+        }
     }
 
     pub fn with<F, R>(&self, f: F) -> R

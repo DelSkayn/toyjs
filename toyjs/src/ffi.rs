@@ -6,8 +6,8 @@ macro_rules! create_static_fn {
         mod wrap {
             #[inline]
             pub fn $func(
-                realm: &mut vm::Realm<$crate::ctx::UserData>,
-                _: &mut vm::realm::ExecutionContext<$crate::ctx::UserData>,
+                realm: &mut vm::Realm,
+                _: &mut vm::realm::ExecutionContext,
             ) -> Result<::vm::Value, ::vm::Value> {
                 unsafe {
                     let ctx = $crate::Ctx::wrap(realm);

@@ -2,22 +2,21 @@ use vm::Gc;
 
 use crate::{
     convert::{FromJs, IntoJs},
-    ctx::UserData,
     Ctx, Value,
 };
 
 #[derive(Clone, Copy)]
 pub struct Object<'js> {
     pub(crate) ctx: Ctx<'js>,
-    pub(crate) ptr: Gc<vm::Object<UserData>>,
+    pub(crate) ptr: Gc<vm::Object>,
 }
 
 impl<'js> Object<'js> {
-    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object<UserData>>) -> Self {
+    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<vm::Object>) -> Self {
         Object { ctx, ptr }
     }
 
-    pub(crate) unsafe fn into_vm(self) -> Gc<vm::Object<UserData>> {
+    pub(crate) unsafe fn into_vm(self) -> Gc<vm::Object> {
         self.ptr
     }
 
