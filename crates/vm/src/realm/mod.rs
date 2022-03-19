@@ -3,7 +3,7 @@
 use crate::{
     gc::Trace,
     instructions::ByteCode,
-    object::{Object, StaticFn},
+    object::{FunctionKind, Object, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC},
     Gc, GcArena, Value,
 };
 
@@ -54,16 +54,78 @@ impl<U: Trace> Realm<U> {
         res
     }
 
+    pub unsafe fn construct_script_function(&mut self, script: Gc<ByteCode>) -> Gc<Object<U>> {
+        debug_assert!(script.functions[0].upvalues.is_empty());
+        self.gc.allocate(Object::from_vm(
+            self,
+            VmFunction {
+                bc: script,
+                function: 0,
+                upvalues: Box::new([]),
+            },
+        ))
+    }
+
+    /// Call a function entering into the vm
+    ///
+    /// # panic
+    /// Will panic if the object given is not a function
+    pub unsafe fn enter_call(&mut self, function: Gc<Object<U>>) -> Result<Value, Value> {
+        let this = self.global().into();
+        match function.function {
+            Some(FunctionKind::Vm(ref x)) => {
+                let instr = InstructionReader::from_bc(x.bc, x.function);
+                self.stack.enter(instr.function(x.function).registers);
+                let res = self.execute(
+                    instr,
+                    ExecutionContext {
+                        function,
+                        this,
+                        new_target: Value::empty(),
+                    },
+                );
+                res
+            }
+            Some(FunctionKind::Shared(ref x)) => {
+                self.stack.enter(0);
+                let mut ctx = ExecutionContext {
+                    function,
+                    this,
+                    new_target: Value::empty(),
+                };
+                let res = x(self, &mut ctx);
+                self.stack.pop();
+                res
+            }
+            Some(FunctionKind::Static(x)) => {
+                self.stack.enter(0);
+                let mut ctx = ExecutionContext {
+                    function,
+                    this,
+                    new_target: Value::empty(),
+                };
+                let res = x(self, &mut ctx);
+                self.stack.pop();
+                res
+            }
+            Some(FunctionKind::Mutable(ref x)) => {
+                self.stack.enter(0);
+                let mut ctx = ExecutionContext {
+                    function,
+                    this,
+                    new_target: Value::empty(),
+                };
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, &mut ctx);
+                self.stack.pop();
+                res
+            }
+            None => panic!("enter_call called with object which was not a function"),
+        }
+    }
+
     pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, Value> {
-        self.stack.enter(bc.functions[0].registers);
-        let instr = InstructionReader::from_bc(bc, 0);
-        let context = ExecutionContext {
-            function: self.construct_function_root(&instr),
-            instr,
-            this: self.global.into(),
-            new_target: Value::null(),
-        };
-        self.execute(context)
+        let func = self.construct_script_function(bc);
+        self.enter_call(func)
     }
 
     pub unsafe fn global(&self) -> Gc<Object<U>> {

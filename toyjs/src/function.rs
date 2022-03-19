@@ -1,6 +1,6 @@
 use vm::Gc;
 
-use crate::{ctx::UserData, Ctx};
+use crate::{ctx::UserData, Ctx, Value};
 
 #[derive(Clone, Copy)]
 pub struct Function<'js> {
@@ -13,5 +13,18 @@ impl<'js> Function<'js> {
         Function { ctx, ptr }
     }
 
-    //pub fn call(self) -> Result<Value<'js>, Value<'js>> {}
+    pub fn call(self) -> Result<Value<'js>, Value<'js>> {
+        unsafe {
+            (*self.ctx.ctx)
+                .enter_call(self.ptr)
+                .map(|x| {
+                    self.ctx.push_value(x);
+                    Value::wrap(self.ctx, x)
+                })
+                .map_err(|x| {
+                    self.ctx.push_value(x);
+                    Value::wrap(self.ctx, x)
+                })
+        }
+    }
 }

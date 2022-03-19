@@ -23,6 +23,10 @@ criterion = "0.3.5"
 name = "startup"
 harness = false
 
+[[bench]]
+name = "expr"
+harness = false
+
 
 [[bin]]
 name = "cli"
