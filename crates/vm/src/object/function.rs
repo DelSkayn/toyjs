@@ -6,7 +6,10 @@ use crate::{
     realm::{ExecutionContext, UpvalueObject},
     Gc, Realm, Value,
 };
-use std::cell::{RefCell, UnsafeCell};
+use std::{
+    cell::{RefCell, UnsafeCell},
+    fmt,
+};
 
 use super::ObjectFlags;
 
@@ -28,6 +31,12 @@ pub enum FunctionKind<U: 'static> {
     Mutable(RefCell<MutableFn<U>>),
     Shared(SharedFn<U>),
     Static(StaticFn<U>),
+}
+
+impl<U> fmt::Debug for FunctionKind<U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "functionkind")
+    }
 }
 
 impl<U: 'static> Object<U> {

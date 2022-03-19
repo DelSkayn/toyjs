@@ -3,6 +3,8 @@ use crate::{gc::Trace, object::FunctionKind, Gc, Object, Realm, Value};
 use super::ExecutionContext;
 
 pub struct Builtin<U: 'static> {
+    pub key_construct: Option<Gc<String>>,
+    pub key_proto: Option<Gc<String>>,
     // the %Object% value
     pub object_proto: Option<Gc<Object<U>>>,
     pub object_construct: Option<Gc<Object<U>>>,
@@ -104,6 +106,8 @@ fn error_construct<U: Trace>(
 impl<U> Builtin<U> {
     pub const fn new() -> Self {
         Self {
+            key_proto: None,
+            key_construct: None,
             object_proto: None,
             object_construct: None,
             function_proto: None,
@@ -121,6 +125,8 @@ unsafe impl<U> Trace for Builtin<U> {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
+        self.key_proto.map(|x| ctx.mark(x));
+        self.key_construct.map(|x| ctx.mark(x));
         self.object_proto.map(|x| ctx.mark(x));
         self.object_construct.map(|x| ctx.mark(x));
         self.function_proto.map(|x| ctx.mark(x));
@@ -136,8 +142,10 @@ impl<U> Default for Builtin<U> {
 
 impl<U: Trace> Realm<U> {
     pub unsafe fn init_builtin(&mut self) {
-        let key_prototype = self.create_string("prototype").into();
-        let key_constructor = self.create_string("constructor").into();
+        let key_prototype = self.create_string("prototype");
+        self.builtin.key_proto = Some(key_prototype);
+        let key_constructor = self.create_string("constructor");
+        self.builtin.key_construct = Some(key_constructor);
         let key_length = self.create_string("length").into();
         let key_empty = self.create_string("").into();
 
@@ -145,9 +153,9 @@ impl<U: Trace> Realm<U> {
         self.builtin.object_proto = Some(object_proto);
 
         let object_construct = self.create_constructor(object_construct);
-        object_construct.raw_index_set(key_prototype, object_proto.into(), self);
+        object_construct.raw_index_set(key_prototype.into(), object_proto.into(), self);
         object_construct.raw_index_set(key_length, 1.into(), self);
-        object_proto.raw_index_set(key_constructor, object_construct.into(), self);
+        object_proto.raw_index_set(key_constructor.into(), object_construct.into(), self);
         self.builtin.object_construct = Some(object_construct);
 
         let function_proto = Object::new_function(
@@ -160,8 +168,8 @@ impl<U: Trace> Realm<U> {
         let error_proto = self.create_object();
         let error_construct = self.create_constructor(error_construct);
 
-        error_construct.raw_index_set(key_prototype, error_proto.into(), self);
-        error_proto.raw_index_set(key_constructor, error_construct.into(), self);
+        error_construct.raw_index_set(key_prototype.into(), error_proto.into(), self);
+        error_proto.raw_index_set(key_constructor.into(), error_construct.into(), self);
 
         let key = self.create_string("message").into();
         error_proto.raw_index_set(key, key_empty, self);
