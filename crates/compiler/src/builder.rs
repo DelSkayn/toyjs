@@ -250,7 +250,7 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
 
             let upvalues = f
                 .upvalues
-                .into_iter()
+                .iter()
                 .map(|x| match x.kind {
                     UpvalueKind::Local(x) => BcUpvalue::Local(x.0),
                     UpvalueKind::Parent(x) => BcUpvalue::Parent(x.0),

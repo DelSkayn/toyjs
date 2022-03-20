@@ -231,6 +231,7 @@ impl<'a> Lexer<'a> {
     /// Will return an error if the lexer failed to propely parse a token.
     ///
     /// If there are no more tokens to be lexed the lexer will return `Ok(None)`
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Option<Token>> {
         self.next_inner().map_err(|e| Error {
             kind: e,

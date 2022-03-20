@@ -119,12 +119,24 @@ unsafe impl Trace for Builtin {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        self.key_proto.map(|x| ctx.mark(x));
-        self.key_construct.map(|x| ctx.mark(x));
-        self.object_proto.map(|x| ctx.mark(x));
-        self.object_construct.map(|x| ctx.mark(x));
-        self.function_proto.map(|x| ctx.mark(x));
-        self.error_proto.map(|x| ctx.mark(x));
+        if let Some(x) = self.key_proto {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.key_construct {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.object_proto {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.object_construct {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.function_proto {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.error_proto {
+            ctx.mark(x);
+        }
     }
 }
 

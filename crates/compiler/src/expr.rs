@@ -126,17 +126,15 @@ impl AssignmentTarget {
                         src: src.0,
                         key: name.0,
                     });
-                } else {
-                    if !this
-                        .symbol_table
-                        .in_scope(symbol_id, this.builder.lexical_scope())
-                    {
-                        let upvalue = this.builder.capture_upvalue(symbol_id, symbol.decl_scope);
-                        this.builder.push(Instruction::UpvalueAssign {
-                            src: src.0,
-                            slot: upvalue.0,
-                        });
-                    }
+                } else if !this
+                    .symbol_table
+                    .in_scope(symbol_id, this.builder.lexical_scope())
+                {
+                    let upvalue = this.builder.capture_upvalue(symbol_id, symbol.decl_scope);
+                    this.builder.push(Instruction::UpvalueAssign {
+                        src: src.0,
+                        slot: upvalue.0,
+                    });
                 }
             }
             Self::Dot(obj, name) => {
@@ -194,7 +192,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub(crate) fn compile_expressions(
         &mut self,
         placment: Option<Register>,
-        expr: &'a Vec<Expr<A>, A>,
+        expr: &'a [Expr<A>],
     ) -> ExprValue<A> {
         for e in expr[..expr.len() - 1].iter() {
             let expr = self.compile_expr(None, e).eval(self);
@@ -347,14 +345,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         left: value.0,
                         righ: one.0,
                     });
-                    match (placement, tgt_placement) {
-                        (Some(to), Some(from)) => {
-                            self.builder.push(Instruction::Move {
-                                src: from.0,
-                                dst: to.0,
-                            });
-                        }
-                        _ => {}
+                    if let (Some(to), Some(from)) = (placement, tgt_placement) {
+                        self.builder.push(Instruction::Move {
+                            src: from.0,
+                            dst: to.0,
+                        });
                     }
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -374,14 +369,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         left: value.0,
                         righ: one.0,
                     });
-                    match (placement, tgt_placement) {
-                        (Some(to), Some(from)) => {
-                            self.builder.push(Instruction::Move {
-                                src: from.0,
-                                dst: to.0,
-                            });
-                        }
-                        _ => {}
+                    if let (Some(to), Some(from)) = (placement, tgt_placement) {
+                        self.builder.push(Instruction::Move {
+                            src: from.0,
+                            dst: to.0,
+                        });
                     }
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -640,7 +632,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         .unwrap_or_else(|| self.builder.alloc_temp());
                     self.builder.push(Instruction::LoadFunction {
                         dst: dst.0,
-                        func: id.0.try_into().unwrap(),
+                        func: id.0,
                     });
                     if let Some(x) = symbol_placement.and(placement) {
                         self.builder.push(Instruction::Move {
@@ -655,7 +647,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
                     self.builder.push(Instruction::LoadFunction {
                         dst: dst.0,
-                        func: id.0.try_into().unwrap(),
+                        func: id.0,
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -710,9 +702,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                             src: reg.0,
                         });
                     }
-                    return place;
+                    place
                 } else {
-                    return self.builder.alloc_symbol(symbol_id);
+                    self.builder.alloc_symbol(symbol_id)
                 }
             } else {
                 let upvalue = self.builder.capture_upvalue(symbol_id, symbol.decl_scope);
@@ -721,7 +713,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     dst: place.0,
                     slot: upvalue.0,
                 });
-                return place;
+                place
             }
         } else {
             let name = self.compile_literal(None, Literal::String(symbol.ident));
@@ -731,14 +723,14 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     dst: place.0,
                     key: name.0,
                 });
-                return place;
+                place
             } else {
                 // Just reuse name temp instruction.
                 self.builder.push(Instruction::GlobalIndex {
                     dst: name.0,
                     key: name.0,
                 });
-                return name;
+                name
             }
         }
     }
@@ -838,7 +830,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         &mut self,
         placement: Option<Register>,
         lhs: &'a Expr<A>,
-        args: &'a Vec<Expr<A>, A>,
+        args: &'a [Expr<A>],
     ) -> Register {
         let func = self.compile_expr(None, lhs).eval(self);
         for (idx, arg) in args.iter().enumerate() {

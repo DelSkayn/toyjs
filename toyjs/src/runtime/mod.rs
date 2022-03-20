@@ -34,7 +34,7 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<Value<'js
 
 pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     ctx.eval(
-        ctx.coerce_string(args.get(0).unwrap_or(Value::undefined(ctx)))
+        ctx.coerce_string(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))
             .into_string(),
     )
 }
@@ -42,7 +42,7 @@ pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Valu
 pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     let num = args.get(0);
     let radix = args.get(1);
-    let str = ctx.coerce_string(num.unwrap_or(Value::undefined(ctx)));
+    let str = ctx.coerce_string(num.unwrap_or_else(|| Value::undefined(ctx)));
     let mut radix = if let Some(radix) = radix {
         ctx.coerce_integer(radix)
     } else {
@@ -52,7 +52,7 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     let mut strip_prefix = true;
     if radix != 0 {
         strip_prefix = radix == 16;
-        if radix < 2 || radix > 36 {
+        if !(2..36).contains(&radix) {
             return Ok(Value::nan(ctx));
         }
     } else {
@@ -61,21 +61,19 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     let mut radix = radix as u32;
 
     let mut trim = str.as_str().trim();
-    let neg = trim.starts_with("-");
-    if neg || trim.starts_with("+") {
+    let neg = trim.starts_with('-');
+    if neg || trim.starts_with('+') {
         trim = &trim[1..];
     }
 
-    if strip_prefix {
-        if trim.starts_with("0x") || trim.starts_with("0X") {
-            trim = &trim[2..];
-            radix = 16;
-        }
+    if strip_prefix && (trim.starts_with("0x") || trim.starts_with("0X")) {
+        trim = &trim[2..];
+        radix = 16;
     }
 
     let mut result: i32 = 0;
     let digits = trim.as_bytes();
-    for (idx, d) in digits.into_iter().copied().enumerate() {
+    for (idx, d) in digits.iter().copied().enumerate() {
         let x = match (d as char).to_digit(radix) {
             Some(x) => x,
             None => {
@@ -103,12 +101,12 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
 
 pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
     Ok(ctx
-        .coerce_number(args.get(0).unwrap_or(Value::undefined(ctx)))
+        .coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))
         .is_nan()
         .into_js(ctx))
 }
 
-pub fn init<'js>(ctx: Ctx<'js>) {
+pub fn init(ctx: Ctx) {
     let global = ctx.global();
     let console = ctx.create_object();
 

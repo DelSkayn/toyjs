@@ -245,7 +245,7 @@ impl Realm {
                     if res.is_undefined() {
                         self.stack.write(dst, false.into());
                     } else {
-                        self.stack.write(dst, res.into());
+                        self.stack.write(dst, res);
                     }
                 }
                 Instruction::LessEq { dst, left, righ } => {
@@ -418,7 +418,7 @@ impl Realm {
     }
 
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
-    pub unsafe fn to_string<'a>(&mut self, value: Value) -> Gc<String> {
+    pub unsafe fn to_string(&mut self, value: Value) -> Gc<String> {
         if value.is_int() {
             self.gc.allocate(value.cast_int().to_string())
         } else if value.is_float() {
@@ -783,7 +783,7 @@ impl Realm {
                         .enter_call(bc_function.registers, dst, *instr, *ctx);
                     ctx.function = function;
                     *instr = InstructionReader::from_bc(bc, func.function);
-                    return Ok(None);
+                    Ok(None)
                 }
                 FunctionKind::Static(x) => {
                     let function = mem::replace(&mut ctx.function, function);

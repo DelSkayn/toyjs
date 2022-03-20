@@ -203,7 +203,7 @@ impl Stack {
 
     pub unsafe fn unwind(&mut self) -> Option<Result<TryFrameData, CallFrameData>> {
         match self.frames.pop() {
-            Some(Frame::Try { data }) => return Some(Ok(data)),
+            Some(Frame::Try { data }) => Some(Ok(data)),
             Some(Frame::Call {
                 registers,
                 frame_offset,
@@ -211,7 +211,7 @@ impl Stack {
                 data,
             }) => {
                 self.restore_frame(registers.into(), frame_offset, open_upvalues);
-                return Some(Err(data));
+                Some(Err(data))
             }
             Some(Frame::Entry {
                 registers,
@@ -219,7 +219,7 @@ impl Stack {
                 open_upvalues,
             }) => {
                 self.restore_frame(registers, frame_offset, open_upvalues);
-                return None;
+                None
             }
             None => panic!("root frame was not an entry frame"),
         }

@@ -58,23 +58,21 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         self.compile_literal(Some(reg), Literal::Undefined);
                         None
                     }
+                } else if let Some(expr) = expr {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let name = self.compile_literal(
+                        None,
+                        Literal::String(self.symbol_table.symbols()[*symbol].ident),
+                    );
+                    self.builder.push(Instruction::GlobalAssign {
+                        key: name.0,
+                        src: expr.0,
+                    });
+                    self.builder.free_temp(expr);
+                    self.builder.free_temp(name);
+                    Some(expr)
                 } else {
-                    if let Some(expr) = expr {
-                        let expr = self.compile_expr(None, expr).eval(self);
-                        let name = self.compile_literal(
-                            None,
-                            Literal::String(self.symbol_table.symbols()[*symbol].ident),
-                        );
-                        self.builder.push(Instruction::GlobalAssign {
-                            key: name.0,
-                            src: expr.0,
-                        });
-                        self.builder.free_temp(expr);
-                        self.builder.free_temp(name);
-                        Some(expr)
-                    } else {
-                        None
-                    }
+                    None
                 }
             }
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
@@ -120,7 +118,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let dst = catch
                     .as_ref()
                     .and_then(|x| x.binding.map(|x| self.builder.alloc_symbol(x)))
-                    .unwrap_or(self.builder.alloc_temp());
+                    .unwrap_or_else(|| self.builder.alloc_temp());
                 let instr = self.builder.push(Instruction::Try { tgt: 0, dst: dst.0 });
                 self.compile_stmt(r#try);
                 self.builder.push(Instruction::Untry { _ignore: () });
@@ -147,7 +145,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     pub fn compile_if(
         &mut self,
-        cond: &'a Vec<Expr<A>, A>,
+        cond: &'a [Expr<A>],
         r#if: &'a Stmt<A>,
         r#else: &'a Option<Box<Stmt<A>, A>>,
     ) {
@@ -162,7 +160,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 .patch_jump(x, self.builder.next_instruction_id())
         });
 
-        self.compile_stmt(r#if).map(|r| self.builder.free_temp(r));
+        if let Some(r) = self.compile_stmt(r#if) {
+            self.builder.free_temp(r);
+        }
         if let Some(r#else) = r#else {
             let patch_else = self.builder.push(Instruction::Jump { tgt: 1 });
             expr.false_list.into_iter().for_each(|x| {
@@ -171,7 +171,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             });
             self.builder
                 .patch_jump(patch_if, self.builder.next_instruction_id());
-            self.compile_stmt(r#else).map(|r| self.builder.free_temp(r));
+            if let Some(r) = self.compile_stmt(r#else) {
+                self.builder.free_temp(r);
+            }
             self.builder
                 .patch_jump(patch_else, self.builder.next_instruction_id());
         } else {
@@ -184,7 +186,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 
-    pub fn compile_while(&mut self, cond: &'a Vec<Expr<A>, A>, block: &'a Stmt<A>) {
+    pub fn compile_while(&mut self, cond: &'a [Expr<A>], block: &'a Stmt<A>) {
         let before_cond = self.builder.next_instruction_id();
         let expr = self.compile_expressions(None, cond);
         let patch_while = self.builder.push(Instruction::JumpFalse {
@@ -197,7 +199,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         });
 
         self.builder.push_flow_scope();
-        self.compile_stmt(block).map(|r| self.builder.free_temp(r));
+        if let Some(r) = self.compile_stmt(block) {
+            self.builder.free_temp(r);
+        }
         let flow_scope = self.builder.pop_flow_scope();
         let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
 
@@ -222,7 +226,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         });
     }
 
-    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a Vec<Expr<A>, A>) {
+    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a [Expr<A>]) {
         let before_stmt = self.builder.next_instruction_id();
 
         self.builder.push_flow_scope();
@@ -258,7 +262,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         &mut self,
         scope: ScopeId,
         params: &'a Params<A>,
-        block: &'a Vec<Stmt<A>, A>,
+        block: &'a [Stmt<A>],
     ) -> FunctionId {
         let id = self.builder.push_function(scope, params);
         for s in block.iter() {
@@ -287,7 +291,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     ) {
         match decl {
             ForDecl::Stmt(x) => {
-                self.compile_stmt(&x);
+                self.compile_stmt(x);
             }
             ForDecl::Expr(x) => {
                 let reg = self.compile_expr(None, x).eval(self);
