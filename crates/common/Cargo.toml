@@ -8,5 +8,4 @@ edition = "2021"
 
 [dependencies]
 fxhash = "0.2.1"
-bumpalo = { version = "3.9.1", features = ["boxed","collections"] }
 static_assertions = "1.1.0"

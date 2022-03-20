@@ -12,9 +12,4 @@ fn collect_all() {
     ctx.with(|ctx| {
         ctx.eval(UPVALUE_SOURCE).unwrap();
     });
-    ctx.collect_all();
-    ctx.with(|ctx| {
-        ctx.eval(UPVALUE_SOURCE).unwrap();
-    });
-    ctx.collect_all();
 }

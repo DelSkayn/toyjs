@@ -14,7 +14,6 @@ ast = { package="toyjs_ast",path = "../crates/ast/" }
 parser = { package="toyjs_parser",path = "../crates/parser/" }
 compiler = { package="toyjs_compiler",path = "../crates/compiler/" }
 vm = { package="toyjs_vm",path = "../crates/vm/" }
-bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 
 [dev-dependencies]
 criterion = "0.3.5"
