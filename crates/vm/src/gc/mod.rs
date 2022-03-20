@@ -10,7 +10,7 @@ use common::cell_vec::CellVec;
 pub use trace::Trace;
 
 mod ptr;
-pub use ptr::{BoundGc, Gc};
+pub use ptr::Gc;
 use ptr::{Color, GcBox, GcBoxPtr};
 
 const PAUSE_FACTOR: f64 = 0.5;

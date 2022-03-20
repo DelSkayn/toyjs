@@ -1,9 +1,6 @@
-use std::{
-    alloc::Global, borrow::Cow, cell::Cell, marker::PhantomData, string::String as StdString,
-};
+use std::{alloc::Global, cell::Cell, marker::PhantomData, string::String as StdString};
 
 use ast::SymbolTable;
-use bumpalo::Bump;
 use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use lexer::Lexer;
@@ -16,7 +13,7 @@ use crate::{ffi::Arguments, Context, Function, Object, String, Value};
 pub struct UserData {
     pub symbol_table: SymbolTable<Global>,
     pub interner: Interner,
-    pub alloc: Bump,
+    //pub alloc: Bump,
 }
 
 unsafe impl Trace for UserData {
@@ -35,7 +32,7 @@ impl UserData {
         UserData {
             symbol_table: SymbolTable::new(),
             interner: Interner::new(),
-            alloc: Bump::new(),
+            //alloc: Bump::new(),
         }
     }
 }
@@ -110,8 +107,8 @@ impl<'js> Ctx<'js> {
     }
 
     /// Coerces a javascript value into a string
-    pub fn coerce_string(self, v: Value<'js>) -> Cow<'js, str> {
-        unsafe { (*self.ctx).to_string(v.into_vm()) }
+    pub fn coerce_string(self, v: Value<'js>) -> String<'js> {
+        unsafe { String::wrap(self, (*self.ctx).to_string(v.into_vm())) }
     }
 
     /// Coerces a javascript value into a string

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, mem};
+use std::mem;
 
 use crate::{
     gc::Trace,
@@ -418,23 +418,23 @@ impl Realm {
     }
 
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
-    pub unsafe fn to_string<'a>(&mut self, value: Value) -> Cow<'a, str> {
+    pub unsafe fn to_string<'a>(&mut self, value: Value) -> Gc<String> {
         if value.is_int() {
-            Cow::Owned(value.cast_int().to_string())
+            self.gc.allocate(value.cast_int().to_string())
         } else if value.is_float() {
-            Cow::Owned(value.cast_float().to_string())
+            self.gc.allocate(value.cast_float().to_string())
         } else if value.is_null() {
-            Cow::Borrowed("null")
+            self.gc.allocate("null".to_string())
         } else if value.is_undefined() {
-            Cow::Borrowed("undefined")
+            self.gc.allocate("undefined".to_string())
         } else if value.is_true() {
-            Cow::Borrowed("true")
+            self.gc.allocate("true".to_string())
         } else if value.is_false() {
-            Cow::Borrowed("false")
+            self.gc.allocate("false".to_string())
         } else if value.is_string() {
-            Cow::Borrowed(value.unsafe_cast_string().ref_static().as_ref())
+            value.unsafe_cast_string()
         } else if value.is_object() {
-            Cow::Borrowed("[object Object]")
+            self.gc.allocate("[object Object]".to_string())
         } else {
             todo!()
         }
@@ -563,14 +563,14 @@ impl Realm {
         if left.is_string() || right.is_string() {
             let left = self.to_string(left);
             let right = self.to_string(right);
-            if left.as_ref().starts_with(right.as_ref()) {
+            if left.as_str().starts_with(right.as_str()) {
                 return false.into();
             }
-            if right.as_ref().starts_with(left.as_ref()) {
+            if right.as_str().starts_with(left.as_str()) {
                 return true.into();
             }
-            let mut left = left.as_ref().chars();
-            let mut right = right.as_ref().chars();
+            let mut left = left.as_str().chars();
+            let mut right = right.as_str().chars();
             loop {
                 let left = left.next().unwrap();
                 let right = right.next().unwrap();

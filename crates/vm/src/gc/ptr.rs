@@ -2,9 +2,8 @@ use super::{GcArena, Trace};
 use std::{
     cell::{Cell, UnsafeCell},
     fmt,
-    marker::PhantomData,
     ops::Deref,
-    ptr::NonNull,
+    ptr::{addr_of, NonNull},
 };
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -60,7 +59,7 @@ impl<T: Trace + 'static> Gc<T> {
 
     #[inline]
     pub unsafe fn ref_static(&self) -> &'static T {
-        &(*self.0.as_ref().value.get())
+        &(*(*self.0.as_ptr()).value.get())
     }
 
     #[inline]
@@ -74,7 +73,10 @@ impl<T: Trace> Deref for Gc<T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        unsafe { &(*self.0.as_ref().value.get()) }
+        unsafe {
+            let value = addr_of!((*self.0.as_ptr()).value);
+            &(*(*value).get())
+        }
     }
 }
 
@@ -97,36 +99,5 @@ unsafe impl<T: Trace + 'static> Trace for Gc<T> {
     #[inline]
     fn trace(&self, ctx: super::Ctx) {
         ctx.mark(*self)
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct BoundGc<'a, T: Trace + ?Sized> {
-    marker: PhantomData<Cell<&'a ()>>,
-    gc: Gc<T>,
-}
-
-impl<'a, T: Trace + ?Sized> Deref for BoundGc<'a, T> {
-    type Target = T;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        unsafe { &(*self.gc.0.as_ref().value.get()) }
-    }
-}
-
-impl<'a, T: Trace + ?Sized> BoundGc<'a, T> {
-    /// # Safety
-    ///
-    /// The gc pointer must be valid for the entire lifetime it will be bound to.
-    pub unsafe fn bind(value: Gc<T>) -> Self {
-        BoundGc {
-            gc: value,
-            marker: PhantomData,
-        }
-    }
-
-    pub fn unbind(self) -> Gc<T> {
-        self.gc
     }
 }

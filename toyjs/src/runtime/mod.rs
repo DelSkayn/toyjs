@@ -33,7 +33,10 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<Value<'js
 }
 
 pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
-    ctx.eval(ctx.coerce_string(args.get(0).unwrap_or(Value::undefined(ctx))))
+    ctx.eval(
+        ctx.coerce_string(args.get(0).unwrap_or(Value::undefined(ctx)))
+            .into_string(),
+    )
 }
 
 pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
@@ -57,7 +60,7 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     }
     let mut radix = radix as u32;
 
-    let mut trim = str.as_ref().trim();
+    let mut trim = str.as_str().trim();
     let neg = trim.starts_with("-");
     if neg || trim.starts_with("+") {
         trim = &trim[1..];
