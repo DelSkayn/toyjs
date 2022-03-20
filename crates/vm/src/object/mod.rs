@@ -76,7 +76,7 @@ impl Object {
             }
         }
         let string = realm.to_string(key);
-        match (*self.values.get()).get(string.as_ref()).copied() {
+        match (*self.values.get()).get(&*string).copied() {
             Some(x) => return x,
             None => {
                 if let Some(x) = self.prototype {

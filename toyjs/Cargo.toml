@@ -19,6 +19,9 @@ bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 [dev-dependencies]
 criterion = "0.3.5"
 
+[features]
+tagged-union = ["vm/tagged-union"]
+
 [[bench]]
 name = "startup"
 harness = false

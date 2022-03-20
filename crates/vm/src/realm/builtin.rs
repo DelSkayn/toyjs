@@ -79,7 +79,7 @@ fn error_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Val
         if realm.stack.frame_size() >= 1 {
             let message = realm.stack.read(0);
             let message = realm.to_string(message);
-            let message = realm.create_string(message);
+            let message = realm.create_string(message.as_str());
             let key = realm.create_string("message");
             object.raw_index_set(key.into(), message.into(), realm);
         }
