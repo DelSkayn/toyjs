@@ -204,6 +204,10 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
         .set_bold(true)
         .set_fg(Some(Color::Red))
         .clone();
+    let failed_color = ColorSpec::new()
+        .set_bold(true)
+        .set_fg(Some(Color::Yellow))
+        .clone();
     let passed_color = ColorSpec::new()
         .set_bold(true)
         .set_fg(Some(Color::Green))
@@ -255,7 +259,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
                     }
                     TestResult::Failed => {
                         failed += 1;
-                        stdout.set_color(&error_color)?;
+                        stdout.set_color(&failed_color)?;
                         writeln!(stdout, "FAILED")?;
                         stdout.set_color(&base_color)?;
                         write!(stdout, "")?;
@@ -283,7 +287,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     stdout.set_color(&base_color)?;
     writeln!(stdout, "{}", passed)?;
 
-    stdout.set_color(&error_color)?;
+    stdout.set_color(&failed_color)?;
     write!(stdout, "\tfailed: ")?;
     stdout.set_color(&base_color)?;
     writeln!(stdout, "{}", failed)?;
