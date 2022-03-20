@@ -132,7 +132,6 @@ impl Stack {
     /// Enter a base stack frame.
     /// When the frame returns execution should be
     pub fn enter(&mut self, registers: u8) {
-        println!("enter: {:?}", self.frames);
         unsafe {
             let new_used = self.used() + registers as usize;
             if new_used > self.capacity {
@@ -162,7 +161,6 @@ impl Stack {
         instr: InstructionReader,
         ctx: ExecutionContext,
     ) {
-        println!("enter: {:?}", self.frames);
         unsafe {
             let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity {
@@ -207,7 +205,6 @@ impl Stack {
     }
 
     pub unsafe fn unwind(&mut self, gc: &GcArena) -> Option<Result<TryFrameData, CallFrameData>> {
-        println!("pop unwind: {:?}", self.frames);
         match self.frames.pop() {
             Some(Frame::Try { data }) => Some(Ok(data)),
             Some(Frame::Call {
@@ -232,7 +229,6 @@ impl Stack {
     }
 
     pub unsafe fn pop(&mut self, gc: &GcArena) -> Option<CallFrameData> {
-        println!("pop: {:?}", self.frames);
         loop {
             match self.frames.pop() {
                 Some(Frame::Try { .. }) => {}
