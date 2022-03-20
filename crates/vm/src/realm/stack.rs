@@ -1,8 +1,8 @@
 use std::{
-    alloc::{self, GlobalAlloc, Layout, System},
+    alloc::{self, Layout},
     cell::{Cell, UnsafeCell},
     convert::TryInto,
-    mem,
+    isize,
     ptr::NonNull,
 };
 
@@ -46,12 +46,6 @@ impl UpvalueObject {
     #[inline]
     pub unsafe fn read(&self) -> Value {
         self.location.get().read()
-    }
-
-    pub unsafe fn rebase(&self, original: *mut Value, new: *mut Value) {
-        debug_assert!((*self.closed.get()) == Value::empty());
-        self.location
-            .set(new.offset(self.location.get().offset_from(original)));
     }
 }
 
@@ -315,12 +309,17 @@ impl Stack {
         }
     }
 
+    unsafe fn rebase<T>(old: *mut T, new: *mut T, ptr: *mut T) -> *mut T {
+        let offset = (ptr as isize) - (old as isize);
+        new.cast::<u8>().offset(offset).cast()
+    }
+
     fn grow(&mut self, capacity: usize) {
         unsafe {
-            let capacity = capacity.next_power_of_two();
+            let capacity = capacity.next_power_of_two().max(8);
             if self.capacity == 0 {
-                let layout = Layout::array::<Value>(capacity.max(8)).unwrap();
-                let ptr = System.alloc(layout);
+                let layout = Layout::array::<Value>(capacity).unwrap();
+                let ptr = alloc::alloc(layout);
                 if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
@@ -329,19 +328,18 @@ impl Stack {
                 self.stack = self.root.as_ptr();
             } else {
                 let layout = Layout::array::<Value>(self.capacity).unwrap();
-                let size = capacity * mem::size_of::<Value>();
-                let ptr: *mut Value = System
-                    .realloc(self.root.as_ptr().cast(), layout, size)
-                    .cast();
+                let size = Layout::array::<Value>(capacity).unwrap().size();
+                let ptr: *mut Value =
+                    alloc::realloc(self.root.as_ptr().cast(), layout, size).cast();
                 if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
                 if ptr != self.root.as_ptr() {
-                    self.stack = ptr.offset(self.stack.offset_from(self.root.as_ptr()));
-                    self.frame = ptr.offset(self.frame.offset_from(self.root.as_ptr()));
+                    let original = self.root.as_ptr();
+                    self.stack = Self::rebase(original, ptr, self.stack);
+                    self.frame = Self::rebase(original, ptr, self.frame);
 
                     // rebase all the open upvalue objects
-                    let original = self.root.as_ptr();
                     for f in self.frames.iter_mut() {
                         match *f {
                             Frame::Entry {
@@ -351,9 +349,10 @@ impl Stack {
                             | Frame::Call {
                                 ref mut open_upvalues,
                                 ..
-                            } => open_upvalues
-                                .iter_mut()
-                                .for_each(|x| x.rebase(original, ptr)),
+                            } => open_upvalues.iter_mut().for_each(|x| {
+                                let new_loc = Self::rebase(original, ptr, x.location.get());
+                                x.location.set(new_loc);
+                            }),
                             _ => {}
                         }
                     }
@@ -412,6 +411,17 @@ unsafe impl Trace for Stack {
                 cur = cur.sub(1);
                 cur.read().trace(ctx);
             }
+        }
+    }
+}
+
+impl Drop for Stack {
+    fn drop(&mut self) {
+        unsafe {
+            alloc::dealloc(
+                self.root.as_ptr().cast(),
+                Layout::array::<Value>(self.capacity).unwrap(),
+            )
         }
     }
 }
