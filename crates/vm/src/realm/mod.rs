@@ -176,3 +176,11 @@ unsafe impl Trace for Realm {
         self.builtin.trace(ctx);
     }
 }
+
+impl Drop for Realm {
+    fn drop(&mut self) {
+        unsafe {
+            self.gc.collect_all();
+        }
+    }
+}
