@@ -89,7 +89,8 @@ impl Realm {
                         self.gc.write_barrier(obj);
                         obj.index_set(key, val, self);
                     } else {
-                        todo!()
+                        // TODO proper error value
+                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?
                     }
                 }
                 Instruction::Index { dst, obj, key } => {
@@ -99,7 +100,8 @@ impl Realm {
                         let res = obj.unsafe_cast_object().index(key, self);
                         self.stack.write(dst, res)
                     } else {
-                        todo!()
+                        // TODO proper error value
+                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?
                     }
                 }
 
@@ -110,6 +112,7 @@ impl Realm {
                 }
 
                 Instruction::GlobalAssign { key, src } => {
+                    self.gc.write_barrier(self.global());
                     self.global()
                         .index_set(self.stack.read(key), self.stack.read(src), self);
                 }
@@ -121,7 +124,9 @@ impl Realm {
 
                 Instruction::UpvalueAssign { src, slot } => {
                     let value = self.stack.read(src);
-                    ctx.function.as_vm_function().upvalues[slot as usize].write(value);
+                    let upvalue = ctx.function.as_vm_function().upvalues[slot as usize];
+                    self.gc.write_barrier(upvalue);
+                    upvalue.write(value);
                 }
 
                 Instruction::Add { dst, left, righ } => {
@@ -336,7 +341,7 @@ impl Realm {
                     self.unwind_error(&mut instr, &mut ctx, error)?;
                 }
 
-                Instruction::ReturnUndefined { .. } => match self.stack.pop() {
+                Instruction::ReturnUndefined { .. } => match self.stack.pop(&self.gc) {
                     Some(frame) => {
                         ctx = frame.ctx;
                         instr = frame.instr;
@@ -346,7 +351,7 @@ impl Realm {
                 },
                 Instruction::Return { ret } => {
                     let return_value = self.stack.read(ret);
-                    match self.stack.pop() {
+                    match self.stack.pop(&self.gc) {
                         Some(frame) => {
                             ctx = frame.ctx;
                             instr = frame.instr;
@@ -386,7 +391,7 @@ impl Realm {
         error: Value,
     ) -> Result<(), Value> {
         loop {
-            match self.stack.unwind() {
+            match self.stack.unwind(&self.gc) {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
                     instr.absolute_jump(catch.ip_offset);
@@ -767,13 +772,15 @@ impl Realm {
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, instr, ctx| {
             if !function.is_object() {
-                todo!()
+                // TODO proper error value
+                return Err(Value::undefined());
             }
             let function = function.unsafe_cast_object();
             let kind = if let Some(x) = function.function.as_ref() {
                 x
             } else {
-                todo!()
+                // TODO proper error value
+                return Err(Value::undefined());
             };
             match kind {
                 FunctionKind::Vm(ref func) => {
@@ -789,7 +796,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = x(this, ctx)?;
-                    this.stack.pop();
+                    this.stack.pop(&this.gc);
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -797,7 +804,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
-                    this.stack.pop();
+                    this.stack.pop(&this.gc);
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -805,7 +812,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = (*x)(this, ctx)?;
-                    this.stack.pop();
+                    this.stack.pop(&this.gc);
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -822,17 +829,20 @@ impl Realm {
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, _instr, ctx| {
             if !function.is_object() {
-                todo!()
+                //TODO proper error value
+                return Err(Value::undefined());
             }
 
             let function = function.unsafe_cast_object();
             let kind = if let Some(x) = function.function.as_ref() {
                 x
             } else {
-                todo!()
+                //TODO proper error value
+                return Err(Value::undefined());
             };
             if !function.is_constructor() {
-                todo!()
+                //TODO proper error value
+                return Err(Value::undefined());
             }
 
             match kind {
@@ -867,11 +877,14 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = func(this, ctx)?;
-                    this.stack.pop();
+                    this.stack.pop(&this.gc);
                     ctx.function = function;
                     Ok(res)
                 }
-                _ => todo!(),
+                _ => {
+                    //TODO proper error value
+                    return Err(Value::undefined());
+                }
             }
         })
     }

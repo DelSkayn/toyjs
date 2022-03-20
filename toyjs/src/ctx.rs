@@ -66,7 +66,7 @@ impl<'js> Ctx<'js> {
     }
 
     pub(crate) unsafe fn pop_frame(&mut self) {
-        (*self.ctx).stack.pop();
+        (*self.ctx).stack.pop(&(*self.ctx).gc);
     }
 
     pub(crate) unsafe fn user_data(self) -> *mut UserData {

@@ -91,7 +91,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x(self, &mut ctx);
-                self.stack.pop();
+                self.stack.pop(&self.gc);
                 res
             }
             Some(FunctionKind::Static(x)) => {
@@ -102,7 +102,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x(self, &mut ctx);
-                self.stack.pop();
+                self.stack.pop(&self.gc);
                 res
             }
             Some(FunctionKind::Mutable(ref x)) => {
@@ -113,7 +113,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, &mut ctx);
-                self.stack.pop();
+                self.stack.pop(&self.gc);
                 res
             }
             None => panic!("enter_call called with object which was not a function"),

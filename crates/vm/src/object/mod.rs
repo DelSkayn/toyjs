@@ -157,15 +157,21 @@ unsafe impl Trace for Object {
     fn trace(&self, ctx: crate::gc::Ctx) {
         unsafe {
             if let Some(x) = self.prototype {
+                #[cfg(feature = "dump-gc-trace")]
+                println!("MARK: obj.proto");
                 ctx.mark(x);
             }
             if let Some(x) = self.function.as_ref() {
                 x.trace(ctx)
             }
-            for (_, v) in (*self.values.get()).iter() {
+            for (_k, v) in (*self.values.get()).iter() {
+                #[cfg(feature = "dump-gc-trace")]
+                println!("MARK: obj.{}", _k);
                 v.trace(ctx);
             }
             for v in (*self.array.get()).iter() {
+                #[cfg(feature = "dump-gc-trace")]
+                println!("MARK: obj.entry");
                 v.trace(ctx);
             }
         }

@@ -12,3 +12,6 @@ anyhow = "1.0.56"
 serde = {version = "1.0.136",features=["derive"]}
 serde_yaml = "0.8.23"
 termcolor = "1.1.3"
+
+[features]
+dump-gc-trace = ["toyjs/dump-gc-trace"]
