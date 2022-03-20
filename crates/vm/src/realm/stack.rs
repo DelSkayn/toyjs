@@ -58,7 +58,7 @@ pub enum Frame {
         // that where pushed by rust code
         registers: u32,
         frame_offset: u8,
-        open_upvalues: Vec<Gc<UpvalueObject>>,
+        open_upvalues: u16,
     },
     /// A frame of a javascript function call.
     Call {
@@ -66,7 +66,7 @@ pub enum Frame {
         registers: u8,
         /// Number of try frames between the current call frame and the previous.
         frame_offset: u8,
-        open_upvalues: Vec<Gc<UpvalueObject>>,
+        open_upvalues: u16,
         data: CallFrameData,
     },
     Try {
@@ -105,6 +105,9 @@ pub struct Stack {
     capacity: usize,
     /// Number of try frames between the current call frame and the previous.
     frame_offset: u8,
+
+    open_upvalues: Vec<Gc<UpvalueObject>>,
+    frame_open_upvalues: u16,
 }
 
 impl Stack {
@@ -118,6 +121,8 @@ impl Stack {
             cur_frame_size: 0,
             capacity: 0,
             frame_offset: 0,
+            open_upvalues: Vec::new(),
+            frame_open_upvalues: 0,
         }
     }
 
@@ -132,8 +137,9 @@ impl Stack {
             self.frames.push(Frame::Entry {
                 frame_offset: self.frame_offset,
                 registers: self.cur_frame_size,
-                open_upvalues: Vec::new(),
+                open_upvalues: self.frame_open_upvalues,
             });
+            self.frame_open_upvalues = 0;
             self.frame_offset = 0;
             self.frame = self.frame.add(self.cur_frame_size as usize);
             let new_stack = self.frame.add(registers as usize);
@@ -171,11 +177,12 @@ impl Stack {
             self.frames.push(Frame::Call {
                 registers: self.cur_frame_size as u8,
                 data: CallFrameData { dst, instr, ctx },
-                open_upvalues: Vec::new(),
+                open_upvalues: self.frame_open_upvalues,
                 frame_offset: self.frame_offset,
             });
             self.frame_offset = 0;
             self.cur_frame_size = new_registers as u32;
+            self.frame_open_upvalues = 0;
         }
     }
 
@@ -203,8 +210,7 @@ impl Stack {
                 open_upvalues,
                 data,
             }) => {
-                open_upvalues.into_iter().for_each(|x| x.close());
-                self.restore_frame(registers.into(), frame_offset);
+                self.restore_frame(registers.into(), frame_offset, open_upvalues);
                 return Some(Err(data));
             }
             Some(Frame::Entry {
@@ -212,8 +218,7 @@ impl Stack {
                 frame_offset,
                 open_upvalues,
             }) => {
-                open_upvalues.into_iter().for_each(|x| x.close());
-                self.restore_frame(registers, frame_offset);
+                self.restore_frame(registers, frame_offset, open_upvalues);
                 return None;
             }
             None => panic!("root frame was not an entry frame"),
@@ -230,8 +235,7 @@ impl Stack {
                     frame_offset,
                     open_upvalues,
                 }) => {
-                    open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers.into(), frame_offset);
+                    self.restore_frame(registers.into(), frame_offset, open_upvalues);
                     return Some(data);
                 }
                 Some(Frame::Entry {
@@ -239,8 +243,7 @@ impl Stack {
                     frame_offset,
                     open_upvalues,
                 }) => {
-                    open_upvalues.into_iter().for_each(|x| x.close());
-                    self.restore_frame(registers, frame_offset);
+                    self.restore_frame(registers, frame_offset, open_upvalues);
                     self.frame_offset = 0;
                     return None;
                 }
@@ -250,24 +253,21 @@ impl Stack {
     }
 
     pub unsafe fn create_upvalue(&mut self, register: u8, gc: &GcArena) -> Gc<UpvalueObject> {
+        let location = self.frame.add(register as usize);
+
+        let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
+        for &u in self.open_upvalues[upvalue_frame..].iter() {
+            if std::ptr::eq(u.location.get(), location) {
+                return u;
+            }
+        }
+
         let upvalue = gc.allocate(UpvalueObject {
-            location: Cell::new(self.frame.add(register as usize)),
+            location: Cell::new(location),
             closed: UnsafeCell::new(Value::empty()),
         });
-        let frame_idx = self.frames.len() - self.frame_offset as usize - 1;
-        match self.frames[frame_idx] {
-            Frame::Call {
-                ref mut open_upvalues,
-                ..
-            }
-            | Frame::Entry {
-                ref mut open_upvalues,
-                ..
-            } => {
-                open_upvalues.push(upvalue);
-            }
-            _ => panic!(),
-        }
+        self.open_upvalues.push(upvalue);
+        self.frame_open_upvalues += 1;
         upvalue
     }
 
@@ -295,20 +295,26 @@ impl Stack {
                 .stack
                 .offset_from(self.frame)
                 .try_into()
-                .expect("frame size execeded u32")
+                .expect("frame size exceeded u32::MAX")
         }
     }
 
     #[inline]
-    fn restore_frame(&mut self, registers: u32, frame_offset: u8) {
+    fn restore_frame(&mut self, registers: u32, frame_offset: u8, open_upvalues: u16) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
             self.cur_frame_size = registers;
-            self.frame_offset = frame_offset
+            self.frame_offset = frame_offset;
+            let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
+            self.open_upvalues
+                .drain(upvalue_frame..)
+                .for_each(|x| x.close());
+            self.frame_open_upvalues = open_upvalues;
         }
     }
 
+    #[inline]
     unsafe fn rebase<T>(old: *mut T, new: *mut T, ptr: *mut T) -> *mut T {
         let offset = (ptr as isize) - (old as isize);
         new.cast::<u8>().offset(offset).cast()
@@ -338,25 +344,10 @@ impl Stack {
                     let original = self.root.as_ptr();
                     self.stack = Self::rebase(original, ptr, self.stack);
                     self.frame = Self::rebase(original, ptr, self.frame);
-
-                    // rebase all the open upvalue objects
-                    for f in self.frames.iter_mut() {
-                        match *f {
-                            Frame::Entry {
-                                ref mut open_upvalues,
-                                ..
-                            }
-                            | Frame::Call {
-                                ref mut open_upvalues,
-                                ..
-                            } => open_upvalues.iter_mut().for_each(|x| {
-                                let new_loc = Self::rebase(original, ptr, x.location.get());
-                                x.location.set(new_loc);
-                            }),
-                            _ => {}
-                        }
-                    }
-
+                    self.open_upvalues.iter_mut().for_each(|x| {
+                        let new_loc = Self::rebase(original, ptr, x.location.get());
+                        x.location.set(new_loc);
+                    });
                     self.root = NonNull::new_unchecked(ptr);
                 }
             }
@@ -364,6 +355,7 @@ impl Stack {
         }
     }
 
+    #[inline]
     pub fn frame_size(&self) -> usize {
         unsafe { self.stack.offset_from(self.frame) as usize }
     }
