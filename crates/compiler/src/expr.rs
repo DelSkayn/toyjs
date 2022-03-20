@@ -392,8 +392,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
                 x => {
-                    println!("ast: {:#?}", x);
-                    todo!()
+                    panic!("unimplemented operator ast: {:#?}", x);
                 }
             },
         }

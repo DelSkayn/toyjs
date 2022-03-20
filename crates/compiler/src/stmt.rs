@@ -137,8 +137,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 None
             }
             x => {
-                println!("ast: {:#?}", x);
-                todo!()
+                panic!("unimplemented statement ast: {:#?}", x);
             }
         }
     }

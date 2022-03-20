@@ -156,20 +156,26 @@ pub fn run_single(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
         Ok(x) => x,
         Err(e) => {
             stdout.set_color(&error_color)?;
-            write!(stdout, "ERROR: ")?;
+            writeln!(stdout, "ERROR: ")?;
             stdout.set_color(&base_color)?;
-            writeln!(stdout, "could not load test: {}", e)?;
+            writeln!(stdout, "\t> could not load test: {}", e)?;
             return Result::<(), anyhow::Error>::Ok(());
         }
     };
 
     match test.run(harness) {
         Ok(x) => match x {
-            TestResult::Panic(_) => {
+            TestResult::Panic(payload) => {
                 stdout.set_color(&panic_color)?;
                 writeln!(stdout, "PANICKED")?;
                 stdout.set_color(&base_color)?;
-                write!(stdout, "")?;
+                if let Some(x) = payload.downcast_ref::<String>() {
+                    writeln!(stdout, "\t> {}", x)?;
+                } else if let Some(x) = payload.downcast_ref::<&str>() {
+                    writeln!(stdout, "\t> {}", x)?;
+                } else {
+                    writeln!(stdout, "\t> {:?}", payload)?;
+                }
             }
             TestResult::Passed => {
                 stdout.set_color(&passed_color)?;
@@ -186,9 +192,9 @@ pub fn run_single(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
         },
         Err(e) => {
             stdout.set_color(&error_color)?;
-            write!(stdout, "ERROR: ")?;
+            writeln!(stdout, "ERROR: ")?;
             stdout.set_color(&base_color)?;
-            writeln!(stdout, "{}", e)?;
+            writeln!(stdout, "\t> {}", e)?;
         }
     }
     Ok(())
@@ -230,9 +236,9 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
                 Err(e) => {
                     errored += 1;
                     stdout.set_color(&error_color)?;
-                    write!(stdout, "ERROR: ")?;
+                    writeln!(stdout, "ERROR: ")?;
                     stdout.set_color(&base_color)?;
-                    writeln!(stdout, "could not load test: {}", e)?;
+                    writeln!(stdout, "\t> could not load test: {}", e)?;
                     return Result::<(), anyhow::Error>::Ok(());
                 }
             };
@@ -243,12 +249,18 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
 
             match res {
                 Ok(x) => match x {
-                    TestResult::Panic(_) => {
+                    TestResult::Panic(payload) => {
                         panicked += 1;
                         stdout.set_color(&panic_color)?;
                         writeln!(stdout, "PANICKED")?;
                         stdout.set_color(&base_color)?;
-                        write!(stdout, "")?;
+                        if let Some(x) = payload.downcast_ref::<String>() {
+                            writeln!(stdout, "\t> {}", x)?;
+                        } else if let Some(x) = payload.downcast_ref::<&str>() {
+                            writeln!(stdout, "\t> {}", x)?;
+                        } else {
+                            writeln!(stdout, "\t> {:?}", payload)?;
+                        }
                     }
                     TestResult::Passed => {
                         passed += 1;

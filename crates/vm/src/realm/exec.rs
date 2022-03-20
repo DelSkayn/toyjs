@@ -53,7 +53,7 @@ impl Realm {
         mut ctx: ExecutionContext,
     ) -> Result<Value, Value> {
         loop {
-            match instr.next() {
+            match dbg!(instr.next()) {
                 Instruction::LoadConst { dst, cons } => {
                     self.stack.write(dst, instr.constant(cons as u32));
                 }
@@ -320,25 +320,15 @@ impl Realm {
 
                 Instruction::Call { dst, func } => {
                     let func = self.stack.read(func);
-                    match self._call(func, &mut instr, &mut ctx, dst) {
-                        Ok(Some(value)) => {
-                            self.stack.write(dst, value);
-                        }
-                        Ok(None) => {}
-                        Err(error) => {
-                            self.unwind_error(&mut instr, &mut ctx, error)?;
-                        }
+                    if let Some(value) = self._call(func, &mut instr, &mut ctx, dst)? {
+                        self.stack.write(dst, value);
                     }
                 }
                 Instruction::CallConstruct { dst, func, obj } => {
                     let func = self.stack.read(func);
                     let obj = self.stack.read(obj);
-                    match self.call_construct(func, obj, &mut instr, &mut ctx) {
-                        Ok(Some(value)) => self.stack.write(dst, value),
-                        Ok(None) => {}
-                        Err(error) => {
-                            self.unwind_error(&mut instr, &mut ctx, error)?;
-                        }
+                    if let Some(value) = self.call_construct(func, obj, &mut instr, &mut ctx)? {
+                        self.stack.write(dst, value);
                     }
                 }
 
@@ -397,7 +387,7 @@ impl Realm {
         error: Value,
     ) -> Result<(), Value> {
         loop {
-            match self.stack.unwind(&self.gc) {
+            match dbg!(self.stack.unwind(&self.gc)) {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
                     instr.absolute_jump(catch.ip_offset);
