@@ -59,7 +59,7 @@ fn main() -> io::Result<()> {
                 _ => {}
             }
         }
-        if delims.is_empty() {
+        if !delims.is_empty() {
             last_length = buffer.len();
             continue 'main;
         }

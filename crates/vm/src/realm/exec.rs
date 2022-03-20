@@ -53,7 +53,7 @@ impl Realm {
         mut ctx: ExecutionContext,
     ) -> Result<Value, Value> {
         loop {
-            match instr.next() {
+            match dbg!(instr.next()) {
                 Instruction::LoadConst { dst, cons } => {
                     self.stack.write(dst, instr.constant(cons as u32));
                 }
@@ -279,7 +279,7 @@ impl Realm {
                 }
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
-                    let number = self.to_number(src);
+                    let number = dbg!(self.to_number(src));
                     if number.is_int() {
                         let number = -(number.cast_int() as i64);
                         if number as i32 as i64 == number {
