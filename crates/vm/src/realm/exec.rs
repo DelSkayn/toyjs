@@ -129,6 +129,12 @@ impl Realm {
                     upvalue.write(value);
                 }
 
+                Instruction::TypeOf { dst, src } => {
+                    let src = self.stack.read(src);
+                    let res = self.type_of(src);
+                    self.stack.write(dst, res.into());
+                }
+
                 Instruction::Add { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
@@ -687,6 +693,28 @@ impl Realm {
             Value::from(res as i32)
         } else {
             Value::from(res)
+        }
+    }
+    #[inline]
+    pub unsafe fn type_of(&mut self, v: Value) -> Gc<String> {
+        if v.is_undefined() {
+            self.create_string("undefined")
+        } else if v.is_null() {
+            self.create_string("object")
+        } else if v.is_bool() {
+            self.create_string("boolean")
+        } else if v.is_number() {
+            self.create_string("number")
+        } else if v.is_string() {
+            self.create_string("string")
+        } else if v.is_object() {
+            if v.unsafe_cast_object().is_function() {
+                self.create_string("function")
+            } else {
+                self.create_string("object")
+            }
+        } else {
+            unreachable!()
         }
     }
 
