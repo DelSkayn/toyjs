@@ -201,7 +201,7 @@ impl Stack {
         }
     }
 
-    pub unsafe fn unwind(&mut self) -> Option<Result<TryFrameData, CallFrameData>> {
+    pub unsafe fn unwind(&mut self, gc: &GcArena) -> Option<Result<TryFrameData, CallFrameData>> {
         match self.frames.pop() {
             Some(Frame::Try { data }) => Some(Ok(data)),
             Some(Frame::Call {
@@ -210,7 +210,7 @@ impl Stack {
                 open_upvalues,
                 data,
             }) => {
-                self.restore_frame(registers.into(), frame_offset, open_upvalues);
+                self.restore_frame(registers.into(), frame_offset, open_upvalues, gc);
                 Some(Err(data))
             }
             Some(Frame::Entry {
@@ -218,14 +218,14 @@ impl Stack {
                 frame_offset,
                 open_upvalues,
             }) => {
-                self.restore_frame(registers, frame_offset, open_upvalues);
+                self.restore_frame(registers, frame_offset, open_upvalues, gc);
                 None
             }
             None => panic!("root frame was not an entry frame"),
         }
     }
 
-    pub unsafe fn pop(&mut self) -> Option<CallFrameData> {
+    pub unsafe fn pop(&mut self, gc: &GcArena) -> Option<CallFrameData> {
         loop {
             match self.frames.pop() {
                 Some(Frame::Try { .. }) => {}
@@ -235,7 +235,7 @@ impl Stack {
                     frame_offset,
                     open_upvalues,
                 }) => {
-                    self.restore_frame(registers.into(), frame_offset, open_upvalues);
+                    self.restore_frame(registers.into(), frame_offset, open_upvalues, gc);
                     return Some(data);
                 }
                 Some(Frame::Entry {
@@ -243,7 +243,7 @@ impl Stack {
                     frame_offset,
                     open_upvalues,
                 }) => {
-                    self.restore_frame(registers, frame_offset, open_upvalues);
+                    self.restore_frame(registers, frame_offset, open_upvalues, gc);
                     self.frame_offset = 0;
                     return None;
                 }
@@ -300,16 +300,23 @@ impl Stack {
     }
 
     #[inline]
-    fn restore_frame(&mut self, registers: u32, frame_offset: u8, open_upvalues: u16) {
+    fn restore_frame(
+        &mut self,
+        registers: u32,
+        frame_offset: u8,
+        open_upvalues: u16,
+        gc: &GcArena,
+    ) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
             self.cur_frame_size = registers;
             self.frame_offset = frame_offset;
             let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
-            self.open_upvalues
-                .drain(upvalue_frame..)
-                .for_each(|x| x.close());
+            self.open_upvalues.drain(upvalue_frame..).for_each(|x| {
+                gc.write_barrier(x);
+                x.close()
+            });
             self.frame_open_upvalues = open_upvalues;
         }
     }
@@ -387,6 +394,9 @@ unsafe impl Trace for Stack {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
+        #[cfg(feature = "dump-gc-trace")]
+        println!("TRACE: stack.frames");
+
         for f in self.frames.iter() {
             match *f {
                 Frame::Entry { .. } => {}
@@ -397,6 +407,8 @@ unsafe impl Trace for Stack {
             }
         }
 
+        #[cfg(feature = "dump-gc-trace")]
+        println!("TRACE: stack.stack");
         let mut cur = self.stack;
         while cur > self.root.as_ptr() {
             unsafe {

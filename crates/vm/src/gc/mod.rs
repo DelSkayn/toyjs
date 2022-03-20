@@ -23,10 +23,18 @@ pub struct Ctx<'gc>(&'gc GcArena);
 impl<'gc> Ctx<'gc> {
     #[inline]
     pub fn mark<T: Trace + 'static>(self, gc: Gc<T>) {
+        #[cfg(feature = "dump-gc-trace")]
+        println!("MARK: {} ptr: {:?}", gc.name(), gc.0.as_ptr());
         unsafe {
             if gc.0.as_ref().color.get() != Color::White {
                 return;
             }
+            #[cfg(feature = "dump-gc-trace")]
+            assert!(
+                !gc.0.as_ref().free.get(),
+                "reached freed value through tracing. ptr: {:?}",
+                gc.0.as_ptr()
+            );
             gc.0.as_ref().color.set(Color::Gray);
             if T::needs_trace() {
                 self.0.grays.push(gc.0);
@@ -102,10 +110,19 @@ impl GcArena {
             self.total_allocated.set(self.total_allocated.get() + size);
 
             let ptr = NonNull::new_unchecked(Box::into_raw(Box::new(GcBox {
+                #[cfg(feature = "dump-gc-trace")]
+                free: Cell::new(false),
                 color: Cell::new(Color::White),
                 next: Cell::new(self.all.get()),
                 value: UnsafeCell::new(value),
             })));
+
+            #[cfg(feature = "dump-gc-trace")]
+            println!(
+                "ALLOC: {} ptr: {:?}",
+                (*ptr.as_ref().value.get()).name(),
+                ptr.as_ptr()
+            );
 
             if self.phase.get() == Phase::Sleep
                 && self.total_allocated.get() > self.wakeup_total.get()
@@ -133,6 +150,8 @@ impl GcArena {
         if !T::needs_trace() {
             return;
         }
+        #[cfg(feature = "dump-gc-trace")]
+        println!("WRITE: {} ptr: {:?}", gc.name(), gc.0.as_ptr());
         unsafe {
             if self.phase.get() == Phase::Mark && gc.0.as_ref().color.get() == Color::Black {
                 gc.0.as_ref().color.set(Color::Gray);
@@ -164,15 +183,22 @@ impl GcArena {
     /// If any new pointers are added into a structure which could contain
     /// Any gc pointers which where not reachable from the program will be freed.
     pub unsafe fn collect_debt<T: Trace>(&self, root: &T) {
+        #[cfg(feature = "dump-gc-trace")]
+        println!("ENTER_COLLECT");
+
         let work = self.allocation_debt.get();
         let mut work_done = 0usize;
 
         //let mut tmp = HashSet::new();
 
         while work > work_done as f64 {
+            #[cfg(feature = "dump-gc-trace")]
+            println!("ITERATION");
             match self.phase.get() {
                 Phase::Wake => {
                     self.sweep_prev.set(None);
+                    #[cfg(feature = "dump-gc-trace")]
+                    println!("TRACE: {}", root.name());
                     // Trace the root, every value reachable by the root is live.
                     // All gc pointers will be put on into the grays array.
                     root.trace(Ctx(self));
@@ -182,6 +208,12 @@ impl GcArena {
                 }
                 Phase::Mark => {
                     if let Some(x) = self.grays.pop() {
+                        #[cfg(feature = "dump-gc-trace")]
+                        println!(
+                            "TRACE: {}, ptr: {:?}",
+                            (*x.as_ref().value.get()).name(),
+                            x.as_ptr()
+                        );
                         //assert!(tmp.insert(x.as_ptr()));
                         let size = mem::size_of_val(x.as_ref());
                         work_done += size;
@@ -189,11 +221,29 @@ impl GcArena {
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else if let Some(x) = self.grays_again.pop() {
+                        #[cfg(feature = "dump-gc-trace")]
+                        println!("AGAIN");
+
+                        #[cfg(feature = "dump-gc-trace")]
+                        println!(
+                            "TRACE: {}, ptr: {:?}",
+                            (*x.as_ref().value.get()).name(),
+                            x.as_ptr()
+                        );
                         //assert!(!tmp.insert(x.as_ptr()));
                         (*x.as_ref().value.get()).trace(Ctx(self));
                         x.as_ref().color.set(Color::Black);
                     } else {
+                        #[cfg(feature = "dump-gc-trace")]
+                        println!("TRACE AGAIN: {}", root.name());
                         root.trace(Ctx(self));
+
+                        // Found new values in root
+                        // Should continue tracing till no more free values are found.
+                        if !self.grays.is_empty() {
+                            continue;
+                        }
+
                         self.grays.clear();
                         self.phase.set(Phase::Sweep);
                         self.sweep.set(self.all.get());
@@ -210,7 +260,17 @@ impl GcArena {
                             } else {
                                 self.all.set(x.as_ref().next.get())
                             }
+
+                            #[cfg(feature = "dump-gc-trace")]
+                            println!(
+                                "FREE: {}, ptr: {:?}",
+                                (*x.as_ref().value.get()).name(),
+                                x.as_ptr()
+                            );
+
                             self.total_allocated.set(self.total_allocated.get() - size);
+                            #[cfg(feature = "dump-gc-trace")]
+                            x.as_ref().free.set(true);
                             Box::from_raw(x.as_ptr());
                         } else {
                             self.remembered_size.set(self.remembered_size.get() + size);
@@ -243,8 +303,10 @@ impl GcArena {
     ///
     /// One should ensure that no more pointer remain after calling this function.
     pub unsafe fn collect_all(&self) {
-        self.collect_full(&());
-        self.collect_full(&());
-        assert!(self.all.get().is_none());
+        let mut ptr = self.all.get();
+        while let Some(p) = ptr {
+            ptr = p.as_ref().next.get();
+            Box::from_raw(p.as_ptr());
+        }
     }
 }

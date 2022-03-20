@@ -89,7 +89,7 @@ unsafe impl<T: Trace> Trace for Box<T> {
     }
 }
 
-unsafe impl<T: Trace> Trace for Vec<T> {
+unsafe impl<T: Trace> Trace for &[T] {
     fn needs_trace() -> bool
     where
         Self: Sized,

@@ -14,6 +14,8 @@ pub enum Color {
 }
 
 pub struct GcBox<T: Trace + ?Sized> {
+    #[cfg(feature = "dump-gc-trace")]
+    pub free: Cell<bool>,
     pub(crate) color: Cell<Color>,
     pub(crate) next: Cell<Option<GcBoxPtr>>,
     pub(crate) value: UnsafeCell<T>,
