@@ -1,5 +1,6 @@
 #![feature(allocator_api)]
 #![allow(dead_code)]
+#![allow(clippy::new_without_default)]
 
 use std::cell::RefCell;
 

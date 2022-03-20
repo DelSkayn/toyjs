@@ -4,7 +4,7 @@ use toyjs::Context;
 
 fn main() -> io::Result<()> {
     let ctx = Context::new();
-    if let Some(x) = env::args().skip(1).next() {
+    if let Some(x) = env::args().nth(1) {
         let source = std::fs::read_to_string(x)?;
         ctx.with(|ctx| println!("value: {:?}", ctx.eval(source).unwrap()));
         return Ok(());
@@ -59,7 +59,7 @@ fn main() -> io::Result<()> {
                 _ => {}
             }
         }
-        if delims.len() != 0 {
+        if delims.is_empty() {
             last_length = buffer.len();
             continue 'main;
         }

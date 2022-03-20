@@ -77,7 +77,7 @@ impl Object {
         }
         let string = realm.to_string(key);
         match (*self.values.get()).get(&*string).copied() {
-            Some(x) => return x,
+            Some(x) => x,
             None => {
                 if let Some(x) = self.prototype {
                     x.index(key, realm)
@@ -159,7 +159,9 @@ unsafe impl Trace for Object {
             if let Some(x) = self.prototype {
                 ctx.mark(x);
             }
-            self.function.as_ref().map(|x| x.trace(ctx));
+            if let Some(x) = self.function.as_ref() {
+                x.trace(ctx)
+            }
             for (_, v) in (*self.values.get()).iter() {
                 v.trace(ctx);
             }

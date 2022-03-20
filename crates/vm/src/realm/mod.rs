@@ -74,15 +74,14 @@ impl Realm {
             Some(FunctionKind::Vm(ref x)) => {
                 let instr = InstructionReader::from_bc(x.bc, x.function);
                 self.stack.enter(instr.function(x.function).registers);
-                let res = self.execute(
+                self.execute(
                     instr,
                     ExecutionContext {
                         function,
                         this,
                         new_target: Value::empty(),
                     },
-                );
-                res
+                )
             }
             Some(FunctionKind::Shared(ref x)) => {
                 self.stack.enter(0);
