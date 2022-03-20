@@ -387,7 +387,7 @@ impl Realm {
         error: Value,
     ) -> Result<(), Value> {
         loop {
-            match dbg!(self.stack.unwind(&self.gc)) {
+            match self.stack.unwind(&self.gc) {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
                     instr.absolute_jump(catch.ip_offset);
