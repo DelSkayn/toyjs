@@ -3,6 +3,8 @@ use crate::{
     Object,
 };
 
+//TODO rediscover implementation and document.
+
 //mod tagged_union;
 //pub use tagged_union::TaggedValue;
 
