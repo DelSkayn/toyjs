@@ -5,6 +5,7 @@ const UPVALUE_SOURCE: &str = include_str!("./upvalue.js");
 const FLOW_SOURCE: &str = include_str!("./flow.js");
 const CONSTRUCTOR_SOURCE: &str = include_str!("./flow.js");
 const PARSE_INT_SOURCE: &str = include_str!("./parseInt.js");
+const CALL_DEEP_SOURCE: &str = include_str!("./callDeep.js");
 
 #[test]
 fn script_upvalues() {
@@ -43,5 +44,13 @@ fn script_parse_int() {
     let ctx = Context::new();
     ctx.with(|ctx| {
         ctx.eval(PARSE_INT_SOURCE).unwrap();
+    });
+}
+
+#[test]
+fn script_call_deep() {
+    let ctx = Context::new();
+    ctx.with(|ctx| {
+        ctx.eval(CALL_DEEP_SOURCE).unwrap();
     });
 }

@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "crates/*",
-    "toyjs"
+    "toyjs",
+    "toyjs_test",
 ]
 
 [profile.release]
