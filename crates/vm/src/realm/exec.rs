@@ -53,7 +53,7 @@ impl Realm {
         mut ctx: ExecutionContext,
     ) -> Result<Value, Value> {
         loop {
-            match dbg!(instr.next()) {
+            match instr.next() {
                 Instruction::LoadConst { dst, cons } => {
                     self.stack.write(dst, instr.constant(cons as u32));
                 }
