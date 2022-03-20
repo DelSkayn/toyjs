@@ -10,4 +10,3 @@ edition = "2021"
 common = { package="toyjs_common",path = "../common/" }
 ast = { package="toyjs_ast",path = "../ast/" }
 vm = { package="toyjs_vm",path = "../vm/" }
-bumpalo = { version = "3.9.1", features = ["boxed","collections"] }

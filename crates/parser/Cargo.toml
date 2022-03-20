@@ -16,7 +16,6 @@ ast = { package="toyjs_ast",path = "../ast/" }
 
 [dev-dependencies]
 criterion = "0.3.5"
-bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 
 [[bin]]
 name = "dump_ast"

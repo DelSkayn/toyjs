@@ -593,7 +593,6 @@ dependencies = [
 name = "toyjs"
 version = "0.1.0"
 dependencies = [
- "bumpalo",
  "criterion",
  "toyjs_ast",
  "toyjs_common",
@@ -617,7 +616,6 @@ dependencies = [
 name = "toyjs_common"
 version = "0.1.0"
 dependencies = [
- "bumpalo",
  "fxhash",
  "static_assertions",
 ]
@@ -626,7 +624,6 @@ dependencies = [
 name = "toyjs_compiler"
 version = "0.1.0"
 dependencies = [
- "bumpalo",
  "toyjs_ast",
  "toyjs_common",
  "toyjs_vm",
@@ -647,7 +644,6 @@ dependencies = [
 name = "toyjs_parser"
 version = "0.1.0"
 dependencies = [
- "bumpalo",
  "criterion",
  "toyjs_ast",
  "toyjs_common",
