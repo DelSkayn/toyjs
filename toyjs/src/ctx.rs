@@ -176,7 +176,7 @@ where {
     /// Evaluates the given value as a script
     pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
         unsafe {
-            let source = Source::from_string(s.into());
+            let source = Source::from_string(dbg!(s.into()));
             let user_data = self.user_data();
             let lexer = Lexer::new(&source, &mut (*user_data).interner);
             let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
