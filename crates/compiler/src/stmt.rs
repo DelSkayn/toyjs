@@ -137,9 +137,6 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
                 None
             }
-            x => {
-                panic!("unimplemented statement ast: {:#?}", x);
-            }
         }
     }
 

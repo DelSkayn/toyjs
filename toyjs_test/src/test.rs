@@ -280,9 +280,9 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
                 Err(e) => {
                     errored += 1;
                     stdout.set_color(&error_color)?;
-                    write!(stdout, "ERROR: ")?;
+                    writeln!(stdout, "ERROR: ")?;
                     stdout.set_color(&base_color)?;
-                    writeln!(stdout, "{}", e)?;
+                    writeln!(stdout, "\t>{}", e)?;
                 }
             }
             Ok(())

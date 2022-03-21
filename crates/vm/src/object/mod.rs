@@ -21,7 +21,7 @@ bitflags::bitflags! {
 #[derive(Debug)]
 /// A javascript object
 pub struct Object {
-    prototype: Option<Gc<Object>>,
+    pub prototype: Option<Gc<Object>>,
     values: UnsafeCell<HashMap<String, Value>>,
     array: UnsafeCell<Vec<Value>>,
     pub flags: ObjectFlags,
