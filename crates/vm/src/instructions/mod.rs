@@ -222,6 +222,7 @@ define_instructions! {
         LessEq{dst: u8, left: u8, righ:u8},
 
         Negative{dst: u8, op: u8},
+        Positive{dst: u8, op: u8},
 
         ToNumber{dst: u8, op: u8},
         ToBool{dst: u8, op: u8},

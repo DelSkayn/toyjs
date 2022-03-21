@@ -279,7 +279,7 @@ impl Realm {
                 }
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
-                    let number = dbg!(self.to_number(src));
+                    let number = self.to_number(src);
                     if number.is_int() {
                         let number = -(number.cast_int() as i64);
                         if number as i32 as i64 == number {
@@ -290,6 +290,11 @@ impl Realm {
                     } else if number.is_float() {
                         self.stack.write(dst, Value::from(-number.cast_float()))
                     }
+                }
+                Instruction::Positive { dst, op } => {
+                    let src = self.stack.read(op);
+                    let number = self.to_number(src);
+                    self.stack.write(dst, number);
                 }
                 Instruction::Jump { tgt } => instr.jump(tgt),
                 Instruction::JumpFalse { cond, tgt } => {
