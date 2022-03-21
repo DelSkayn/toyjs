@@ -135,6 +135,17 @@ impl Realm {
                     self.stack.write(dst, res.into());
                 }
 
+                Instruction::InstanceOf { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    match self.instance_of(left, right) {
+                        Ok(value) => {
+                            self.stack.write(dst, value.into());
+                        }
+                        Err(e) => self.unwind_error(&mut instr, &mut ctx, e)?,
+                    }
+                }
+
                 Instruction::Add { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
@@ -690,7 +701,7 @@ impl Realm {
             Value::from(res)
         }
     }
-    #[inline]
+
     pub unsafe fn type_of(&mut self, v: Value) -> Gc<String> {
         if v.is_undefined() {
             self.create_string("undefined")
@@ -711,6 +722,37 @@ impl Realm {
         } else {
             unreachable!()
         }
+    }
+
+    pub unsafe fn instance_of(&mut self, left: Value, right: Value) -> Result<bool, Value> {
+        if !left.is_object() {
+            //TODO proper error value
+            return Err(Value::undefined());
+        }
+        let left = left.unsafe_cast_object();
+        // TODO implement @@hasInstance method
+
+        if !right.is_object() || !right.unsafe_cast_object().is_function() {
+            //TODO proper error value
+            return Err(Value::undefined());
+        }
+
+        let right = right.unsafe_cast_object();
+        let tgt_proto = right.index(self.builtin.key_proto.unwrap().into(), self);
+        if !tgt_proto.is_object() {
+            //TODO proper error value
+            return Err(Value::undefined());
+        }
+        let tgt_proto = tgt_proto.unsafe_cast_object();
+
+        let mut cur = left;
+        while let Some(proto) = cur.prototype {
+            if proto.ptr_eq(tgt_proto) {
+                return Ok(true);
+            }
+            cur = proto;
+        }
+        Ok(false)
     }
 
     #[inline]
