@@ -98,9 +98,13 @@ impl Object {
 
     /// Create a functions from a function in a bytecode set.
     pub fn from_constructor(realm: &Realm, func: StaticFn) -> Self {
+        Self::from_constructor_with_prototype(realm.builtin.function_proto, func)
+    }
+
+    pub fn from_constructor_with_prototype(prototype: Option<Gc<Object>>, func: StaticFn) -> Self {
         let kind = FunctionKind::Static(func);
         Self {
-            prototype: realm.builtin.function_proto,
+            prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
             flags: ObjectFlags::CONSTRUCTOR,

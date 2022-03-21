@@ -7,7 +7,7 @@ use crate::{
     Gc, Value,
 };
 
-use super::{reader::InstructionReader, Realm};
+use super::{builtin, reader::InstructionReader, Realm};
 
 pub enum NumericOperator {
     Sub,
@@ -738,7 +738,7 @@ impl Realm {
         }
 
         let right = right.unsafe_cast_object();
-        let tgt_proto = right.index(self.builtin.key_proto.unwrap().into(), self);
+        let tgt_proto = right.index(self.builtin.keys.as_ref().unwrap().prototype.into(), self);
         if !tgt_proto.is_object() {
             //TODO proper error value
             return Err(Value::undefined());
@@ -819,33 +819,42 @@ impl Realm {
         let function = self.gc.allocate(function);
         let proto = self.create_object();
         proto.raw_index_set(
-            self.builtin.key_construct.unwrap().into(),
+            self.builtin.keys.as_ref().unwrap().constructor.into(),
             function.into(),
             self,
         );
-        function.raw_index_set(self.builtin.key_proto.unwrap().into(), proto.into(), self);
+        function.raw_index_set(
+            self.builtin.keys.as_ref().unwrap().prototype.into(),
+            proto.into(),
+            self,
+        );
         function
     }
 
     /// Execution only version of call
     unsafe fn _call(
         &mut self,
-        function: Value,
+        funct: Value,
         instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, instr, ctx| {
-            if !function.is_object() {
+            if !funct.is_object() {
                 // TODO proper error value
-                return Err(Value::undefined());
+                let text = this.to_string(funct);
+                return Err(
+                    this.create_type_error(ctx, format!("{} is not a function", text.as_str()))
+                );
             }
-            let function = function.unsafe_cast_object();
+            let function = funct.unsafe_cast_object();
             let kind = if let Some(x) = function.function.as_ref() {
                 x
             } else {
-                // TODO proper error value
-                return Err(Value::undefined());
+                let text = this.to_string(funct);
+                return Err(
+                    this.create_type_error(ctx, format!("{} is not a function", text.as_str()))
+                );
             };
             match kind {
                 FunctionKind::Vm(ref func) => {
@@ -895,19 +904,27 @@ impl Realm {
         self.unwind(instr, ctx, |this, _instr, ctx| {
             if !function.is_object() {
                 //TODO proper error value
-                return Err(Value::undefined());
+
+                let text = this.to_string(function);
+                return Err(
+                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                );
             }
 
-            let function = function.unsafe_cast_object();
-            let kind = if let Some(x) = function.function.as_ref() {
+            let function_obj = function.unsafe_cast_object();
+            let kind = if let Some(x) = function_obj.function.as_ref() {
                 x
             } else {
-                //TODO proper error value
-                return Err(Value::undefined());
+                let text = this.to_string(function);
+                return Err(
+                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                );
             };
-            if !function.is_constructor() {
-                //TODO proper error value
-                return Err(Value::undefined());
+            if !function_obj.is_constructor() {
+                let text = this.to_string(function);
+                return Err(
+                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                );
             }
 
             match kind {
@@ -916,7 +933,8 @@ impl Realm {
                     let bc_function = &bc.functions[func.function as usize];
                     this.stack.enter(bc_function.registers);
 
-                    let proto = function.index(this.builtin.key_proto.unwrap().into(), this);
+                    let proto = function_obj
+                        .index(this.builtin.keys.as_ref().unwrap().prototype.into(), this);
                     let this_object = if proto.is_object() {
                         this.create_object_proto(Some(proto.unsafe_cast_object()))
                     } else {
@@ -927,7 +945,7 @@ impl Realm {
                     let res = this.execute(
                         instr,
                         ExecutionContext {
-                            function,
+                            function: function_obj,
                             this: this_object.into(),
                             new_target: target_obj,
                         },
@@ -939,7 +957,7 @@ impl Realm {
                     }
                 }
                 FunctionKind::Static(func) => {
-                    let function = mem::replace(&mut ctx.function, function);
+                    let function = mem::replace(&mut ctx.function, function_obj);
                     this.stack.enter(0);
                     let res = func(this, ctx)?;
                     this.stack.pop(&this.gc);
@@ -952,5 +970,27 @@ impl Realm {
                 }
             }
         })
+    }
+
+    pub unsafe fn create_type_error(
+        &mut self,
+        ctx: &mut ExecutionContext,
+        message: impl Into<String>,
+    ) -> Value {
+        use builtin::error::TypeError;
+        let message = self.create_string(message);
+        self.stack.push(message.into());
+        self.stack.enter(0);
+        let res = builtin::error::construct::<TypeError>(
+            self,
+            &mut ExecutionContext {
+                this: Value::empty(),
+                new_target: Value::empty(),
+                function: ctx.function,
+            },
+        )
+        .unwrap();
+        self.stack.pop(&self.gc);
+        res
     }
 }

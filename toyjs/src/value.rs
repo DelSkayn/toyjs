@@ -71,6 +71,22 @@ impl<'js> Value<'js> {
             None
         }
     }
+
+    pub fn into_object(self) -> Option<Object<'js>> {
+        if self.value.is_object() {
+            unsafe { Some(Object::wrap(self.ctx, self.value.unsafe_cast_object())) }
+        } else {
+            None
+        }
+    }
+
+    pub fn into_string(self) -> Option<String<'js>> {
+        if self.value.is_string() {
+            unsafe { Some(String::wrap(self.ctx, self.value.unsafe_cast_string())) }
+        } else {
+            None
+        }
+    }
 }
 
 impl<'js> From<String<'js>> for Value<'js> {
