@@ -2,14 +2,24 @@ use crate::{gc::Trace, object::FunctionKind, Gc, Object, Realm, Value};
 
 use super::ExecutionContext;
 
+mod common_keys;
+use common_keys::CommonKeys;
+
+pub mod error;
+
+pub trait BuiltinAccessor {
+    fn access(builtin: &Builtin) -> Option<Gc<Object>>;
+}
+
 pub struct Builtin {
-    pub key_construct: Option<Gc<String>>,
-    pub key_proto: Option<Gc<String>>,
+    pub keys: Option<CommonKeys>,
     // the %Object% value
     pub object_proto: Option<Gc<Object>>,
     pub object_construct: Option<Gc<Object>>,
     pub function_proto: Option<Gc<Object>>,
     pub error_proto: Option<Gc<Object>>,
+    pub syntax_error_proto: Option<Gc<Object>>,
+    pub type_error_proto: Option<Gc<Object>>,
 }
 
 fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
@@ -100,12 +110,13 @@ fn error_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Val
 impl Builtin {
     pub const fn new() -> Self {
         Self {
-            key_proto: None,
-            key_construct: None,
+            keys: None,
             object_proto: None,
             object_construct: None,
             function_proto: None,
             error_proto: None,
+            syntax_error_proto: None,
+            type_error_proto: None,
         }
     }
 }
@@ -119,11 +130,8 @@ unsafe impl Trace for Builtin {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        if let Some(x) = self.key_proto {
-            ctx.mark(x);
-        }
-        if let Some(x) = self.key_construct {
-            ctx.mark(x);
+        if let Some(keys) = self.keys.as_ref() {
+            keys.trace(ctx);
         }
         if let Some(x) = self.object_proto {
             ctx.mark(x);
@@ -137,6 +145,12 @@ unsafe impl Trace for Builtin {
         if let Some(x) = self.error_proto {
             ctx.mark(x);
         }
+        if let Some(x) = self.syntax_error_proto {
+            ctx.mark(x);
+        }
+        if let Some(x) = self.type_error_proto {
+            ctx.mark(x);
+        }
     }
 }
 
@@ -148,47 +162,47 @@ impl Default for Builtin {
 
 impl Realm {
     pub unsafe fn init_builtin(&mut self) {
-        let key_prototype = self.create_string("prototype");
-        self.builtin.key_proto = Some(key_prototype);
-        let key_constructor = self.create_string("constructor");
-        self.builtin.key_construct = Some(key_constructor);
-        let key_length = self.create_string("length").into();
-        let key_empty = self.create_string("").into();
+        let keys = CommonKeys::new(self);
 
         let object_proto = self.create_object_proto(None);
         self.builtin.object_proto = Some(object_proto);
 
-        let object_construct = self.create_constructor(object_construct);
-        object_construct.raw_index_set(key_prototype.into(), object_proto.into(), self);
-        object_construct.raw_index_set(key_length, 1.into(), self);
-        object_proto.raw_index_set(key_constructor.into(), object_construct.into(), self);
-        self.builtin.object_construct = Some(object_construct);
-
-        let function_proto = Object::new_function(
+        let func_proto = Object::new_function(
             FunctionKind::Static(function_proto),
             self.builtin.object_proto,
         );
-        let func_proto = self.gc.allocate(function_proto);
+        let func_proto = self.gc.allocate(func_proto);
         self.builtin.function_proto = Some(func_proto);
 
-        let error_proto = self.create_object();
-        let error_construct = self.create_constructor(error_construct);
-
-        error_construct.raw_index_set(key_prototype.into(), error_proto.into(), self);
-        error_proto.raw_index_set(key_constructor.into(), error_construct.into(), self);
-
-        let key = self.create_string("message").into();
-        error_proto.raw_index_set(key, key_empty, self);
-        let key = self.create_string("name").into();
-        let value = self.create_string("Error").into();
-        error_proto.raw_index_set(key, value, self);
-        self.builtin.error_proto = Some(error_proto);
+        let object_construct = self.create_constructor(Some(func_proto), object_construct);
+        object_construct.raw_index_set(keys.prototype.into(), object_proto.into(), self);
+        object_construct.raw_index_set(keys.length.into(), 1.into(), self);
+        object_proto.raw_index_set(keys.constructor.into(), object_construct.into(), self);
+        self.builtin.object_construct = Some(object_construct);
 
         let global = self.create_object();
         let key = self.create_string("Object").into();
         global.raw_index_set(key, object_construct.into(), self);
-        let key = self.create_string("Error").into();
-        global.raw_index_set(key, error_construct.into(), self);
         self.global = global;
+
+        let name = self.create_string("Error");
+        let (error_construct, error_proto) =
+            error::init_native::<error::Error>(self, &keys, name, func_proto, object_proto);
+        self.builtin.error_proto = Some(error_proto);
+        global.index_set(name.into(), error_construct.into(), self);
+
+        let name = self.create_string("SyntaxError");
+        let (error_construct, error_proto) =
+            error::init_native::<error::TypeError>(self, &keys, name, error_construct, error_proto);
+        self.builtin.type_error_proto = Some(error_proto);
+        global.index_set(name.into(), error_construct.into(), self);
+
+        let name = self.create_string("TypeError");
+        let (error_construct, error_proto) =
+            error::init_native::<error::TypeError>(self, &keys, name, error_construct, error_proto);
+        self.builtin.type_error_proto = Some(error_proto);
+        global.index_set(name.into(), error_construct.into(), self);
+
+        self.builtin.keys = Some(keys);
     }
 }

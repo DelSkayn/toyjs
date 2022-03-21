@@ -1,6 +1,6 @@
 use std::{env, io};
 
-use toyjs::Context;
+use toyjs::{Context, Value};
 
 fn main() -> io::Result<()> {
     let ctx = Context::new();
@@ -64,7 +64,23 @@ fn main() -> io::Result<()> {
             continue 'main;
         }
         last_length = 0;
-        ctx.with(|ctx| println!("value: {:?}", ctx.eval(&buffer).unwrap()));
+        ctx.with(|ctx| match ctx.eval(&buffer) {
+            Ok(x) => println!("> {:?}", x),
+            Err(e) => {
+                if let Some(e) = e.into_object() {
+                    if e.is_error() {
+                        let msg: Value = e.get("message");
+                        let name: Value = e.get("name");
+
+                        if let (Some(name), Some(msg)) = (name.into_string(), msg.into_string()) {
+                            println!("uncaught {}: {}", name, msg);
+                            return;
+                        }
+                    }
+                }
+                println!("uncaught error: {:?}", e)
+            }
+        });
         buffer.clear();
     }
     Ok(())

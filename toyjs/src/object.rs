@@ -20,6 +20,10 @@ impl<'js> Object<'js> {
         self.ptr
     }
 
+    pub fn is_error(self) -> bool {
+        self.ptr.is_error()
+    }
+
     pub fn get<K, V>(self, key: K) -> V
     where
         K: IntoJs<'js>,

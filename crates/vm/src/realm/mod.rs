@@ -156,8 +156,13 @@ impl Realm {
         self.gc.allocate(Object::from_static(self, f))
     }
 
-    pub unsafe fn create_constructor(&self, f: StaticFn) -> Gc<Object> {
-        self.gc.allocate(Object::from_constructor(self, f))
+    pub unsafe fn create_constructor(
+        &self,
+        prototype: Option<Gc<Object>>,
+        f: StaticFn,
+    ) -> Gc<Object> {
+        self.gc
+            .allocate(Object::from_constructor_with_prototype(prototype, f))
     }
 }
 
