@@ -7,6 +7,7 @@ use std::alloc::Allocator;
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub(crate) fn compile_stmt(&mut self, stmt: &'a Stmt<A>) -> Option<Register> {
         match stmt {
+            Stmt::Empty => None,
             Stmt::Expr(x) => {
                 let reg = self.compile_expressions(None, x).eval(self);
                 self.builder.free_temp(reg);
