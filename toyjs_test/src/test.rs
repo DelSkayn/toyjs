@@ -313,6 +313,15 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     write!(stdout, "\terror: ")?;
     stdout.set_color(&base_color)?;
     writeln!(stdout, "{}", errored)?;
+    writeln!(stdout, "")?;
+
+    let total = passed + failed + panicked + errored;
+
+    writeln!(
+        stdout,
+        " Conformance: {:.5}%",
+        (passed as f64 / total as f64) * 100.0
+    )?;
 
     Ok(())
 }
