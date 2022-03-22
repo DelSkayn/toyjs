@@ -341,3 +341,38 @@ impl fmt::Debug for Value {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Value;
+
+    #[test]
+    fn convert_i32() {
+        fn test_value(v: i32) {
+            assert_eq!(v, Value::from(v).cast_int());
+        }
+
+        test_value(-1);
+        test_value(1);
+        test_value(0);
+        test_value(i32::MAX);
+        test_value(i32::MIN);
+    }
+
+    #[test]
+    fn convert_f64() {
+        fn test_value(v: f64) {
+            assert_eq!(v.to_bits(), Value::from(v).cast_float().to_bits());
+        }
+
+        test_value(-1.0);
+        test_value(1.0);
+        test_value(0.0);
+        test_value(f64::MAX);
+        test_value(f64::MIN);
+        test_value(f64::INFINITY);
+        test_value(f64::NEG_INFINITY);
+        test_value(f64::NAN);
+        test_value(f64::MIN_POSITIVE);
+    }
+}
