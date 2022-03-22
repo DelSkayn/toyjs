@@ -1,3 +1,4 @@
+
 (function(){
     let obj = {
         a: 1,
@@ -13,15 +14,15 @@
 
     let sum = 0;
     for(let i = 0;i < 10000;i++){
-        sum += obj.a
-            + obj.b
-            + obj.c
-            + obj.dddddd
-            + obj.eeeeee
-            + obj.ffffff
-            + obj.gggggg
-            + obj.hhhhhh
-            + obj.iiiiii;
+        sum += obj["a" ]
+            + obj["a" ]
+            + obj["c" ]
+            + obj["dddddd" ]
+            + obj["eeeeee" ]
+            + obj["ffffff" ]
+            + obj["gggggg" ]
+            + obj["hhhhhh" ]
+            + obj["iiiiii" ];
     }
     return sum
 })()
