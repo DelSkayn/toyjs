@@ -31,7 +31,5 @@ pub use value::Value;
 pub mod object;
 pub use object::Object;
 
-pub mod atom;
-
 pub mod realm;
 pub use realm::Realm;
