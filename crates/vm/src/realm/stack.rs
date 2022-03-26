@@ -58,7 +58,6 @@ pub enum Frame {
         // A u32 because entry frames can contain a lot of values
         // that where pushed by rust code
         registers: u32,
-        frame_offset: u8,
         open_upvalues: u16,
     },
     /// A frame of a javascript function call.
@@ -66,7 +65,6 @@ pub enum Frame {
         // Size in number of registers of the frame.
         registers: u8,
         /// Number of try frames between the current call frame and the previous.
-        frame_offset: u8,
         open_upvalues: u16,
         data: CallFrameData,
     },
@@ -107,8 +105,6 @@ pub struct Stack {
     /// Amount of values allocated for the stack
     capacity: usize,
     /// Number of try frames between the current call frame and the previous.
-    frame_offset: u8,
-
     open_upvalues: Vec<Gc<UpvalueObject>>,
     frame_open_upvalues: u16,
 }
@@ -123,7 +119,6 @@ impl Stack {
             frames: Vec::new(),
             cur_frame_size: 0,
             capacity: 0,
-            frame_offset: 0,
             open_upvalues: Vec::new(),
             frame_open_upvalues: 0,
         }
@@ -138,12 +133,10 @@ impl Stack {
                 self.grow(new_used)
             }
             self.frames.push(Frame::Entry {
-                frame_offset: self.frame_offset,
                 registers: self.cur_frame_size,
                 open_upvalues: self.frame_open_upvalues,
             });
             self.frame_open_upvalues = 0;
-            self.frame_offset = 0;
             self.frame = self.frame.add(self.cur_frame_size as usize);
             let new_stack = self.frame.add(registers as usize);
             while self.stack < new_stack {
@@ -181,9 +174,7 @@ impl Stack {
                 registers: self.cur_frame_size as u8,
                 data: CallFrameData { dst, instr, ctx },
                 open_upvalues: self.frame_open_upvalues,
-                frame_offset: self.frame_offset,
             });
-            self.frame_offset = 0;
             self.cur_frame_size = new_registers as u32;
             self.frame_open_upvalues = 0;
         }
@@ -193,7 +184,6 @@ impl Stack {
         self.frames.push(Frame::Try {
             data: TryFrameData { dst, ip_offset },
         });
-        self.frame_offset += 1;
     }
 
     pub unsafe fn pop_try(&mut self) -> TryFrameData {
@@ -209,19 +199,17 @@ impl Stack {
             Some(Frame::Try { data }) => Some(Ok(data)),
             Some(Frame::Call {
                 registers,
-                frame_offset,
                 open_upvalues,
                 data,
             }) => {
-                self.restore_frame(registers.into(), frame_offset, open_upvalues, gc);
+                self.restore_frame(registers.into(), open_upvalues, gc);
                 Some(Err(data))
             }
             Some(Frame::Entry {
                 registers,
-                frame_offset,
                 open_upvalues,
             }) => {
-                self.restore_frame(registers, frame_offset, open_upvalues, gc);
+                self.restore_frame(registers, open_upvalues, gc);
                 None
             }
             None => panic!("root frame was not an entry frame"),
@@ -235,19 +223,16 @@ impl Stack {
                 Some(Frame::Call {
                     registers,
                     data,
-                    frame_offset,
                     open_upvalues,
                 }) => {
-                    self.restore_frame(registers.into(), frame_offset, open_upvalues, gc);
+                    self.restore_frame(registers.into(), open_upvalues, gc);
                     return Some(data);
                 }
                 Some(Frame::Entry {
                     registers,
-                    frame_offset,
                     open_upvalues,
                 }) => {
-                    self.restore_frame(registers, frame_offset, open_upvalues, gc);
-                    self.frame_offset = 0;
+                    self.restore_frame(registers, open_upvalues, gc);
                     return None;
                 }
                 None => panic!("tried to pop non-existant stack"),
@@ -303,18 +288,11 @@ impl Stack {
     }
 
     #[inline]
-    fn restore_frame(
-        &mut self,
-        registers: u32,
-        frame_offset: u8,
-        open_upvalues: u16,
-        gc: &GcArena,
-    ) {
+    fn restore_frame(&mut self, registers: u32, open_upvalues: u16, gc: &GcArena) {
         unsafe {
             self.stack = self.frame;
             self.frame = self.frame.sub(registers as usize);
             self.cur_frame_size = registers;
-            self.frame_offset = frame_offset;
             let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
             self.open_upvalues.drain(upvalue_frame..).for_each(|x| {
                 gc.write_barrier(x);
