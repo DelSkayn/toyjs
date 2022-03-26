@@ -43,14 +43,14 @@ impl UserData {
 #[derive(Clone, Copy, Debug)]
 pub struct Ctx<'js> {
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) ctx: *mut vm::Realm,
+    pub(crate) ctx: *const vm::Realm,
     marker: PhantomData<Cell<&'js Context>>,
 }
 
 impl<'js> Ctx<'js> {
     // # Safety
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) unsafe fn wrap(ctx: *mut vm::Realm) -> Self {
+    pub(crate) unsafe fn wrap(ctx: *const vm::Realm) -> Self {
         Ctx {
             ctx,
             marker: PhantomData,
@@ -65,7 +65,7 @@ impl<'js> Ctx<'js> {
     }
 
     pub(crate) unsafe fn user_data(self) -> *mut UserData {
-        (*self.ctx).user_data.downcast_mut().unwrap()
+        (*(*self.ctx).user_data).downcast_mut().unwrap()
     }
 
     /// Returns the global object of the current context.
@@ -127,10 +127,7 @@ impl<'js> Ctx<'js> {
     /// Creates a new function from a rust closure
     pub unsafe fn create_static_function(
         self,
-        f: fn(
-            &mut vm::Realm,
-            exec: &mut vm::realm::ExecutionContext,
-        ) -> Result<vm::Value, vm::Value>,
+        f: fn(&vm::Realm, exec: &mut vm::realm::ExecutionContext) -> Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
         let function = vm::Object::alloc_function(
@@ -149,7 +146,7 @@ where {
         F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
     {
         unsafe {
-            let func: SharedFn = Box::new(move |realm: &mut vm::Realm, _| {
+            let func: SharedFn = Box::new(move |realm: &vm::Realm, _| {
                 let ctx = Ctx::wrap(realm);
                 let args = Arguments::from_ctx(ctx);
                 f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)

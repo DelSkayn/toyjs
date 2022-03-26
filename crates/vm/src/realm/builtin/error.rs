@@ -24,7 +24,7 @@ impl BuiltinAccessor for TypeError {
 }
 
 pub unsafe fn construct_vm<T: BuiltinAccessor>(
-    realm: &mut Realm,
+    realm: &Realm,
     exec: &mut ExecutionContext,
 ) -> Result<Value, Value> {
     let new_target = if exec.new_target.is_empty() {
@@ -62,7 +62,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
 }
 
 pub unsafe fn construct(
-    realm: &mut Realm,
+    realm: &Realm,
     prototype: Gc<Object>,
     message: Option<Gc<String>>,
     options: Option<Value>,
@@ -85,7 +85,7 @@ pub unsafe fn construct(
 }
 
 pub unsafe fn init_native<T: BuiltinAccessor>(
-    realm: &mut Realm,
+    realm: &Realm,
     keys: &CommonKeys,
     name: Gc<String>,
     construct_proto: Gc<Object>,

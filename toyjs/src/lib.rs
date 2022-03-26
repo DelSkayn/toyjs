@@ -43,14 +43,14 @@ impl ToyJs {
 
 pub struct Context {
     vm: Vm,
-    inner: RealmBox,
+    realm: RealmBox,
 }
 
 impl Context {
     pub fn new(js: &ToyJs) -> Self {
         let res = Context {
             vm: js.vm.clone(),
-            inner: vm::Realm::new_with_user_data(&js.vm, UserData::new()),
+            realm: vm::Realm::new_with_user_data(&js.vm, UserData::new()),
         };
         res.with(runtime::init);
         res
@@ -61,15 +61,22 @@ impl Context {
         F: for<'js> FnOnce(Ctx<'js>) -> R,
     {
         let guard = self.vm.lock();
+        let _vm = &*guard;
         let res = unsafe {
-            let ptr = self.inner.as_ptr();
+            let ptr = self.realm.as_ptr();
             (*ptr).user_enter_frame(0);
-            let ctx = Ctx::wrap(self.inner.as_ptr());
+            let ctx = Ctx::wrap(ptr);
             let res = f(ctx);
             (*ptr).user_pop_frame();
             res
         };
         mem::drop(guard);
         res
+    }
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        unsafe { self.realm.free() }
     }
 }

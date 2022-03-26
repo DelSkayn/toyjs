@@ -6,7 +6,7 @@ macro_rules! create_static_fn {
         mod wrap {
             #[inline]
             pub fn $func(
-                realm: &mut vm::Realm,
+                realm: &vm::Realm,
                 _: &mut vm::realm::ExecutionContext,
             ) -> Result<::vm::Value, ::vm::Value> {
                 unsafe {

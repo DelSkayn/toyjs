@@ -26,7 +26,7 @@ pub struct Builtin {
     pub type_error_proto: Option<Gc<Object>>,
 }
 
-unsafe fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     if exec.new_target.is_empty()
         || exec.new_target.is_undefined()
         || (exec.new_target.is_object()
@@ -65,7 +65,7 @@ unsafe fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Re
     Ok(object.into())
 }
 
-fn function_proto(_: &mut Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
+fn function_proto(_: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
     Ok(Value::undefined())
 }
 

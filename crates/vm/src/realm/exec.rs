@@ -48,7 +48,7 @@ unsafe impl Trace for ExecutionContext {
 
 impl Realm {
     pub unsafe fn execute(
-        &mut self,
+        &self,
         mut instr: InstructionReader,
         mut ctx: ExecutionContext,
     ) -> Result<Value, Value> {
@@ -388,13 +388,13 @@ impl Realm {
     }
 
     pub unsafe fn unwind<R, O, F>(
-        &mut self,
+        &self,
         instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
         f: F,
     ) -> Result<Option<O>, Value>
     where
-        F: FnOnce(&mut Self, &mut InstructionReader, &mut ExecutionContext) -> Result<R, Value>,
+        F: FnOnce(&Realm, &mut InstructionReader, &mut ExecutionContext) -> Result<R, Value>,
         R: Into<Option<O>>,
     {
         match f(self, instr, ctx) {
@@ -407,7 +407,7 @@ impl Realm {
     }
 
     pub unsafe fn unwind_error(
-        &mut self,
+        &self,
         instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
         error: Value,
@@ -430,7 +430,7 @@ impl Realm {
         }
     }
 
-    pub unsafe fn is_falsish(&mut self, value: Value) -> bool {
+    pub unsafe fn is_falsish(&self, value: Value) -> bool {
         if value.is_int() {
             value.cast_int() == 0
         } else if value.is_string() {
@@ -440,12 +440,12 @@ impl Realm {
         }
     }
 
-    pub unsafe fn is_nullish(&mut self, value: Value) -> bool {
+    pub unsafe fn is_nullish(&self, value: Value) -> bool {
         value.is_null() || value.is_undefined()
     }
 
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
-    pub unsafe fn to_string(&mut self, value: Value) -> Gc<String> {
+    pub unsafe fn to_string(&self, value: Value) -> Gc<String> {
         if value.is_int() {
             self.vm.borrow().allocate(value.cast_int().to_string())
         } else if value.is_float() {
@@ -461,13 +461,14 @@ impl Realm {
         } else if value.is_string() {
             value.unsafe_cast_string()
         } else if value.is_object() {
-            self.vm.borrow().allocate("[object Object]".to_string())
+            let primitive = self.to_primitive(value);
+            self.to_string(primitive)
         } else {
             todo!()
         }
     }
 
-    pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object> {
+    pub unsafe fn to_object(&self, value: Value) -> Gc<Object> {
         if value.is_null() || value.is_undefined() {
             return Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
         }
@@ -475,7 +476,7 @@ impl Realm {
     }
 
     /// Implements type conversion [`ToNumber`](https://tc39.es/ecma262/#sec-tonumber)
-    pub unsafe fn to_number(&mut self, value: Value) -> Value {
+    pub unsafe fn to_number(&self, value: Value) -> Value {
         if value.is_int() || value.is_float() {
             value
         } else if value.is_undefined() {
@@ -501,7 +502,7 @@ impl Realm {
     }
 
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
-    pub unsafe fn to_int32(&mut self, value: Value) -> i32 {
+    pub unsafe fn to_int32(&self, value: Value) -> i32 {
         let number = self.to_number(value);
         if number.is_int() {
             number.cast_int()
@@ -522,7 +523,7 @@ impl Realm {
         }
     }
 
-    pub unsafe fn strict_equal(&mut self, left: Value, right: Value) -> bool {
+    pub unsafe fn strict_equal(&self, left: Value, right: Value) -> bool {
         if !left.same_type(right) {
             return false;
         }
@@ -541,7 +542,7 @@ impl Realm {
         todo!()
     }
 
-    pub unsafe fn equal(&mut self, left: Value, right: Value) -> bool {
+    pub unsafe fn equal(&self, left: Value, right: Value) -> bool {
         if left.same_type(right) {
             return self.strict_equal(left, right);
         }
@@ -579,7 +580,7 @@ impl Realm {
         false
     }
 
-    pub unsafe fn less_then(&mut self, left: Value, right: Value, swap: bool) -> Value {
+    pub unsafe fn less_then(&self, left: Value, right: Value, swap: bool) -> Value {
         let (left, right) = if swap {
             let r = self.to_primitive(left);
             let l = self.to_primitive(right);
@@ -641,7 +642,7 @@ impl Realm {
         (left < right).into()
     }
 
-    pub unsafe fn add(&mut self, left: Value, right: Value) -> Value {
+    pub unsafe fn add(&self, left: Value, right: Value) -> Value {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
         if left.is_string() || right.is_string() {
@@ -678,12 +679,7 @@ impl Realm {
     }
 
     #[inline]
-    pub unsafe fn numeric_operator(
-        &mut self,
-        left: Value,
-        right: Value,
-        op: NumericOperator,
-    ) -> Value {
+    pub unsafe fn numeric_operator(&self, left: Value, right: Value, op: NumericOperator) -> Value {
         let left = self.to_primitive(left);
         let right = self.to_primitive(right);
         let left = self.to_number(left);
@@ -738,24 +734,30 @@ impl Realm {
         }
     }
 
-    pub unsafe fn instance_of(&mut self, left: Value, right: Value) -> Result<bool, Value> {
-        if !left.is_object() {
-            //TODO proper error value
-            return Err(Value::undefined());
+    pub unsafe fn instance_of(&self, left: Value, right: Value) -> Result<bool, Value> {
+        if !right.is_object() {
+            //TODO
+            let msg = self.to_string(right);
+            return Err(
+                self.create_type_error(format!("invalid `instanceof` operand {}", msg.as_str()))
+            );
         }
-        let left = left.unsafe_cast_object();
-        // TODO implement @@hasInstance method
 
-        if !right.is_object() || !right.unsafe_cast_object().is_function() {
-            //TODO proper error value
-            return Err(Value::undefined());
+        if !left.is_object() {
+            return Ok(false);
         }
 
         let right = right.unsafe_cast_object();
+        let left = left.unsafe_cast_object();
+        // TODO implement @@hasInstance method
+
+        if right.is_function() {
+            return Err(self.create_type_error("right hand instanceof operand is not a function"));
+        }
+
         let tgt_proto = right.index(self.builtin.keys.as_ref().unwrap().prototype.into(), self);
         if !tgt_proto.is_object() {
-            //TODO proper error value
-            return Err(Value::undefined());
+            return Err(self.create_type_error("object prototype is not an object"));
         }
         let tgt_proto = tgt_proto.unsafe_cast_object();
 
@@ -770,7 +772,7 @@ impl Realm {
     }
 
     #[inline]
-    pub unsafe fn to_primitive(&mut self, v: Value) -> Value {
+    pub unsafe fn to_primitive(&self, v: Value) -> Value {
         if v.is_object() {
             todo!()
         }
@@ -792,7 +794,7 @@ impl Realm {
     }
 
     pub(crate) unsafe fn construct_function(
-        &mut self,
+        &self,
         function_id: u16,
         reader: &InstructionReader,
         function: Gc<Object>,
@@ -822,7 +824,7 @@ impl Realm {
     }
 
     pub(crate) unsafe fn construct_constructor(
-        &mut self,
+        &self,
         function_id: u16,
         reader: &InstructionReader,
         function: Gc<Object>,
@@ -846,7 +848,7 @@ impl Realm {
 
     /// Execution only version of call
     unsafe fn _call(
-        &mut self,
+        &self,
         funct: Value,
         instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
@@ -854,7 +856,6 @@ impl Realm {
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, instr, ctx| {
             if !funct.is_object() {
-                // TODO proper error value
                 let text = this.to_string(funct);
                 return Err(this.create_type_error(format!("{} is not a function", text.as_str())));
             }
@@ -904,7 +905,7 @@ impl Realm {
     }
 
     unsafe fn call_construct(
-        &mut self,
+        &self,
         function: Value,
         target_obj: Value,
         instr: &mut InstructionReader,
@@ -912,8 +913,6 @@ impl Realm {
     ) -> Result<Option<Value>, Value> {
         self.unwind(instr, ctx, |this, _instr, ctx| {
             if !function.is_object() {
-                //TODO proper error value
-
                 let text = this.to_string(function);
                 return Err(
                     this.create_type_error(format!("{} is not a constructor", text.as_str()))
@@ -973,19 +972,42 @@ impl Realm {
                     ctx.function = function;
                     Ok(res)
                 }
-                _ => {
-                    //TODO proper error value
-                    return Err(Value::undefined());
+                FunctionKind::Shared(func) => {
+                    let function = mem::replace(&mut ctx.function, function_obj);
+                    this.stack.enter(0);
+                    let res = func(this, ctx)?;
+                    this.stack.pop(this.vm.borrow().gc());
+                    ctx.function = function;
+                    Ok(res)
+                }
+                FunctionKind::Mutable(func) => {
+                    let function = mem::replace(&mut ctx.function, function_obj);
+                    this.stack.enter(0);
+                    let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
+                    this.stack.pop(this.vm.borrow().gc());
+                    ctx.function = function;
+                    Ok(res)
                 }
             }
         })
     }
 
-    pub unsafe fn create_type_error(&mut self, message: impl Into<String>) -> Value {
+    pub unsafe fn create_type_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
         builtin::error::construct(
             self,
             self.builtin.type_error_proto.unwrap(),
+            Some(message),
+            None,
+        )
+        .into()
+    }
+
+    pub unsafe fn create_syntax_error(&self, message: impl Into<String>) -> Value {
+        let message = self.vm().allocate(message.into());
+        builtin::error::construct(
+            self,
+            self.builtin.syntax_error_proto.unwrap(),
             Some(message),
             None,
         )

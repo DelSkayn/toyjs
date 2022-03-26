@@ -51,11 +51,11 @@ impl Object {
         prototype: Option<Gc<Object>>,
         flags: ObjectFlags,
     ) -> Gc<Self> {
-        realm.vm().allocate(Self::new(prototype, flags))
+        realm.vm.allocate(Self::new(prototype, flags))
     }
 
     #[inline]
-    pub unsafe fn alloc_error(realm: &mut Realm, prototype: Option<Gc<Object>>) -> Gc<Self> {
+    pub unsafe fn alloc_error(realm: &Realm, prototype: Option<Gc<Object>>) -> Gc<Self> {
         realm.vm().allocate(Self::new_error(prototype))
     }
 
@@ -65,7 +65,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index(&self, key: Value, realm: &mut Realm) -> Value {
+    pub unsafe fn index(&self, key: Value, realm: &Realm) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -103,7 +103,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &mut Realm) {
+    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -124,7 +124,7 @@ impl Object {
     }
 
     /// Set a property of the object directly, skipping possible setters.
-    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &mut Realm) {
+    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
