@@ -23,44 +23,42 @@ impl BuiltinAccessor for TypeError {
     }
 }
 
-pub fn construct_vm<T: BuiltinAccessor>(
+pub unsafe fn construct_vm<T: BuiltinAccessor>(
     realm: &mut Realm,
     exec: &mut ExecutionContext,
 ) -> Result<Value, Value> {
-    unsafe {
-        let new_target = if exec.new_target.is_empty() {
-            exec.function.into()
-        } else {
-            exec.new_target
-        };
+    let new_target = if exec.new_target.is_empty() {
+        exec.function.into()
+    } else {
+        exec.new_target
+    };
 
-        let proto = if new_target.is_object() {
-            let key = realm.vm().allocate::<String>("prototype".into());
-            new_target.unsafe_cast_object().index(key.into(), realm)
-        } else {
-            Value::undefined()
-        };
-        let proto = if proto.is_object() {
-            proto.unsafe_cast_object()
-        } else {
-            T::access(&realm.builtin).unwrap()
-        };
+    let proto = if new_target.is_object() {
+        let key = realm.vm().allocate::<String>("prototype".into());
+        new_target.unsafe_cast_object().index(key.into(), realm)
+    } else {
+        Value::undefined()
+    };
+    let proto = if proto.is_object() {
+        proto.unsafe_cast_object()
+    } else {
+        T::access(&realm.builtin).unwrap()
+    };
 
-        let (message, options) = if realm.stack.frame_size() >= 1 {
-            let message = realm.stack.read(0);
-            let message = realm.to_string(message);
-            let message = realm.vm().allocate::<String>(message.as_str().into());
-            let options = if realm.stack.frame_size() >= 2 {
-                Some(realm.stack.read(1))
-            } else {
-                None
-            };
-            (Some(message), options)
+    let (message, options) = if realm.stack.frame_size() >= 1 {
+        let message = realm.stack.read(0);
+        let message = realm.to_string(message);
+        let message = realm.vm().allocate::<String>(message.as_str().into());
+        let options = if realm.stack.frame_size() >= 2 {
+            Some(realm.stack.read(1))
         } else {
-            (None, None)
+            None
         };
-        Ok(construct(realm, proto, message, options).into())
-    }
+        (Some(message), options)
+    } else {
+        (None, None)
+    };
+    Ok(construct(realm, proto, message, options).into())
 }
 
 pub unsafe fn construct(

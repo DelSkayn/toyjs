@@ -26,93 +26,47 @@ pub struct Builtin {
     pub type_error_proto: Option<Gc<Object>>,
 }
 
-fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
-    unsafe {
-        if exec.new_target.is_empty()
-            || exec.new_target.is_undefined()
-            || (exec.new_target.is_object()
-                && exec.new_target.unsafe_cast_object().ptr_eq(exec.function))
-        {
-            if realm.stack.frame_size() == 0 {
-                return Ok(
-                    Object::alloc(realm, realm.builtin.object_proto, ObjectFlags::empty()).into(),
-                );
-            }
-            let value = realm.stack.read(0);
-            if value.is_undefined() || value.is_null() {
-                return Ok(
-                    Object::alloc(realm, realm.builtin.object_proto, ObjectFlags::empty()).into(),
-                );
-            }
-            return Ok(realm.to_object(value).into());
+unsafe fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+    if exec.new_target.is_empty()
+        || exec.new_target.is_undefined()
+        || (exec.new_target.is_object()
+            && exec.new_target.unsafe_cast_object().ptr_eq(exec.function))
+    {
+        if realm.stack.frame_size() == 0 {
+            return Ok(
+                Object::alloc(realm, realm.builtin.object_proto, ObjectFlags::empty()).into(),
+            );
         }
-
-        let proto = if exec.new_target.is_object() {
-            let key = realm.vm().allocate::<String>("prototype".into());
-            exec.new_target
-                .unsafe_cast_object()
-                .index(key.into(), realm)
-        } else {
-            Value::undefined()
-        };
-        let proto = if proto.is_object() {
-            proto.unsafe_cast_object()
-        } else {
-            realm.builtin.error_proto.unwrap()
-        };
-
-        let object = Object::new_error(Some(proto));
-        let object = realm.vm.borrow().allocate(object);
-        Ok(object.into())
+        let value = realm.stack.read(0);
+        if value.is_undefined() || value.is_null() {
+            return Ok(
+                Object::alloc(realm, realm.builtin.object_proto, ObjectFlags::empty()).into(),
+            );
+        }
+        return Ok(realm.to_object(value).into());
     }
+
+    let proto = if exec.new_target.is_object() {
+        let key = realm.vm().allocate::<String>("prototype".into());
+        exec.new_target
+            .unsafe_cast_object()
+            .index(key.into(), realm)
+    } else {
+        Value::undefined()
+    };
+    let proto = if proto.is_object() {
+        proto.unsafe_cast_object()
+    } else {
+        realm.builtin.error_proto.unwrap()
+    };
+
+    let object = Object::new_error(Some(proto));
+    let object = realm.vm.borrow().allocate(object);
+    Ok(object.into())
 }
 
 fn function_proto(_: &mut Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
     Ok(Value::undefined())
-}
-
-fn error_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
-    unsafe {
-        let new_target = if exec.new_target.is_empty() {
-            exec.function.into()
-        } else {
-            exec.new_target
-        };
-
-        let proto = if new_target.is_object() {
-            let key = realm.vm().allocate::<String>("prototype".into());
-            new_target.unsafe_cast_object().index(key.into(), realm)
-        } else {
-            Value::undefined()
-        };
-        let proto = if proto.is_object() {
-            proto.unsafe_cast_object()
-        } else {
-            realm.builtin.error_proto.unwrap()
-        };
-
-        let object = Object::new_error(Some(proto));
-        let object = realm.vm.borrow().allocate(object);
-
-        if realm.stack.frame_size() >= 1 {
-            let message = realm.stack.read(0);
-            let message = realm.to_string(message);
-            let message = realm.vm().allocate::<String>(message.as_str().into());
-            let key = realm.vm().allocate::<String>("message".into());
-            object.raw_index_set(key.into(), message.into(), realm);
-        }
-        if realm.stack.frame_size() >= 2 {
-            let options = realm.stack.read(1);
-            if options.is_object() {
-                let key = realm.vm().allocate::<String>("cause".into());
-                let value = options.unsafe_cast_object().index(key.into(), realm);
-                if !value.is_undefined() {
-                    object.raw_index_set(key.into(), value, realm)
-                }
-            }
-        }
-        Ok(object.into())
-    }
 }
 
 impl Builtin {
