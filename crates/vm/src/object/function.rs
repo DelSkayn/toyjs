@@ -17,10 +17,10 @@ use super::ObjectFlags;
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
 pub type MutableFn =
-    Box<dyn for<'a> FnMut(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
+    Box<dyn for<'a> FnMut(&'a Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
 pub type SharedFn =
-    Box<dyn for<'a> Fn(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
-pub type StaticFn = unsafe fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>;
+    Box<dyn for<'a> Fn(&'a Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
+pub type StaticFn = unsafe fn(&Realm, &mut ExecutionContext) -> Result<Value, Value>;
 
 pub struct VmFunction {
     pub bc: Gc<ByteCode>,

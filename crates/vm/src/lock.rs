@@ -23,24 +23,21 @@ mod lock {
 
 #[cfg(not(feature = "parallel"))]
 mod lock {
-    use std::{
-        cell::{RefCell, RefMut},
-        rc::Rc,
-    };
+    use std::rc::Rc;
 
-    pub struct Lock<T>(RefCell<T>);
+    pub struct Lock<T>(T);
 
     pub type Ref<T> = Rc<T>;
 
-    pub type Guard<'a, T> = RefMut<'a, T>;
+    pub type Guard<'a, T> = &'a T;
 
     impl<T> Lock<T> {
         pub fn new(v: T) -> Self {
-            Lock(RefCell::new(v))
+            Lock(v)
         }
 
         pub fn lock(&self) -> Guard<T> {
-            self.0.borrow_mut()
+            &self.0
         }
     }
 }

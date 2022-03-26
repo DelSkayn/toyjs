@@ -22,19 +22,23 @@ pub use exec::ExecutionContext;
 mod builtin;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-struct VmBox {
+pub struct VmBox {
     ptr: NonNull<VmInner>,
 }
 
 impl VmBox {
-    unsafe fn new(vm: &mut VmInner) -> Self {
+    unsafe fn new(vm: *const VmInner) -> Self {
         VmBox {
-            ptr: NonNull::new(vm).unwrap(),
+            ptr: NonNull::new(vm as *mut _).unwrap(),
         }
     }
 
     unsafe fn borrow(&self) -> &VmInner {
-        &(*self.ptr.as_ptr())
+        &(*(self.ptr.as_ptr() as *const VmInner))
+    }
+
+    pub unsafe fn allocate<T: Trace + 'static>(&self, v: T) -> Gc<T> {
+        (*self.ptr.as_ptr()).allocate(v)
     }
 }
 
@@ -49,7 +53,7 @@ impl RealmBox {
 
     pub unsafe fn free(self) {
         (*self.0.as_ptr()).vm.borrow().remove_realm(self);
-        Box::from_raw(self.0.as_ptr());
+        Box::from_raw(self.as_ptr());
     }
 
     pub fn as_ptr(self) -> *mut Realm {
@@ -71,11 +75,11 @@ unsafe impl Trace for RealmBox {
 }
 
 pub struct Realm {
-    vm: VmBox,
+    pub(crate) vm: VmBox,
     pub global: Gc<Object>,
     pub stack: Stack,
     pub builtin: Builtin,
-    pub user_data: Box<dyn Any>,
+    pub user_data: *mut dyn Any,
 }
 
 impl Realm {
@@ -85,8 +89,8 @@ impl Realm {
 
     pub fn new_with_user_data<U: Any>(vm: &Vm, user_data: U) -> RealmBox {
         unsafe {
-            let mut vm = vm.0.lock();
-            let vm = VmBox::new(&mut *vm);
+            let vm = vm.0.lock();
+            let vm = VmBox::new(&*vm);
 
             let global = vm
                 .borrow()
@@ -97,7 +101,7 @@ impl Realm {
                 builtin: Builtin::new(),
                 global,
                 stack,
-                user_data: Box::new(user_data),
+                user_data: Box::into_raw(Box::new(user_data)),
             };
             res.init_builtin();
             let res = RealmBox::new(res);
@@ -129,7 +133,7 @@ impl Realm {
     ///
     /// # panic
     /// Will panic if the object given is not a function
-    pub unsafe fn enter_call(&mut self, function: Gc<Object>) -> Result<Value, Value> {
+    pub unsafe fn enter_call(&self, function: Gc<Object>) -> Result<Value, Value> {
         let this = self.global.into();
         match function.function {
             Some(FunctionKind::Vm(ref x)) => {
@@ -181,20 +185,20 @@ impl Realm {
         }
     }
 
-    pub unsafe fn eval(&mut self, bc: Gc<ByteCode>) -> Result<Value, Value> {
+    pub unsafe fn eval(&self, bc: Gc<ByteCode>) -> Result<Value, Value> {
         let func = self.construct_script_function(bc);
         self.enter_call(func)
     }
 
-    pub unsafe fn user_enter_frame(&mut self, registers: u8) {
+    pub unsafe fn user_enter_frame(&self, registers: u8) {
         self.stack.enter(registers)
     }
 
-    pub unsafe fn user_pop_frame(&mut self) {
+    pub unsafe fn user_pop_frame(&self) {
         self.stack.pop(self.vm.borrow().gc());
     }
 
-    pub unsafe fn user_push_temp(&mut self, tmp: Value) {
+    pub unsafe fn user_push_temp(&self, tmp: Value) {
         self.stack.push_temp(tmp)
     }
 }
@@ -211,5 +215,11 @@ unsafe impl Trace for Realm {
         ctx.mark(self.global);
         self.stack.trace(ctx);
         self.builtin.trace(ctx);
+    }
+}
+
+impl Drop for Realm {
+    fn drop(&mut self) {
+        unsafe { Box::from_raw(self.user_data) };
     }
 }

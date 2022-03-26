@@ -93,62 +93,63 @@ pub struct TryFrameData {
 /// The vm stack implementation.
 pub struct Stack {
     /// Start of the stack array.
-    root: NonNull<Value>,
+    root: Cell<NonNull<Value>>,
     /// points to the start of the current frame i.e. the first register in use.
-    frame: *mut Value,
+    frame: Cell<*mut Value>,
     /// points one past the last value in use.
-    stack: *mut Value,
+    stack: Cell<*mut Value>,
 
-    frames: Vec<Frame>,
+    frames: UnsafeCell<Vec<Frame>>,
 
-    cur_frame_size: u32,
+    cur_frame_size: Cell<u32>,
     /// Amount of values allocated for the stack
-    capacity: usize,
+    capacity: Cell<usize>,
     /// Number of try frames between the current call frame and the previous.
-    open_upvalues: Vec<Gc<UpvalueObject>>,
-    frame_open_upvalues: u16,
+    open_upvalues: UnsafeCell<Vec<Gc<UpvalueObject>>>,
+    frame_open_upvalues: Cell<u16>,
 }
 
 impl Stack {
     pub fn new() -> Self {
         let root = NonNull::dangling();
         Stack {
-            frame: root.as_ptr(),
-            stack: root.as_ptr(),
-            root,
-            frames: Vec::new(),
-            cur_frame_size: 0,
-            capacity: 0,
-            open_upvalues: Vec::new(),
-            frame_open_upvalues: 0,
+            frame: Cell::new(root.as_ptr()),
+            stack: Cell::new(root.as_ptr()),
+            root: Cell::new(root),
+            frames: UnsafeCell::new(Vec::new()),
+            cur_frame_size: Cell::new(0),
+            capacity: Cell::new(0),
+            open_upvalues: UnsafeCell::new(Vec::new()),
+            frame_open_upvalues: Cell::new(0),
         }
     }
 
     /// Enter a base stack frame.
     /// When the frame returns execution should be
-    pub fn enter(&mut self, registers: u8) {
+    pub fn enter(&self, registers: u8) {
         unsafe {
             let new_used = self.used() + registers as usize;
-            if new_used > self.capacity {
+            if new_used > self.capacity.get() {
                 self.grow(new_used)
             }
-            self.frames.push(Frame::Entry {
-                registers: self.cur_frame_size,
-                open_upvalues: self.frame_open_upvalues,
+            (*self.frames.get()).push(Frame::Entry {
+                registers: self.cur_frame_size.get(),
+                open_upvalues: self.frame_open_upvalues.get(),
             });
-            self.frame_open_upvalues = 0;
-            self.frame = self.frame.add(self.cur_frame_size as usize);
-            let new_stack = self.frame.add(registers as usize);
-            while self.stack < new_stack {
-                self.stack.write(Value::undefined());
-                self.stack = self.stack.add(1);
+            self.frame_open_upvalues.set(0);
+            self.frame
+                .set(self.frame.get().add(self.cur_frame_size.get() as usize));
+            let new_stack = self.frame.get().add(registers as usize);
+            while self.stack.get() < new_stack {
+                self.stack.get().write(Value::undefined());
+                self.stack.set(self.stack.get().add(1));
             }
-            self.cur_frame_size = registers as u32;
+            self.cur_frame_size.set(registers as u32);
         }
     }
 
     pub fn enter_call(
-        &mut self,
+        &self,
         new_registers: u8,
         dst: u8,
         instr: InstructionReader,
@@ -156,46 +157,47 @@ impl Stack {
     ) {
         unsafe {
             let new_used = self.used() + new_registers as usize;
-            if new_used > self.capacity {
+            if new_used > self.capacity.get() {
                 self.grow(new_used)
             }
-            self.frame = self.frame.add(self.cur_frame_size as usize);
-            let mut cur = self.stack;
-            self.stack = self.frame.add(new_registers as usize);
-            while cur < self.stack {
+            self.frame
+                .set(self.frame.get().add(self.cur_frame_size.get() as usize));
+            let mut cur = self.stack.get();
+            self.stack.set(self.frame.get().add(new_registers as usize));
+            while cur < self.stack.get() {
                 cur.write(Value::undefined());
                 cur = cur.add(1);
             }
             debug_assert!(
-                self.cur_frame_size < u8::MAX as u32,
+                self.cur_frame_size.get() < u8::MAX as u32,
                 "frame size to big to fit in u8"
             );
-            self.frames.push(Frame::Call {
-                registers: self.cur_frame_size as u8,
+            (*self.frames.get()).push(Frame::Call {
+                registers: self.cur_frame_size.get() as u8,
                 data: CallFrameData { dst, instr, ctx },
-                open_upvalues: self.frame_open_upvalues,
+                open_upvalues: self.frame_open_upvalues.get(),
             });
-            self.cur_frame_size = new_registers as u32;
-            self.frame_open_upvalues = 0;
+            self.cur_frame_size.set(new_registers as u32);
+            self.frame_open_upvalues.set(0);
         }
     }
 
-    pub fn push_try(&mut self, dst: u8, ip_offset: usize) {
-        self.frames.push(Frame::Try {
+    pub unsafe fn push_try(&self, dst: u8, ip_offset: usize) {
+        (*self.frames.get()).push(Frame::Try {
             data: TryFrameData { dst, ip_offset },
         });
     }
 
-    pub unsafe fn pop_try(&mut self) -> TryFrameData {
-        let frame = self.frames.pop();
+    pub unsafe fn pop_try(&self) -> TryFrameData {
+        let frame = (*self.frames.get()).pop();
         match frame {
             Some(Frame::Try { data }) => data,
             _ => panic!("tried to unguard stack which was not guarded"),
         }
     }
 
-    pub unsafe fn unwind(&mut self, gc: &GcArena) -> Option<Result<TryFrameData, CallFrameData>> {
-        match self.frames.pop() {
+    pub unsafe fn unwind(&self, gc: &GcArena) -> Option<Result<TryFrameData, CallFrameData>> {
+        match (*self.frames.get()).pop() {
             Some(Frame::Try { data }) => Some(Ok(data)),
             Some(Frame::Call {
                 registers,
@@ -216,9 +218,9 @@ impl Stack {
         }
     }
 
-    pub unsafe fn pop(&mut self, gc: &GcArena) -> Option<CallFrameData> {
+    pub unsafe fn pop(&self, gc: &GcArena) -> Option<CallFrameData> {
         loop {
-            match self.frames.pop() {
+            match (*self.frames.get()).pop() {
                 Some(Frame::Try { .. }) => {}
                 Some(Frame::Call {
                     registers,
@@ -240,11 +242,12 @@ impl Stack {
         }
     }
 
-    pub unsafe fn create_upvalue(&mut self, register: u8, gc: &GcArena) -> Gc<UpvalueObject> {
-        let location = self.frame.add(register as usize);
+    pub unsafe fn create_upvalue(&self, register: u8, gc: &GcArena) -> Gc<UpvalueObject> {
+        let location = self.frame.get().add(register as usize);
 
-        let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
-        for &u in self.open_upvalues[upvalue_frame..].iter() {
+        let upvalue_frame =
+            (*self.open_upvalues.get()).len() - self.frame_open_upvalues.get() as usize;
+        for &u in (*self.open_upvalues.get())[upvalue_frame..].iter() {
             if std::ptr::eq(u.location.get(), location) {
                 return u;
             }
@@ -254,51 +257,54 @@ impl Stack {
             location: Cell::new(location),
             closed: UnsafeCell::new(Value::empty()),
         });
-        self.open_upvalues.push(upvalue);
-        self.frame_open_upvalues += 1;
+        (*self.open_upvalues.get()).push(upvalue);
+        self.frame_open_upvalues
+            .set(self.frame_open_upvalues.get() + 1);
         upvalue
     }
 
     #[inline]
-    pub fn push(&mut self, v: Value) {
+    pub fn push(&self, v: Value) {
         let used = self.used();
-        if used + 1 > self.capacity {
+        if used + 1 > self.capacity.get() {
             self.grow(used + 1)
         }
         unsafe {
-            self.stack.write(v);
-            self.stack = self.stack.add(1);
+            self.stack.get().write(v);
+            self.stack.set(self.stack.get().add(1));
         }
     }
 
-    pub fn push_temp(&mut self, v: Value) {
+    pub fn push_temp(&self, v: Value) {
         let used = self.used();
-        if used + 1 > self.capacity {
+        if used + 1 > self.capacity.get() {
             self.grow(used + 1)
         }
         unsafe {
-            self.stack.write(v);
-            self.stack = self.stack.add(1);
-            self.cur_frame_size = self
-                .stack
-                .offset_from(self.frame)
-                .try_into()
-                .expect("frame size exceeded u32::MAX")
+            self.stack.get().write(v);
+            self.stack.set(self.stack.get().add(1));
+            self.cur_frame_size.set(
+                self.stack
+                    .get()
+                    .offset_from(self.frame.get())
+                    .try_into()
+                    .expect("frame size exceeded u32::MAX"),
+            )
         }
     }
 
     #[inline]
-    fn restore_frame(&mut self, registers: u32, open_upvalues: u16, gc: &GcArena) {
+    fn restore_frame(&self, registers: u32, open_upvalues: u16, gc: &GcArena) {
         unsafe {
-            self.stack = self.frame;
-            self.frame = self.frame.sub(registers as usize);
-            self.cur_frame_size = registers;
-            let upvalue_frame = self.open_upvalues.len() - self.frame_open_upvalues as usize;
-            self.open_upvalues.drain(upvalue_frame..).for_each(|x| {
-                gc.write_barrier(x);
-                x.close()
-            });
-            self.frame_open_upvalues = open_upvalues;
+            self.stack.set(self.frame.get());
+            self.frame.set(self.frame.get().sub(registers as usize));
+            self.cur_frame_size.set(registers);
+            for _ in 0..self.frame_open_upvalues.get() {
+                let up = (*self.open_upvalues.get()).pop().unwrap();
+                gc.write_barrier(up);
+                up.close()
+            }
+            self.frame_open_upvalues.set(open_upvalues);
         }
     }
 
@@ -308,61 +314,63 @@ impl Stack {
         new.cast::<u8>().offset(offset).cast()
     }
 
-    fn grow(&mut self, capacity: usize) {
+    fn grow(&self, capacity: usize) {
         unsafe {
             let capacity = capacity.next_power_of_two().max(8);
-            if self.capacity == 0 {
+            if self.capacity.get() == 0 {
                 let layout = Layout::array::<Value>(capacity).unwrap();
                 let ptr = alloc::alloc(layout);
                 if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
-                self.root = NonNull::new_unchecked(ptr.cast());
-                self.frame = self.root.as_ptr();
-                self.stack = self.root.as_ptr();
+                self.root.set(NonNull::new_unchecked(ptr.cast()));
+                self.frame.set(self.root.get().as_ptr());
+                self.stack.set(self.root.get().as_ptr());
             } else {
-                let layout = Layout::array::<Value>(self.capacity).unwrap();
+                let layout = Layout::array::<Value>(self.capacity.get()).unwrap();
                 let size = Layout::array::<Value>(capacity).unwrap().size();
                 let ptr: *mut Value =
-                    alloc::realloc(self.root.as_ptr().cast(), layout, size).cast();
+                    alloc::realloc(self.root.get().as_ptr().cast(), layout, size).cast();
                 if ptr.is_null() {
                     alloc::handle_alloc_error(layout);
                 }
-                if ptr != self.root.as_ptr() {
-                    let original = self.root.as_ptr();
-                    self.stack = Self::rebase(original, ptr, self.stack);
-                    self.frame = Self::rebase(original, ptr, self.frame);
-                    self.open_upvalues.iter_mut().for_each(|x| {
-                        let new_loc = Self::rebase(original, ptr, x.location.get());
-                        x.location.set(new_loc);
-                    });
-                    self.root = NonNull::new_unchecked(ptr);
+                if ptr != self.root.get().as_ptr() {
+                    let original = self.root.get().as_ptr();
+                    self.stack
+                        .set(Self::rebase(original, ptr, self.stack.get()));
+                    self.frame
+                        .set(Self::rebase(original, ptr, self.frame.get()));
+                    for up in (*self.open_upvalues.get()).iter() {
+                        let loc = Self::rebase(original, ptr, up.location.get());
+                        up.location.set(loc);
+                    }
+                    self.root.set(NonNull::new_unchecked(ptr));
                 }
             }
-            self.capacity = capacity;
+            self.capacity.set(capacity);
         }
     }
 
     #[inline]
     pub fn frame_size(&self) -> usize {
-        unsafe { self.stack.offset_from(self.frame) as usize }
+        unsafe { self.stack.get().offset_from(self.frame.get()) as usize }
     }
 
     #[inline]
     fn used(&self) -> usize {
-        unsafe { self.stack.offset_from(self.root.as_ptr()) as usize }
+        unsafe { self.stack.get().offset_from(self.root.get().as_ptr()) as usize }
     }
 
     #[inline(always)]
     pub fn read(&self, register: u8) -> Value {
         debug_assert!((register as usize) < self.frame_size());
-        unsafe { self.frame.add(register as usize).read() }
+        unsafe { self.frame.get().add(register as usize).read() }
     }
 
     #[inline(always)]
-    pub fn write(&mut self, register: u8, v: Value) {
+    pub fn write(&self, register: u8, v: Value) {
         debug_assert!((register as usize) < self.frame_size());
-        unsafe { self.frame.add(register as usize).write(v) }
+        unsafe { self.frame.get().add(register as usize).write(v) }
     }
 }
 
@@ -378,20 +386,22 @@ unsafe impl Trace for Stack {
         #[cfg(feature = "dump-gc-trace")]
         println!("TRACE: stack.frames");
 
-        for f in self.frames.iter() {
-            match *f {
-                Frame::Entry { .. } => {}
-                Frame::Try { .. } => {}
-                Frame::Call { ref data, .. } => {
-                    data.ctx.trace(ctx);
+        unsafe {
+            for f in (*self.frames.get()).iter() {
+                match *f {
+                    Frame::Entry { .. } => {}
+                    Frame::Try { .. } => {}
+                    Frame::Call { ref data, .. } => {
+                        data.ctx.trace(ctx);
+                    }
                 }
             }
         }
 
         #[cfg(feature = "dump-gc-trace")]
         println!("TRACE: stack.stack");
-        let mut cur = self.stack;
-        while cur > self.root.as_ptr() {
+        let mut cur = self.stack.get();
+        while cur > self.root.get().as_ptr() {
             unsafe {
                 cur = cur.sub(1);
                 cur.read().trace(ctx);
@@ -404,8 +414,8 @@ impl Drop for Stack {
     fn drop(&mut self) {
         unsafe {
             alloc::dealloc(
-                self.root.as_ptr().cast(),
-                Layout::array::<Value>(self.capacity).unwrap(),
+                self.root.get().as_ptr().cast(),
+                Layout::array::<Value>(self.capacity.get()).unwrap(),
             )
         }
     }
