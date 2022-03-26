@@ -20,7 +20,7 @@ pub type MutableFn =
     Box<dyn for<'a> FnMut(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
 pub type SharedFn =
     Box<dyn for<'a> Fn(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
-pub type StaticFn = fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>;
+pub type StaticFn = unsafe fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>;
 
 pub struct VmFunction {
     pub bc: Gc<ByteCode>,
