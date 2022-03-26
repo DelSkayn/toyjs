@@ -2,7 +2,7 @@ use crate::{Ctx, Function, Object, String};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Value<'js> {
-    ctx: Ctx<'js>,
+    pub(crate) ctx: Ctx<'js>,
     value: vm::Value,
 }
 

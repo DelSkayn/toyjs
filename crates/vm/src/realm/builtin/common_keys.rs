@@ -28,7 +28,7 @@ unsafe impl Trace for CommonKeys {
 }
 
 impl CommonKeys {
-    pub unsafe fn new(realm: &mut Realm) -> Self {
+    pub unsafe fn new(realm: &Realm) -> Self {
         CommonKeys {
             empty: realm.vm().allocate::<String>("".into()),
             prototype: realm.vm().allocate::<String>("prototype".into()),

@@ -1,30 +1,30 @@
-use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx};
+use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Error, Result};
 
-pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let mut idx = 0;
     while let Some(x) = args.get(idx) {
         if x.is_falseish() {
-            return Err(Value::undefined(ctx));
+            return Err(Error::Value(Value::undefined(ctx)));
         }
         idx += 1;
     }
     Ok(Value::undefined(ctx))
 }
 
-pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let mut idx = 0;
     while let Some(x) = args.get(idx) {
         if idx != 0 {
             print!(" ");
         }
-        print!("{}", ctx.coerce_string(x));
+        print!("{}", ctx.coerce_string(x)?);
         idx += 1;
     }
     println!();
     Ok(Value::undefined(ctx))
 }
 
-pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let mut buf = String::new();
     match std::io::stdin().read_line(&mut buf) {
         Ok(_) => Ok(ctx.create_string(buf).into()),
@@ -32,19 +32,19 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<Value<'js
     }
 }
 
-pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     ctx.eval(
-        ctx.coerce_string(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))
+        ctx.coerce_string(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?
             .into_string(),
     )
 }
 
-pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let num = args.get(0);
     let radix = args.get(1);
-    let str = ctx.coerce_string(num.unwrap_or_else(|| Value::undefined(ctx)));
+    let str = ctx.coerce_string(num.unwrap_or_else(|| Value::undefined(ctx)))?;
     let mut radix = if let Some(radix) = radix {
-        ctx.coerce_integer(radix)
+        ctx.coerce_integer(radix)?
     } else {
         0
     };
@@ -99,9 +99,9 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>,
     Ok(result.into_js(ctx))
 }
 
-pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<Value<'js>, Value<'js>> {
+pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     Ok(ctx
-        .coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))
+        .coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?
         .is_nan()
         .into_js(ctx))
 }
@@ -110,14 +110,22 @@ pub fn init(ctx: Ctx) {
     let global = ctx.global();
     let console = ctx.create_object();
 
-    console.set("log", create_static_fn!(ctx, console_log));
-    console.set("input", create_static_fn!(ctx, console_in));
+    console
+        .set("log", create_static_fn!(ctx, console_log))
+        .unwrap();
+    console
+        .set("input", create_static_fn!(ctx, console_in))
+        .unwrap();
 
-    global.set("console", console);
-    global.set("eval", create_static_fn!(ctx, eval));
-    global.set("undefined", Value::undefined(ctx));
-    global.set("NaN", f64::NAN);
-    global.set("parseInt", create_static_fn!(ctx, parse_int));
-    global.set("isNaN", create_static_fn!(ctx, is_nan));
-    global.set("assert", create_static_fn!(ctx, assert));
+    global.set("console", console).unwrap();
+    global.set("eval", create_static_fn!(ctx, eval)).unwrap();
+    global.set("undefined", Value::undefined(ctx)).unwrap();
+    global.set("NaN", f64::NAN).unwrap();
+    global
+        .set("parseInt", create_static_fn!(ctx, parse_int))
+        .unwrap();
+    global.set("isNaN", create_static_fn!(ctx, is_nan)).unwrap();
+    global
+        .set("assert", create_static_fn!(ctx, assert))
+        .unwrap();
 }

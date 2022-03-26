@@ -2,6 +2,7 @@ use vm::Gc;
 
 use crate::{
     convert::{FromJs, IntoJs},
+    error::{Error, Result},
     Ctx, Value,
 };
 
@@ -24,7 +25,7 @@ impl<'js> Object<'js> {
         self.ptr.is_error()
     }
 
-    pub fn get<K, V>(self, key: K) -> V
+    pub fn get<K, V>(self, key: K) -> Result<'js, V>
     where
         K: IntoJs<'js>,
         V: FromJs<'js>,
@@ -32,23 +33,35 @@ impl<'js> Object<'js> {
         unsafe {
             let v = self
                 .ptr
-                .index(key.into_js(self.ctx).into_vm(), &(*self.ctx.ctx));
-            self.ctx.push_value(v);
+                .index(key.into_js(self.ctx).into_vm(), &(*self.ctx.ctx))
+                .map_err(|e| {
+                    self.ctx.push_value(e);
+                    Error::wrap(self.ctx, e)
+                })?;
+            if V::NEEDS_GC {
+                self.ctx.push_value(v);
+            }
             V::from_js(self.ctx, Value::wrap(self.ctx, v))
         }
     }
 
-    pub fn set<K, V>(self, key: K, value: V)
+    pub fn set<K, V>(self, key: K, value: V) -> Result<'js, ()>
     where
         K: IntoJs<'js>,
         V: IntoJs<'js>,
     {
         unsafe {
-            self.ptr.index_set(
-                key.into_js(self.ctx).into_vm(),
-                value.into_js(self.ctx).into_vm(),
-                &(*self.ctx.ctx),
-            );
+            self.ptr
+                .index_set(
+                    key.into_js(self.ctx).into_vm(),
+                    value.into_js(self.ctx).into_vm(),
+                    &(*self.ctx.ctx),
+                )
+                .map_err(|e| {
+                    self.ctx.push_value(e);
+                    Error::wrap(self.ctx, e)
+                })?;
+            Ok(())
         }
     }
 }

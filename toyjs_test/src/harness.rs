@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::{anyhow, Context, Result};
-use toyjs::Ctx;
+use toyjs::{Ctx, Value};
 
 use crate::test::Test;
 
@@ -67,7 +67,7 @@ impl Harness {
                     include
                 )
             })?;
-            ctx.eval(&test.source)
+            ctx.eval::<Value, _>(&test.source)
                 .map_err(|e| anyhow!("failed to execute harness file `{}`: {:?}", include, e))?;
         }
         Ok(())

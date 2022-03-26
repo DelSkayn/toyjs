@@ -65,7 +65,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index(&self, key: Value, realm: &Realm) -> Value {
+    pub unsafe fn index(&self, key: Value, realm: &Realm) -> Result<Value, Value> {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -73,25 +73,25 @@ impl Object {
             let idx = key.cast_int();
             if idx >= 0 {
                 return match (*self.array.get()).get(idx as usize).copied() {
-                    Some(x) => x,
+                    Some(x) => Ok(x),
                     None => {
                         if let Some(proto) = self.prototype {
                             proto.index(key, realm)
                         } else {
-                            Value::undefined()
+                            Ok(Value::undefined())
                         }
                     }
                 };
             }
         }
-        let string = realm.to_string(key);
+        let string = realm.to_string(key)?;
         match (*self.values.get()).get(&*string).copied() {
-            Some(x) => x,
+            Some(x) => Ok(x),
             None => {
                 if let Some(x) = self.prototype {
                     x.index(key, realm)
                 } else {
-                    Value::undefined()
+                    Ok(Value::undefined())
                 }
             }
         }
@@ -103,7 +103,7 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &Realm) {
+    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &Realm) -> Result<(), Value> {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -118,13 +118,19 @@ impl Object {
                 (*self.array.get())[idx] = value
             }
         } else {
-            let string = realm.to_string(key);
+            let string = realm.to_string(key)?;
             (*self.values.get()).insert(string.to_string(), value);
         }
+        Ok(())
     }
 
     /// Set a property of the object directly, skipping possible setters.
-    pub unsafe fn raw_index_set(&self, key: Value, value: Value, realm: &Realm) {
+    pub unsafe fn raw_index_set(
+        &self,
+        key: Value,
+        value: Value,
+        realm: &Realm,
+    ) -> Result<(), Value> {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
@@ -139,9 +145,10 @@ impl Object {
                 (*self.array.get())[idx] = value
             }
         } else {
-            let string = realm.to_string(key);
+            let string = realm.to_string(key)?;
             (*self.values.get()).insert(string.to_string(), value);
         }
+        Ok(())
     }
 
     #[inline]

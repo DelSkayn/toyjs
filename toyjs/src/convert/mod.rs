@@ -1,23 +1,42 @@
-use crate::{Ctx, Function, Object, String, Value};
+use crate::{error::Result, Ctx, Function, Object, String, Value};
 use std::string::String as StdString;
 
-pub trait FromJs<'js> {
-    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Self;
+pub unsafe trait FromJs<'js>: Sized {
+    const NEEDS_GC: bool;
+
+    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Result<'js, Self>;
 }
 
-impl<'js> FromJs<'js> for Value<'js> {
-    fn from_js(_: Ctx<'js>, value: Value<'js>) -> Self {
-        value
+unsafe impl<'js> FromJs<'js> for Value<'js> {
+    const NEEDS_GC: bool = true;
+    fn from_js(_: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        Ok(value)
     }
 }
 
-impl<'js> FromJs<'js> for f64 {
-    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Self {
-        let value = ctx.coerce_number(value);
-        value
+unsafe impl<'js> FromJs<'js> for f64 {
+    const NEEDS_GC: bool = false;
+    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        let value = ctx.coerce_number(value)?;
+        Ok(value
             .into_f64()
             .or_else(|| value.into_i32().map(|x| x.into()))
-            .expect("coerce number did not return a number")
+            .expect("coerce number did not return a number"))
+    }
+}
+
+unsafe impl<'js> FromJs<'js> for i32 {
+    const NEEDS_GC: bool = false;
+    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        let value = ctx.coerce_integer(value)?;
+        Ok(value)
+    }
+}
+
+unsafe impl<'js> FromJs<'js> for () {
+    const NEEDS_GC: bool = true;
+    fn from_js(_: Ctx<'js>, _: Value<'js>) -> Result<'js, Self> {
+        Ok(())
     }
 }
 

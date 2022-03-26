@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context as AnyhowContext, Result};
 use serde::Deserialize;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use toyjs::{Context, ToyJs};
+use toyjs::{Context, ToyJs, Value};
 
 use crate::harness::Harness;
 
@@ -95,7 +95,7 @@ impl Test {
             let context = Context::new(&toyjs);
             context.with(|ctx| {
                 harness.prepare(ctx, &self.metadata.includes)?;
-                match ctx.eval(&self.source) {
+                match ctx.eval::<Value, _>(&self.source) {
                     Ok(_) => {
                         if self.metadata.negative.is_some() {
                             Ok(TestResult::Failed)

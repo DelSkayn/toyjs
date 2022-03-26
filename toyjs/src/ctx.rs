@@ -10,7 +10,9 @@ use vm::{
     object::{ObjectFlags, SharedFn},
 };
 
-use crate::{ffi::Arguments, Context, Function, Object, String, Value};
+use crate::{
+    convert::FromJs, error::Result, ffi::Arguments, Context, Error, Function, Object, String, Value,
+};
 
 #[doc(hidden)]
 pub struct UserData {
@@ -110,24 +112,41 @@ impl<'js> Ctx<'js> {
     }
 
     /// Coerces a javascript value into a string
-    pub fn coerce_string(self, v: Value<'js>) -> String<'js> {
-        unsafe { String::wrap(self, (*self.ctx).to_string(v.into_vm())) }
+    pub fn coerce_string(self, v: Value<'js>) -> Result<'js, String<'js>> {
+        unsafe {
+            (*self.ctx)
+                .to_string(v.into_vm())
+                .map(|x| String::wrap(self, x))
+                .map_err(|e| Error::wrap(self, e))
+        }
     }
 
     /// Coerces a javascript value into a string
-    pub fn coerce_number(self, v: Value<'js>) -> Value<'js> {
-        unsafe { Value::wrap(self, (*self.ctx).to_number(v.into_vm())) }
+    pub fn coerce_number(self, v: Value<'js>) -> Result<'js, Value<'js>> {
+        unsafe {
+            (*self.ctx)
+                .to_number(v.into_vm())
+                .map(|x| Value::wrap(self, x))
+                .map_err(|e| Error::wrap(self, e))
+        }
     }
 
-    pub fn coerce_integer(self, v: Value<'js>) -> i32 {
-        unsafe { (*self.ctx).to_int32(v.into_vm()) }
+    pub fn coerce_integer(self, v: Value<'js>) -> Result<'js, i32> {
+        unsafe {
+            (*self.ctx)
+                .to_int32(v.into_vm())
+                .map_err(|e| Error::wrap(self, e))
+        }
     }
 
     #[doc(hidden)]
     /// Creates a new function from a rust closure
     pub unsafe fn create_static_function(
         self,
-        f: fn(&vm::Realm, exec: &mut vm::realm::ExecutionContext) -> Result<vm::Value, vm::Value>,
+        f: fn(
+            &vm::Realm,
+            exec: &mut vm::realm::ExecutionContext,
+        ) -> std::result::Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
         let function = vm::Object::alloc_function(
@@ -136,20 +155,20 @@ where {
             ObjectFlags::empty(),
             vm::object::FunctionKind::Static(f),
         );
-        (*self.ctx).stack.push(function.into());
+        self.push_value(function.into());
         Function::wrap(self, function)
     }
 
     /// Creates a new function from a rust closure
     pub fn create_shared_function<F>(self, f: F) -> Function<'js>
     where
-        F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
+        F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<'a, Value<'a>> + 'static,
     {
         unsafe {
             let func: SharedFn = Box::new(move |realm: &vm::Realm, _| {
                 let ctx = Ctx::wrap(realm);
                 let args = Arguments::from_ctx(ctx);
-                f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)
+                f(ctx, args).map(Value::into_vm).map_err(|e| e.into_vm(ctx))
             });
             let function = vm::Object::alloc_function(
                 &(*self.ctx),
@@ -157,18 +176,19 @@ where {
                 ObjectFlags::empty(),
                 vm::object::FunctionKind::Shared(func),
             );
-            (*self.ctx).stack.push(function.into());
+            self.push_value(function.into());
             Function::wrap(self, function)
         }
     }
 
-    pub fn compile(self, s: impl Into<StdString>) -> Result<Function<'js>, Value<'js>> {
+    pub fn compile(self, s: impl Into<StdString>) -> Result<'js, Function<'js>> {
         unsafe {
             let source = Source::from_string(s.into());
             let user_data = self.user_data();
             let lexer = Lexer::new(&source, &mut (*user_data).interner);
             let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
-                .map_err(|_| Value::undefined(self))?;
+                .map_err(|e| e.format(&source, &(*user_data).interner).to_string())
+                .map_err(Error::Parse)?;
 
             let bytecode = Compiler::compile_script(
                 &ast,
@@ -179,34 +199,41 @@ where {
             );
             let bytecode = (*self.ctx).vm().allocate(bytecode);
             let function = (*self.ctx).construct_script_function(bytecode);
-            (*self.ctx).stack.push(function.into());
+            self.push_value(function.into());
             Ok(Function::wrap(self, function))
         }
     }
 
     /// Evaluates the given value as a script
-    pub fn eval(self, s: impl Into<StdString>) -> Result<Value<'js>, Value<'js>> {
+    pub fn eval<R: FromJs<'js>, S: Into<StdString>>(self, s: S) -> Result<'js, R> {
         unsafe {
-            let source = Source::from_string(s.into());
-            let user_data = self.user_data();
-            let lexer = Lexer::new(&source, &mut (*user_data).interner);
-            let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
-                .map_err(|_| Value::undefined(self))?;
-            let bytecode = Compiler::compile_script(
-                &ast,
-                &(*user_data).symbol_table,
-                &mut (*user_data).interner,
-                &(*self.ctx).vm().gc(),
-                Global,
-            );
-            let bytecode = (*self.ctx).vm().allocate(bytecode);
-            std::mem::drop(ast);
-            let value = (*self.ctx).eval(bytecode).map_err(|x| {
-                self.push_value(x);
-                Value::wrap(self, x)
-            })?;
-            self.push_value(value);
-            Ok(Value::wrap(self, value))
+            let v = self.eval_inner(s.into())?;
+            if R::NEEDS_GC {
+                self.push_value(v);
+            }
+            R::from_js(self, Value::wrap(self, v))
         }
+    }
+
+    unsafe fn eval_inner(self, s: StdString) -> Result<'js, vm::Value> {
+        let source = Source::from_string(s);
+        let user_data = self.user_data();
+        let lexer = Lexer::new(&source, &mut (*user_data).interner);
+        let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
+            .map_err(|e| e.format(&source, &(*user_data).interner).to_string())
+            .map_err(Error::Parse)?;
+        let bytecode = Compiler::compile_script(
+            &ast,
+            &(*user_data).symbol_table,
+            &mut (*user_data).interner,
+            &(*self.ctx).vm().gc(),
+            Global,
+        );
+        let bytecode = (*self.ctx).vm().allocate(bytecode);
+        std::mem::drop(ast);
+        (*self.ctx).eval(bytecode).map_err(|e| {
+            self.push_value(e);
+            Error::wrap(self, e)
+        })
     }
 }
