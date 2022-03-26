@@ -47,7 +47,7 @@ pub fn construct<T: BuiltinAccessor>(
         };
 
         let object = Object::new_error(Some(proto));
-        let object = realm.gc.allocate(object);
+        let object = realm.vm.borrow().allocate(object);
 
         if realm.stack.frame_size() >= 1 {
             let message = realm.stack.read(0);

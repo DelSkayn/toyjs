@@ -9,7 +9,7 @@ use anyhow::{anyhow, Context as AnyhowContext, Result};
 use serde::Deserialize;
 use std::io::Write;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use toyjs::Context;
+use toyjs::{Context, ToyJs};
 
 use crate::harness::Harness;
 
@@ -91,7 +91,8 @@ impl Test {
 
     pub fn run(&self, harness: &Harness) -> Result<TestResult> {
         let res = match catch_unwind(|| {
-            let context = Context::new();
+            let toyjs = ToyJs::new();
+            let context = Context::new(&toyjs);
             context.with(|ctx| {
                 harness.prepare(ctx, &self.metadata.includes)?;
                 match ctx.eval(&self.source) {

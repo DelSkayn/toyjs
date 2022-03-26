@@ -54,7 +54,7 @@ fn object_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Va
         };
 
         let object = Object::new_error(Some(proto));
-        let object = realm.gc.allocate(object);
+        let object = realm.vm.borrow().allocate(object);
         Ok(object.into())
     }
 }
@@ -84,7 +84,7 @@ fn error_construct(realm: &mut Realm, exec: &mut ExecutionContext) -> Result<Val
         };
 
         let object = Object::new_error(Some(proto));
-        let object = realm.gc.allocate(object);
+        let object = realm.vm.borrow().allocate(object);
 
         if realm.stack.frame_size() >= 1 {
             let message = realm.stack.read(0);
@@ -171,7 +171,7 @@ impl Realm {
             FunctionKind::Static(function_proto),
             self.builtin.object_proto,
         );
-        let func_proto = self.gc.allocate(func_proto);
+        let func_proto = self.vm.borrow().allocate(func_proto);
         self.builtin.function_proto = Some(func_proto);
 
         let object_construct = self.create_constructor(Some(func_proto), object_construct);
