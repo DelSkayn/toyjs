@@ -1,9 +1,10 @@
 use std::{env, io};
 
-use toyjs::{Context, Value};
+use toyjs::{Context, ToyJs, Value};
 
 fn main() -> io::Result<()> {
-    let ctx = Context::new();
+    let toyjs = ToyJs::new();
+    let ctx = Context::new(&toyjs);
     if let Some(x) = env::args().nth(1) {
         let source = std::fs::read_to_string(x)?;
         ctx.with(|ctx| println!("value: {:?}", ctx.eval(source).unwrap()));

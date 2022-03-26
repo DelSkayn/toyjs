@@ -31,5 +31,9 @@ pub use value::Value;
 pub mod object;
 pub use object::Object;
 
+pub mod vm;
+
 pub mod realm;
 pub use realm::Realm;
+
+pub mod lock;

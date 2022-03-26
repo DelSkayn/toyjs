@@ -61,22 +61,22 @@ impl Realm {
                     self.stack.write(dst, Value::from(self.global));
                 }
                 Instruction::LoadFunction { dst, func } => {
-                    self.gc.collect_debt(&(&*self, &ctx));
+                    self.vm.borrow().collect_debt(&ctx);
                     let func = self.construct_function(func, &instr, ctx.function);
-                    let res = Value::from(self.gc.allocate(func));
+                    let res = Value::from(self.vm.borrow().allocate(func));
                     self.stack.write(dst, res);
                 }
                 Instruction::LoadConstructor { dst, func } => {
-                    self.gc.collect_debt(&(&*self, &ctx));
+                    self.vm.borrow().collect_debt(&ctx);
                     let func = self.construct_constructor(func, &instr, ctx.function);
                     self.stack.write(dst, func.into());
                 }
                 Instruction::LoadThis { dst } => self.stack.write(dst, ctx.this),
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
-                    self.gc.collect_debt(&(&*self, instr, ctx.function));
+                    self.vm.borrow().collect_debt(&ctx);
                     let object = Object::new(None);
-                    let res = Value::from(self.gc.allocate(object));
+                    let res = Value::from(self.vm.borrow().allocate(object));
                     self.stack.write(dst, res)
                 }
                 Instruction::IndexAssign { obj, key, val } => {
@@ -86,7 +86,7 @@ impl Realm {
 
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
-                        self.gc.write_barrier(obj);
+                        self.vm.borrow().write_barrier(obj);
                         obj.index_set(key, val, self);
                     } else {
                         // TODO proper error value
@@ -107,14 +107,15 @@ impl Realm {
 
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
-                    let src = self.global().index(key, self);
+                    let obj = self.global;
+                    let src = obj.index(key, self);
                     self.stack.write(dst, src);
                 }
 
                 Instruction::GlobalAssign { key, src } => {
-                    self.gc.write_barrier(self.global());
-                    self.global()
-                        .index_set(self.stack.read(key), self.stack.read(src), self);
+                    let obj = self.global;
+                    self.vm.borrow().write_barrier(obj);
+                    obj.index_set(self.stack.read(key), self.stack.read(src), self);
                 }
 
                 Instruction::Upvalue { dst, slot } => {
@@ -125,7 +126,7 @@ impl Realm {
                 Instruction::UpvalueAssign { src, slot } => {
                     let value = self.stack.read(src);
                     let upvalue = ctx.function.as_vm_function().upvalues[slot as usize];
-                    self.gc.write_barrier(upvalue);
+                    self.vm.borrow().write_barrier(upvalue);
                     upvalue.write(value);
                 }
 
@@ -353,17 +354,19 @@ impl Realm {
                     self.unwind_error(&mut instr, &mut ctx, error)?;
                 }
 
-                Instruction::ReturnUndefined { .. } => match self.stack.pop(&self.gc) {
-                    Some(frame) => {
-                        ctx = frame.ctx;
-                        instr = frame.instr;
-                        self.stack.write(frame.dst, Value::undefined());
+                Instruction::ReturnUndefined { .. } => {
+                    match self.stack.pop(self.vm.borrow().gc()) {
+                        Some(frame) => {
+                            ctx = frame.ctx;
+                            instr = frame.instr;
+                            self.stack.write(frame.dst, Value::undefined());
+                        }
+                        None => return Ok(Value::undefined()),
                     }
-                    None => return Ok(Value::undefined()),
-                },
+                }
                 Instruction::Return { ret } => {
                     let return_value = self.stack.read(ret);
-                    match self.stack.pop(&self.gc) {
+                    match self.stack.pop(self.vm.borrow().gc()) {
                         Some(frame) => {
                             ctx = frame.ctx;
                             instr = frame.instr;
@@ -403,7 +406,7 @@ impl Realm {
         error: Value,
     ) -> Result<(), Value> {
         loop {
-            match self.stack.unwind(&self.gc) {
+            match self.stack.unwind(self.vm.borrow().gc()) {
                 Some(Ok(catch)) => {
                     self.stack.write(catch.dst, error);
                     instr.absolute_jump(catch.ip_offset);
@@ -437,21 +440,21 @@ impl Realm {
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
     pub unsafe fn to_string(&mut self, value: Value) -> Gc<String> {
         if value.is_int() {
-            self.gc.allocate(value.cast_int().to_string())
+            self.vm.borrow().allocate(value.cast_int().to_string())
         } else if value.is_float() {
-            self.gc.allocate(value.cast_float().to_string())
+            self.vm.borrow().allocate(value.cast_float().to_string())
         } else if value.is_null() {
-            self.gc.allocate("null".to_string())
+            self.vm.borrow().allocate("null".to_string())
         } else if value.is_undefined() {
-            self.gc.allocate("undefined".to_string())
+            self.vm.borrow().allocate("undefined".to_string())
         } else if value.is_true() {
-            self.gc.allocate("true".to_string())
+            self.vm.borrow().allocate("true".to_string())
         } else if value.is_false() {
-            self.gc.allocate("false".to_string())
+            self.vm.borrow().allocate("false".to_string())
         } else if value.is_string() {
             value.unsafe_cast_string()
         } else if value.is_object() {
-            self.gc.allocate("[object Object]".to_string())
+            self.vm.borrow().allocate("[object Object]".to_string())
         } else {
             todo!()
         }
@@ -637,7 +640,11 @@ impl Realm {
         if left.is_string() || right.is_string() {
             let left = self.to_string(left);
             let right = self.to_string(right);
-            return Value::from(self.gc.allocate(left.to_string() + &right.to_string()));
+            return Value::from(
+                self.vm
+                    .borrow()
+                    .allocate(left.to_string() + &right.to_string()),
+            );
         }
         let left = self.to_number(left);
         let right = self.to_number(right);
@@ -790,7 +797,9 @@ impl Realm {
             .iter()
             .copied()
             .map(|x| match x {
-                Upvalue::Local(register) => self.stack.create_upvalue(register, &self.gc),
+                Upvalue::Local(register) => {
+                    self.stack.create_upvalue(register, self.vm.borrow().gc())
+                }
                 Upvalue::Parent(slot) => {
                     debug_assert!(function.upvalues.len() > slot as usize);
                     *function.upvalues.get_unchecked(slot as usize)
@@ -816,7 +825,7 @@ impl Realm {
     ) -> Gc<Object> {
         let mut function = self.construct_function(function_id, reader, function);
         function.flags |= ObjectFlags::CONSTRUCTOR;
-        let function = self.gc.allocate(function);
+        let function = self.vm.borrow().allocate(function);
         let proto = self.create_object();
         proto.raw_index_set(
             self.builtin.keys.as_ref().unwrap().constructor.into(),
@@ -870,7 +879,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = x(this, ctx)?;
-                    this.stack.pop(&this.gc);
+                    this.stack.pop(this.vm.borrow().gc());
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -878,7 +887,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
-                    this.stack.pop(&this.gc);
+                    this.stack.pop(this.vm.borrow().gc());
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -886,7 +895,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function);
                     this.stack.enter(0);
                     let res = (*x)(this, ctx)?;
-                    this.stack.pop(&this.gc);
+                    this.stack.pop(this.vm.borrow().gc());
                     ctx.function = function;
                     Ok(Some(res))
                 }
@@ -960,7 +969,7 @@ impl Realm {
                     let function = mem::replace(&mut ctx.function, function_obj);
                     this.stack.enter(0);
                     let res = func(this, ctx)?;
-                    this.stack.pop(&this.gc);
+                    this.stack.pop(this.vm.borrow().gc());
                     ctx.function = function;
                     Ok(res)
                 }
@@ -990,7 +999,7 @@ impl Realm {
             },
         )
         .unwrap();
-        self.stack.pop(&self.gc);
+        self.stack.pop(self.vm.borrow().gc());
         res
     }
 }

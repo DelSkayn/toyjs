@@ -47,7 +47,7 @@ pub struct Ctx<'js> {
 impl<'js> Ctx<'js> {
     // # Safety
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) unsafe fn wrap(ctx: &mut vm::Realm) -> Self {
+    pub(crate) unsafe fn wrap(ctx: *mut vm::Realm) -> Self {
         Ctx {
             ctx,
             marker: PhantomData,
@@ -61,14 +61,6 @@ impl<'js> Ctx<'js> {
         }
     }
 
-    pub(crate) unsafe fn push_frame(&mut self) {
-        (*self.ctx).stack.enter(0);
-    }
-
-    pub(crate) unsafe fn pop_frame(&mut self) {
-        (*self.ctx).stack.pop(&(*self.ctx).gc);
-    }
-
     pub(crate) unsafe fn user_data(self) -> *mut UserData {
         (*self.ctx).user_data.downcast_mut().unwrap()
     }
@@ -76,7 +68,7 @@ impl<'js> Ctx<'js> {
     /// Returns the global object of the current context.
     pub fn global(self) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).global();
+            let object = (*self.ctx).global;
             Object::wrap(self, object)
         }
     }
@@ -163,10 +155,10 @@ where {
                 &ast,
                 &(*user_data).symbol_table,
                 &mut (*user_data).interner,
-                &(*self.ctx).gc,
+                (*self.ctx).vm().gc(),
                 Global,
             );
-            let bytecode = (*self.ctx).gc.allocate(bytecode);
+            let bytecode = (*self.ctx).vm().allocate(bytecode);
             let function = (*self.ctx).construct_script_function(bytecode);
             (*self.ctx).stack.push(function.into());
             Ok(Function::wrap(self, function))
@@ -185,10 +177,10 @@ where {
                 &ast,
                 &(*user_data).symbol_table,
                 &mut (*user_data).interner,
-                &(*self.ctx).gc,
+                &(*self.ctx).vm().gc(),
                 Global,
             );
-            let bytecode = (*self.ctx).gc.allocate(bytecode);
+            let bytecode = (*self.ctx).vm().allocate(bytecode);
             std::mem::drop(ast);
             let value = (*self.ctx).eval(bytecode).map_err(|x| {
                 self.push_value(x);
