@@ -5,7 +5,10 @@ use common::{interner::Interner, source::Source};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
-use vm::gc::Trace;
+use vm::{
+    gc::Trace,
+    object::{ObjectFlags, SharedFn},
+};
 
 use crate::{ffi::Arguments, Context, Function, Object, String, Value};
 
@@ -76,14 +79,18 @@ impl<'js> Ctx<'js> {
     /// Creates a javascript string from a rust string.
     pub fn create_string(self, s: impl Into<StdString>) -> String<'js> {
         unsafe {
-            let string = (*self.ctx).create_string(s.into());
+            let string = (*self.ctx).vm().allocate(s.into());
             (*self.ctx).stack.push(string.into());
             String::wrap(self, string)
         }
     }
     pub fn create_object(self) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).create_object();
+            let object = vm::Object::alloc(
+                &(*self.ctx),
+                (*self.ctx).builtin.object_proto,
+                ObjectFlags::empty(),
+            );
             (*self.ctx).stack.push(object.into());
             Object::wrap(self, object)
         }
@@ -92,7 +99,11 @@ impl<'js> Ctx<'js> {
     /// Creates a new empty object
     pub fn create_object_proto(self, prototype: Option<Object<'js>>) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).create_object_proto(prototype.map(|x| x.into_vm()));
+            let object = vm::Object::alloc(
+                &(*self.ctx),
+                prototype.map(|x| x.into_vm()),
+                ObjectFlags::empty(),
+            );
             (*self.ctx).stack.push(object.into());
             Object::wrap(self, object)
         }
@@ -122,7 +133,12 @@ impl<'js> Ctx<'js> {
         ) -> Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
-        let function = (*self.ctx).create_static_function(f);
+        let function = vm::Object::alloc_function(
+            &(*self.ctx),
+            (*self.ctx).builtin.function_proto,
+            ObjectFlags::empty(),
+            vm::object::FunctionKind::Static(f),
+        );
         (*self.ctx).stack.push(function.into());
         Function::wrap(self, function)
     }
@@ -133,11 +149,17 @@ where {
         F: for<'a> Fn(Ctx<'a>, Arguments<'a>) -> Result<Value<'a>, Value<'a>> + 'static,
     {
         unsafe {
-            let function = (*self.ctx).create_shared_function(move |realm, _| {
+            let func: SharedFn = Box::new(move |realm: &mut vm::Realm, _| {
                 let ctx = Ctx::wrap(realm);
                 let args = Arguments::from_ctx(ctx);
                 f(ctx, args).map(Value::into_vm).map_err(Value::into_vm)
             });
+            let function = vm::Object::alloc_function(
+                &(*self.ctx),
+                (*self.ctx).builtin.function_proto,
+                ObjectFlags::empty(),
+                vm::object::FunctionKind::Shared(func),
+            );
             (*self.ctx).stack.push(function.into());
             Function::wrap(self, function)
         }

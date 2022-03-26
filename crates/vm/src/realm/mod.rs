@@ -5,7 +5,7 @@ use std::{any::Any, ptr::NonNull};
 use crate::{
     gc::Trace,
     instructions::ByteCode,
-    object::{FunctionKind, Object, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{FunctionKind, Object, ObjectFlags, VmFunction, RECURSIVE_FUNC_PANIC},
     vm::{Vm, VmInner},
     Gc, Value,
 };
@@ -88,7 +88,9 @@ impl Realm {
             let mut vm = vm.0.lock();
             let vm = VmBox::new(&mut *vm);
 
-            let global = vm.borrow().allocate(Object::new(None));
+            let global = vm
+                .borrow()
+                .allocate(Object::new(None, ObjectFlags::empty()));
             let stack = Stack::new();
             let mut res = Realm {
                 vm,
@@ -111,14 +113,16 @@ impl Realm {
 
     pub unsafe fn construct_script_function(&self, script: Gc<ByteCode>) -> Gc<Object> {
         debug_assert!(script.functions[0].upvalues.is_empty());
-        self.vm.borrow().allocate(Object::from_vm(
+        Object::alloc_function(
             self,
-            VmFunction {
+            self.builtin.function_proto,
+            ObjectFlags::empty(),
+            FunctionKind::Vm(VmFunction {
                 bc: script,
                 function: 0,
                 upvalues: Box::new([]),
-            },
-        ))
+            }),
+        )
     }
 
     /// Call a function entering into the vm
@@ -192,43 +196,6 @@ impl Realm {
 
     pub unsafe fn user_push_temp(&mut self, tmp: Value) {
         self.stack.push_temp(tmp)
-    }
-
-    pub unsafe fn create_object_proto(&self, prototype: Option<Gc<Object>>) -> Gc<Object> {
-        self.vm.borrow().allocate(Object::new(prototype))
-    }
-
-    pub unsafe fn create_object(&self) -> Gc<Object> {
-        self.create_object_proto(self.builtin.object_proto)
-    }
-
-    #[inline]
-    pub unsafe fn create_string(&self, s: impl Into<String>) -> Gc<String> {
-        self.vm.borrow().allocate(s.into())
-    }
-
-    pub unsafe fn create_shared_function<F>(&self, f: F) -> Gc<Object>
-    where
-        F: for<'a> Fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value> + 'static,
-    {
-        self.vm.borrow().allocate(Object::from_shared(self, f))
-    }
-
-    pub unsafe fn create_static_function(
-        &self,
-        f: fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>,
-    ) -> Gc<Object> {
-        self.vm.borrow().allocate(Object::from_static(self, f))
-    }
-
-    pub unsafe fn create_constructor(
-        &self,
-        prototype: Option<Gc<Object>>,
-        f: StaticFn,
-    ) -> Gc<Object> {
-        self.vm
-            .borrow()
-            .allocate(Object::from_constructor_with_prototype(prototype, f))
     }
 }
 

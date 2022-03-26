@@ -1,4 +1,4 @@
-use crate::{realm::ExecutionContext, Gc, Object, Realm, Value};
+use crate::{object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value};
 
 use super::{common_keys::CommonKeys, BuiltinAccessor};
 
@@ -35,7 +35,7 @@ pub fn construct<T: BuiltinAccessor>(
         };
 
         let proto = if new_target.is_object() {
-            let key = realm.create_string("prototype");
+            let key = realm.vm().allocate::<String>("prototype".into());
             new_target.unsafe_cast_object().index(key.into(), realm)
         } else {
             Value::undefined()
@@ -52,14 +52,14 @@ pub fn construct<T: BuiltinAccessor>(
         if realm.stack.frame_size() >= 1 {
             let message = realm.stack.read(0);
             let message = realm.to_string(message);
-            let message = realm.create_string(message.as_str());
-            let key = realm.create_string("message");
+            let message = realm.vm().allocate::<String>(message.as_str().into());
+            let key = realm.vm().allocate::<String>("message".into());
             object.raw_index_set(key.into(), message.into(), realm);
         }
         if realm.stack.frame_size() >= 2 {
             let options = realm.stack.read(1);
             if options.is_object() {
-                let key = realm.create_string("cause");
+                let key = realm.vm().allocate::<String>("cause".into());
                 let value = options.unsafe_cast_object().index(key.into(), realm);
                 if !value.is_undefined() {
                     object.raw_index_set(key.into(), value, realm)
@@ -77,14 +77,18 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
     construct_proto: Gc<Object>,
     proto_proto: Gc<Object>,
 ) -> (Gc<Object>, Gc<Object>) {
-    let error_proto = realm.create_object_proto(Some(proto_proto));
-    let error_construct = realm.create_constructor(Some(construct_proto), construct::<T>);
+    let error_proto = Object::alloc(realm, Some(proto_proto), ObjectFlags::empty());
+    let error_construct = Object::alloc_constructor(
+        realm,
+        Some(construct_proto),
+        crate::object::FunctionKind::Static(construct::<T>),
+    );
 
     error_construct.raw_index_set(keys.prototype.into(), error_proto.into(), realm);
     error_proto.raw_index_set(keys.constructor.into(), error_construct.into(), realm);
 
     error_proto.raw_index_set(keys.message.into(), keys.empty.into(), realm);
-    let key = realm.create_string("name").into();
+    let key = realm.vm().allocate::<String>("name".into()).into();
     error_proto.raw_index_set(key, name.into(), realm);
 
     (error_construct, error_proto)
