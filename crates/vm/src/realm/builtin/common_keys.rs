@@ -30,12 +30,12 @@ unsafe impl Trace for CommonKeys {
 impl CommonKeys {
     pub unsafe fn new(realm: &mut Realm) -> Self {
         CommonKeys {
-            empty: realm.create_string(""),
-            prototype: realm.create_string("prototype"),
-            constructor: realm.create_string("constructor"),
-            name: realm.create_string("name"),
-            message: realm.create_string("message"),
-            length: realm.create_string("length"),
+            empty: realm.vm().allocate::<String>("".into()),
+            prototype: realm.vm().allocate::<String>("prototype".into()),
+            constructor: realm.vm().allocate::<String>("constructor".into()),
+            name: realm.vm().allocate::<String>("name".into()),
+            message: realm.vm().allocate::<String>("message".into()),
+            length: realm.vm().allocate::<String>("length".into()),
         }
     }
 }

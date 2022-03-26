@@ -16,7 +16,7 @@ mod string;
 pub use string::String;
 mod value;
 pub use value::Value;
-use vm::{realm::RealmBox, vm::Vm};
+use vm::{realm::RealmBox, Vm};
 
 pub mod convert;
 

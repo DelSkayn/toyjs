@@ -30,24 +30,33 @@ pub struct Object {
 
 impl Object {
     /// Create a new object.
-    pub fn new(prototype: Option<Gc<Object>>) -> Self {
+    pub fn new(prototype: Option<Gc<Object>>, flags: ObjectFlags) -> Self {
         Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
-            flags: ObjectFlags::empty(),
+            flags,
             function: None,
         }
     }
 
+    #[inline]
     pub fn new_error(prototype: Option<Gc<Object>>) -> Self {
-        Object {
-            prototype,
-            values: UnsafeCell::new(HashMap::default()),
-            array: UnsafeCell::new(Vec::new()),
-            flags: ObjectFlags::ERROR,
-            function: None,
-        }
+        Self::new(prototype, ObjectFlags::ERROR)
+    }
+
+    #[inline]
+    pub unsafe fn alloc(
+        realm: &Realm,
+        prototype: Option<Gc<Object>>,
+        flags: ObjectFlags,
+    ) -> Gc<Self> {
+        realm.vm().allocate(Self::new(prototype, flags))
+    }
+
+    #[inline]
+    pub unsafe fn alloc_error(realm: &mut Realm, prototype: Option<Gc<Object>>) -> Gc<Self> {
+        realm.vm().allocate(Self::new_error(prototype))
     }
 
     /// Index into the object and return the value assiociated with the key.

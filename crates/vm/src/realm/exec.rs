@@ -63,8 +63,13 @@ impl Realm {
                 Instruction::LoadFunction { dst, func } => {
                     self.vm.borrow().collect_debt(&ctx);
                     let func = self.construct_function(func, &instr, ctx.function);
-                    let res = Value::from(self.vm.borrow().allocate(func));
-                    self.stack.write(dst, res);
+                    let func = Object::alloc_function(
+                        self,
+                        self.builtin.function_proto,
+                        ObjectFlags::empty(),
+                        FunctionKind::Vm(func),
+                    );
+                    self.stack.write(dst, func.into());
                 }
                 Instruction::LoadConstructor { dst, func } => {
                     self.vm.borrow().collect_debt(&ctx);
@@ -75,8 +80,9 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object = Object::new(None);
-                    let res = Value::from(self.vm.borrow().allocate(object));
+                    let object =
+                        Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+                    let res = Value::from(object);
                     self.stack.write(dst, res)
                 }
                 Instruction::IndexAssign { obj, key, val } => {
@@ -133,6 +139,7 @@ impl Realm {
                 Instruction::TypeOf { dst, src } => {
                     let src = self.stack.read(src);
                     let res = self.type_of(src);
+                    let res = self.vm().allocate::<String>(res.into());
                     self.stack.write(dst, res.into());
                 }
 
@@ -462,7 +469,7 @@ impl Realm {
 
     pub unsafe fn to_object(&mut self, value: Value) -> Gc<Object> {
         if value.is_null() || value.is_undefined() {
-            return self.create_object();
+            return Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
         }
         todo!()
     }
@@ -709,22 +716,22 @@ impl Realm {
         }
     }
 
-    pub unsafe fn type_of(&mut self, v: Value) -> Gc<String> {
+    pub unsafe fn type_of(&self, v: Value) -> &str {
         if v.is_undefined() {
-            self.create_string("undefined")
+            "undefined"
         } else if v.is_null() {
-            self.create_string("object")
+            "object"
         } else if v.is_bool() {
-            self.create_string("boolean")
+            "boolean"
         } else if v.is_number() {
-            self.create_string("number")
+            "number"
         } else if v.is_string() {
-            self.create_string("string")
+            "string"
         } else if v.is_object() {
             if v.unsafe_cast_object().is_function() {
-                self.create_string("function")
+                "function"
             } else {
-                self.create_string("object")
+                "object"
             }
         } else {
             unreachable!()
@@ -789,7 +796,7 @@ impl Realm {
         function_id: u16,
         reader: &InstructionReader,
         function: Gc<Object>,
-    ) -> Object {
+    ) -> VmFunction {
         let bc_function = reader.function(function_id);
         let function = function.as_vm_function();
         let upvalues = bc_function
@@ -807,14 +814,11 @@ impl Realm {
             })
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        Object::from_vm(
-            self,
-            VmFunction {
-                bc: reader.bc,
-                function: function_id,
-                upvalues,
-            },
-        )
+        VmFunction {
+            bc: reader.bc,
+            function: function_id,
+            upvalues,
+        }
     }
 
     pub(crate) unsafe fn construct_constructor(
@@ -823,10 +827,10 @@ impl Realm {
         reader: &InstructionReader,
         function: Gc<Object>,
     ) -> Gc<Object> {
-        let mut function = self.construct_function(function_id, reader, function);
-        function.flags |= ObjectFlags::CONSTRUCTOR;
-        let function = self.vm.borrow().allocate(function);
-        let proto = self.create_object();
+        let function = self.construct_function(function_id, reader, function);
+        let function =
+            Object::alloc_constructor(self, self.builtin.object_proto, FunctionKind::Vm(function));
+        let proto = Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
         proto.raw_index_set(
             self.builtin.keys.as_ref().unwrap().constructor.into(),
             function.into(),
@@ -945,9 +949,9 @@ impl Realm {
                     let proto = function_obj
                         .index(this.builtin.keys.as_ref().unwrap().prototype.into(), this);
                     let this_object = if proto.is_object() {
-                        this.create_object_proto(Some(proto.unsafe_cast_object()))
+                        Object::alloc(this, Some(proto.unsafe_cast_object()), ObjectFlags::empty())
                     } else {
-                        this.create_object()
+                        Object::alloc(this, this.builtin.object_proto, ObjectFlags::empty())
                     };
 
                     let instr = InstructionReader::from_bc(bc, func.function);
@@ -987,7 +991,7 @@ impl Realm {
         message: impl Into<String>,
     ) -> Value {
         use builtin::error::TypeError;
-        let message = self.create_string(message);
+        let message = self.vm().allocate(message.into());
         self.stack.push(message.into());
         self.stack.enter(0);
         let res = builtin::error::construct::<TypeError>(

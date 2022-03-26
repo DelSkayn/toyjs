@@ -16,8 +16,10 @@ use super::ObjectFlags;
 
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
-pub type MutableFn = Box<dyn FnMut(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>>;
-pub type SharedFn = Box<dyn Fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>>;
+pub type MutableFn =
+    Box<dyn for<'a> FnMut(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
+pub type SharedFn =
+    Box<dyn for<'a> Fn(&'a mut Realm, &'a mut ExecutionContext) -> Result<Value, Value>>;
 pub type StaticFn = fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value>;
 
 pub struct VmFunction {
@@ -58,64 +60,44 @@ impl fmt::Debug for FunctionKind {
 }
 
 impl Object {
-    pub fn new_function(function: FunctionKind, prototype: Option<Gc<Object>>) -> Self {
+    pub fn new_function(
+        prototype: Option<Gc<Object>>,
+        flags: ObjectFlags,
+        function: FunctionKind,
+    ) -> Self {
         Self {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
-            flags: ObjectFlags::empty(),
+            flags,
             function: Some(function),
         }
     }
 
-    /// Create a function from a mutable rust closure.
-    ///
-    /// Mutable closures cannot be called recursively.
-    /// The implementation will panic in the case that the function is called from within
-    /// The function call.
-    pub unsafe fn from_mutable<F>(realm: &Realm, f: F) -> Self
-    where
-        F: FnMut(&mut Realm, &mut ExecutionContext) -> Result<Value, Value> + 'static,
-    {
-        let kind = FunctionKind::Mutable(RefCell::new(Box::new(f)));
-        Self::new_function(kind, realm.builtin.function_proto)
-    }
-
-    /// Create a function from a immutable rust closure.
-    pub unsafe fn from_shared<F>(realm: &Realm, f: F) -> Self
-    where
-        F: Fn(&mut Realm, &mut ExecutionContext) -> Result<Value, Value> + 'static,
-    {
-        let kind = FunctionKind::Shared(Box::new(f));
-        Self::new_function(kind, realm.builtin.function_proto)
+    pub unsafe fn alloc_function(
+        realm: &Realm,
+        prototype: Option<Gc<Object>>,
+        flags: ObjectFlags,
+        function: FunctionKind,
+    ) -> Gc<Self> {
+        realm
+            .vm()
+            .allocate(Self::new_function(prototype, flags, function))
     }
 
     /// Create a functions from a function in a bytecode set.
-    pub fn from_static(realm: &Realm, vm: StaticFn) -> Self {
-        let kind = FunctionKind::Static(vm);
-        Self::new_function(kind, realm.builtin.function_proto)
+    pub fn new_constructor(prototype: Option<Gc<Object>>, function: FunctionKind) -> Self {
+        Self::new_function(prototype, ObjectFlags::CONSTRUCTOR, function)
     }
 
-    /// Create a functions from a function in a bytecode set.
-    pub fn from_constructor(realm: &Realm, func: StaticFn) -> Self {
-        Self::from_constructor_with_prototype(realm.builtin.function_proto, func)
-    }
-
-    pub fn from_constructor_with_prototype(prototype: Option<Gc<Object>>, func: StaticFn) -> Self {
-        let kind = FunctionKind::Static(func);
-        Self {
-            prototype,
-            values: UnsafeCell::new(HashMap::default()),
-            array: UnsafeCell::new(Vec::new()),
-            flags: ObjectFlags::CONSTRUCTOR,
-            function: Some(kind),
-        }
-    }
-
-    /// Create a functions from a function in a bytecode set.
-    pub fn from_vm(realm: &Realm, vm: VmFunction) -> Self {
-        let kind = FunctionKind::Vm(vm);
-        Self::new_function(kind, realm.builtin.function_proto)
+    pub unsafe fn alloc_constructor(
+        realm: &Realm,
+        prototype: Option<Gc<Object>>,
+        function: FunctionKind,
+    ) -> Gc<Self> {
+        realm
+            .vm()
+            .allocate(Self::new_constructor(prototype, function))
     }
 
     #[inline]
