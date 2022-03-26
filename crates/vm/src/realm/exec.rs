@@ -856,18 +856,14 @@ impl Realm {
             if !funct.is_object() {
                 // TODO proper error value
                 let text = this.to_string(funct);
-                return Err(
-                    this.create_type_error(ctx, format!("{} is not a function", text.as_str()))
-                );
+                return Err(this.create_type_error(format!("{} is not a function", text.as_str())));
             }
             let function = funct.unsafe_cast_object();
             let kind = if let Some(x) = function.function.as_ref() {
                 x
             } else {
                 let text = this.to_string(funct);
-                return Err(
-                    this.create_type_error(ctx, format!("{} is not a function", text.as_str()))
-                );
+                return Err(this.create_type_error(format!("{} is not a function", text.as_str())));
             };
             match kind {
                 FunctionKind::Vm(ref func) => {
@@ -920,7 +916,7 @@ impl Realm {
 
                 let text = this.to_string(function);
                 return Err(
-                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
                 );
             }
 
@@ -930,13 +926,13 @@ impl Realm {
             } else {
                 let text = this.to_string(function);
                 return Err(
-                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
                 );
             };
             if !function_obj.is_constructor() {
                 let text = this.to_string(function);
                 return Err(
-                    this.create_type_error(ctx, format!("{} is not a constructor", text.as_str()))
+                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
                 );
             }
 
@@ -985,25 +981,14 @@ impl Realm {
         })
     }
 
-    pub unsafe fn create_type_error(
-        &mut self,
-        ctx: &mut ExecutionContext,
-        message: impl Into<String>,
-    ) -> Value {
-        use builtin::error::TypeError;
+    pub unsafe fn create_type_error(&mut self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
-        self.stack.push(message.into());
-        self.stack.enter(0);
-        let res = builtin::error::construct::<TypeError>(
+        builtin::error::construct(
             self,
-            &mut ExecutionContext {
-                this: Value::empty(),
-                new_target: Value::empty(),
-                function: ctx.function,
-            },
+            self.builtin.type_error_proto.unwrap(),
+            Some(message),
+            None,
         )
-        .unwrap();
-        self.stack.pop(self.vm.borrow().gc());
-        res
+        .into()
     }
 }

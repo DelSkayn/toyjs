@@ -23,7 +23,7 @@ impl BuiltinAccessor for TypeError {
     }
 }
 
-pub fn construct<T: BuiltinAccessor>(
+pub fn construct_vm<T: BuiltinAccessor>(
     realm: &mut Realm,
     exec: &mut ExecutionContext,
 ) -> Result<Value, Value> {
@@ -46,28 +46,44 @@ pub fn construct<T: BuiltinAccessor>(
             T::access(&realm.builtin).unwrap()
         };
 
-        let object = Object::new_error(Some(proto));
-        let object = realm.vm.borrow().allocate(object);
-
-        if realm.stack.frame_size() >= 1 {
+        let (message, options) = if realm.stack.frame_size() >= 1 {
             let message = realm.stack.read(0);
             let message = realm.to_string(message);
             let message = realm.vm().allocate::<String>(message.as_str().into());
-            let key = realm.vm().allocate::<String>("message".into());
-            object.raw_index_set(key.into(), message.into(), realm);
-        }
-        if realm.stack.frame_size() >= 2 {
-            let options = realm.stack.read(1);
-            if options.is_object() {
-                let key = realm.vm().allocate::<String>("cause".into());
-                let value = options.unsafe_cast_object().index(key.into(), realm);
-                if !value.is_undefined() {
-                    object.raw_index_set(key.into(), value, realm)
-                }
+            let options = if realm.stack.frame_size() >= 2 {
+                Some(realm.stack.read(1))
+            } else {
+                None
+            };
+            (Some(message), options)
+        } else {
+            (None, None)
+        };
+        Ok(construct(realm, proto, message, options).into())
+    }
+}
+
+pub unsafe fn construct(
+    realm: &mut Realm,
+    prototype: Gc<Object>,
+    message: Option<Gc<String>>,
+    options: Option<Value>,
+) -> Gc<Object> {
+    let object = Object::alloc_error(realm, Some(prototype));
+    if let Some(message) = message {
+        let key = realm.vm().allocate::<String>("message".into());
+        object.raw_index_set(key.into(), message.into(), realm);
+    }
+    if let Some(options) = options {
+        if options.is_object() {
+            let key = realm.vm().allocate::<String>("cause".into());
+            let value = options.unsafe_cast_object().index(key.into(), realm);
+            if !value.is_undefined() {
+                object.raw_index_set(key.into(), value, realm)
             }
         }
-        Ok(object.into())
     }
+    object
 }
 
 pub unsafe fn init_native<T: BuiltinAccessor>(
@@ -81,7 +97,7 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
     let error_construct = Object::alloc_constructor(
         realm,
         Some(construct_proto),
-        crate::object::FunctionKind::Static(construct::<T>),
+        crate::object::FunctionKind::Static(construct_vm::<T>),
     );
 
     error_construct.raw_index_set(keys.prototype.into(), error_proto.into(), realm);
