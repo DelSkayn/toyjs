@@ -1,6 +1,6 @@
 use vm::Gc;
 
-use crate::{Ctx, Value};
+use crate::{convert::FromJs, Ctx, Error, Result, Value};
 
 #[derive(Clone, Copy)]
 pub struct Function<'js> {
@@ -13,18 +13,16 @@ impl<'js> Function<'js> {
         Function { ctx, ptr }
     }
 
-    pub fn call(self) -> Result<Value<'js>, Value<'js>> {
+    pub fn call<R: FromJs<'js>>(self) -> Result<'js, R> {
         unsafe {
-            (*self.ctx.ctx)
-                .enter_call(self.ptr)
-                .map(|x| {
-                    self.ctx.push_value(x);
-                    Value::wrap(self.ctx, x)
-                })
-                .map_err(|x| {
-                    self.ctx.push_value(x);
-                    Value::wrap(self.ctx, x)
-                })
+            let v = (*self.ctx.ctx).enter_call(self.ptr).map_err(|x| {
+                self.ctx.push_value(x);
+                Error::wrap(self.ctx, x)
+            })?;
+            if R::NEEDS_GC {
+                self.ctx.push_value(v);
+            }
+            R::from_js(self.ctx, Value::wrap(self.ctx, v))
         }
     }
 }

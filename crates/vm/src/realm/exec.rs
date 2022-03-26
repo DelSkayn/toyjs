@@ -46,6 +46,18 @@ unsafe impl Trace for ExecutionContext {
     }
 }
 
+macro_rules! catch_unwind(
+    ($realm:expr,$instr:expr,$ctx:expr,$v:expr) => {
+        match $v{
+            Ok(x) => x,
+            Err(e) => {
+                $realm.unwind_error(&mut $instr, &mut $ctx, e)?;
+                continue;
+            }
+        }
+    };
+);
+
 impl Realm {
     pub unsafe fn execute(
         &self,
@@ -93,7 +105,7 @@ impl Realm {
                     if obj.is_object() {
                         let obj = obj.unsafe_cast_object();
                         self.vm.borrow().write_barrier(obj);
-                        obj.index_set(key, val, self);
+                        catch_unwind!(self, instr, ctx, obj.index_set(key, val, self));
                     } else {
                         // TODO proper error value
                         self.unwind_error(&mut instr, &mut ctx, Value::undefined())?
@@ -103,7 +115,12 @@ impl Realm {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
                     if obj.is_object() {
-                        let res = obj.unsafe_cast_object().index(key, self);
+                        let res = catch_unwind!(
+                            self,
+                            instr,
+                            ctx,
+                            obj.unsafe_cast_object().index(key, self)
+                        );
                         self.stack.write(dst, res)
                     } else {
                         // TODO proper error value
@@ -114,14 +131,19 @@ impl Realm {
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
                     let obj = self.global;
-                    let src = obj.index(key, self);
+                    let src = catch_unwind!(self, instr, ctx, obj.index(key, self));
                     self.stack.write(dst, src);
                 }
 
                 Instruction::GlobalAssign { key, src } => {
                     let obj = self.global;
                     self.vm.borrow().write_barrier(obj);
-                    obj.index_set(self.stack.read(key), self.stack.read(src), self);
+                    catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        obj.index_set(self.stack.read(key), self.stack.read(src), self)
+                    );
                 }
 
                 Instruction::Upvalue { dst, slot } => {
@@ -146,12 +168,8 @@ impl Realm {
                 Instruction::InstanceOf { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    match self.instance_of(left, right) {
-                        Ok(value) => {
-                            self.stack.write(dst, value.into());
-                        }
-                        Err(e) => self.unwind_error(&mut instr, &mut ctx, e)?,
-                    }
+                    let v = catch_unwind!(self, instr, ctx, self.instance_of(left, right));
+                    self.stack.write(dst, v.into());
                 }
 
                 Instruction::Add { dst, left, righ } => {
@@ -162,7 +180,7 @@ impl Realm {
                             Self::coerce_int(left.cast_int() as i64 + right.cast_int() as i64);
                         self.stack.write(dst, res);
                     } else {
-                        let res = self.add(left, right);
+                        let res = catch_unwind!(self, instr, ctx, self.add(left, right));
                         self.stack.write(dst, res);
                     }
                 }
@@ -174,66 +192,91 @@ impl Realm {
                             Self::coerce_int(left.cast_int() as i64 - right.cast_int() as i64);
                         self.stack.write(dst, res);
                     } else {
-                        let res = self.numeric_operator(left, right, NumericOperator::Sub);
+                        let res = catch_unwind!(
+                            self,
+                            instr,
+                            ctx,
+                            self.numeric_operator(left, right, NumericOperator::Sub)
+                        );
                         self.stack.write(dst, res);
                     }
                 }
                 Instruction::Mul { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.numeric_operator(left, right, NumericOperator::Mul);
+                    let res = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.numeric_operator(left, right, NumericOperator::Mul)
+                    );
                     self.stack.write(dst, res);
                 }
                 Instruction::Div { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.numeric_operator(left, right, NumericOperator::Div);
+                    let res = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.numeric_operator(left, right, NumericOperator::Div)
+                    );
                     self.stack.write(dst, res);
                 }
                 Instruction::Mod { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.numeric_operator(left, right, NumericOperator::Mod);
+                    let res = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.numeric_operator(left, right, NumericOperator::Mod)
+                    );
                     self.stack.write(dst, res);
                 }
                 Instruction::Pow { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.numeric_operator(left, right, NumericOperator::Pow);
+                    let res = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.numeric_operator(left, right, NumericOperator::Pow)
+                    );
                     self.stack.write(dst, res);
                 }
 
                 Instruction::ShiftLeft { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.to_int32(left);
-                    let right = self.to_int32(right) as u32 % 32;
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right)) as u32 % 32;
                     self.stack.write(dst, Value::from(left << right));
                 }
                 Instruction::ShiftRight { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.to_int32(left);
-                    let right = self.to_int32(right) as u32 % 32;
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right)) as u32 % 32;
                     self.stack.write(dst, Value::from(left >> right));
                 }
                 Instruction::ShiftUnsigned { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = self.to_int32(left) as u32;
-                    let right = self.to_int32(right) as u32 % 32;
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right)) as u32 % 32;
                     self.stack.write(dst, Value::from((left >> right) as i32));
                 }
                 Instruction::Equal { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.equal(left, right);
+                    let res = catch_unwind!(self, instr, ctx, self.equal(left, right));
                     self.stack.write(dst, Value::from(res));
                 }
                 Instruction::NotEqual { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = !self.equal(left, right);
+                    let res = !catch_unwind!(self, instr, ctx, self.equal(left, right));
                     self.stack.write(dst, Value::from(res));
                 }
 
@@ -253,7 +296,7 @@ impl Realm {
                 Instruction::Greater { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.less_then(left, right, true);
+                    let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, true));
                     if res.is_undefined() {
                         self.stack.write(dst, false.into());
                     } else {
@@ -263,7 +306,7 @@ impl Realm {
                 Instruction::GreaterEq { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.less_then(left, right, false);
+                    let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, false));
                     let res = res.is_false() && !res.is_undefined();
                     self.stack.write(dst, res.into())
                 }
@@ -271,7 +314,7 @@ impl Realm {
                 Instruction::Less { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.less_then(left, right, false);
+                    let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, false));
                     if res.is_undefined() {
                         self.stack.write(dst, false.into());
                     } else {
@@ -281,7 +324,7 @@ impl Realm {
                 Instruction::LessEq { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let res = self.less_then(left, right, true);
+                    let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, true));
                     let res = res.is_false() && !res.is_undefined();
                     self.stack.write(dst, res.into())
                 }
@@ -298,7 +341,7 @@ impl Realm {
                 }
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
-                    let number = self.to_number(src);
+                    let number = catch_unwind!(self, instr, ctx, self.to_number(src));
                     if number.is_int() {
                         let number = -(number.cast_int() as i64);
                         if number as i32 as i64 == number {
@@ -312,7 +355,7 @@ impl Realm {
                 }
                 Instruction::Positive { dst, op } => {
                     let src = self.stack.read(op);
-                    let number = self.to_number(src);
+                    let number = catch_unwind!(self, instr, ctx, self.to_number(src));
                     self.stack.write(dst, number);
                 }
                 Instruction::Jump { tgt } => instr.jump(tgt),
@@ -344,16 +387,26 @@ impl Realm {
 
                 Instruction::Call { dst, func } => {
                     let func = self.stack.read(func);
-                    if let Some(value) = self._call(func, &mut instr, &mut ctx, dst)? {
+                    let value = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self._call(func, &mut instr, &mut ctx, dst)
+                    );
+                    if let Some(value) = value {
                         self.stack.write(dst, value);
                     }
                 }
                 Instruction::CallConstruct { dst, func, obj } => {
                     let func = self.stack.read(func);
                     let obj = self.stack.read(obj);
-                    if let Some(value) = self.call_construct(func, obj, &mut instr, &mut ctx)? {
-                        self.stack.write(dst, value);
-                    }
+                    let value = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.call_construct(func, obj, &mut instr, &mut ctx)
+                    );
+                    self.stack.write(dst, value);
                 }
 
                 Instruction::Throw { src } => {
@@ -445,24 +498,24 @@ impl Realm {
     }
 
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
-    pub unsafe fn to_string(&self, value: Value) -> Gc<String> {
+    pub unsafe fn to_string(&self, value: Value) -> Result<Gc<String>, Value> {
         if value.is_int() {
-            self.vm.borrow().allocate(value.cast_int().to_string())
+            Ok(self.vm.borrow().allocate(value.cast_int().to_string()))
         } else if value.is_float() {
-            self.vm.borrow().allocate(value.cast_float().to_string())
+            Ok(self.vm.borrow().allocate(value.cast_float().to_string()))
         } else if value.is_null() {
-            self.vm.borrow().allocate("null".to_string())
+            Ok(self.vm.borrow().allocate("null".to_string()))
         } else if value.is_undefined() {
-            self.vm.borrow().allocate("undefined".to_string())
+            Ok(self.vm.borrow().allocate("undefined".to_string()))
         } else if value.is_true() {
-            self.vm.borrow().allocate("true".to_string())
+            Ok(self.vm.borrow().allocate("true".to_string()))
         } else if value.is_false() {
-            self.vm.borrow().allocate("false".to_string())
+            Ok(self.vm.borrow().allocate("false".to_string()))
         } else if value.is_string() {
-            value.unsafe_cast_string()
+            Ok(value.unsafe_cast_string())
         } else if value.is_object() {
-            let primitive = self.to_primitive(value);
-            self.to_string(primitive)
+            let primitive = self.to_primitive(value, true)?;
+            Ok(self.to_string(primitive)?)
         } else {
             todo!()
         }
@@ -476,35 +529,35 @@ impl Realm {
     }
 
     /// Implements type conversion [`ToNumber`](https://tc39.es/ecma262/#sec-tonumber)
-    pub unsafe fn to_number(&self, value: Value) -> Value {
+    pub unsafe fn to_number(&self, value: Value) -> Result<Value, Value> {
         if value.is_int() || value.is_float() {
-            value
+            Ok(value)
         } else if value.is_undefined() {
-            Value::nan()
+            Ok(Value::nan())
         } else if value.is_null() || value.is_undefined() || value.is_false() {
-            Value::from(0i32)
+            Ok(Value::from(0i32))
         } else if value.is_string() {
             if let Ok(v) = value.unsafe_cast_string().parse::<f64>() {
                 if v as i32 as f64 == v {
-                    Value::from(v as i32)
+                    Ok(Value::from(v as i32))
                 } else {
-                    Value::from(v)
+                    Ok(Value::from(v))
                 }
             } else {
-                Value::from(f64::NAN)
+                Ok(Value::from(f64::NAN))
             }
         } else if value.is_object() {
-            let prim = self.to_primitive(value);
-            self.to_number(prim)
+            let prim = self.to_primitive(value, false)?;
+            Ok(self.to_number(prim)?)
         } else {
             todo!()
         }
     }
 
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
-    pub unsafe fn to_int32(&self, value: Value) -> i32 {
-        let number = self.to_number(value);
-        if number.is_int() {
+    pub unsafe fn to_int32(&self, value: Value) -> Result<i32, Value> {
+        let number = self.to_number(value)?;
+        Ok(if number.is_int() {
             number.cast_int()
         } else if number.is_float() {
             let f = number.cast_float();
@@ -520,7 +573,7 @@ impl Realm {
             }
         } else {
             todo!()
-        }
+        })
     }
 
     pub unsafe fn strict_equal(&self, left: Value, right: Value) -> bool {
@@ -542,60 +595,67 @@ impl Realm {
         todo!()
     }
 
-    pub unsafe fn equal(&self, left: Value, right: Value) -> bool {
+    pub unsafe fn equal(&self, left: Value, right: Value) -> Result<bool, Value> {
         if left.same_type(right) {
-            return self.strict_equal(left, right);
+            return Ok(self.strict_equal(left, right));
         }
 
         if left.is_undefined() && right.is_null() {
-            return true;
+            return Ok(true);
         }
         if right.is_undefined() && left.is_null() {
-            return true;
+            return Ok(true);
         }
         if left.is_number() && right.is_string() {
-            let right = self.to_number(right);
+            // Should not return error
+            let right = self.to_number(right).unwrap();
             return self.equal(left, right);
         }
         if right.is_number() && left.is_string() {
-            let left = self.to_number(left);
+            // Should not return error
+            let left = self.to_number(left).unwrap();
             return self.equal(left, right);
         }
         if left.is_bool() {
-            let left = self.to_number(left);
+            // Should not return error
+            let left = self.to_number(left).unwrap();
             return self.equal(left, right);
         }
         if right.is_bool() {
-            let right = self.to_number(right);
+            // Should not return error
+            let right = self.to_number(right).unwrap();
             return self.equal(left, right);
         }
         if !left.is_object() && right.is_object() {
-            let right = self.to_primitive(right);
+            let right = self.to_primitive(right, true)?;
             return self.equal(left, right);
         }
         if !right.is_object() && left.is_object() {
-            let left = self.to_primitive(left);
+            let left = self.to_primitive(left, true)?;
             return self.equal(left, right);
         }
-        false
+        Ok(false)
     }
 
-    pub unsafe fn less_then(&self, left: Value, right: Value, swap: bool) -> Value {
+    pub unsafe fn less_then(&self, left: Value, right: Value, swap: bool) -> Result<Value, Value> {
         let (left, right) = if swap {
-            let r = self.to_primitive(left);
-            let l = self.to_primitive(right);
+            let r = self.to_primitive(left, false)?;
+            let l = self.to_primitive(right, false)?;
             (l, r)
         } else {
-            (self.to_primitive(left), self.to_primitive(right))
+            (
+                self.to_primitive(left, false)?,
+                self.to_primitive(right, false)?,
+            )
         };
         if left.is_string() || right.is_string() {
-            let left = self.to_string(left);
-            let right = self.to_string(right);
+            let left = self.to_string(left)?;
+            let right = self.to_string(right)?;
             if left.as_str().starts_with(right.as_str()) {
-                return false.into();
+                return Ok(false.into());
             }
             if right.as_str().starts_with(left.as_str()) {
-                return true.into();
+                return Ok(true.into());
             }
             let mut left = left.as_str().chars();
             let mut right = right.as_str().chars();
@@ -603,15 +663,16 @@ impl Realm {
                 let left = left.next().unwrap();
                 let right = right.next().unwrap();
                 if left != right {
-                    return (left < right).into();
+                    return Ok((left < right).into());
                 }
             }
         }
 
-        let left = self.to_number(left);
-        let right = self.to_number(right);
+        // Left and right are already primitives so they cannot return an error
+        let left = self.to_number(left).unwrap();
+        let right = self.to_number(right).unwrap();
         if left.is_int() && right.is_string() {
-            return (left.cast_int() < right.cast_int()).into();
+            return Ok((left.cast_int() < right.cast_int()).into());
         }
         let left = if left.is_float() {
             left.cast_float()
@@ -625,37 +686,37 @@ impl Realm {
         };
 
         if left.is_nan() || right.is_nan() {
-            return Value::undefined();
+            return Ok(Value::undefined());
         }
 
         if left.to_bits() == f64::NEG_INFINITY.to_bits()
             || right.to_bits() == f64::INFINITY.to_bits()
         {
-            return true.into();
+            return Ok(true.into());
         }
 
         if left.to_bits() == f64::INFINITY.to_bits()
             || right.to_bits() == f64::NEG_INFINITY.to_bits()
         {
-            return false.into();
+            return Ok(false.into());
         }
-        (left < right).into()
+        Ok((left < right).into())
     }
 
-    pub unsafe fn add(&self, left: Value, right: Value) -> Value {
-        let left = self.to_primitive(left);
-        let right = self.to_primitive(right);
+    pub unsafe fn add(&self, left: Value, right: Value) -> Result<Value, Value> {
+        let left = self.to_primitive(left, true)?;
+        let right = self.to_primitive(right, true)?;
         if left.is_string() || right.is_string() {
-            let left = self.to_string(left);
-            let right = self.to_string(right);
-            return Value::from(
-                self.vm
-                    .borrow()
-                    .allocate(left.to_string() + &right.to_string()),
-            );
+            let left = self.to_string(left)?;
+            let right = self.to_string(right)?;
+            let v = self
+                .vm
+                .borrow()
+                .allocate(left.to_string() + &right.to_string());
+            return Ok(v.into());
         }
-        let left = self.to_number(left);
-        let right = self.to_number(right);
+        let left = self.to_number(left)?;
+        let right = self.to_number(right)?;
         let left = if left.is_int() {
             left.cast_int() as f64
         } else if left.is_float() {
@@ -672,18 +733,21 @@ impl Realm {
         };
         let res = left + right;
         if res as i32 as f64 == res {
-            Value::from(res as i32)
+            Ok(Value::from(res as i32))
         } else {
-            Value::from(res)
+            Ok(Value::from(res))
         }
     }
 
     #[inline]
-    pub unsafe fn numeric_operator(&self, left: Value, right: Value, op: NumericOperator) -> Value {
-        let left = self.to_primitive(left);
-        let right = self.to_primitive(right);
-        let left = self.to_number(left);
-        let right = self.to_number(right);
+    pub unsafe fn numeric_operator(
+        &self,
+        left: Value,
+        right: Value,
+        op: NumericOperator,
+    ) -> Result<Value, Value> {
+        let left = self.to_number(left)?;
+        let right = self.to_number(right)?;
         let left = if left.is_int() {
             left.cast_int() as f64
         } else if left.is_float() {
@@ -706,9 +770,9 @@ impl Realm {
             NumericOperator::Pow => left.powf(right),
         };
         if res as i32 as f64 == res {
-            Value::from(res as i32)
+            Ok(Value::from(res as i32))
         } else {
-            Value::from(res)
+            Ok(Value::from(res))
         }
     }
 
@@ -736,11 +800,7 @@ impl Realm {
 
     pub unsafe fn instance_of(&self, left: Value, right: Value) -> Result<bool, Value> {
         if !right.is_object() {
-            //TODO
-            let msg = self.to_string(right);
-            return Err(
-                self.create_type_error(format!("invalid `instanceof` operand {}", msg.as_str()))
-            );
+            return Err(self.create_type_error("invalid `instanceof` operand"));
         }
 
         if !left.is_object() {
@@ -755,7 +815,9 @@ impl Realm {
             return Err(self.create_type_error("right hand instanceof operand is not a function"));
         }
 
-        let tgt_proto = right.index(self.builtin.keys.as_ref().unwrap().prototype.into(), self);
+        let tgt_proto = right
+            .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
+            .unwrap();
         if !tgt_proto.is_object() {
             return Err(self.create_type_error("object prototype is not an object"));
         }
@@ -772,11 +834,37 @@ impl Realm {
     }
 
     #[inline]
-    pub unsafe fn to_primitive(&self, v: Value) -> Value {
+    pub unsafe fn to_primitive(&self, v: Value, prefer_string: bool) -> Result<Value, Value> {
         if v.is_object() {
-            todo!()
+            let v = v.unsafe_cast_object();
+            //TODO @@toPrimitive
+
+            let keys = if prefer_string {
+                [
+                    self.vm().allocate::<String>("toString".into()),
+                    self.vm().allocate::<String>("valueOf".into()),
+                ]
+            } else {
+                [
+                    self.vm().allocate::<String>("valueOf".into()),
+                    self.vm().allocate::<String>("toString".into()),
+                ]
+            };
+            for k in keys {
+                let v = v.index(k.into(), self).unwrap();
+                if v.is_object() {
+                    let v = v.unsafe_cast_object();
+                    if v.is_function() {
+                        let res = self.enter_call(v)?;
+                        if !res.is_object() {
+                            return Ok(res);
+                        }
+                    }
+                }
+            }
+            return Err(self.create_type_error("Could not create a primitive from object"));
         }
-        v
+        Ok(v)
     }
 
     #[inline]
@@ -833,16 +921,20 @@ impl Realm {
         let function =
             Object::alloc_constructor(self, self.builtin.object_proto, FunctionKind::Vm(function));
         let proto = Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
-        proto.raw_index_set(
-            self.builtin.keys.as_ref().unwrap().constructor.into(),
-            function.into(),
-            self,
-        );
-        function.raw_index_set(
-            self.builtin.keys.as_ref().unwrap().prototype.into(),
-            proto.into(),
-            self,
-        );
+        proto
+            .raw_index_set(
+                self.builtin.keys.as_ref().unwrap().constructor.into(),
+                function.into(),
+                self,
+            )
+            .unwrap();
+        function
+            .raw_index_set(
+                self.builtin.keys.as_ref().unwrap().prototype.into(),
+                proto.into(),
+                self,
+            )
+            .unwrap();
         function
     }
 
@@ -854,142 +946,131 @@ impl Realm {
         ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
-        self.unwind(instr, ctx, |this, instr, ctx| {
-            if !funct.is_object() {
-                let text = this.to_string(funct);
-                return Err(this.create_type_error(format!("{} is not a function", text.as_str())));
+        const NOT_A_FUNCTION: &'static str = "tried to call value which was not a function";
+
+        if !funct.is_object() {
+            return Err(self.create_type_error(NOT_A_FUNCTION));
+        }
+        let function = funct.unsafe_cast_object();
+        let kind = if let Some(x) = function.function.as_ref() {
+            x
+        } else {
+            return Err(self.create_type_error(NOT_A_FUNCTION));
+        };
+        match kind {
+            FunctionKind::Vm(ref func) => {
+                let bc = func.bc;
+                let bc_function = &bc.functions[func.function as usize];
+                self.stack
+                    .enter_call(bc_function.registers, dst, *instr, *ctx);
+                ctx.function = function;
+                *instr = InstructionReader::from_bc(bc, func.function);
+                Ok(None)
             }
-            let function = funct.unsafe_cast_object();
-            let kind = if let Some(x) = function.function.as_ref() {
-                x
-            } else {
-                let text = this.to_string(funct);
-                return Err(this.create_type_error(format!("{} is not a function", text.as_str())));
-            };
-            match kind {
-                FunctionKind::Vm(ref func) => {
-                    let bc = func.bc;
-                    let bc_function = &bc.functions[func.function as usize];
-                    this.stack
-                        .enter_call(bc_function.registers, dst, *instr, *ctx);
-                    ctx.function = function;
-                    *instr = InstructionReader::from_bc(bc, func.function);
-                    Ok(None)
-                }
-                FunctionKind::Static(x) => {
-                    let function = mem::replace(&mut ctx.function, function);
-                    this.stack.enter(0);
-                    let res = x(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
-                    Ok(Some(res))
-                }
-                FunctionKind::Mutable(ref x) => {
-                    let function = mem::replace(&mut ctx.function, function);
-                    this.stack.enter(0);
-                    let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
-                    Ok(Some(res))
-                }
-                FunctionKind::Shared(ref x) => {
-                    let function = mem::replace(&mut ctx.function, function);
-                    this.stack.enter(0);
-                    let res = (*x)(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
-                    Ok(Some(res))
-                }
+            FunctionKind::Static(x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                self.stack.enter(0);
+                let res = x(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(Some(res))
             }
-        })
+            FunctionKind::Mutable(ref x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                self.stack.enter(0);
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(Some(res))
+            }
+            FunctionKind::Shared(ref x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                self.stack.enter(0);
+                let res = (*x)(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(Some(res))
+            }
+        }
     }
 
     unsafe fn call_construct(
         &self,
         function: Value,
         target_obj: Value,
-        instr: &mut InstructionReader,
+        _instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
-    ) -> Result<Option<Value>, Value> {
-        self.unwind(instr, ctx, |this, _instr, ctx| {
-            if !function.is_object() {
-                let text = this.to_string(function);
-                return Err(
-                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
-                );
-            }
+    ) -> Result<Value, Value> {
+        const NOT_A_CONSTRUCTOR: &'static str = "value is not an constructor";
+        if !function.is_object() {
+            return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
+        }
 
-            let function_obj = function.unsafe_cast_object();
-            let kind = if let Some(x) = function_obj.function.as_ref() {
-                x
-            } else {
-                let text = this.to_string(function);
-                return Err(
-                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
-                );
-            };
-            if !function_obj.is_constructor() {
-                let text = this.to_string(function);
-                return Err(
-                    this.create_type_error(format!("{} is not a constructor", text.as_str()))
-                );
-            }
+        let function_obj = function.unsafe_cast_object();
+        let kind = if let Some(x) = function_obj.function.as_ref() {
+            x
+        } else {
+            return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
+        };
+        if !function_obj.is_constructor() {
+            return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
+        }
 
-            match kind {
-                FunctionKind::Vm(ref func) => {
-                    let bc = func.bc;
-                    let bc_function = &bc.functions[func.function as usize];
-                    this.stack.enter(bc_function.registers);
+        match kind {
+            FunctionKind::Vm(ref func) => {
+                let bc = func.bc;
+                let bc_function = &bc.functions[func.function as usize];
+                self.stack.enter(bc_function.registers);
 
-                    let proto = function_obj
-                        .index(this.builtin.keys.as_ref().unwrap().prototype.into(), this);
-                    let this_object = if proto.is_object() {
-                        Object::alloc(this, Some(proto.unsafe_cast_object()), ObjectFlags::empty())
-                    } else {
-                        Object::alloc(this, this.builtin.object_proto, ObjectFlags::empty())
-                    };
+                let proto = function_obj
+                    .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
+                    .unwrap();
+                let this_object = if proto.is_object() {
+                    Object::alloc(self, Some(proto.unsafe_cast_object()), ObjectFlags::empty())
+                } else {
+                    Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty())
+                };
 
-                    let instr = InstructionReader::from_bc(bc, func.function);
-                    let res = this.execute(
-                        instr,
-                        ExecutionContext {
-                            function: function_obj,
-                            this: this_object.into(),
-                            new_target: target_obj,
-                        },
-                    )?;
-                    if res.is_object() {
-                        Ok(res)
-                    } else {
-                        Ok(this_object.into())
-                    }
-                }
-                FunctionKind::Static(func) => {
-                    let function = mem::replace(&mut ctx.function, function_obj);
-                    this.stack.enter(0);
-                    let res = func(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
+                let instr = InstructionReader::from_bc(bc, func.function);
+                let res = self.execute(
+                    instr,
+                    ExecutionContext {
+                        function: function_obj,
+                        this: this_object.into(),
+                        new_target: target_obj,
+                    },
+                )?;
+                if res.is_object() {
                     Ok(res)
-                }
-                FunctionKind::Shared(func) => {
-                    let function = mem::replace(&mut ctx.function, function_obj);
-                    this.stack.enter(0);
-                    let res = func(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
-                    Ok(res)
-                }
-                FunctionKind::Mutable(func) => {
-                    let function = mem::replace(&mut ctx.function, function_obj);
-                    this.stack.enter(0);
-                    let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(this, ctx)?;
-                    this.stack.pop(this.vm.borrow().gc());
-                    ctx.function = function;
-                    Ok(res)
+                } else {
+                    Ok(this_object.into())
                 }
             }
-        })
+            FunctionKind::Static(func) => {
+                let function = mem::replace(&mut ctx.function, function_obj);
+                self.stack.enter(0);
+                let res = func(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(res)
+            }
+            FunctionKind::Shared(func) => {
+                let function = mem::replace(&mut ctx.function, function_obj);
+                self.stack.enter(0);
+                let res = func(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(res)
+            }
+            FunctionKind::Mutable(func) => {
+                let function = mem::replace(&mut ctx.function, function_obj);
+                self.stack.enter(0);
+                let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(res)
+            }
+        }
     }
 
     pub unsafe fn create_type_error(&self, message: impl Into<String>) -> Value {

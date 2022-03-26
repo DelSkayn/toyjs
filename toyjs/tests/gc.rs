@@ -7,11 +7,11 @@ fn collect_all() {
     let toyjs = ToyJs::new();
     let ctx = Context::new(&toyjs);
     ctx.with(|ctx| {
-        ctx.eval(UPVALUE_SOURCE).unwrap();
+        ctx.eval::<(), _>(UPVALUE_SOURCE).unwrap();
     });
     toyjs.collect_full();
     toyjs.collect_full();
     ctx.with(|ctx| {
-        ctx.eval(UPVALUE_SOURCE).unwrap();
+        ctx.eval::<(), _>(UPVALUE_SOURCE).unwrap();
     });
 }

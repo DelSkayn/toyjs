@@ -14,7 +14,7 @@ macro_rules! create_static_fn {
                     let args = $crate::ffi::Arguments::from_ctx(ctx);
                     super::$func(ctx, args)
                         .map(|x| x.into_vm())
-                        .map_err(|x| x.into_vm())
+                        .map_err(|x| x.into_vm(ctx))
                 }
             }
         }

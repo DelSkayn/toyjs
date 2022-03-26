@@ -35,7 +35,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
 
     let proto = if new_target.is_object() {
         let key = realm.vm().allocate::<String>("prototype".into());
-        new_target.unsafe_cast_object().index(key.into(), realm)
+        new_target.unsafe_cast_object().index(key.into(), realm)?
     } else {
         Value::undefined()
     };
@@ -47,7 +47,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
 
     let (message, options) = if realm.stack.frame_size() >= 1 {
         let message = realm.stack.read(0);
-        let message = realm.to_string(message);
+        let message = realm.to_string(message)?;
         let message = realm.vm().allocate::<String>(message.as_str().into());
         let options = if realm.stack.frame_size() >= 2 {
             Some(realm.stack.read(1))
@@ -70,14 +70,19 @@ pub unsafe fn construct(
     let object = Object::alloc_error(realm, Some(prototype));
     if let Some(message) = message {
         let key = realm.vm().allocate::<String>("message".into());
-        object.raw_index_set(key.into(), message.into(), realm);
+        object
+            .raw_index_set(key.into(), message.into(), realm)
+            .unwrap();
     }
     if let Some(options) = options {
         if options.is_object() {
             let key = realm.vm().allocate::<String>("cause".into());
-            let value = options.unsafe_cast_object().index(key.into(), realm);
+            let value = options
+                .unsafe_cast_object()
+                .index(key.into(), realm)
+                .unwrap();
             if !value.is_undefined() {
-                object.raw_index_set(key.into(), value, realm)
+                object.raw_index_set(key.into(), value, realm).unwrap()
             }
         }
     }
@@ -98,12 +103,18 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
         crate::object::FunctionKind::Static(construct_vm::<T>),
     );
 
-    error_construct.raw_index_set(keys.prototype.into(), error_proto.into(), realm);
-    error_proto.raw_index_set(keys.constructor.into(), error_construct.into(), realm);
+    error_construct
+        .raw_index_set(keys.prototype.into(), error_proto.into(), realm)
+        .unwrap();
+    error_proto
+        .raw_index_set(keys.constructor.into(), error_construct.into(), realm)
+        .unwrap();
 
-    error_proto.raw_index_set(keys.message.into(), keys.empty.into(), realm);
+    error_proto
+        .raw_index_set(keys.message.into(), keys.empty.into(), realm)
+        .unwrap();
     let key = realm.vm().allocate::<String>("name".into()).into();
-    error_proto.raw_index_set(key, name.into(), realm);
+    error_proto.raw_index_set(key, name.into(), realm).unwrap();
 
     (error_construct, error_proto)
 }

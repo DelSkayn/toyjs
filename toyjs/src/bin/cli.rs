@@ -7,7 +7,11 @@ fn main() -> io::Result<()> {
     let ctx = Context::new(&toyjs);
     if let Some(x) = env::args().nth(1) {
         let source = std::fs::read_to_string(x)?;
-        ctx.with(|ctx| println!("value: {:?}", ctx.eval(source).unwrap()));
+        ctx.with(|ctx| match ctx.eval::<Value, _>(source) {
+            Ok(x) => println!("value: {:?}", x),
+            Err(e) => println!("\x1b[1:31m{}\x1b[0m", e),
+        });
+
         return Ok(());
     }
 
@@ -65,21 +69,10 @@ fn main() -> io::Result<()> {
             continue 'main;
         }
         last_length = 0;
-        ctx.with(|ctx| match ctx.eval(&buffer) {
+        ctx.with(|ctx| match ctx.eval::<Value, _>(&buffer) {
             Ok(x) => println!("> {:?}", x),
             Err(e) => {
-                if let Some(e) = e.into_object() {
-                    if e.is_error() {
-                        let msg: Value = e.get("message");
-                        let name: Value = e.get("name");
-
-                        if let (Some(name), Some(msg)) = (name.into_string(), msg.into_string()) {
-                            println!("uncaught {}: {}", name, msg);
-                            return;
-                        }
-                    }
-                }
-                println!("uncaught error: {:?}", e)
+                println!("\x1b[1:31m{}\x1b[0m", e)
             }
         });
         buffer.clear();
