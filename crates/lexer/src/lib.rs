@@ -316,7 +316,7 @@ impl<'a> Lexer<'a> {
             b'*' => match self.peek_byte() {
                 Some(b'=') => {
                     self.eat_byte();
-                    self.token(t!("*"))
+                    self.token(t!("*="))
                 }
                 Some(b'*') => {
                     self.eat_byte();

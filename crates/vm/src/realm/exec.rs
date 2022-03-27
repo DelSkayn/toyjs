@@ -202,15 +202,15 @@ impl Realm {
                     }
                 }
                 Instruction::Mul { dst, left, righ } => {
-                    let left = self.stack.read(left);
-                    let right = self.stack.read(righ);
+                    let left = dbg!(self.stack.read(left));
+                    let right = dbg!(self.stack.read(righ));
                     let res = catch_unwind!(
                         self,
                         instr,
                         ctx,
                         self.numeric_operator(left, right, NumericOperator::Mul)
                     );
-                    self.stack.write(dst, res);
+                    self.stack.write(dst, dbg!(res));
                 }
                 Instruction::Div { dst, left, righ } => {
                     let left = self.stack.read(left);
