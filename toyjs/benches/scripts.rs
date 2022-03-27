@@ -12,8 +12,8 @@ fn scripts(c: &mut Criterion) {
         let func = ctx.compile(FIBBO_SOURCE).unwrap();
         c.bench_function("fibbo", |b| {
             b.iter(|| {
-                let v = func.call().unwrap();
-                assert!(v.into_i32().unwrap() == 10946);
+                let v = func.call::<i32>().unwrap();
+                assert_eq!(v, 10946);
             })
         });
     });
@@ -22,8 +22,8 @@ fn scripts(c: &mut Criterion) {
         let func = ctx.compile(OBJECT_INDEX_SOURCE).unwrap();
         c.bench_function("object_index", |b| {
             b.iter(|| {
-                let v = func.call().unwrap();
-                assert!(v.into_i32().unwrap() == 90000);
+                let v = func.call::<i32>().unwrap();
+                assert_eq!(v, 90000);
             })
         });
     });
@@ -32,8 +32,8 @@ fn scripts(c: &mut Criterion) {
         let func = ctx.compile(OBJECT_INDEX_EXPRESSION_SOURCE).unwrap();
         c.bench_function("object_index_expression", |b| {
             b.iter(|| {
-                let v = func.call().unwrap();
-                assert!(v.into_i32().unwrap() == 90000);
+                let v = func.call::<i32>().unwrap();
+                assert_eq!(v, 90000);
             })
         });
     });

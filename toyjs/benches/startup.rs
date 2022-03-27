@@ -6,8 +6,7 @@ fn startup(c: &mut Criterion) {
         b.iter(|| {
             let toyjs = ToyJs::new();
             let ctx = Context::new(&toyjs);
-            let v = black_box(ctx.with(|ctx| ctx.eval("null").unwrap().is_null()));
-            assert!(v);
+            black_box(ctx.with(|ctx| ctx.eval::<(), _>("null").unwrap()));
         })
     });
 }

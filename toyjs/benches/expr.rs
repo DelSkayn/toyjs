@@ -10,9 +10,7 @@ fn expression(c: &mut Criterion) {
         ctx.with(|ctx| {
             let function = ctx.compile(EXPRESSION).unwrap();
             b.iter(|| {
-                let val = black_box(function.call());
-                let val = val.map(|x| f64::from_js(ctx, x));
-
+                let val = black_box(function.call::<f64>());
                 assert!(val.unwrap() == 15625160092.4096);
             })
         })
