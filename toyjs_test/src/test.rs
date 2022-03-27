@@ -232,6 +232,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     dir_walker(&p, &mut |path| {
         (|| {
             write!(stdout, "{} => ", path.display())?;
+            stdout.flush();
             let test = match Test::from_path(path) {
                 Ok(x) => x,
                 Err(e) => {
