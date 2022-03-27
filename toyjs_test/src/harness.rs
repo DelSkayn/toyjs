@@ -68,7 +68,7 @@ impl Harness {
                 )
             })?;
             ctx.eval::<Value, _>(&test.source)
-                .map_err(|e| anyhow!("failed to execute harness file `{}`: {:?}", include, e))?;
+                .map_err(|e| anyhow!("failed to execute harness file `{}`: {}", include, e))?;
         }
         Ok(())
     }

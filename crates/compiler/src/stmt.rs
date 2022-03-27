@@ -132,6 +132,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         .patch_jump(catch_jmp, self.builder.next_instruction_id());
                 }
                 if let Some(finally) = finally {
+                    if catch.is_none() {
+                        self.builder
+                            .patch_jump(instr, self.builder.next_instruction_id());
+                    }
                     self.compile_stmt(finally);
                 }
 
