@@ -905,7 +905,29 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         lhs: &'a Expr<A>,
         args: &'a [Expr<A>],
     ) -> Register {
-        let func = self.compile_expr(None, lhs).eval(self);
+        enum CallType {
+            Method { obj: Register, key: Register },
+            Procedure { func: Register },
+        }
+
+        // Handle methods
+        let instr = match *lhs {
+            Expr::UnaryPostfix(ref lhs, PostfixOperator::Dot(ident)) => {
+                let obj = self.compile_expr(None, lhs).eval(self);
+                let key = self.compile_literal(None, Literal::String(ident));
+                CallType::Method { key, obj }
+            }
+            Expr::UnaryPostfix(ref lhs, PostfixOperator::Index(ref expr)) => {
+                let obj = self.compile_expr(None, lhs).eval(self);
+                let key = self.compile_expr(None, expr).eval(self);
+                CallType::Method { key, obj }
+            }
+            ref lhs => {
+                let func = self.compile_expr(None, lhs).eval(self);
+                CallType::Procedure { func }
+            }
+        };
+
         for (idx, arg) in args.iter().enumerate() {
             if idx >= 16 {
                 todo!()
@@ -914,12 +936,28 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder.free_temp(reg);
             self.builder.push(Instruction::Push { src: reg.0 });
         }
-        self.builder.free_temp(func);
-        let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
-        self.builder.push(Instruction::Call {
-            dst: dst.0,
-            func: func.0,
-        });
-        dst
+
+        match instr {
+            CallType::Method { obj, key } => {
+                self.builder.free_temp(obj);
+                self.builder.free_temp(key);
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::CallMethod {
+                    obj: obj.0,
+                    dst: dst.0,
+                    key: key.0,
+                });
+                dst
+            }
+            CallType::Procedure { func } => {
+                self.builder.free_temp(func);
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::Call {
+                    func: func.0,
+                    dst: dst.0,
+                });
+                dst
+            }
+        }
     }
 }

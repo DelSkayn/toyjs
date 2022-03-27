@@ -128,13 +128,11 @@ impl Realm {
             }),
         )
     }
-
-    /// Call a function entering into the vm
-    ///
-    /// # panic
-    /// Will panic if the object given is not a function
-    pub unsafe fn enter_call(&self, function: Gc<Object>) -> Result<Value, Value> {
-        let this = self.global.into();
+    pub unsafe fn enter_method_call(
+        &self,
+        function: Gc<Object>,
+        this: Value,
+    ) -> Result<Value, Value> {
         match function.function {
             Some(FunctionKind::Vm(ref x)) => {
                 let instr = InstructionReader::from_bc(x.bc, x.function);
@@ -183,6 +181,14 @@ impl Realm {
             }
             None => panic!("enter_call called with object which was not a function"),
         }
+    }
+
+    /// Call a function entering into the vm
+    ///
+    /// # panic
+    /// Will panic if the object given is not a function
+    pub unsafe fn enter_call(&self, function: Gc<Object>) -> Result<Value, Value> {
+        self.enter_method_call(function, self.global.into())
     }
 
     pub unsafe fn eval(&self, bc: Gc<ByteCode>) -> Result<Value, Value> {

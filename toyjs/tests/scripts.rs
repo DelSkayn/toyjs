@@ -7,6 +7,7 @@ const CONSTRUCTOR_SOURCE: &str = include_str!("./flow.js");
 const PARSE_INT_SOURCE: &str = include_str!("./parseInt.js");
 const CALL_DEEP_SOURCE: &str = include_str!("./callDeep.js");
 const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
+const THIS_SOURCE: &str = include_str!("./this.js");
 
 fn eval_script(s: &str) {
     let toyjs = ToyJs::new();
@@ -49,4 +50,9 @@ fn script_call_deep() {
 #[test]
 fn script_var_for() {
     eval_script(VAR_FOR_SOURCE);
+}
+
+#[test]
+fn script_this() {
+    eval_script(THIS_SOURCE);
 }
