@@ -355,6 +355,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         left: value.0,
                         righ: one.0,
                     });
+                    ass.compile_assign(self, dst);
                     if let (Some(to), Some(from)) = (placement, tgt_placement) {
                         self.builder.push(Instruction::Move {
                             src: from.0,

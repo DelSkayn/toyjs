@@ -156,6 +156,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             cond: expr.register.0,
             tgt: 1,
         });
+        self.builder.free_temp(expr.register);
         expr.true_list.into_iter().for_each(|x| {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
@@ -194,6 +195,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             cond: expr.register.0,
             tgt: 1,
         });
+        self.builder.free_temp(expr.register);
         expr.true_list.into_iter().for_each(|x| {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
@@ -244,6 +246,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             cond: res.register.0,
             tgt: 1,
         });
+        self.builder.free_temp(res.register);
         self.builder.patch_jump(back_jump, before_stmt);
         res.true_list
             .into_iter()
@@ -305,6 +308,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             cond: cond.register.0,
             tgt: 1,
         });
+        self.builder.free_temp(cond.register);
 
         cond.true_list.into_iter().for_each(|x| {
             self.builder
