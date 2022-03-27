@@ -50,6 +50,7 @@ pub struct State {
 pub struct Parser<'source, A: Allocator> {
     lexer: Lexer<'source>,
     peek: Option<Token>,
+    peek_lt: Option<Token>,
     last_span: Span,
     symbol_table: SymbolTableBuilder<'source, A>,
     state: State,
@@ -67,6 +68,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
             special_ident: SpecialIdent::from_interner(lexer.interner),
             lexer,
             peek: None,
+            peek_lt: None,
             last_span: Span { low: 0, hi: 0 },
             symbol_table: SymbolTableBuilder::new_script(symbol_table),
             alloc,
@@ -88,6 +90,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
             special_ident: SpecialIdent::from_interner(lexer.interner),
             lexer,
             peek: None,
+            peek_lt: None,
             last_span: Span { low: 0, hi: 0 },
             symbol_table: SymbolTableBuilder::new_module(symbol_table),
             alloc,
@@ -122,7 +125,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
     }
 
     fn next_lt(&mut self) -> Result<Option<Token>> {
-        if let Some(x) = self.peek.take() {
+        if let Some(x) = self.peek_lt.take().or_else(|| self.peek.take()) {
             Ok(Some(x))
         } else {
             Ok(self.lexer.next()?.map(|e| {
@@ -133,7 +136,7 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
     }
 
     fn peek_lt(&mut self) -> Result<Option<Token>> {
-        if let Some(x) = self.peek {
+        if let Some(x) = self.peek_lt.or(self.peek) {
             Ok(Some(x))
         } else {
             let next = self.lexer.next()?.map(|e| {
@@ -155,12 +158,15 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
         loop {
             match self.lexer.next()? {
                 None => return Ok(None),
-                Some(x) if x.kind != t!("\n") => {
-                    self.last_span = x.span;
-                    self.peek = Some(x);
-                    return Ok(Some(x));
+                Some(x) => {
+                    if x.kind != t!("\n") {
+                        self.last_span = x.span;
+                        self.peek = Some(x);
+                        return Ok(Some(x));
+                    } else {
+                        self.peek_lt = Some(x);
+                    }
                 }
-                _ => {}
             }
         }
     }
