@@ -5,7 +5,7 @@ use ast::SymbolId;
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct Register(pub u8);
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 enum AllocValue {
     Free,
     Temp,

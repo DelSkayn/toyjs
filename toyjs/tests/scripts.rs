@@ -6,57 +6,47 @@ const FLOW_SOURCE: &str = include_str!("./flow.js");
 const CONSTRUCTOR_SOURCE: &str = include_str!("./flow.js");
 const PARSE_INT_SOURCE: &str = include_str!("./parseInt.js");
 const CALL_DEEP_SOURCE: &str = include_str!("./callDeep.js");
+const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
 
-#[test]
-fn script_upvalues() {
+fn eval_script(s: &str) {
     let toyjs = ToyJs::new();
     let ctx = Context::new(&toyjs);
     ctx.with(|ctx| {
-        ctx.eval::<(), _>(UPVALUE_SOURCE).unwrap();
+        ctx.eval::<(), _>(s).unwrap();
     });
+}
+
+#[test]
+fn script_upvalues() {
+    eval_script(UPVALUE_SOURCE);
 }
 
 #[test]
 fn script_throw() {
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
-    ctx.with(|ctx| {
-        ctx.eval::<(), _>(THROW_SOURCE).unwrap();
-    });
+    eval_script(THROW_SOURCE);
 }
 
 #[test]
 fn script_flow() {
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
-    ctx.with(|ctx| {
-        ctx.eval::<(), _>(FLOW_SOURCE).unwrap();
-    });
+    eval_script(FLOW_SOURCE);
 }
 
 #[test]
 fn script_constructor() {
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
-    ctx.with(|ctx| {
-        ctx.eval::<(), _>(CONSTRUCTOR_SOURCE).unwrap();
-    });
+    eval_script(CONSTRUCTOR_SOURCE);
 }
 
 #[test]
 fn script_parse_int() {
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
-    ctx.with(|ctx| {
-        ctx.eval::<(), _>(PARSE_INT_SOURCE).unwrap();
-    });
+    eval_script(PARSE_INT_SOURCE);
 }
 
 #[test]
 fn script_call_deep() {
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
-    ctx.with(|ctx| {
-        ctx.eval::<(), _>(CALL_DEEP_SOURCE).unwrap();
-    });
+    eval_script(CALL_DEEP_SOURCE);
+}
+
+#[test]
+fn script_var_for() {
+    eval_script(VAR_FOR_SOURCE);
 }
