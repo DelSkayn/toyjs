@@ -41,6 +41,12 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("try") => self.parse_try(),
             _ => {
                 let expr = self.parse_expr()?;
+                match self.peek_lt()?.map(|x| x.kind) {
+                    Some(t!(";")) | Some(t!("\n")) | None => {}
+                    _ => {
+                        unexpected!(self, "\n", ";" => "expected expression to end");
+                    }
+                }
                 Ok(ast::Stmt::Expr(expr))
             }
         };

@@ -130,7 +130,11 @@ impl FormattedError<'_> {
                             } else {
                                 first = false;
                             }
-                            write!(w, "{}", e)?;
+                            if e == &"\n" {
+                                write!(w, "\\n")?;
+                            } else {
+                                write!(w, "{}", e)?;
+                            }
                         }
                         write!(w, "]")?;
                     }
