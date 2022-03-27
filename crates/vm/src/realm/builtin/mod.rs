@@ -184,6 +184,17 @@ impl Realm {
         let name = self.vm().allocate::<String>("Error".into());
         let (error_construct, error_proto) =
             error::init_native::<error::Error>(self, &keys, name, func_proto, object_proto);
+
+        let key = self.vm().allocate::<String>("toString".into());
+        let func = Object::alloc_function(
+            self,
+            Some(func_proto),
+            ObjectFlags::empty(),
+            FunctionKind::Static(error::to_string),
+        );
+        error_proto
+            .raw_index_set(key.into(), func.into(), self)
+            .unwrap();
         self.builtin.error_proto = Some(error_proto);
         global
             .index_set(name.into(), error_construct.into(), self)

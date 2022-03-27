@@ -240,6 +240,7 @@ define_instructions! {
         Push{ src: u8},
 
         Call{dst:u8, func:u8},
+        CallMethod{dst:u8, obj:u8,key: u8},
         CallConstruct{dst: u8, func: u8, obj: u8},
 
         Throw{ src: u8 },

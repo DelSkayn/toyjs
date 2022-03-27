@@ -89,6 +89,26 @@ pub unsafe fn construct(
     object
 }
 
+pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+    let this = exec.this;
+    if !this.is_object() {
+        return Err(realm.create_type_error("this is not an object"));
+    }
+    let this = this.unsafe_cast_object();
+    let key = realm.vm().allocate::<String>("name".into());
+    let name = this.index(key.into(), realm).unwrap();
+    let name = realm.to_string(name)?;
+
+    let key = realm.vm().allocate::<String>("message".into());
+    let message = this.index(key.into(), realm).unwrap();
+    let message = realm.to_string(message)?;
+
+    let res = realm
+        .vm
+        .allocate(format!("{}: {}", name.as_str(), message.as_str()));
+    Ok(res.into())
+}
+
 pub unsafe fn init_native<T: BuiltinAccessor>(
     realm: &Realm,
     keys: &CommonKeys,

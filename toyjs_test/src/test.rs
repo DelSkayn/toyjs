@@ -61,10 +61,104 @@ pub struct Test {
     pub source: String,
 }
 
+pub struct Colors {
+    error: ColorSpec,
+    panic: ColorSpec,
+    failure: ColorSpec,
+    passed: ColorSpec,
+    base: ColorSpec,
+    header: ColorSpec,
+}
+
+impl Colors {
+    pub fn new() -> Self {
+        let base = ColorSpec::new().set_fg(Some(Color::White)).clone();
+        let error = ColorSpec::new()
+            .set_bold(true)
+            .set_fg(Some(Color::Red))
+            .clone();
+        let failure = ColorSpec::new()
+            .set_bold(true)
+            .set_fg(Some(Color::Yellow))
+            .clone();
+        let passed = ColorSpec::new()
+            .set_bold(true)
+            .set_fg(Some(Color::Green))
+            .clone();
+        let panic = ColorSpec::new()
+            .set_bold(true)
+            .set_fg(Some(Color::Blue))
+            .clone();
+        let header = ColorSpec::new().set_bold(true).clone();
+
+        Colors {
+            error,
+            panic,
+            failure,
+            passed,
+            base,
+            header,
+        }
+    }
+}
+
+pub enum FailureCause {
+    Errored(String),
+    NoError,
+}
+
 pub enum TestResult {
-    Failed,
+    Failed(FailureCause),
     Passed,
     Panic(Box<dyn Any + Send + 'static>),
+}
+
+pub fn write_result(
+    result: &Result<TestResult>,
+    out: &mut StandardStream,
+    c: &Colors,
+) -> Result<()> {
+    match result {
+        Ok(x) => match x {
+            TestResult::Panic(payload) => {
+                out.set_color(&c.panic)?;
+                writeln!(out, "PANICKED")?;
+                out.set_color(&c.base)?;
+                if let Some(x) = payload.downcast_ref::<String>() {
+                    writeln!(out, "\t> {}", x)?;
+                } else if let Some(x) = payload.downcast_ref::<&str>() {
+                    writeln!(out, "\t> {}", x)?;
+                } else {
+                    writeln!(out, "\t> {:?}", payload)?;
+                }
+            }
+            TestResult::Passed => {
+                out.set_color(&c.passed)?;
+                writeln!(out, "PASSED")?;
+                out.set_color(&c.base)?;
+                write!(out, "")?;
+            }
+            TestResult::Failed(cause) => {
+                out.set_color(&c.failure)?;
+                writeln!(out, "FAILED")?;
+                out.set_color(&c.base)?;
+                write!(out, "\t> ")?;
+                match *cause {
+                    FailureCause::NoError => {
+                        writeln!(out, "Test did not return an error when it should have")?
+                    }
+                    FailureCause::Errored(ref e) => writeln!(out, "Test returned error: {}", e)?,
+                }
+            }
+        },
+        Err(e) => {
+            out.set_color(&c.error)?;
+            writeln!(out, "ERROR: ")?;
+            out.set_color(&c.base)?;
+            writeln!(out, "\t> {}", e)?;
+        }
+    }
+    Ok(())
 }
 
 impl Test {
@@ -98,14 +192,14 @@ impl Test {
                 match ctx.eval::<Value, _>(&self.source) {
                     Ok(_) => {
                         if self.metadata.negative.is_some() {
-                            Ok(TestResult::Failed)
+                            Ok(TestResult::Failed(FailureCause::NoError))
                         } else {
                             Ok(TestResult::Passed)
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
                         if self.metadata.negative.is_none() {
-                            Ok(TestResult::Failed)
+                            Ok(TestResult::Failed(FailureCause::Errored(format!("{}", e))))
                         } else {
                             Ok(TestResult::Passed)
                         }
@@ -136,68 +230,12 @@ pub fn dir_walker<F: FnMut(&Path)>(p: &Path, f: &mut F) -> Result<()> {
 
 pub fn run_single(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-
-    let base_color = ColorSpec::new().set_fg(Some(Color::White)).clone();
-    let error_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Red))
-        .clone();
-    let passed_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Green))
-        .clone();
-    let panic_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Blue))
-        .clone();
+    let colors = Colors::new();
 
     write!(stdout, "{} => ", p.as_ref().display())?;
 
-    let test = match Test::from_path(p.as_ref()) {
-        Ok(x) => x,
-        Err(e) => {
-            stdout.set_color(&error_color)?;
-            writeln!(stdout, "ERROR: ")?;
-            stdout.set_color(&base_color)?;
-            writeln!(stdout, "\t> could not load test: {}", e)?;
-            return Result::<(), anyhow::Error>::Ok(());
-        }
-    };
-
-    match test.run(harness) {
-        Ok(x) => match x {
-            TestResult::Panic(payload) => {
-                stdout.set_color(&panic_color)?;
-                writeln!(stdout, "PANICKED")?;
-                stdout.set_color(&base_color)?;
-                if let Some(x) = payload.downcast_ref::<String>() {
-                    writeln!(stdout, "\t> {}", x)?;
-                } else if let Some(x) = payload.downcast_ref::<&str>() {
-                    writeln!(stdout, "\t> {}", x)?;
-                } else {
-                    writeln!(stdout, "\t> {:?}", payload)?;
-                }
-            }
-            TestResult::Passed => {
-                stdout.set_color(&passed_color)?;
-                writeln!(stdout, "PASSED")?;
-                stdout.set_color(&base_color)?;
-                write!(stdout, "")?;
-            }
-            TestResult::Failed => {
-                stdout.set_color(&error_color)?;
-                writeln!(stdout, "FAILED")?;
-                stdout.set_color(&base_color)?;
-                write!(stdout, "")?;
-            }
-        },
-        Err(e) => {
-            stdout.set_color(&error_color)?;
-            writeln!(stdout, "ERROR: ")?;
-            stdout.set_color(&base_color)?;
-            writeln!(stdout, "\t> {}", e)?;
-        }
-    }
+    let res = Test::from_path(p.as_ref()).and_then(|test| test.run(harness));
+    write_result(&res, &mut stdout, &colors)?;
     Ok(())
 }
 
@@ -205,24 +243,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     let p = p.as_ref().join("test");
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
 
-    let base_color = ColorSpec::new().set_fg(Some(Color::White)).clone();
-    let header_color = ColorSpec::new().set_bold(true).clone();
-    let error_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Red))
-        .clone();
-    let failed_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Yellow))
-        .clone();
-    let passed_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Green))
-        .clone();
-    let panic_color = ColorSpec::new()
-        .set_bold(true)
-        .set_fg(Some(Color::Blue))
-        .clone();
+    let c = Colors::new();
 
     let mut passed = 0;
     let mut errored = 0;
@@ -233,87 +254,54 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
         (|| {
             write!(stdout, "{} => ", path.display())?;
             stdout.flush()?;
-            let test = match Test::from_path(path) {
-                Ok(x) => x,
-                Err(e) => {
-                    errored += 1;
-                    stdout.set_color(&error_color)?;
-                    writeln!(stdout, "ERROR: ")?;
-                    stdout.set_color(&base_color)?;
-                    writeln!(stdout, "\t> could not load test: {}", e)?;
-                    return Result::<(), anyhow::Error>::Ok(());
-                }
-            };
             let hook = panic::take_hook();
             panic::set_hook(Box::new(|_| {}));
-            let res = test.run(harness);
+            let res = Test::from_path(path).and_then(|test| test.run(harness));
             panic::set_hook(hook);
+
+            write_result(&res, &mut stdout, &c)?;
 
             match res {
                 Ok(x) => match x {
-                    TestResult::Panic(payload) => {
+                    TestResult::Panic(_) => {
                         panicked += 1;
-                        stdout.set_color(&panic_color)?;
-                        writeln!(stdout, "PANICKED")?;
-                        stdout.set_color(&base_color)?;
-                        if let Some(x) = payload.downcast_ref::<String>() {
-                            writeln!(stdout, "\t> {}", x)?;
-                        } else if let Some(x) = payload.downcast_ref::<&str>() {
-                            writeln!(stdout, "\t> {}", x)?;
-                        } else {
-                            writeln!(stdout, "\t> {:?}", payload)?;
-                        }
                     }
                     TestResult::Passed => {
                         passed += 1;
-                        stdout.set_color(&passed_color)?;
-                        writeln!(stdout, "PASSED")?;
-                        stdout.set_color(&base_color)?;
-                        write!(stdout, "")?;
                     }
-                    TestResult::Failed => {
+                    TestResult::Failed(_) => {
                         failed += 1;
-                        stdout.set_color(&failed_color)?;
-                        writeln!(stdout, "FAILED")?;
-                        stdout.set_color(&base_color)?;
-                        write!(stdout, "")?;
                     }
                 },
-                Err(e) => {
+                Err(_) => {
                     errored += 1;
-                    stdout.set_color(&error_color)?;
-                    writeln!(stdout, "ERROR: ")?;
-                    stdout.set_color(&base_color)?;
-                    writeln!(stdout, "\t>{}", e)?;
                 }
             }
-            Ok(())
+            Result::<(), anyhow::Error>::Ok(())
         })()
         .unwrap()
     })?;
 
-    stdout.set_color(&header_color)?;
+    stdout.set_color(&c.header)?;
     writeln!(stdout, "Report:")?;
-    stdout.set_color(&base_color)?;
-
-    stdout.set_color(&passed_color)?;
+    stdout.set_color(&c.passed)?;
     write!(stdout, "\tpassed: ")?;
-    stdout.set_color(&base_color)?;
+    stdout.set_color(&c.base)?;
     writeln!(stdout, "{}", passed)?;
 
-    stdout.set_color(&failed_color)?;
+    stdout.set_color(&c.failure)?;
     write!(stdout, "\tfailed: ")?;
-    stdout.set_color(&base_color)?;
+    stdout.set_color(&c.base)?;
     writeln!(stdout, "{}", failed)?;
 
-    stdout.set_color(&panic_color)?;
+    stdout.set_color(&c.panic)?;
     write!(stdout, "\tpanicked: ")?;
-    stdout.set_color(&base_color)?;
+    stdout.set_color(&c.base)?;
     writeln!(stdout, "{}", panicked)?;
 
-    stdout.set_color(&error_color)?;
+    stdout.set_color(&c.error)?;
     write!(stdout, "\terror: ")?;
-    stdout.set_color(&base_color)?;
+    stdout.set_color(&c.base)?;
     writeln!(stdout, "{}", errored)?;
     writeln!(stdout, "")?;
 

@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, u8};
 
 use crate::{
     gc::Trace,
@@ -8,6 +8,9 @@ use crate::{
 };
 
 use super::{builtin, reader::InstructionReader, Realm};
+
+const NOT_A_FUNCTION: &'static str = "tried to call value which was not a function";
+const INDEX_NON_OBJECT: &'static str = "tried to index value which as not a object";
 
 pub enum NumericOperator {
     Sub,
@@ -392,6 +395,19 @@ impl Realm {
                         instr,
                         ctx,
                         self._call(func, &mut instr, &mut ctx, dst)
+                    );
+                    if let Some(value) = value {
+                        self.stack.write(dst, value);
+                    }
+                }
+                Instruction::CallMethod { dst, obj, key } => {
+                    let obj = self.stack.read(obj);
+                    let key = self.stack.read(key);
+                    let value = catch_unwind!(
+                        self,
+                        instr,
+                        ctx,
+                        self.call_method(obj, key, &mut instr, &mut ctx, dst)
                     );
                     if let Some(value) = value {
                         self.stack.write(dst, value);
@@ -851,11 +867,11 @@ impl Realm {
                 ]
             };
             for k in keys {
-                let v = v.index(k.into(), self).unwrap();
-                if v.is_object() {
-                    let v = v.unsafe_cast_object();
-                    if v.is_function() {
-                        let res = self.enter_call(v)?;
+                let func = v.index(k.into(), self).unwrap();
+                if func.is_object() {
+                    let func = func.unsafe_cast_object();
+                    if func.is_function() {
+                        let res = self.enter_method_call(func, v.into())?;
                         if !res.is_object() {
                             return Ok(res);
                         }
@@ -938,6 +954,70 @@ impl Realm {
         function
     }
 
+    unsafe fn call_method(
+        &self,
+        object: Value,
+        key: Value,
+        instr: &mut InstructionReader,
+        ctx: &mut ExecutionContext,
+        dst: u8,
+    ) -> Result<Option<Value>, Value> {
+        if !object.is_object() {
+            return Err(self.create_type_error(INDEX_NON_OBJECT));
+        }
+        let object = object.unsafe_cast_object();
+        let function = object.index(key, self)?;
+        if !function.is_object() {
+            return Err(self.create_type_error(NOT_A_FUNCTION));
+        }
+        let function = function.unsafe_cast_object();
+        if !function.is_function() {
+            return Err(self.create_type_error(NOT_A_FUNCTION));
+        }
+
+        let kind = function.function.as_ref().unwrap();
+        match kind {
+            FunctionKind::Vm(ref func) => {
+                let bc = func.bc;
+                let bc_function = &bc.functions[func.function as usize];
+                self.stack
+                    .enter_call(bc_function.registers, dst, *instr, *ctx);
+                ctx.function = function;
+                ctx.this = object.into();
+                *instr = InstructionReader::from_bc(bc, func.function);
+                Ok(None)
+            }
+            FunctionKind::Static(x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                self.stack.enter(0);
+                let res = x(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.function = function;
+                Ok(Some(res))
+            }
+            FunctionKind::Mutable(ref x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                let this = mem::replace(&mut ctx.this, object.into());
+                self.stack.enter(0);
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.this = this;
+                ctx.function = function;
+                Ok(Some(res))
+            }
+            FunctionKind::Shared(ref x) => {
+                let function = mem::replace(&mut ctx.function, function);
+                let this = mem::replace(&mut ctx.this, object.into());
+                self.stack.enter(0);
+                let res = (*x)(self, ctx)?;
+                self.stack.pop(self.vm.borrow().gc());
+                ctx.this = this;
+                ctx.function = function;
+                Ok(Some(res))
+            }
+        }
+    }
+
     /// Execution only version of call
     unsafe fn _call(
         &self,
@@ -946,8 +1026,6 @@ impl Realm {
         ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
-        const NOT_A_FUNCTION: &'static str = "tried to call value which was not a function";
-
         if !funct.is_object() {
             return Err(self.create_type_error(NOT_A_FUNCTION));
         }
@@ -964,6 +1042,7 @@ impl Realm {
                 self.stack
                     .enter_call(bc_function.registers, dst, *instr, *ctx);
                 ctx.function = function;
+                ctx.this = funct;
                 *instr = InstructionReader::from_bc(bc, func.function);
                 Ok(None)
             }
@@ -977,17 +1056,21 @@ impl Realm {
             }
             FunctionKind::Mutable(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
+                let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
                 let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
                 self.stack.pop(self.vm.borrow().gc());
+                ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
             }
             FunctionKind::Shared(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
+                let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
                 let res = (*x)(self, ctx)?;
                 self.stack.pop(self.vm.borrow().gc());
+                ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
             }
