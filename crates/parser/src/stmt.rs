@@ -113,6 +113,9 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             Some(t!("const")) => {
                 ast::ForDecl::Stmt(Box::new_in(self.parse_const_binding()?, self.alloc.clone()))
             }
+            Some(t!("var")) => {
+                ast::ForDecl::Stmt(Box::new_in(self.parse_var_binding()?, self.alloc.clone()))
+            }
             _ => ast::ForDecl::Expr(self.parse_single_expr()?),
         };
         expect!(self, ";");
