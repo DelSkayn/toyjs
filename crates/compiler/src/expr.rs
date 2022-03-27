@@ -595,6 +595,69 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     righ: expr.0,
                 });
             }
+            AssignOperator::Multiply => {
+                self.builder.push(Instruction::Mul {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::Divide => {
+                self.builder.push(Instruction::Div {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::ShiftLeft => {
+                self.builder.push(Instruction::ShiftLeft {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::ShiftRight => {
+                self.builder.push(Instruction::ShiftRight {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::ShiftRightUnsigned => {
+                self.builder.push(Instruction::ShiftUnsigned {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::BitwiseOr => {
+                self.builder.push(Instruction::BitwiseOr {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::BitwiseAnd => {
+                self.builder.push(Instruction::BitwiseAnd {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::BitwiseXor => {
+                self.builder.push(Instruction::BitwiseXor {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
+            AssignOperator::Exponentiate => {
+                self.builder.push(Instruction::Pow {
+                    dst: dst.0,
+                    left: assign_value.0,
+                    righ: expr.0,
+                });
+            }
             _ => todo!(),
         }
 
