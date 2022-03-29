@@ -72,7 +72,7 @@ fn main() -> io::Result<()> {
         ctx.with(|ctx| match ctx.eval::<Value, _>(&buffer) {
             Ok(x) => println!("> {:?}", x),
             Err(e) => {
-                println!("\x1b[1:31m{}\x1b[0m", e)
+                println!("\x1b[1;31m{}\x1b[0m", e)
             }
         });
         buffer.clear();

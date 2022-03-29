@@ -31,13 +31,13 @@ impl<'js> fmt::Display for Error<'js> {
             Error::Value(x) => {
                 let ctx = x.ctx;
                 if let Ok(x) = ctx.coerce_string(*x) {
-                    writeln!(f, "Uncaught {}", x.as_str())?;
+                    write!(f, "Uncaught {}", x.as_str())?;
                 } else {
-                    writeln!(f, "Uncaught {:?}", x)?;
+                    write!(f, "Uncaught {:?}", x)?;
                 }
             }
             Error::Parse(x) => {
-                writeln!(f, "Uncaught SyntaxError: {}", x)?;
+                write!(f, "Uncaught SyntaxError: {}", x)?;
             }
         }
         Ok(())

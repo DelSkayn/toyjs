@@ -122,7 +122,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     .unwrap_or_else(|| self.builder.alloc_temp());
                 let instr = self.builder.push(Instruction::Try { tgt: 0, dst: dst.0 });
                 self.compile_stmt(r#try);
-                self.builder.push(Instruction::Untry { _ignore: () });
+                self.builder.push(Instruction::Untry { dst: dst.0 });
                 if let Some(catch) = catch {
                     let catch_jmp = self.builder.push(Instruction::Jump { tgt: 0 });
                     self.builder
@@ -137,7 +137,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                             .patch_jump(instr, self.builder.next_instruction_id());
                     }
                     self.compile_stmt(finally);
+                    self.builder.push(Instruction::Throw { src: dst.0 });
                 }
+                self.builder.free_temp(dst);
 
                 None
             }
