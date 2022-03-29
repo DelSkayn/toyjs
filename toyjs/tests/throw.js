@@ -20,7 +20,7 @@ function nested(){
             })()
         })()
     }catch(e){
-        assert!(e === "d");
+        assert(e === "d");
     }finally{
         return
     }

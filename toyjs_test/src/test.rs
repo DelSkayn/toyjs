@@ -176,7 +176,7 @@ impl Test {
                 .ok_or_else(|| anyhow!("could not find metadata end delimiter"))?;
 
             serde_yaml::from_str(&source[start..start + end])
-                .with_context(|| format!("could not parse test metadata"))?
+                .context("could not parse test metadata")?
         } else {
             MetaData::default()
         };
@@ -303,7 +303,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     write!(stdout, "\terror: ")?;
     stdout.set_color(&c.base)?;
     writeln!(stdout, "{}", errored)?;
-    writeln!(stdout, "")?;
+    writeln!(stdout)?;
 
     let total = passed + failed + panicked + errored;
 

@@ -226,7 +226,7 @@ where {
             &ast,
             &(*user_data).symbol_table,
             &mut (*user_data).interner,
-            &(*self.ctx).vm().gc(),
+            (*self.ctx).vm().gc(),
             Global,
         );
         let bytecode = (*self.ctx).vm().allocate(bytecode);

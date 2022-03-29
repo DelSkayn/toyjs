@@ -1,6 +1,11 @@
 use crate::{error::Result, Ctx, Function, Object, String, Value};
 use std::string::String as StdString;
 
+/// A trait to convert javascript Values to rust.
+///
+/// # Safety
+///
+/// The value of `NEEDS_GC` must be true if self contains a gc collected pointer.
 pub unsafe trait FromJs<'js>: Sized {
     const NEEDS_GC: bool;
 

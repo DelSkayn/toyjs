@@ -48,11 +48,8 @@ impl VmInner {
 
     pub fn remove_realm(&self, realm: RealmBox) {
         unsafe {
-            match (*self.realms.get()).binary_search(&realm) {
-                Ok(e) => {
-                    (*self.realms.get()).remove(e);
-                }
-                Err(_) => {}
+            if let Ok(e) = (*self.realms.get()).binary_search(&realm) {
+                (*self.realms.get()).remove(e);
             }
         }
     }
