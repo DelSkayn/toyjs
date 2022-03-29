@@ -380,7 +380,8 @@ impl Realm {
                     .stack
                     .push_try(dst, instr.absolute_offset(tgt) as usize),
 
-                Instruction::Untry { _ignore: () } => {
+                Instruction::Untry { dst } => {
+                    self.stack.write(dst, Value::empty());
                     self.stack.pop_try();
                 }
 
@@ -428,7 +429,9 @@ impl Realm {
 
                 Instruction::Throw { src } => {
                     let error = self.stack.read(src);
-                    self.unwind_error(&mut instr, &mut ctx, error)?;
+                    if !error.is_empty() {
+                        self.unwind_error(&mut instr, &mut ctx, error)?;
+                    }
                 }
 
                 Instruction::ReturnUndefined { .. } => {

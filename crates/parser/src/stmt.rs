@@ -42,7 +42,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             _ => {
                 let expr = self.parse_expr()?;
                 match self.peek_lt()?.map(|x| x.kind) {
-                    Some(t!(";")) | Some(t!("\n")) | None => {}
+                    Some(t!(";")) | Some(t!("\n")) | Some(t!("}")) | None => {}
                     _ => {
                         unexpected!(self, "\n", ";" => "expected expression to end");
                     }

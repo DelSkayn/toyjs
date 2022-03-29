@@ -236,7 +236,7 @@ define_instructions! {
         Jump{tgt:i16},
 
         Try{ dst: u8, tgt: i16},
-        Untry{ _ignore: ()},
+        Untry{ dst: u8 },
 
         Push{ src: u8},
 
