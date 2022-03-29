@@ -181,6 +181,7 @@ define_instructions! {
         Move{ dst: u8, src: u8},
 
         CreateObject{ dst: u8},
+        CreateArray{ dst: u8},
 
         IndexAssign{obj: u8,key: u8, val:u8},
         Index{dst: u8,obj: u8, key:u8},

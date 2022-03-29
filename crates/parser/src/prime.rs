@@ -48,6 +48,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 Ok(PrimeExpr::Variable(var))
             }
             t!("{") => self.parse_object(),
+            t!("[") => self.parse_array(),
             TokenKind::Literal(x) => {
                 self.next()?;
                 Ok(match x {
@@ -90,6 +91,20 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         }
         expect!(self,"}" => "expected object to end here, missing a comma?");
         Ok(PrimeExpr::Object(exprs))
+    }
+
+    pub(crate) fn parse_array(&mut self) -> Result<PrimeExpr<A>> {
+        expect!(self, "[");
+        let mut exprs = Vec::new_in(self.alloc.clone());
+        while self.peek_kind()? != Some(t!("]")) {
+            let expr = self.parse_single_expr()?;
+            exprs.push(expr);
+            if !self.eat(t!(","))? {
+                break;
+            }
+        }
+        expect!(self,"]" => "expected array to end here, missing a comma?");
+        Ok(PrimeExpr::Array(exprs))
     }
 
     fn parse_function_expression(&mut self) -> Result<PrimeExpr<A>> {

@@ -695,6 +695,10 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_object_literal(placement, bindings),
                 self.alloc.clone(),
             ),
+            PrimeExpr::Array(bindings) => ExprValue::new_in(
+                self.compile_array_literal(placement, bindings),
+                self.alloc.clone(),
+            ),
             PrimeExpr::Function(scope, symbol, args, stmts) => {
                 let id = self.compile_function_decl(*scope, args, stmts);
                 if let Some(symbol) = symbol {
@@ -872,6 +876,36 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             object = Some(dst);
         }
         object.unwrap()
+    }
+
+    fn compile_array_literal(
+        &mut self,
+        placement: Option<Register>,
+        bindings: &'a Vec<Expr<A>, A>,
+    ) -> Register {
+        let mut array = None;
+        for (idx, value) in bindings.iter().enumerate() {
+            let expr = self.compile_expr(None, value).eval(self);
+            let key = self.compile_literal(None, Literal::Integer(idx.try_into().unwrap()));
+            if array.is_none() {
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::CreateArray { dst: dst.0 });
+                array = Some(dst);
+            }
+            self.builder.free_temp(expr);
+            self.builder.free_temp(key);
+            self.builder.push(Instruction::IndexAssign {
+                obj: array.unwrap().0,
+                val: expr.0,
+                key: key.0,
+            });
+        }
+        if array.is_none() {
+            let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+            self.builder.push(Instruction::CreateObject { dst: dst.0 });
+            array = Some(dst);
+        }
+        array.unwrap()
     }
 
     fn compile_new(&mut self, placement: Option<Register>, rhs: &'a Expr<A>) -> Register {
