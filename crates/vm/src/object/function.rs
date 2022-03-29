@@ -8,7 +8,7 @@ use crate::{
     Gc, Realm, Value,
 };
 use std::{
-    cell::{RefCell, UnsafeCell},
+    cell::{Cell, RefCell, UnsafeCell},
     fmt,
 };
 
@@ -71,6 +71,7 @@ impl Object {
             array: UnsafeCell::new(Vec::new()),
             flags,
             function: Some(function),
+            map_backdown: Cell::new(None),
         }
     }
 

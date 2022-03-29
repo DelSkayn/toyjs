@@ -1,6 +1,6 @@
 //! Javascript object implementation.
 
-use std::cell::UnsafeCell;
+use std::cell::{Cell, UnsafeCell};
 
 use crate::{
     gc::{Gc, Trace},
@@ -10,6 +10,8 @@ use common::collections::HashMap;
 
 mod function;
 pub use function::*;
+
+const ARRAY_BACKDOWN_PROCENT: f64 = 0.7;
 
 bitflags::bitflags! {
     pub struct ObjectFlags: u8{
@@ -26,6 +28,8 @@ pub struct Object {
     array: UnsafeCell<Vec<Value>>,
     pub flags: ObjectFlags,
     pub function: Option<FunctionKind>,
+    // TODO non null
+    map_backdown: Cell<Option<usize>>,
 }
 
 impl Object {
@@ -35,6 +39,7 @@ impl Object {
             prototype,
             values: UnsafeCell::new(HashMap::default()),
             array: UnsafeCell::new(Vec::new()),
+            map_backdown: Cell::new(None),
             flags,
             function: None,
         }
@@ -72,16 +77,19 @@ impl Object {
         if key.is_int() {
             let idx = key.cast_int();
             if idx >= 0 {
-                return match (*self.array.get()).get(idx as usize).copied() {
-                    Some(x) => Ok(x),
-                    None => {
-                        if let Some(proto) = self.prototype {
-                            proto.index(key, realm)
-                        } else {
-                            Ok(Value::undefined())
+                let idx = idx as usize;
+                if self.map_backdown.get().map(|x| idx < x).unwrap_or(true) {
+                    return match (*self.array.get()).get(idx).copied() {
+                        Some(x) => Ok(x),
+                        None => {
+                            if let Some(proto) = self.prototype {
+                                proto.index(key, realm)
+                            } else {
+                                Ok(Value::undefined())
+                            }
                         }
-                    }
-                };
+                    };
+                }
             }
         }
         let string = realm.to_string(key)?;
@@ -110,17 +118,38 @@ impl Object {
 
         if key.is_int() {
             let idx = key.cast_int();
-            if idx >= 0 {
+            if idx >= 0
+                && self
+                    .map_backdown
+                    .get()
+                    .map(|x| (idx as usize) < x)
+                    .unwrap_or(true)
+            {
                 let idx = idx as usize;
-                if (*self.array.get()).len() <= idx {
-                    (*self.array.get()).resize(idx + 1, Value::undefined())
+                let len = (*self.array.get()).len();
+                if len <= idx {
+                    if (idx - len) as f64 / len as f64 > ARRAY_BACKDOWN_PROCENT {
+                        // Fill up to capacity since that part is already allocated any way.
+                        let capacity = (*self.array.get()).capacity();
+                        (*self.array.get()).resize(capacity, Value::undefined());
+                        self.map_backdown.set(Some(capacity));
+                        if idx < capacity {
+                            (*self.array.get())[idx] = value;
+                            return Ok(());
+                        }
+                    } else {
+                        (*self.array.get()).resize(idx + 1, Value::undefined());
+                        (*self.array.get())[idx] = value;
+                        return Ok(());
+                    }
+                } else {
+                    (*self.array.get())[idx] = value;
+                    return Ok(());
                 }
-                (*self.array.get())[idx] = value
             }
-        } else {
-            let string = realm.to_string(key)?;
-            (*self.values.get()).insert(string.to_string(), value);
         }
+        let string = realm.to_string(key)?;
+        (*self.values.get()).insert(string.to_string(), value);
         Ok(())
     }
 

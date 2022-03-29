@@ -154,6 +154,7 @@ impl<A: Allocator> Expr<A> {
                 PrimeExpr::Literal(_) => false,
                 PrimeExpr::Covered(_) => false,
                 PrimeExpr::Object(_) => false,
+                PrimeExpr::Array(_) => false,
                 PrimeExpr::Function(_, _, _, _) => false,
                 PrimeExpr::This => false,
             },
@@ -181,6 +182,7 @@ pub enum PrimeExpr<A: Allocator> {
     Variable(SymbolId),
     Covered(Vec<Expr<A>, A>),
     Object(Vec<(StringId, Expr<A>), A>),
+    Array(Vec<Expr<A>, A>),
     Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
     // A direct eval call
     Eval(Vec<Expr<A>, A>),
