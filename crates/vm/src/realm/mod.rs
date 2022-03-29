@@ -83,7 +83,7 @@ pub struct Realm {
 }
 
 impl Realm {
-    pub fn new(vm: &Vm) -> RealmBox {
+    pub fn new_alloc(vm: &Vm) -> RealmBox {
         Self::new_with_user_data(vm, ())
     }
 
@@ -154,7 +154,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x(self, &mut ctx);
-                self.stack.pop(&self.vm.borrow().gc());
+                self.stack.pop(self.vm.borrow().gc());
                 res
             }
             Some(FunctionKind::Static(x)) => {
@@ -165,7 +165,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x(self, &mut ctx);
-                self.stack.pop(&self.vm.borrow().gc());
+                self.stack.pop(self.vm.borrow().gc());
                 res
             }
             Some(FunctionKind::Mutable(ref x)) => {
@@ -176,7 +176,7 @@ impl Realm {
                     new_target: Value::empty(),
                 };
                 let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, &mut ctx);
-                self.stack.pop(&self.vm.borrow().gc());
+                self.stack.pop(self.vm.borrow().gc());
                 res
             }
             None => panic!("enter_call called with object which was not a function"),

@@ -11,11 +11,11 @@ pub enum Error<'js> {
 }
 
 impl<'js> Error<'js> {
-    pub unsafe fn wrap(ctx: Ctx<'js>, value: vm::Value) -> Self {
+    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, value: vm::Value) -> Self {
         Error::Value(Value::wrap(ctx, value))
     }
 
-    pub fn into_vm(self, _ctx: Ctx<'js>) -> vm::Value {
+    pub(crate) fn into_vm(self, _ctx: Ctx<'js>) -> vm::Value {
         match self {
             Error::Value(x) => x.into_vm(),
             _ => todo!(),

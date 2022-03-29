@@ -22,6 +22,7 @@ mod lock {
 }
 
 #[cfg(not(feature = "parallel"))]
+#[allow(clippy::module_inception)]
 mod lock {
     use std::rc::Rc;
 

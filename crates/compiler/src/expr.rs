@@ -881,7 +881,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn compile_array_literal(
         &mut self,
         placement: Option<Register>,
-        bindings: &'a Vec<Expr<A>, A>,
+        bindings: &'a [Expr<A>],
     ) -> Register {
         let mut array = None;
         for (idx, value) in bindings.iter().enumerate() {

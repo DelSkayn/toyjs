@@ -9,8 +9,9 @@ use crate::{
 
 use super::{builtin, reader::InstructionReader, Realm};
 
-const NOT_A_FUNCTION: &'static str = "tried to call value which was not a function";
-const INDEX_NON_OBJECT: &'static str = "tried to index value which as not a object";
+const NOT_A_FUNCTION: &str = "tried to call value which was not a function";
+const NOT_A_CONSTRUCTOR: &str = "value is not an constructor";
+const INDEX_NON_OBJECT: &str = "tried to index value which as not a object";
 
 pub enum NumericOperator {
     Sub,
@@ -1084,7 +1085,6 @@ impl Realm {
         _instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
     ) -> Result<Value, Value> {
-        const NOT_A_CONSTRUCTOR: &'static str = "value is not an constructor";
         if !function.is_object() {
             return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
         }

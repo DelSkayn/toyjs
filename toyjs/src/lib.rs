@@ -63,8 +63,8 @@ impl Context {
         F: for<'js> FnOnce(Ctx<'js>) -> R,
     {
         let guard = self.vm.lock();
-        let _vm = &*guard;
         let res = unsafe {
+            let _vm = &*guard;
             let ptr = self.realm.as_ptr();
             (*ptr).user_enter_frame(0);
             let ctx = Ctx::wrap(ptr);
@@ -72,6 +72,7 @@ impl Context {
             (*ptr).user_pop_frame();
             res
         };
+        #[allow(clippy::drop_ref)]
         mem::drop(guard);
         res
     }
