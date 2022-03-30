@@ -53,7 +53,12 @@ pub enum Stmt<A: Allocator> {
     Switch(Vec<Expr<A>, A>, Vec<Case<A>, A>, Option<Vec<Stmt<A>, A>>),
     While(Vec<Expr<A>, A>, Box<Stmt<A>, A>),
     DoWhile(Box<Stmt<A>, A>, Vec<Expr<A>, A>),
-    For(ForDecl<A>, Expr<A>, Expr<A>, Box<Stmt<A>, A>),
+    For(
+        Option<ForDecl<A>>,
+        Option<Expr<A>>,
+        Option<Expr<A>>,
+        Box<Stmt<A>, A>,
+    ),
     Block(ScopeId, Vec<Stmt<A>, A>),
     Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
     Return(Option<Vec<Expr<A>, A>>),

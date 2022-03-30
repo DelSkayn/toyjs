@@ -341,56 +341,68 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
     pub fn compile_for(
         &mut self,
-        decl: &'a ForDecl<A>,
-        cond: &'a Expr<A>,
-        post: &'a Expr<A>,
+        decl: &'a Option<ForDecl<A>>,
+        cond: &'a Option<Expr<A>>,
+        post: &'a Option<Expr<A>>,
         block: &'a Stmt<A>,
     ) {
-        match decl {
-            ForDecl::Stmt(x) => {
-                self.compile_stmt(x);
-            }
-            ForDecl::Expr(x) => {
-                let reg = self.compile_expr(None, x).eval(self);
-                self.builder.free_temp(reg);
+        if let Some(decl) = decl {
+            match decl {
+                ForDecl::Stmt(x) => {
+                    self.compile_stmt(x);
+                }
+                ForDecl::Expr(x) => {
+                    let reg = self.compile_expr(None, x).eval(self);
+                    self.builder.free_temp(reg);
+                }
             }
         }
         let before_cond = self.builder.next_instruction_id();
-        let cond = self.compile_expr(None, cond);
-        let patch_cond = self.builder.push(Instruction::JumpFalse {
-            cond: cond.register.0,
-            tgt: 1,
-        });
-        self.builder.free_temp(cond.register);
+        let patch_cond = if let Some(cond) = cond {
+            let cond = self.compile_expr(None, cond);
+            self.builder.free_temp(cond.register);
+            let patch_cond = self.builder.push(Instruction::JumpFalse {
+                cond: cond.register.0,
+                tgt: 1,
+            });
+            self.builder.free_temp(cond.register);
 
-        cond.true_list.into_iter().for_each(|x| {
-            self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
-        });
+            for x in cond.true_list.iter() {
+                self.builder
+                    .patch_jump(*x, self.builder.next_instruction_id())
+            }
+            Some((patch_cond, cond))
+        } else {
+            None
+        };
 
         self.builder.push_flow_scope();
         self.compile_stmt(block);
         let flow_scope = self.builder.pop_flow_scope();
 
-        flow_scope.patch_continue.into_iter().for_each(|x| {
+        for x in flow_scope.patch_continue.into_iter() {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
-        });
+        }
 
-        let reg = self.compile_expr(None, post).eval(self);
-        self.builder.free_temp(reg);
+        if let Some(post) = post {
+            let reg = self.compile_expr(None, post).eval(self);
+            self.builder.free_temp(reg);
+        }
         let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
-        self.builder.patch_jump(back_jump, before_cond);
-        self.builder
-            .patch_jump(patch_cond, self.builder.next_instruction_id());
-        cond.false_list.into_iter().for_each(|x| {
+        if let Some((patch_cond, cond)) = patch_cond {
+            self.builder.patch_jump(back_jump, before_cond);
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
-        });
+                .patch_jump(patch_cond, self.builder.next_instruction_id());
+            for x in cond.false_list.into_iter() {
+                self.builder
+                    .patch_jump(x, self.builder.next_instruction_id())
+            }
+        }
 
-        flow_scope.patch_break.into_iter().for_each(|x| {
+        for x in flow_scope.patch_break.into_iter() {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id())
-        })
+        }
     }
 }
