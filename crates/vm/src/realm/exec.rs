@@ -101,6 +101,13 @@ impl Realm {
                     let res = Value::from(object);
                     self.stack.write(dst, res)
                 }
+                Instruction::CreateArray { dst } => {
+                    self.vm.borrow().collect_debt(&ctx);
+                    let object =
+                        Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+                    let res = Value::from(object);
+                    self.stack.write(dst, res)
+                }
                 Instruction::IndexAssign { obj, key, val } => {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
