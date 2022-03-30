@@ -228,17 +228,24 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
 
     fn parse_var_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "var");
-        expect_bind!(self, let id = "ident");
-        let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
-        let expr = if self.eat(t!("="))? {
-            Some(self.parse_single_expr()?)
-        } else {
-            None
-        };
-        Ok(ast::Stmt::Var(var, expr))
+        let mut bindings = Vec::new_in(self.alloc.clone());
+        loop {
+            expect_bind!(self, let id = "ident");
+            let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
+                kind: ErrorKind::RedeclaredVariable,
+                origin: self.last_span,
+            })?;
+            let expr = if self.eat(t!("="))? {
+                Some(self.parse_single_expr()?)
+            } else {
+                None
+            };
+            bindings.push((var, expr));
+            if !self.eat(t!(","))? {
+                break;
+            }
+        }
+        Ok(ast::Stmt::Var(bindings))
     }
 
     fn parse_const_binding(&mut self) -> Result<ast::Stmt<A>> {

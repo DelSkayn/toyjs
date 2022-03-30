@@ -54,31 +54,35 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let reg = self.builder.alloc_symbol(*symbol);
                 Some(self.compile_expr(Some(reg), expr).eval(self))
             }
-            Stmt::Var(symbol, expr) => {
-                if self.symbol_table.is_symbol_local(*symbol) {
-                    let reg = self.builder.alloc_symbol(*symbol);
-                    if let Some(x) = expr.as_ref() {
-                        Some(self.compile_expr(Some(reg), x).eval(self))
+            Stmt::Var(symbols) => {
+                let mut reg = None;
+                for (symbol, expr) in symbols {
+                    if self.symbol_table.is_symbol_local(*symbol) {
+                        let dst = self.builder.alloc_symbol(*symbol);
+                        if let Some(x) = expr.as_ref() {
+                            reg = Some(self.compile_expr(Some(dst), x).eval(self));
+                        } else {
+                            self.compile_literal(Some(dst), Literal::Undefined);
+                            reg = None;
+                        }
+                    } else if let Some(expr) = expr {
+                        let expr = self.compile_expr(None, expr).eval(self);
+                        let name = self.compile_literal(
+                            None,
+                            Literal::String(self.symbol_table.symbols()[*symbol].ident),
+                        );
+                        self.builder.push(Instruction::GlobalAssign {
+                            key: name.0,
+                            src: expr.0,
+                        });
+                        self.builder.free_temp(expr);
+                        self.builder.free_temp(name);
+                        reg = Some(expr);
                     } else {
-                        self.compile_literal(Some(reg), Literal::Undefined);
-                        None
+                        reg = None;
                     }
-                } else if let Some(expr) = expr {
-                    let expr = self.compile_expr(None, expr).eval(self);
-                    let name = self.compile_literal(
-                        None,
-                        Literal::String(self.symbol_table.symbols()[*symbol].ident),
-                    );
-                    self.builder.push(Instruction::GlobalAssign {
-                        key: name.0,
-                        src: expr.0,
-                    });
-                    self.builder.free_temp(expr);
-                    self.builder.free_temp(name);
-                    Some(expr)
-                } else {
-                    None
                 }
+                reg
             }
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
             Stmt::Function(scope, symbol, params, stmts) => {

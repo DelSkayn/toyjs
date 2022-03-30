@@ -43,7 +43,7 @@ pub struct Case<A: Allocator> {
 pub enum Stmt<A: Allocator> {
     Empty,
     Let(SymbolId, Option<Expr<A>>),
-    Var(SymbolId, Option<Expr<A>>),
+    Var(Vec<(SymbolId, Option<Expr<A>>), A>),
     Const(SymbolId, Expr<A>),
     Expr(Vec<Expr<A>, A>),
     Throw(Expr<A>),
