@@ -1,7 +1,7 @@
 use super::*;
 use ast::{
     symbol_table::{DeclType, ScopeKind},
-    Literal, PrimeExpr,
+    Expr, Literal, PrimeExpr,
 };
 use token::t;
 
@@ -82,6 +82,32 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let mut exprs = Vec::new_in(self.alloc.clone());
         while self.peek_kind()? != Some(t!("}")) {
             expect_bind!(self, let bind = "ident");
+            if self.peek_kind()? == Some(t!("(")) {
+                let scope = self.symbol_table.push_scope(ScopeKind::Function);
+                let params = self.parse_params()?;
+                expect!(self, "{");
+                let stmts = self.alter_state::<_, _, Result<_>>(
+                    |s| {
+                        s.r#return = true;
+                        s.r#break = false;
+                        s.r#continue = false;
+                    },
+                    |this| {
+                        let mut stmts = Vec::new_in(this.alloc.clone());
+                        while !this.eat(t!("}"))? {
+                            if this.peek()?.is_none() {
+                                unexpected!(this, "expected statement or function end");
+                            }
+                            stmts.push(this.parse_stmt()?);
+                        }
+                        Ok(stmts)
+                    },
+                )?;
+                self.symbol_table.pop_scope();
+                let expr = Expr::Prime(PrimeExpr::Function(scope, None, params, stmts));
+                exprs.push((bind, expr));
+                continue;
+            }
             expect!(self, ":");
             let expr = self.parse_single_expr()?;
             exprs.push((bind, expr));
