@@ -181,14 +181,14 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         };
         expect!(self, ";");
         let cond = if !self.eat(t!(";"))? {
-            let res = self.parse_single_expr()?;
+            let res = self.parse_expr()?;
             expect!(self, ";");
             Some(res)
         } else {
             None
         };
         let post = if !self.eat(t!(")"))? {
-            let res = self.parse_single_expr()?;
+            let res = self.parse_expr()?;
             expect!(self, ")");
             Some(res)
         } else {

@@ -30,7 +30,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 None
             }
             Stmt::For(decl, cond, post, block) => {
-                self.compile_for(decl, cond, post, block);
+                self.compile_for(decl, cond.as_deref(), post.as_deref(), block);
                 None
             }
             Stmt::Continue => {
@@ -346,8 +346,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     pub fn compile_for(
         &mut self,
         decl: &'a Option<ForDecl<A>>,
-        cond: &'a Option<Expr<A>>,
-        post: &'a Option<Expr<A>>,
+        cond: Option<&'a [Expr<A>]>,
+        post: Option<&'a [Expr<A>]>,
         block: &'a Stmt<A>,
     ) {
         if let Some(decl) = decl {
@@ -363,7 +363,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
         let before_cond = self.builder.next_instruction_id();
         let patch_cond = if let Some(cond) = cond {
-            let cond = self.compile_expr(None, cond);
+            let cond = self.compile_expressions(None, cond);
             self.builder.free_temp(cond.register);
             let patch_cond = self.builder.push(Instruction::JumpFalse {
                 cond: cond.register.0,
@@ -390,7 +390,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
 
         if let Some(post) = post {
-            let reg = self.compile_expr(None, post).eval(self);
+            let reg = self.compile_expressions(None, post).eval(self);
             self.builder.free_temp(reg);
         }
         let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
