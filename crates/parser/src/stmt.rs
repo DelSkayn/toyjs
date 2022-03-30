@@ -11,6 +11,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let res = match peek {
             t!("if") => self.parse_if(),
             t!("while") => self.parse_while(),
+            t!("switch") => self.parse_switch(),
             t!("do") => self.parse_do_while(),
             t!("for") => self.parse_for(),
             t!("let") => self.parse_let_binding(),
@@ -86,6 +87,54 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             expr,
             Box::new_in(stmt, self.alloc.clone()),
         ))
+    }
+
+    fn parse_switch(&mut self) -> Result<ast::Stmt<A>> {
+        expect!(self, "switch");
+        expect!(self, "(");
+        let expr = self.parse_expr()?;
+        expect!(self, ")");
+        expect!(self, "{");
+        let mut clauses = Vec::new_in(self.alloc.clone());
+        let mut r#default = None;
+        self.alter_state(
+            |x| {
+                x.r#break = true;
+            },
+            |this| loop {
+                if this.eat(t!("case"))? {
+                    let expr = this.parse_single_expr()?;
+                    expect!(this, ":");
+                    let mut stmts = Vec::new_in(this.alloc.clone());
+                    let peek = this.peek_kind()?;
+                    loop {
+                        match peek {
+                            Some(t!("case")) | Some(t!("default")) | Some(t!("}")) => break,
+                            _ => {
+                                stmts.push(this.parse_stmt()?);
+                            }
+                        }
+                    }
+                    clauses.push(ast::Case { expr, stmts });
+                } else if this.eat(t!("default"))? {
+                    expect!(this, ":");
+                    let peek = this.peek_kind()?;
+                    let mut stmts = Vec::new_in(this.alloc.clone());
+                    while peek.is_some() && peek.unwrap() != t!("}") {
+                        stmts.push(this.parse_stmt()?);
+                    }
+                    r#default = Some(stmts);
+                    return Ok(());
+                } else {
+                    return Ok(());
+                }
+            },
+        )?;
+        if r#default.is_some() && self.peek_kind()? == Some(t!("case")) {
+            unexpected!(self => "`default` must be the last case");
+        }
+        expect!(self, "}" => "switch block not closed");
+        Ok(ast::Stmt::Switch(expr, clauses, r#default))
     }
 
     fn parse_do_while(&mut self) -> Result<ast::Stmt<A>> {
