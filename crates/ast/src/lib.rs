@@ -33,6 +33,13 @@ pub struct Catch<A: Allocator> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub struct Case<A: Allocator> {
+    pub expr: Expr<A>,
+    pub stmts: Vec<Stmt<A>, A>,
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
     Let(SymbolId, Option<Expr<A>>),
@@ -43,6 +50,7 @@ pub enum Stmt<A: Allocator> {
     Break,
     Continue,
     If(Vec<Expr<A>, A>, Box<Stmt<A>, A>, Option<Box<Stmt<A>, A>>),
+    Switch(Vec<Expr<A>, A>, Vec<Case<A>, A>, Option<Vec<Stmt<A>, A>>),
     While(Vec<Expr<A>, A>, Box<Stmt<A>, A>),
     DoWhile(Box<Stmt<A>, A>, Vec<Expr<A>, A>),
     For(ForDecl<A>, Expr<A>, Expr<A>, Box<Stmt<A>, A>),

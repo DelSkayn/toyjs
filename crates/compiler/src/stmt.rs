@@ -17,6 +17,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_if(cond, r#if, r#else);
                 None
             }
+            Stmt::Switch(_cond, _clauses, _default) => {
+                todo!()
+            }
             Stmt::While(cond, block) => {
                 self.compile_while(cond, block);
                 None
