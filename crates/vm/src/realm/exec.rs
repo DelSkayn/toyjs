@@ -513,6 +513,8 @@ impl Realm {
     pub unsafe fn is_falsish(&self, value: Value) -> bool {
         if value.is_int() {
             value.cast_int() == 0
+        } else if value.is_float() {
+            value.cast_float().is_nan()
         } else if value.is_string() {
             value.unsafe_cast_string().is_empty()
         } else {
