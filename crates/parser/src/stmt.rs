@@ -106,8 +106,8 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                     let expr = this.parse_single_expr()?;
                     expect!(this, ":");
                     let mut stmts = Vec::new_in(this.alloc.clone());
-                    let peek = this.peek_kind()?;
                     loop {
+                        let peek = this.peek_kind()?;
                         match peek {
                             Some(t!("case")) | Some(t!("default")) | Some(t!("}")) => break,
                             _ => {
@@ -118,10 +118,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                     clauses.push(ast::Case { expr, stmts });
                 } else if this.eat(t!("default"))? {
                     expect!(this, ":");
-                    let peek = this.peek_kind()?;
+                    let mut peek = this.peek_kind()?;
                     let mut stmts = Vec::new_in(this.alloc.clone());
                     while peek.is_some() && peek.unwrap() != t!("}") {
                         stmts.push(this.parse_stmt()?);
+                        peek = this.peek_kind()?;
                     }
                     r#default = Some(stmts);
                     return Ok(());

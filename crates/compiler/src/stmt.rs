@@ -1,4 +1,4 @@
-use ast::{Expr, ForDecl, Literal, Params, ScopeId, Stmt};
+use ast::{Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt};
 use vm::instructions::Instruction;
 
 use crate::{builder::FunctionId, expr::ExprValue, register::Register, Compiler};
@@ -17,8 +17,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_if(cond, r#if, r#else);
                 None
             }
-            Stmt::Switch(_cond, _clauses, _default) => {
-                todo!()
+            Stmt::Switch(cond, clauses, r#default) => {
+                self.compile_switch(cond, clauses, r#default.as_deref());
+                None
             }
             Stmt::While(cond, block) => {
                 self.compile_while(cond, block);
@@ -190,6 +191,53 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             });
             self.builder
                 .patch_jump(patch_if, self.builder.next_instruction_id());
+        }
+    }
+
+    pub fn compile_switch(
+        &mut self,
+        cond: &'a [Expr<A>],
+        cases: &'a [Case<A>],
+        r#default: Option<&'a [Stmt<A>]>,
+    ) {
+        let cond = self.compile_expressions(None, cond).eval(self);
+        // Compile condition jumps
+        let mut jumps = Vec::new_in(self.alloc.clone());
+        for case in cases.iter() {
+            let v = self.compile_expr(None, &case.expr).eval(self);
+            self.builder.free_temp(v);
+            self.builder.push(Instruction::SEqual {
+                dst: v.0,
+                left: cond.0,
+                righ: v.0,
+            });
+            jumps.push(
+                self.builder
+                    .push(Instruction::JumpTrue { cond: v.0, tgt: 0 }),
+            )
+        }
+        let after_cond = self.builder.push(Instruction::Jump { tgt: 0 });
+        self.builder.free_temp(cond);
+        // Compile statements.
+        self.builder.push_flow_scope();
+        for (c, jump) in cases.iter().zip(jumps) {
+            self.builder
+                .patch_jump(jump, self.builder.next_instruction_id());
+            for s in c.stmts.iter() {
+                self.compile_stmt(s);
+            }
+        }
+        self.builder
+            .patch_jump(after_cond, self.builder.next_instruction_id());
+        if let Some(stmts) = r#default {
+            for s in stmts {
+                self.compile_stmt(s);
+            }
+        }
+        let flow = self.builder.pop_flow_scope();
+        for j in flow.patch_break {
+            self.builder
+                .patch_jump(j, self.builder.next_instruction_id());
         }
     }
 
