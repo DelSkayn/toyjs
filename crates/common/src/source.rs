@@ -94,7 +94,7 @@ impl Source {
             })
             .expect("span outside source file");
         let line_span = lines[line];
-        let line_str = &self.source[line_span.low as usize..=line_span.hi as usize];
+        let line_str = &self.source[line_span.low as usize..line_span.hi as usize];
         let mut column = 0;
         let mut chars = line_str.chars();
         while ((chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize) as u32) < span.low
@@ -169,7 +169,7 @@ impl Source {
         let mut prefix = self.source[line_span.low as usize..span.low as usize]
             .chars()
             .rev();
-        let mut postfix = self.source[(span.hi + 1) as usize..=line_span.hi as usize].chars();
+        let mut postfix = self.source[(span.hi + 1) as usize..line_span.hi as usize].chars();
 
         let mut buffer = VecDeque::with_capacity(MAX_LINE_LENGTH);
         self.source[span.low as usize..=span.hi as usize]

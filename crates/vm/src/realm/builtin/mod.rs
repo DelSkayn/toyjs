@@ -203,7 +203,7 @@ impl Realm {
         let name = self.vm().allocate::<String>("SyntaxError".into());
         let (error_construct, error_proto) =
             error::init_native::<error::TypeError>(self, &keys, name, error_construct, error_proto);
-        self.builtin.type_error_proto = Some(error_proto);
+        self.builtin.syntax_error_proto = Some(error_proto);
         global
             .index_set(name.into(), error_construct.into(), self)
             .unwrap();

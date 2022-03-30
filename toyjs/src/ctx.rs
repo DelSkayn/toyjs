@@ -188,7 +188,7 @@ where {
             let lexer = Lexer::new(&source, &mut (*user_data).interner);
             let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
                 .map_err(|e| e.format(&source, &(*user_data).interner).to_string())
-                .map_err(Error::Parse)?;
+                .map_err(Error::Syntax)?;
 
             let bytecode = Compiler::compile_script(
                 &ast,
@@ -221,7 +221,7 @@ where {
         let lexer = Lexer::new(&source, &mut (*user_data).interner);
         let ast = Parser::parse_script(lexer, &mut (*user_data).symbol_table, Global)
             .map_err(|e| e.format(&source, &(*user_data).interner).to_string())
-            .map_err(Error::Parse)?;
+            .map_err(Error::Syntax)?;
         let bytecode = Compiler::compile_script(
             &ast,
             &(*user_data).symbol_table,
