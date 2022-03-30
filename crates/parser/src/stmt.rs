@@ -161,24 +161,39 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "for");
         expect!(self, "(");
         let _scope = self.symbol_table.push_scope(ScopeKind::Lexical);
-        let decl = match self.peek_kind()? {
-            None => unexpected!(self, "let", "var", "const", "ident"),
-            Some(t!("let")) => {
-                ast::ForDecl::Stmt(Box::new_in(self.parse_let_binding()?, self.alloc.clone()))
-            }
-            Some(t!("const")) => {
-                ast::ForDecl::Stmt(Box::new_in(self.parse_const_binding()?, self.alloc.clone()))
-            }
-            Some(t!("var")) => {
-                ast::ForDecl::Stmt(Box::new_in(self.parse_var_binding()?, self.alloc.clone()))
-            }
-            _ => ast::ForDecl::Expr(self.parse_single_expr()?),
+        let decl = if !self.eat(t!(";"))? {
+            let decl = match self.peek_kind()? {
+                None => unexpected!(self, "let", "var", "const", "ident"),
+                Some(t!("let")) => {
+                    ast::ForDecl::Stmt(Box::new_in(self.parse_let_binding()?, self.alloc.clone()))
+                }
+                Some(t!("const")) => {
+                    ast::ForDecl::Stmt(Box::new_in(self.parse_const_binding()?, self.alloc.clone()))
+                }
+                Some(t!("var")) => {
+                    ast::ForDecl::Stmt(Box::new_in(self.parse_var_binding()?, self.alloc.clone()))
+                }
+                _ => ast::ForDecl::Expr(self.parse_single_expr()?),
+            };
+            Some(decl)
+        } else {
+            None
         };
         expect!(self, ";");
-        let cond = self.parse_single_expr()?;
-        expect!(self, ";");
-        let post = self.parse_single_expr()?;
-        expect!(self, ")");
+        let cond = if !self.eat(t!(";"))? {
+            let res = self.parse_single_expr()?;
+            expect!(self, ";");
+            Some(res)
+        } else {
+            None
+        };
+        let post = if !self.eat(t!(")"))? {
+            let res = self.parse_single_expr()?;
+            expect!(self, ")");
+            Some(res)
+        } else {
+            None
+        };
         let stmt = self.alter_state(
             |x| {
                 x.r#continue = true;
