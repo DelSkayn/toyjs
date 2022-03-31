@@ -1,4 +1,4 @@
-use ast::{Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt};
+use ast::{ArrowBody, Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt};
 use vm::instructions::Instruction;
 
 use crate::{builder::FunctionId, expr::ExprValue, register::Register, Compiler};
@@ -337,6 +337,39 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             _ => {
                 self.builder
                     .push(Instruction::ReturnUndefined { _ignore: () });
+            }
+        }
+        self.builder.pop_function();
+        id
+    }
+
+    pub fn compile_arrow_function_decl(
+        &mut self,
+        scope: ScopeId,
+        params: &'a Params<A>,
+        body: &'a ArrowBody<A>,
+    ) -> FunctionId {
+        let id = self.builder.push_function(scope, params);
+        match body {
+            ArrowBody::Block(block) => {
+                for s in block {
+                    self.compile_stmt(s);
+                }
+
+                match self.builder.instructions().last() {
+                    Some(Instruction::Return { .. })
+                    | Some(Instruction::ReturnUndefined { .. })
+                    | Some(Instruction::Throw { .. }) => {}
+                    _ => {
+                        self.builder
+                            .push(Instruction::ReturnUndefined { _ignore: () });
+                    }
+                }
+            }
+            ArrowBody::Expr(x) => {
+                let reg = self.compile_expr(None, x).eval(self);
+                self.builder.free_temp(reg);
+                self.builder.push(Instruction::Return { ret: reg.0 });
             }
         }
         self.builder.pop_function();

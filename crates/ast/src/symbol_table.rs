@@ -8,7 +8,7 @@ use common::{
 };
 use std::{
     alloc::{Allocator, Global},
-    fmt,
+    fmt, mem,
 };
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
@@ -36,6 +36,7 @@ impl DeclType {
 }
 
 /// Data about a lexical symbol
+#[derive(Debug)]
 pub struct Symbol {
     /// type of symbol
     pub decl_type: DeclType,
@@ -388,6 +389,32 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             .insert(new_symbol);
 
         new_symbol
+    }
+
+    pub fn reparse_function_param(&mut self, id: SymbolId) -> SymbolId {
+        let symbol = &mut self.table.symbols[id];
+        if let DeclType::Implicit = symbol.decl_type {
+            symbol.decl_type = DeclType::Argument;
+            let ident = symbol.ident;
+            let old_scope = mem::replace(&mut symbol.decl_scope, self.current_function);
+            let idx = self.table.scopes[old_scope]
+                .symbols
+                .iter()
+                .enumerate()
+                .find(|x| *x.1 == id)
+                .unwrap()
+                .0;
+            self.table.scopes[old_scope].symbols.remove(idx);
+            self.table.scopes[self.current_function].symbols.push(id);
+            self.table.symbols_by_ident.remove(&(old_scope, ident));
+            self.table
+                .symbols_by_ident
+                .insert((self.current_function, ident), id);
+            id
+        } else {
+            let ident = symbol.ident;
+            self.define(ident, DeclType::Argument).unwrap()
+        }
     }
 
     /// Push a new scope onto the stack

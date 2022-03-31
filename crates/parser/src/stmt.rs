@@ -279,7 +279,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             origin: self.last_span,
         })?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.parse_params()?;
+        let params = self.parse_params(false)?;
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
             |s| {
@@ -299,8 +299,10 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         Ok(ast::Stmt::Function(scope, var, params, stmts))
     }
 
-    pub(crate) fn parse_params(&mut self) -> Result<ast::Params<A>> {
-        expect!(self, "(");
+    pub(crate) fn parse_params(&mut self, openbrace_eaten: bool) -> Result<ast::Params<A>> {
+        if !openbrace_eaten {
+            expect!(self, "(");
+        }
         let mut stmt = Vec::new_in(self.alloc.clone());
         let mut rest = None;
         while let Some(peek) = self.peek_kind()? {

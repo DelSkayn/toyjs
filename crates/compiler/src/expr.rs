@@ -1,7 +1,7 @@
 use ast::{
     symbol_table::{DeclType, Symbol},
-    AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator, PrimeExpr,
-    SymbolId,
+    ArrowBody, AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator,
+    PrimeExpr, SymbolId,
 };
 use common::interner::StringId;
 use vm::instructions::Instruction;
@@ -739,6 +739,18 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+            }
+            PrimeExpr::ArrowArgs(_) => {
+                panic!("PrimeExpr::ArrowArgs made it into completed ast!")
+            }
+            PrimeExpr::ArrowFunction(scope, args, body) => {
+                let id = self.compile_arrow_function_decl(*scope, args, body);
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::LoadFunction {
+                    dst: dst.0,
+                    func: id.0,
+                });
+                ExprValue::new_in(dst, self.alloc.clone())
             }
             PrimeExpr::This => {
                 let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
