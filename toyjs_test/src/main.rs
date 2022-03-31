@@ -7,6 +7,7 @@ use args::Sub;
 use clap::Parser;
 
 mod args;
+mod commands;
 mod harness;
 mod test;
 
@@ -18,9 +19,9 @@ fn main() -> Result<()> {
     let harness = harness::Harness::load(path)?;
 
     match args.subcommand.unwrap_or_default() {
-        Sub::All => test::run(path, &harness),
+        Sub::All => commands::all::run(path, &harness),
         Sub::Single { path: single_path } => {
-            test::run_single(Path::new(path).join(single_path), &harness)
+            commands::single::run(Path::new(path).join(single_path), &harness)
         }
     }
 }
