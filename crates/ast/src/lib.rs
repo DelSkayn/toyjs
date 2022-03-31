@@ -170,6 +170,7 @@ impl<A: Allocator> Expr<A> {
                 PrimeExpr::Array(_) => false,
                 PrimeExpr::Function(_, _, _, _) => false,
                 PrimeExpr::This => false,
+                PrimeExpr::NewTarget => false,
             },
             Expr::Assign(ref left, ref op, _) => match op {
                 AssignOperator::Assign => left.is_assignable(),
@@ -200,6 +201,7 @@ pub enum PrimeExpr<A: Allocator> {
     // A direct eval call
     Eval(Vec<Expr<A>, A>),
     This,
+    NewTarget,
 }
 
 #[derive(Derivative, Clone, Copy)]

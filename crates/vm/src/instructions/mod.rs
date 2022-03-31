@@ -177,6 +177,7 @@ define_instructions! {
         LoadConstructor{ dst: u8, func: u16},
 
         LoadThis{ dst: u8},
+        LoadTarget{ dst: u8},
 
         Move{ dst: u8, src: u8},
 
