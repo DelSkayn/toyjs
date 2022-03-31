@@ -280,7 +280,7 @@ impl<T, Idx: SlotKey, A: Allocator> SlotVec<T, Idx, A> {
             }
         } else {
             assert!(
-                !(self.values.len() >= <Idx as SlotKey>::MAX),
+                self.values.len() < <Idx as SlotKey>::MAX,
                 "to many values for the given index"
             );
             let idx = Idx::new(self.values.len());
