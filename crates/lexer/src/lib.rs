@@ -94,7 +94,7 @@ impl<'a> Lexer<'a> {
                 Some(chars::LF) => return Ok(()),
                 Some(chars::CR) => {
                     if let Some(chars::LF) = self.peek_byte() {
-                        self.eat_byte()
+                        self.eat_byte();
                     }
                     return Ok(());
                 }
@@ -212,8 +212,7 @@ impl<'a> Lexer<'a> {
                         break;
                     }
                 }
-                Some(_) => break,
-                None => break,
+                Some(_) | None => break,
             }
         }
         if let Some(x) = Self::match_keyword(&self.source.source()[start..self.offset]) {
@@ -469,8 +468,7 @@ impl<'a> Lexer<'a> {
             },
             // These characters are not offical identifier starters according to unicode
             // but are specified by ecmascript as such.
-            b'$' => self.lex_ident(self.offset - 1)?,
-            b'_' => self.lex_ident(self.offset - 1)?,
+            b'$' | b'_' => self.lex_ident(self.offset - 1)?,
 
             b'\\' => todo!(),
             b'\'' => self.lex_string(b'\'')?,

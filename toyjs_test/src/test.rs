@@ -130,7 +130,7 @@ impl Test {
                 if e.is::<String>() {
                     TestResult::Panic(e.downcast_ref::<String>().unwrap().clone())
                 } else if e.is::<&'static str>() {
-                    TestResult::Panic(e.downcast_ref::<&'static str>().unwrap().to_string())
+                    TestResult::Panic((*e.downcast_ref::<&'static str>().unwrap()).to_string())
                 } else {
                     TestResult::Panic("Could not format panic message".to_string())
                 }
@@ -148,7 +148,7 @@ pub fn dir_walker<F: FnMut(&Path)>(p: &Path, f: &mut F) -> Result<()> {
         if entry.file_type()?.is_file() {
             f(&entry.path());
         } else {
-            dir_walker(entry.path().as_path(), f)?
+            dir_walker(entry.path().as_path(), f)?;
         }
     }
     Ok(())

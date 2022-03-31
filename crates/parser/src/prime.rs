@@ -1,4 +1,4 @@
-use super::*;
+use super::{Allocator, Error, ErrorKind, Parser, Result, TokenKind};
 use ast::{
     symbol_table::{DeclType, ScopeKind},
     Expr, Literal, PrimeExpr,

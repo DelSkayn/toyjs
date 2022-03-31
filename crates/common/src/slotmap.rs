@@ -63,19 +63,19 @@ pub unsafe trait SlotKey:
 
     fn new(v: usize) -> Self;
 
-    #[inline(always)]
+    #[inline]
     fn new_version(idx: usize, _version: Self::Version) -> Self {
         Self::new(idx)
     }
 
     fn index(&self) -> usize;
 
-    #[inline(always)]
+    #[inline]
     fn version(&self) -> Self::Version {
         Default::default()
     }
 
-    #[inline(always)]
+    #[inline]
     fn next_version(self) -> Self {
         self
     }
@@ -91,7 +91,7 @@ unsafe impl SlotKey for VersionKey {
     type Version = u32;
     const MAX: usize = u32::MAX as usize;
 
-    #[inline(always)]
+    #[inline]
     fn new(idx: usize) -> Self {
         VersionKey {
             idx: idx as u32,
@@ -106,12 +106,12 @@ unsafe impl SlotKey for VersionKey {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn index(&self) -> usize {
         self.idx as usize
     }
 
-    #[inline(always)]
+    #[inline]
     fn version(&self) -> u32 {
         self.version
     }
@@ -126,12 +126,12 @@ unsafe impl SlotKey for usize {
     type Version = ();
     const MAX: usize = usize::MAX as usize;
 
-    #[inline(always)]
+    #[inline]
     fn new(x: usize) -> Self {
         x
     }
 
-    #[inline(always)]
+    #[inline]
     fn index(&self) -> usize {
         *self
     }
@@ -141,12 +141,12 @@ unsafe impl SlotKey for u32 {
     type Version = ();
     const MAX: usize = u32::MAX as usize;
 
-    #[inline(always)]
+    #[inline]
     fn new(x: usize) -> Self {
         x as u32
     }
 
-    #[inline(always)]
+    #[inline]
     fn index(&self) -> usize {
         *self as usize
     }
@@ -156,12 +156,12 @@ unsafe impl SlotKey for u16 {
     type Version = ();
     const MAX: usize = u16::MAX as usize;
 
-    #[inline(always)]
+    #[inline]
     fn new(x: usize) -> Self {
         x as u16
     }
 
-    #[inline(always)]
+    #[inline]
     fn index(&self) -> usize {
         *self as usize
     }
@@ -171,12 +171,12 @@ unsafe impl SlotKey for u8 {
     type Version = ();
     const MAX: usize = u8::MAX as usize;
 
-    #[inline(always)]
+    #[inline]
     fn new(x: usize) -> Self {
         x as u8
     }
 
-    #[inline(always)]
+    #[inline]
     fn index(&self) -> usize {
         *self as usize
     }
@@ -210,6 +210,7 @@ impl<T, Idx: SlotKey> SlotVec<T, Idx> {
         }
     }
     /// Create a list with a given capacity.
+    #[must_use]
     pub fn with_capacity(capacity: usize) -> SlotVec<T> {
         SlotVec {
             values: Vec::with_capacity(capacity),
@@ -275,12 +276,13 @@ impl<T, Idx: SlotKey, A: Allocator> SlotVec<T, Idx, A> {
                     };
                     x.next_version()
                 }
-                _ => panic!("invalid free list!"),
+                SlotMapValue::Value { .. } => panic!("invalid free list!"),
             }
         } else {
-            if self.values.len() >= <Idx as SlotKey>::MAX {
-                panic!("to many values for the given index")
-            }
+            assert!(
+                !(self.values.len() >= <Idx as SlotKey>::MAX),
+                "to many values for the given index"
+            );
             let idx = Idx::new(self.values.len());
             self.values.push(SlotMapValue::Value {
                 value: v,
@@ -381,13 +383,11 @@ impl<'a, T, Idx: SlotKey> Iterator for IterMut<'a, T, Idx> {
 impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotVec<T, Idx, A> {
     type Output = T;
 
-    #[inline(always)]
+    #[inline]
     fn index(&self, idx: Idx) -> &T {
         match self.values[idx.index()] {
             SlotMapValue::Value { ref value, version } => {
-                if version != idx.version() {
-                    panic!("invalid version of key")
-                }
+                assert!(!(version != idx.version()), "invalid version of key");
                 value
             }
             SlotMapValue::Free(_) => panic!("no value at given index"),
@@ -396,16 +396,14 @@ impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotVec<T, Idx, A> {
 }
 
 impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotVec<T, Idx, A> {
-    #[inline(always)]
+    #[inline]
     fn index_mut(&mut self, idx: Idx) -> &mut T {
         match self.values[idx.index()] {
             SlotMapValue::Value {
                 ref mut value,
                 version,
             } => {
-                if version != idx.version() {
-                    panic!("invalid version of key")
-                }
+                assert!(!(version != idx.version()), "invalid version of key");
                 value
             }
             SlotMapValue::Free(_) => panic!("no value at given index"),
@@ -434,6 +432,7 @@ impl<T, K: SlotKey> Default for SlotStack<T, K> {
 }
 
 impl<T, K: SlotKey> SlotStack<T, K, Global> {
+    #[must_use]
     pub fn new() -> Self {
         Self::new_in(Global)
     }
@@ -469,14 +468,14 @@ impl<T, K: SlotKey, A: Allocator> Deref for SlotStack<T, K, A> {
 impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotStack<T, Idx, A> {
     type Output = T;
 
-    #[inline(always)]
+    #[inline]
     fn index(&self, idx: Idx) -> &T {
         &self.values[idx.index()]
     }
 }
 
 impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotStack<T, Idx, A> {
-    #[inline(always)]
+    #[inline]
     fn index_mut(&mut self, idx: Idx) -> &mut T {
         &mut self.values[idx.index()]
     }
@@ -496,6 +495,7 @@ pub struct SlotMap<T, K: SlotKey, A: Allocator = Global> {
 }
 
 impl<T, K: SlotKey> SlotMap<T, K> {
+    #[must_use]
     pub fn new() -> Self {
         Self::new_in(Global)
     }
@@ -516,7 +516,7 @@ impl<T, K: SlotKey, A: Allocator> SlotMap<T, K, A> {
 
     pub fn insert(&mut self, k: K, v: T) {
         if self.values.len() <= k.index() {
-            self.values.resize_with(k.index() + 1, || None)
+            self.values.resize_with(k.index() + 1, || None);
         }
         self.values[k.index()] = Some((v, k.version()));
     }
@@ -524,14 +524,14 @@ impl<T, K: SlotKey, A: Allocator> SlotMap<T, K, A> {
     pub fn get(&self, k: K) -> Option<&T> {
         self.values
             .get(k.index())
-            .and_then(|x| x.as_ref())
+            .and_then(Option::as_ref)
             .and_then(|x| if x.1 == k.version() { Some(&x.0) } else { None })
     }
 
     pub fn get_mut(&mut self, k: K) -> Option<&mut T> {
         self.values
             .get_mut(k.index())
-            .and_then(|x| x.as_mut())
+            .and_then(Option::as_mut)
             .and_then(|x| {
                 if x.1 == k.version() {
                     Some(&mut x.0)
@@ -545,7 +545,7 @@ impl<T, K: SlotKey, A: Allocator> SlotMap<T, K, A> {
 impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotMap<T, Idx, A> {
     type Output = T;
 
-    #[inline(always)]
+    #[inline]
     fn index(&self, idx: Idx) -> &T {
         self.values[idx.index()]
             .as_ref()
@@ -561,7 +561,7 @@ impl<T, Idx: SlotKey, A: Allocator> ops::Index<Idx> for SlotMap<T, Idx, A> {
 }
 
 impl<T, Idx: SlotKey, A: Allocator> ops::IndexMut<Idx> for SlotMap<T, Idx, A> {
-    #[inline(always)]
+    #[inline]
     fn index_mut(&mut self, idx: Idx) -> &mut T {
         self.values[idx.index()]
             .as_mut()

@@ -197,7 +197,7 @@ impl Realm {
     }
 
     pub unsafe fn user_enter_frame(&self, registers: u8) {
-        self.stack.enter(registers)
+        self.stack.enter(registers);
     }
 
     pub unsafe fn user_pop_frame(&self) {
@@ -205,7 +205,7 @@ impl Realm {
     }
 
     pub unsafe fn user_push_temp(&self, tmp: Value) {
-        self.stack.push_temp(tmp)
+        self.stack.push_temp(tmp);
     }
 }
 

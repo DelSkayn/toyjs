@@ -111,7 +111,7 @@ unsafe impl Trace for ByteCode {
     }
 
     fn trace(&self, ctx: gc::Ctx) {
-        self.constants.iter().for_each(|x| x.trace(ctx))
+        self.constants.iter().for_each(|x| x.trace(ctx));
     }
 }
 

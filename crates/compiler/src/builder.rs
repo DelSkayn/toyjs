@@ -162,16 +162,10 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
         let jump = to.0 as i64 - id.0 as i64;
         let x = jump.try_into().unwrap();
         match self.functions[self.current].instructions[id] {
-            Instruction::JumpTrue { ref mut tgt, .. } => {
-                *tgt = x;
-            }
-            Instruction::JumpFalse { ref mut tgt, .. } => {
-                *tgt = x;
-            }
-            Instruction::Jump { ref mut tgt, .. } => {
-                *tgt = x;
-            }
-            Instruction::Try { ref mut tgt, .. } => {
+            Instruction::JumpTrue { ref mut tgt, .. }
+            | Instruction::JumpFalse { ref mut tgt, .. }
+            | Instruction::Jump { ref mut tgt, .. }
+            | Instruction::Try { ref mut tgt, .. } => {
                 *tgt = x;
             }
             _ => panic!("instruction is not a patchable jump"),
@@ -259,9 +253,9 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
                 .into_boxed_slice();
 
             functions.push(ByteFunction {
-                registers,
-                size,
                 offset,
+                size,
+                registers,
                 upvalues,
             });
             instructions.extend_from_slice(&func_instructions);

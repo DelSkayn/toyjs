@@ -169,7 +169,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.builder.free_temp(expr.register);
         expr.true_list.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
 
         if let Some(r) = self.compile_stmt(r#if) {
@@ -179,7 +179,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             let patch_else = self.builder.push(Instruction::Jump { tgt: 1 });
             expr.false_list.into_iter().for_each(|x| {
                 self.builder
-                    .patch_jump(x, self.builder.next_instruction_id())
+                    .patch_jump(x, self.builder.next_instruction_id());
             });
             self.builder
                 .patch_jump(patch_if, self.builder.next_instruction_id());
@@ -191,7 +191,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         } else {
             expr.false_list.into_iter().for_each(|x| {
                 self.builder
-                    .patch_jump(x, self.builder.next_instruction_id())
+                    .patch_jump(x, self.builder.next_instruction_id());
             });
             self.builder
                 .patch_jump(patch_if, self.builder.next_instruction_id());
@@ -218,7 +218,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             jumps.push(
                 self.builder
                     .push(Instruction::JumpTrue { cond: v.0, tgt: 0 }),
-            )
+            );
         }
         let after_cond = self.builder.push(Instruction::Jump { tgt: 0 });
         self.builder.free_temp(cond);
@@ -227,7 +227,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         for (c, jump) in cases.iter().zip(jumps) {
             self.builder
                 .patch_jump(jump, self.builder.next_instruction_id());
-            for s in c.stmts.iter() {
+            for s in &c.stmts {
                 self.compile_stmt(s);
             }
         }
@@ -255,7 +255,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.builder.free_temp(expr.register);
         expr.true_list.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
 
         self.builder.push_flow_scope();
@@ -272,7 +272,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .patch_jump(patch_while, self.builder.next_instruction_id());
         expr.false_list.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
 
         flow_scope
@@ -282,7 +282,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         flow_scope.patch_break.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
     }
 
@@ -295,7 +295,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         flow_scope.patch_continue.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
 
         let res = self.compile_expressions(None, cond);
@@ -310,12 +310,12 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             .for_each(|x| self.builder.patch_jump(x, before_stmt));
         res.false_list.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
 
         flow_scope.patch_break.into_iter().for_each(|x| {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         });
     }
 
@@ -331,9 +331,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
 
         match self.builder.instructions().last() {
-            Some(Instruction::Return { .. }) => {}
-            Some(Instruction::ReturnUndefined { .. }) => {}
-            Some(Instruction::Throw { .. }) => {}
+            Some(Instruction::Return { .. })
+            | Some(Instruction::ReturnUndefined { .. })
+            | Some(Instruction::Throw { .. }) => {}
             _ => {
                 self.builder
                     .push(Instruction::ReturnUndefined { _ignore: () });
@@ -371,7 +371,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             });
             self.builder.free_temp(cond.register);
 
-            for x in cond.true_list.iter() {
+            for x in &cond.true_list {
                 self.builder
                     .patch_jump(*x, self.builder.next_instruction_id())
             }
@@ -384,9 +384,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         self.compile_stmt(block);
         let flow_scope = self.builder.pop_flow_scope();
 
-        for x in flow_scope.patch_continue.into_iter() {
+        for x in flow_scope.patch_continue {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         }
 
         if let Some(post) = post {
@@ -398,15 +398,15 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder.patch_jump(back_jump, before_cond);
             self.builder
                 .patch_jump(patch_cond, self.builder.next_instruction_id());
-            for x in cond.false_list.into_iter() {
+            for x in cond.false_list {
                 self.builder
-                    .patch_jump(x, self.builder.next_instruction_id())
+                    .patch_jump(x, self.builder.next_instruction_id());
             }
         }
 
-        for x in flow_scope.patch_break.into_iter() {
+        for x in flow_scope.patch_break {
             self.builder
-                .patch_jump(x, self.builder.next_instruction_id())
+                .patch_jump(x, self.builder.next_instruction_id());
         }
     }
 }

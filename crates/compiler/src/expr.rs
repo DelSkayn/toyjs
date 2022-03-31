@@ -27,11 +27,11 @@ impl<A: Allocator + Clone> ExprValue<A> {
     pub fn eval(self, this: &mut Compiler<A>) -> Register {
         self.true_list.into_iter().for_each(|x| {
             this.builder
-                .patch_jump(x, this.builder.next_instruction_id())
+                .patch_jump(x, this.builder.next_instruction_id());
         });
         self.false_list.into_iter().for_each(|x| {
             this.builder
-                .patch_jump(x, this.builder.next_instruction_id())
+                .patch_jump(x, this.builder.next_instruction_id());
         });
         self.register
     }
@@ -502,7 +502,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let left = self.compile_expr(None, left);
                 left.true_list.into_iter().for_each(|x| {
                     self.builder
-                        .patch_jump(x, self.builder.next_instruction_id())
+                        .patch_jump(x, self.builder.next_instruction_id());
                 });
                 let reg = left.register;
                 let jump = self.builder.push(Instruction::JumpFalse {
@@ -515,7 +515,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 let jump_after = self.builder.push(Instruction::Jump { tgt: 1 });
                 left.false_list.into_iter().for_each(|x| {
                     self.builder
-                        .patch_jump(x, self.builder.next_instruction_id())
+                        .patch_jump(x, self.builder.next_instruction_id());
                 });
                 self.builder
                     .patch_jump(jump, self.builder.next_instruction_id());

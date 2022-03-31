@@ -1,4 +1,4 @@
-use super::*;
+use super::{chars, is_radix, ErrorKind, LexResult, Lexer, Token};
 use std::convert::TryInto;
 use token::{Literal, TokenKind};
 
@@ -36,7 +36,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn digit_from_byte(&mut self, c: u8) -> LexResult<u8> {
+    fn digit_from_byte(c: u8) -> LexResult<u8> {
         if !is_radix(c, 16) {
             return Err(ErrorKind::InvalidEscapeCode);
         }
@@ -73,7 +73,7 @@ impl<'a> Lexer<'a> {
                 for _ in 0..2 {
                     match self.next_byte() {
                         Some(e) => {
-                            let digit = self.digit_from_byte(e)?;
+                            let digit = Self::digit_from_byte(e)?;
                             val <<= 4;
                             val |= digit;
                         }
@@ -112,13 +112,13 @@ impl<'a> Lexer<'a> {
                         return Err(ErrorKind::InvalidEscapeCode);
                     }
                     let val: char = val.try_into().map_err(|_| ErrorKind::InvalidEscapeCode)?;
-                    self.buffer.push(val)
+                    self.buffer.push(val);
                 } else {
                     let mut val = 0u32;
                     for _ in 0..4 {
                         match self.next_byte() {
                             Some(e) => {
-                                let digit = self.digit_from_byte(e)?;
+                                let digit = Self::digit_from_byte(e)?;
                                 val <<= 4;
                                 val |= digit as u32;
                             }
@@ -126,7 +126,7 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     let val: char = val.try_into().map_err(|_| ErrorKind::InvalidEscapeCode)?;
-                    self.buffer.push(val)
+                    self.buffer.push(val);
                 }
             }
             x if !x.is_ascii() => match self.next_char(x)? {

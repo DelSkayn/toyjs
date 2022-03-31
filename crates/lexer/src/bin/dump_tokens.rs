@@ -39,7 +39,7 @@ fn main() -> Result<(), io::Error> {
             }
         }
     }
-    for t in tokens.iter() {
+    for t in &tokens {
         println!("{}\t{:?}", t.kind.format(&interner), t);
     }
 

@@ -1,4 +1,4 @@
-use super::*;
+use super::{Allocator, Error, ErrorKind, Parser, Result};
 use ast::symbol_table::{DeclType, ScopeKind};
 use token::t;
 
@@ -81,7 +81,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 x.r#continue = true;
                 x.r#break = true;
             },
-            |this| this.parse_stmt(),
+            Parser::parse_stmt,
         )?;
         Ok(ast::Stmt::While(
             expr,
@@ -145,7 +145,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 x.r#continue = true;
                 x.r#break = true;
             },
-            |this| this.parse_stmt(),
+            Self::parse_stmt,
         )?;
         expect!(self, "while");
         expect!(self, "(");
@@ -161,7 +161,9 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         expect!(self, "for");
         expect!(self, "(");
         let _scope = self.symbol_table.push_scope(ScopeKind::Lexical);
-        let decl = if !self.eat(t!(";"))? {
+        let decl = if self.eat(t!(";"))? {
+            None
+        } else {
             let decl = match self.peek_kind()? {
                 None => unexpected!(self, "let", "var", "const", "ident"),
                 Some(t!("let")) => {
@@ -176,30 +178,28 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 _ => ast::ForDecl::Expr(self.parse_single_expr()?),
             };
             Some(decl)
-        } else {
-            None
         };
         expect!(self, ";");
-        let cond = if !self.eat(t!(";"))? {
+        let cond = if self.eat(t!(";"))? {
+            None
+        } else {
             let res = self.parse_expr()?;
             expect!(self, ";");
             Some(res)
-        } else {
-            None
         };
-        let post = if !self.eat(t!(")"))? {
+        let post = if self.eat(t!(")"))? {
+            None
+        } else {
             let res = self.parse_expr()?;
             expect!(self, ")");
             Some(res)
-        } else {
-            None
         };
         let stmt = self.alter_state(
             |x| {
                 x.r#continue = true;
                 x.r#break = true;
             },
-            |this| this.parse_stmt(),
+            Self::parse_stmt,
         )?;
         self.symbol_table.pop_scope();
 
@@ -265,7 +265,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         let scope = self.symbol_table.push_scope(ScopeKind::Lexical);
         let mut stmts = Vec::new_in(self.alloc.clone());
         while !self.eat(t!("}"))? {
-            stmts.push(self.parse_stmt()?)
+            stmts.push(self.parse_stmt()?);
         }
         self.symbol_table.pop_scope();
         Ok(ast::Stmt::Block(scope, stmts))
@@ -328,9 +328,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                                 origin: self.last_span,
                             })?;
                     stmt.push(arg_var);
-                    if self.eat(t!(","))? {
-                        continue;
-                    } else {
+                    if !self.eat(t!(","))? {
                         break;
                     }
                 }
@@ -373,7 +371,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             expect!(self, "{");
             let mut stmts = Vec::new_in(self.alloc.clone());
             while !self.eat(t!("}"))? {
-                stmts.push(self.parse_stmt()?)
+                stmts.push(self.parse_stmt()?);
             }
             self.symbol_table.pop_scope();
             let stmt = Box::new_in(ast::Stmt::Block(scope, stmts), self.alloc.clone());
