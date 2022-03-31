@@ -242,6 +242,54 @@ impl Value {
         debug_assert!(self.is_string());
         Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
     }
+
+    #[inline]
+    pub fn into_int(self) -> Option<i32> {
+        if self.is_int() {
+            unsafe { Some(self.0.int) }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn into_float(mut self) -> Option<f64> {
+        if self.is_float() {
+            unsafe {
+                self.0.bits -= MIN_FLOAT;
+                Some(self.0.float)
+            }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn into_bool(self) -> Option<bool> {
+        if self.is_bool() {
+            unsafe { Some(self.0.bits == VALUE_TRUE) }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn into_string(self) -> Option<Gc<String>> {
+        if self.is_string() {
+            unsafe { Some(Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())) }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn into_object(self) -> Option<Gc<Object>> {
+        if self.is_object() {
+            unsafe { Some(Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())) }
+        } else {
+            None
+        }
+    }
 }
 
 impl From<bool> for Value {

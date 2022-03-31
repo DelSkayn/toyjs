@@ -45,8 +45,8 @@ impl<'js> Value<'js> {
     }
 
     pub fn is_nan(self) -> bool {
-        if self.value.is_float() {
-            self.value.cast_float().is_nan()
+        if let Some(x) = self.value.into_float() {
+            x.is_nan()
         } else {
             false
         }
@@ -57,35 +57,23 @@ impl<'js> Value<'js> {
     }
 
     pub fn into_f64(self) -> Option<f64> {
-        if self.value.is_float() {
-            Some(self.value.cast_float())
-        } else {
-            None
-        }
+        self.value.into_float()
     }
 
     pub fn into_i32(self) -> Option<i32> {
-        if self.value.is_int() {
-            Some(self.value.cast_int())
-        } else {
-            None
-        }
+        self.value.into_int()
     }
 
     pub fn into_object(self) -> Option<Object<'js>> {
-        if self.value.is_object() {
-            unsafe { Some(Object::wrap(self.ctx, self.value.unsafe_cast_object())) }
-        } else {
-            None
-        }
+        self.value
+            .into_object()
+            .map(|o| unsafe { Object::wrap(self.ctx, o) })
     }
 
     pub fn into_string(self) -> Option<String<'js>> {
-        if self.value.is_string() {
-            unsafe { Some(String::wrap(self.ctx, self.value.unsafe_cast_string())) }
-        } else {
-            None
-        }
+        self.value
+            .into_string()
+            .map(|s| unsafe { String::wrap(self.ctx, s) })
     }
 }
 

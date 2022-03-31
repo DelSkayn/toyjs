@@ -33,10 +33,10 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<'js, Valu
 }
 
 pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
-    ctx.eval(
-        ctx.coerce_string(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?
-            .into_string(),
-    )
+    if let Some(x) = args.get(0) {
+        return ctx.eval(ctx.coerce_string(x)?.into_string());
+    }
+    return Ok(Value::undefined(ctx));
 }
 
 pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {

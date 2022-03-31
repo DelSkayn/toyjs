@@ -28,8 +28,10 @@ pub struct Builtin {
 
 unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     if exec.new_target.is_undefined()
-        || (exec.new_target.is_object()
-            && exec.new_target.unsafe_cast_object().ptr_eq(exec.function))
+        || exec
+            .new_target
+            .into_object()
+            .map_or(false, |x| x.ptr_eq(exec.function))
     {
         if realm.stack.frame_size() == 0 {
             return Ok(
@@ -45,20 +47,15 @@ unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result
         return Ok(realm.to_object(value).into());
     }
 
-    let proto = if exec.new_target.is_object() {
+    let proto = if let Some(object) = exec.new_target.into_object() {
         let key = realm.vm().allocate::<String>("prototype".into());
-        exec.new_target
-            .unsafe_cast_object()
-            .index(key.into(), realm)
-            .unwrap()
+        object.index(key.into(), realm).unwrap()
     } else {
         Value::undefined()
     };
-    let proto = if proto.is_object() {
-        proto.unsafe_cast_object()
-    } else {
-        realm.builtin.error_proto.unwrap()
-    };
+    let proto = proto
+        .into_object()
+        .unwrap_or_else(|| realm.builtin.error_proto.unwrap());
 
     let object = Object::new_error(Some(proto));
     let object = realm.vm.borrow().allocate(object);

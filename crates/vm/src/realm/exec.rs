@@ -109,8 +109,7 @@ impl Realm {
                     let key = self.stack.read(key);
                     let val = self.stack.read(val);
 
-                    if obj.is_object() {
-                        let obj = obj.unsafe_cast_object();
+                    if let Some(obj) = obj.into_object() {
                         self.vm.borrow().write_barrier(obj);
                         catch_unwind!(self, instr, ctx, obj.index_set(key, val, self));
                     } else {
@@ -121,13 +120,8 @@ impl Realm {
                 Instruction::Index { dst, obj, key } => {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
-                    if obj.is_object() {
-                        let res = catch_unwind!(
-                            self,
-                            instr,
-                            ctx,
-                            obj.unsafe_cast_object().index(key, self)
-                        );
+                    if let Some(obj) = obj.into_object() {
+                        let res = catch_unwind!(self, instr, ctx, obj.index(key, self));
                         self.stack.write(dst, res);
                     } else {
                         // TODO proper error value
@@ -382,20 +376,22 @@ impl Realm {
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
                     let number = catch_unwind!(self, instr, ctx, self.to_number(src));
-                    if number.is_int() {
-                        let number = -(number.cast_int() as i64);
+                    if let Some(number) = number.into_int() {
+                        let number = -(number as i64);
                         if number as i32 as i64 == number {
                             self.stack.write(dst, Value::from(number as i32))
                         } else {
                             self.stack.write(dst, Value::from(number as f64))
                         }
-                    } else if number.is_float() {
-                        let number = -number.cast_float();
+                    } else if let Some(number) = number.into_float() {
+                        let number = -number;
                         if number as i32 as f64 == number {
                             self.stack.write(dst, Value::from(number as i32));
                         } else {
                             self.stack.write(dst, Value::from(number));
                         }
+                    } else {
+                        unreachable!()
                     }
                 }
                 Instruction::Positive { dst, op } => {
@@ -544,12 +540,12 @@ impl Realm {
     }
 
     pub unsafe fn is_falsish(&self, value: Value) -> bool {
-        if value.is_int() {
-            value.cast_int() == 0
-        } else if value.is_float() {
-            value.cast_float().is_nan()
-        } else if value.is_string() {
-            value.unsafe_cast_string().is_empty()
+        if let Some(v) = value.into_int() {
+            v == 0
+        } else if let Some(v) = value.into_float() {
+            v.is_nan()
+        } else if let Some(v) = value.into_string() {
+            v.is_empty()
         } else {
             value.is_null() || value.is_undefined() || value.is_false()
         }
@@ -561,10 +557,10 @@ impl Realm {
 
     /// Implements type conversion [`Tostring`](https://tc39.es/ecma262/#sec-tostring)
     pub unsafe fn to_string(&self, value: Value) -> Result<Gc<String>, Value> {
-        if value.is_int() {
-            Ok(self.vm.borrow().allocate(value.cast_int().to_string()))
-        } else if value.is_float() {
-            Ok(self.vm.borrow().allocate(value.cast_float().to_string()))
+        if let Some(value) = value.into_int() {
+            Ok(self.vm.borrow().allocate(value.to_string()))
+        } else if let Some(value) = value.into_float() {
+            Ok(self.vm.borrow().allocate(value.to_string()))
         } else if value.is_null() {
             Ok(self.vm.borrow().allocate("null".to_string()))
         } else if value.is_undefined() {
@@ -573,8 +569,8 @@ impl Realm {
             Ok(self.vm.borrow().allocate("true".to_string()))
         } else if value.is_false() {
             Ok(self.vm.borrow().allocate("false".to_string()))
-        } else if value.is_string() {
-            Ok(value.unsafe_cast_string())
+        } else if let Some(value) = value.into_string() {
+            Ok(value)
         } else if value.is_object() {
             let primitive = self.to_primitive(value, true)?;
             Ok(self.to_string(primitive)?)
@@ -598,8 +594,8 @@ impl Realm {
             Ok(Value::nan())
         } else if value.is_null() || value.is_undefined() || value.is_false() {
             Ok(Value::from(0i32))
-        } else if value.is_string() {
-            if let Ok(v) = value.unsafe_cast_string().parse::<f64>() {
+        } else if let Some(value) = value.into_string() {
+            if let Ok(v) = value.parse::<f64>() {
                 if v as i32 as f64 == v {
                     Ok(Value::from(v as i32))
                 } else {
@@ -619,10 +615,9 @@ impl Realm {
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
     pub unsafe fn to_int32(&self, value: Value) -> Result<i32, Value> {
         let number = self.to_number(value)?;
-        Ok(if number.is_int() {
-            number.cast_int()
-        } else if number.is_float() {
-            let f = number.cast_float();
+        Ok(if let Some(number) = number.into_int() {
+            number
+        } else if let Some(f) = number.into_float() {
             if f.is_normal() {
                 let res = f.abs().floor().copysign(f) as i64 % (2 << 32);
                 if res >= (2 << 31) {
@@ -641,10 +636,9 @@ impl Realm {
     /// Implements type conversion [`ToUint32`](https://tc39.es/ecma262/#sec-touint32)
     pub unsafe fn to_uint32(&self, value: Value) -> Result<u32, Value> {
         let number = self.to_number(value)?;
-        Ok(if number.is_int() {
-            number.cast_int() as u32
-        } else if number.is_float() {
-            let f = number.cast_float();
+        Ok(if let Some(number) = number.into_int() {
+            number as u32
+        } else if let Some(f) = number.into_float() {
             if f.is_normal() {
                 (f.abs().floor().copysign(f) as i64 % (2 << 32)) as u32
             } else {
@@ -659,13 +653,13 @@ impl Realm {
         if !left.same_type(right) {
             #[cfg(debug_assertions)]
             if left.is_number() && right.is_number() {
-                let left = if left.is_float() {
-                    left.cast_float()
+                let left = if let Some(x) = left.into_float() {
+                    x
                 } else {
                     left.cast_int() as f64
                 };
-                let right = if right.is_float() {
-                    right.cast_float()
+                let right = if let Some(x) = right.into_float() {
+                    x
                 } else {
                     right.cast_int() as f64
                 };
@@ -673,14 +667,14 @@ impl Realm {
             }
             return false;
         }
-        if left.is_int() {
-            return left.cast_int() == right.cast_int();
+        if let Some(left) = left.into_int() {
+            return left == right.cast_int();
         }
-        if left.is_string() {
-            return left.unsafe_cast_string() == right.unsafe_cast_string();
+        if let Some(left) = left.into_string() {
+            return left == right.unsafe_cast_string();
         }
-        if left.is_object() {
-            return left.unsafe_cast_object().ptr_eq(right.unsafe_cast_object());
+        if let Some(left) = left.into_object() {
+            return left.ptr_eq(right.unsafe_cast_object());
         }
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();
@@ -767,13 +761,13 @@ impl Realm {
         if left.is_int() && right.is_string() {
             return Ok((left.cast_int() < right.cast_int()).into());
         }
-        let left = if left.is_float() {
-            left.cast_float()
+        let left = if let Some(left) = left.into_float() {
+            left
         } else {
             left.cast_int() as f64
         };
-        let right = if right.is_float() {
-            right.cast_float()
+        let right = if let Some(right) = right.into_float() {
+            right
         } else {
             right.cast_int() as f64
         };
@@ -810,17 +804,17 @@ impl Realm {
         }
         let left = self.to_number(left)?;
         let right = self.to_number(right)?;
-        let left = if left.is_int() {
-            left.cast_int() as f64
-        } else if left.is_float() {
-            left.cast_float()
+        let left = if let Some(left) = left.into_int() {
+            left as f64
+        } else if let Some(left) = left.into_float() {
+            left
         } else {
             todo!()
         };
-        let right = if right.is_int() {
-            right.cast_int() as f64
-        } else if right.is_float() {
-            right.cast_float()
+        let right = if let Some(right) = right.into_int() {
+            right as f64
+        } else if let Some(right) = right.into_float() {
+            right
         } else {
             todo!()
         };
@@ -841,17 +835,17 @@ impl Realm {
     ) -> Result<Value, Value> {
         let left = self.to_number(left)?;
         let right = self.to_number(right)?;
-        let left = if left.is_int() {
-            left.cast_int() as f64
-        } else if left.is_float() {
-            left.cast_float()
+        let left = if let Some(left) = left.into_int() {
+            left as f64
+        } else if let Some(left) = left.into_float() {
+            left
         } else {
             todo!()
         };
-        let right = if right.is_int() {
-            right.cast_int() as f64
-        } else if right.is_float() {
-            right.cast_float()
+        let right = if let Some(right) = right.into_int() {
+            right as f64
+        } else if let Some(right) = right.into_float() {
+            right
         } else {
             todo!()
         };
@@ -880,8 +874,8 @@ impl Realm {
             "number"
         } else if v.is_string() {
             "string"
-        } else if v.is_object() {
-            if v.unsafe_cast_object().is_function() {
+        } else if let Some(obj) = v.into_object() {
+            if obj.is_function() {
                 "function"
             } else {
                 "object"
@@ -892,16 +886,16 @@ impl Realm {
     }
 
     pub unsafe fn instance_of(&self, left: Value, right: Value) -> Result<bool, Value> {
-        if !right.is_object() {
-            return Err(self.create_type_error("invalid `instanceof` operand"));
-        }
+        let right = right
+            .into_object()
+            .ok_or_else(|| self.create_type_error("invalid `instanceof` operand"))?;
 
-        if !left.is_object() {
+        let left = if let Some(x) = left.into_object() {
+            x
+        } else {
             return Ok(false);
-        }
+        };
 
-        let right = right.unsafe_cast_object();
-        let left = left.unsafe_cast_object();
         // TODO implement @@hasInstance method
 
         if right.is_function() {
@@ -911,10 +905,9 @@ impl Realm {
         let tgt_proto = right
             .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
             .unwrap();
-        if !tgt_proto.is_object() {
-            return Err(self.create_type_error("object prototype is not an object"));
-        }
-        let tgt_proto = tgt_proto.unsafe_cast_object();
+        let tgt_proto = tgt_proto
+            .into_object()
+            .ok_or_else(|| self.create_type_error("object prototype is not an object"))?;
 
         let mut cur = left;
         while let Some(proto) = cur.prototype {
@@ -945,8 +938,7 @@ impl Realm {
             };
             for k in keys {
                 let func = v.index(k.into(), self).unwrap();
-                if func.is_object() {
-                    let func = func.unsafe_cast_object();
+                if let Some(func) = func.into_object() {
                     if func.is_function() {
                         let res = self.enter_method_call(func, v.into())?;
                         if !res.is_object() {
@@ -1039,20 +1031,18 @@ impl Realm {
         ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
-        if !object.is_object() {
-            return Err(self.create_type_error(INDEX_NON_OBJECT));
-        }
-        let object = object.unsafe_cast_object();
+        let object = object
+            .into_object()
+            .ok_or_else(|| self.create_type_error(INDEX_NON_OBJECT))?;
         let function = object.index(key, self)?;
-        if !function.is_object() {
-            return Err(self.create_type_error(NOT_A_FUNCTION));
-        }
-        let function = function.unsafe_cast_object();
-        if !function.is_function() {
-            return Err(self.create_type_error(NOT_A_FUNCTION));
-        }
+        let function = function
+            .into_object()
+            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
 
-        let kind = function.function.as_ref().unwrap();
+        let kind = function
+            .function
+            .as_ref()
+            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
         match kind {
             FunctionKind::Vm(ref func) => {
                 let bc = func.bc;
@@ -1103,15 +1093,13 @@ impl Realm {
         ctx: &mut ExecutionContext,
         dst: u8,
     ) -> Result<Option<Value>, Value> {
-        if !funct.is_object() {
-            return Err(self.create_type_error(NOT_A_FUNCTION));
-        }
-        let function = funct.unsafe_cast_object();
-        let kind = if let Some(x) = function.function.as_ref() {
-            x
-        } else {
-            return Err(self.create_type_error(NOT_A_FUNCTION));
-        };
+        let function = funct
+            .into_object()
+            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
+        let kind = function
+            .function
+            .as_ref()
+            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
         match kind {
             FunctionKind::Vm(ref func) => {
                 let bc = func.bc;
@@ -1161,17 +1149,14 @@ impl Realm {
         _instr: &mut InstructionReader,
         ctx: &mut ExecutionContext,
     ) -> Result<Value, Value> {
-        if !function.is_object() {
-            return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
-        }
-
-        let function_obj = function.unsafe_cast_object();
-        let kind = if let Some(x) = function_obj.function.as_ref() {
-            x
-        } else {
-            return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
-        };
-        if !function_obj.is_constructor() {
+        let function = function
+            .into_object()
+            .ok_or_else(|| self.create_type_error(NOT_A_CONSTRUCTOR))?;
+        let kind = function
+            .function
+            .as_ref()
+            .ok_or_else(|| self.create_type_error(NOT_A_CONSTRUCTOR))?;
+        if !function.is_constructor() {
             return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
         }
 
@@ -1181,7 +1166,7 @@ impl Realm {
                 let bc_function = &bc.functions[func.function as usize];
                 self.stack.enter(bc_function.registers);
 
-                let proto = function_obj
+                let proto = function
                     .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
                     .unwrap();
                 let this_object = if proto.is_object() {
@@ -1194,7 +1179,7 @@ impl Realm {
                 let res = self.execute(
                     instr,
                     ExecutionContext {
-                        function: function_obj,
+                        function,
                         this: this_object.into(),
                         new_target: target_obj,
                     },
@@ -1206,7 +1191,7 @@ impl Realm {
                 }
             }
             FunctionKind::Static(func) => {
-                let function = mem::replace(&mut ctx.function, function_obj);
+                let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func(self, ctx)?;
                 self.stack.pop(self.vm.borrow().gc());
@@ -1214,7 +1199,7 @@ impl Realm {
                 Ok(res)
             }
             FunctionKind::Shared(func) => {
-                let function = mem::replace(&mut ctx.function, function_obj);
+                let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func(self, ctx)?;
                 self.stack.pop(self.vm.borrow().gc());
@@ -1222,7 +1207,7 @@ impl Realm {
                 Ok(res)
             }
             FunctionKind::Mutable(func) => {
-                let function = mem::replace(&mut ctx.function, function_obj);
+                let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
                 self.stack.pop(self.vm.borrow().gc());
