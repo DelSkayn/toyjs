@@ -390,7 +390,12 @@ impl Realm {
                             self.stack.write(dst, Value::from(number as f64))
                         }
                     } else if number.is_float() {
-                        self.stack.write(dst, Value::from(-number.cast_float()))
+                        let number = -number.cast_float();
+                        if number as i32 as f64 == number {
+                            self.stack.write(dst, Value::from(number as i32))
+                        } else {
+                            self.stack.write(dst, Value::from(number))
+                        }
                     }
                 }
                 Instruction::Positive { dst, op } => {
@@ -635,6 +640,20 @@ impl Realm {
 
     pub unsafe fn strict_equal(&self, left: Value, right: Value) -> bool {
         if !left.same_type(right) {
+            #[cfg(debug_assertions)]
+            if left.is_number() && right.is_number() {
+                let left = if left.is_float() {
+                    left.cast_float()
+                } else {
+                    left.cast_int() as f64
+                };
+                let right = if right.is_float() {
+                    right.cast_float()
+                } else {
+                    right.cast_int() as f64
+                };
+                assert_ne!(left, right);
+            }
             return false;
         }
         if left.is_int() {
