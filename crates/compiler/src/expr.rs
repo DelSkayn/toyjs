@@ -319,6 +319,17 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+                PrefixOperator::BitwiseNot => {
+                    // It seems that binary expressions do not shortcut through a not evaluation.
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.builder.free_temp(expr);
+                    self.builder.push(Instruction::BitwiseNot {
+                        dst: dst.0,
+                        src: expr.0,
+                    });
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
                 PrefixOperator::Negative => {
                     let expr = self.compile_expr(None, expr).eval(self);
                     let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
@@ -550,7 +561,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             StrictEqual => SEqual,
             NotEqual => NotEqual,
             StrictNotEqual => SNotEqual,
-            In => In,
+            //In => In,
             InstanceOf => InstanceOf,
         });
     }

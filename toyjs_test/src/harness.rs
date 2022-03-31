@@ -60,6 +60,10 @@ impl Harness {
     }
 
     pub fn prepare(&self, ctx: Ctx, includes: &[String]) -> Result<()> {
+        ctx.eval::<(), _>(&self.sta.source)
+            .map_err(|e| anyhow!("failed to execute harness file `{}`: {}", "sta.js", e))?;
+        ctx.eval::<(), _>(&self.assert.source)
+            .map_err(|e| anyhow!("failed to execute harness file `{}`: {}", "assert.js", e))?;
         for include in includes.iter() {
             let test = self.other.get(include).ok_or_else(|| {
                 anyhow!(

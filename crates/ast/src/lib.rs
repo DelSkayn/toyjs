@@ -132,7 +132,7 @@ pub enum PrefixOperator {
     TypeOf,
     Positive,
     Negative,
-    BinaryNot,
+    BitwiseNot,
     AddOne,
     SubtractOne,
     New,
