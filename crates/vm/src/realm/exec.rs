@@ -303,9 +303,14 @@ impl Realm {
                 Instruction::ShiftUnsigned { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
-                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let left = catch_unwind!(self, instr, ctx, self.to_uint32(left));
                     let right = catch_unwind!(self, instr, ctx, self.to_int32(right)) as u32 % 32;
-                    self.stack.write(dst, Value::from((left >> right) as i32));
+                    let v = left >> right;
+                    if v > i32::MAX as u32 {
+                        self.stack.write(dst, Value::from(v as f64));
+                    } else {
+                        self.stack.write(dst, Value::from(v as i32));
+                    }
                 }
                 Instruction::Equal { dst, left, righ } => {
                     let left = self.stack.read(left);
@@ -634,7 +639,24 @@ impl Realm {
                 0
             }
         } else {
-            todo!()
+            unreachable!()
+        })
+    }
+
+    /// Implements type conversion [`ToUint32`](https://tc39.es/ecma262/#sec-touint32)
+    pub unsafe fn to_uint32(&self, value: Value) -> Result<u32, Value> {
+        let number = self.to_number(value)?;
+        Ok(if number.is_int() {
+            number.cast_int() as u32
+        } else if number.is_float() {
+            let f = number.cast_float();
+            if f.is_normal() {
+                (f.abs().floor().copysign(f) as i64 % (2 << 32)) as u32
+            } else {
+                0
+            }
+        } else {
+            unreachable!()
         })
     }
 
