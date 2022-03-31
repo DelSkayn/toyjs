@@ -287,7 +287,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
 
     fn reparse_arrow_function(&mut self, expr: Expr<A>) -> Result<Expr<A>> {
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.reparse_as_param(dbg!(expr))?;
+        let params = self.reparse_as_param(expr)?;
         let body = if self.peek_kind()? == Some(t!("{")) {
             let block = self.alter_state(
                 |s| {
