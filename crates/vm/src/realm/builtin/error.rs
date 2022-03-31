@@ -33,17 +33,15 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
         exec.new_target
     };
 
-    let proto = if new_target.is_object() {
+    let proto = if let Some(obj) = new_target.into_object() {
         let key = realm.vm().allocate::<String>("prototype".into());
-        new_target.unsafe_cast_object().index(key.into(), realm)?
+        obj.index(key.into(), realm)?
     } else {
         Value::undefined()
     };
-    let proto = if proto.is_object() {
-        proto.unsafe_cast_object()
-    } else {
-        T::access(&realm.builtin).unwrap()
-    };
+    let proto = proto
+        .into_object()
+        .unwrap_or_else(|| T::access(&realm.builtin).unwrap());
 
     let (message, options) = if realm.stack.frame_size() >= 1 {
         let message = realm.stack.read(0);
@@ -91,10 +89,10 @@ pub unsafe fn construct(
 
 pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     let this = exec.this;
-    if !this.is_object() {
-        return Err(realm.create_type_error("this is not an object"));
-    }
-    let this = this.unsafe_cast_object();
+    let this = this
+        .into_object()
+        .ok_or_else(|| realm.create_type_error("this is not an object"))?;
+
     let key = realm.vm().allocate::<String>("name".into());
     let name = this.index(key.into(), realm).unwrap();
     let name = realm.to_string(name)?;
