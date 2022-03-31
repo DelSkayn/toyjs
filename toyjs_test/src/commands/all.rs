@@ -30,7 +30,8 @@ impl Report {
                 i += 1;
                 cur = PathBuf::from(format!("report.{}.json", i));
             }
-            while i > 1 {
+            i -= 1;
+            while i > 0 {
                 let new = PathBuf::from(format!("report.{}.json", i));
                 fs::rename(&new, cur)?;
                 cur = new;
