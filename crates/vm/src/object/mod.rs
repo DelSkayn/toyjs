@@ -203,9 +203,7 @@ unsafe impl Trace for Object {
             if let Some(x) = self.function.as_ref() {
                 x.trace(ctx);
             }
-            for (_k, v) in &(*self.values.get()) {
-                #[cfg(feature = "dump-gc-trace")]
-                println!("MARK: obj.{}", _k);
+            for v in (*self.values.get()).values() {
                 v.trace(ctx);
             }
             for v in &(*self.array.get()) {

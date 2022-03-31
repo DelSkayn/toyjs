@@ -718,7 +718,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     let dst = symbol_placement
                         .or(placement)
                         .unwrap_or_else(|| self.builder.alloc_temp());
-                    self.builder.push(Instruction::LoadFunction {
+                    self.builder.push(Instruction::LoadConstructor {
                         dst: dst.0,
                         func: id.0,
                     });
@@ -733,7 +733,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 } else {
                     let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
 
-                    self.builder.push(Instruction::LoadFunction {
+                    self.builder.push(Instruction::LoadConstructor {
                         dst: dst.0,
                         func: id.0,
                     });

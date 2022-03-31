@@ -103,13 +103,10 @@ impl<'a> Lexer<'a> {
         while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
             self.eat_byte();
         }
-        match self.peek_byte() {
-            Some(b'e' | b'E') => {
-                // Number has a exponent.
-                self.next_byte();
-                return self.lex_number_exponent(str_start);
-            }
-            _ => {}
+        if let Some(b'e' | b'E') = self.peek_byte() {
+            // Number has a exponent.
+            self.next_byte();
+            return self.lex_number_exponent(str_start);
         }
         self.lex_number_string(str_start)
     }
