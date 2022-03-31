@@ -45,7 +45,7 @@ impl<'gc> Ctx<'gc> {
     pub fn mark_dynamic(self, gc: Gc<dyn Trace>) {
         unsafe {
             gc.0.as_ref().color.set(Color::Gray);
-            self.0.grays.push(gc.0)
+            self.0.grays.push(gc.0);
         }
     }
 }
@@ -63,7 +63,7 @@ pub enum Phase {
 /// However it is unsafe to actually collect garbage because if the
 /// colletion methods are not called properly the gc will free values which are still in use.
 ///
-/// As such GcArena does not deallocate any pointers it allocated when it is dropped so one should
+/// As such `GcArena` does not deallocate any pointers it allocated when it is dropped so one should
 /// manually call `collect_all`.
 pub struct GcArena {
     all: Cell<Option<GcBoxPtr>>,
@@ -132,7 +132,7 @@ impl GcArena {
 
             if self.phase.get() != Phase::Sleep {
                 self.allocation_debt
-                    .set(self.allocation_debt.get() + size as f64 + size as f64 / TIMING_FACTOR)
+                    .set(self.allocation_debt.get() + size as f64 + size as f64 / TIMING_FACTOR);
             }
 
             self.all.set(Some(ptr));
@@ -165,7 +165,7 @@ impl GcArena {
     /// if the gc is already running collection.
     ///
     /// # Safety
-    /// All gc pointers held by the programm allocated with the current GcArena must be reachable
+    /// All gc pointers held by the programm allocated with the current `GcArena` must be reachable
     /// from the root handed as an argument to this function.
     /// Any gc pointers which where not reachable from the program will be freed.
     pub unsafe fn collect_full<T: Trace>(&self, root: &T) {
@@ -178,7 +178,7 @@ impl GcArena {
     /// Very unsafe, if not used correctly will cause undefined behaviour.
     ///
     /// # Safety
-    /// All gc pointers held by the programm allocated with the current GcArena must be reachable
+    /// All gc pointers held by the programm allocated with the current `GcArena` must be reachable
     /// from the root handed as an argument to this function.
     /// If any new pointers are added into a structure which could contain
     /// Any gc pointers which where not reachable from the program will be freed.
@@ -258,7 +258,7 @@ impl GcArena {
                             if let Some(prev) = self.sweep_prev.get() {
                                 prev.as_ref().next.set(x.as_ref().next.get());
                             } else {
-                                self.all.set(x.as_ref().next.get())
+                                self.all.set(x.as_ref().next.get());
                             }
 
                             #[cfg(feature = "dump-gc-trace")]

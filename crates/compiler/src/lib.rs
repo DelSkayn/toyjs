@@ -81,12 +81,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         ByteCode {
             constants,
-            instructions,
             functions,
+            instructions,
         }
-    }
-
-    fn compile_function(&mut self) {
-        todo!()
     }
 }

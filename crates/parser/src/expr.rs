@@ -1,4 +1,4 @@
-use super::*;
+use super::{Allocator, Parser, Result};
 
 use ast::{AssignOperator, BinaryOperator, Expr, PostfixOperator, PrefixOperator};
 use token::{t, TokenKind};

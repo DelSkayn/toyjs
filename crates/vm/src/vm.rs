@@ -15,12 +15,12 @@ pub struct VmInner {
 impl VmInner {
     pub unsafe fn collect_debt<T: Trace>(&self, trace: T) {
         self.gc
-            .collect_debt(&((*self.realms.get()).as_slice(), trace))
+            .collect_debt(&((*self.realms.get()).as_slice(), trace));
     }
 
     pub unsafe fn collect_full<T: Trace>(&self, trace: T) {
         self.gc
-            .collect_full(&((*self.realms.get()).as_slice(), trace))
+            .collect_full(&((*self.realms.get()).as_slice(), trace));
     }
 
     pub fn allocate<T: Trace + 'static>(&self, v: T) -> Gc<T> {
@@ -28,7 +28,7 @@ impl VmInner {
     }
 
     pub fn write_barrier<T: Trace + 'static>(&self, v: Gc<T>) {
-        self.gc.write_barrier(v)
+        self.gc.write_barrier(v);
     }
 
     pub fn gc(&self) -> &GcArena {
@@ -73,11 +73,11 @@ impl Vm {
     }
 
     pub fn collect_full(&self) {
-        unsafe { self.0.lock().collect_full(()) }
+        unsafe { self.0.lock().collect_full(()) };
     }
 
     pub fn collect_debt(&self) {
-        unsafe { self.0.lock().collect_debt(()) }
+        unsafe { self.0.lock().collect_debt(()) };
     }
 
     pub fn lock(&self) -> Guard<VmInner> {

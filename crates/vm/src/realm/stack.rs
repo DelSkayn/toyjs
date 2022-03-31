@@ -35,7 +35,7 @@ impl UpvalueObject {
     #[inline]
     pub unsafe fn close(&self) {
         (*self.closed.get()) = self.location.get().read();
-        self.location.set(self.closed.get())
+        self.location.set(self.closed.get());
     }
 
     #[inline]
@@ -130,7 +130,7 @@ impl Stack {
         unsafe {
             let new_used = self.used() + registers as usize;
             if new_used > self.capacity.get() {
-                self.grow(new_used)
+                self.grow(new_used);
             }
             (*self.frames.get()).push(Frame::Entry {
                 registers: self.cur_frame_size.get(),
@@ -158,7 +158,7 @@ impl Stack {
         unsafe {
             let new_used = self.used() + new_registers as usize;
             if new_used > self.capacity.get() {
-                self.grow(new_used)
+                self.grow(new_used);
             }
             self.frame
                 .set(self.frame.get().add(self.cur_frame_size.get() as usize));
@@ -267,7 +267,7 @@ impl Stack {
     pub fn push(&self, v: Value) {
         let used = self.used();
         if used + 1 > self.capacity.get() {
-            self.grow(used + 1)
+            self.grow(used + 1);
         }
         unsafe {
             self.stack.get().write(v);
@@ -278,7 +278,7 @@ impl Stack {
     pub fn push_temp(&self, v: Value) {
         let used = self.used();
         if used + 1 > self.capacity.get() {
-            self.grow(used + 1)
+            self.grow(used + 1);
         }
         unsafe {
             self.stack.get().write(v);
@@ -289,7 +289,7 @@ impl Stack {
                     .offset_from(self.frame.get())
                     .try_into()
                     .expect("frame size exceeded u32::MAX"),
-            )
+            );
         }
     }
 
@@ -302,7 +302,7 @@ impl Stack {
             for _ in 0..self.frame_open_upvalues.get() {
                 let up = (*self.open_upvalues.get()).pop().unwrap();
                 gc.write_barrier(up);
-                up.close()
+                up.close();
             }
             self.frame_open_upvalues.set(open_upvalues);
         }
@@ -340,7 +340,7 @@ impl Stack {
                         .set(Self::rebase(original, ptr, self.stack.get()));
                     self.frame
                         .set(Self::rebase(original, ptr, self.frame.get()));
-                    for up in (*self.open_upvalues.get()).iter() {
+                    for up in &(*self.open_upvalues.get()) {
                         let loc = Self::rebase(original, ptr, up.location.get());
                         up.location.set(loc);
                     }
@@ -389,8 +389,7 @@ unsafe impl Trace for Stack {
         unsafe {
             for f in (*self.frames.get()).iter() {
                 match *f {
-                    Frame::Entry { .. } => {}
-                    Frame::Try { .. } => {}
+                    Frame::Entry { .. } | Frame::Try { .. } => {}
                     Frame::Call { ref data, .. } => {
                         data.ctx.trace(ctx);
                     }
@@ -416,7 +415,7 @@ impl Drop for Stack {
             alloc::dealloc(
                 self.root.get().as_ptr().cast(),
                 Layout::array::<Value>(self.capacity.get()).unwrap(),
-            )
+            );
         }
     }
 }

@@ -58,7 +58,7 @@ unsafe impl<T: Trace> Trace for &T {
 
     #[inline]
     fn trace(&self, ctx: Ctx) {
-        (**self).trace(ctx)
+        (**self).trace(ctx);
     }
 }
 
@@ -72,7 +72,7 @@ unsafe impl<T: Trace> Trace for &mut T {
 
     #[inline]
     fn trace(&self, ctx: Ctx) {
-        (**self).trace(ctx)
+        (**self).trace(ctx);
     }
 }
 
@@ -85,7 +85,7 @@ unsafe impl<T: Trace> Trace for Box<T> {
     }
 
     fn trace(&self, ctx: Ctx) {
-        (**self).trace(ctx)
+        (**self).trace(ctx);
     }
 }
 
@@ -98,11 +98,11 @@ unsafe impl<T: Trace> Trace for &[T] {
     }
 
     fn trace(&self, ctx: Ctx) {
-        self.iter().for_each(|x| x.trace(ctx))
+        self.iter().for_each(|x| x.trace(ctx));
     }
 }
 
-unsafe impl<K: Trace, V: Trace> Trace for std::collections::HashMap<K, V> {
+unsafe impl<K: Trace, V: Trace, H> Trace for std::collections::HashMap<K, V, H> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -113,12 +113,12 @@ unsafe impl<K: Trace, V: Trace> Trace for std::collections::HashMap<K, V> {
     fn trace(&self, ctx: Ctx) {
         self.iter().for_each(|(k, v)| {
             if K::needs_trace() {
-                k.trace(ctx)
+                k.trace(ctx);
             }
             if V::needs_trace() {
-                v.trace(ctx)
+                v.trace(ctx);
             }
-        })
+        });
     }
 }
 
@@ -131,7 +131,7 @@ unsafe impl<T: Trace> Trace for std::rc::Rc<T> {
     }
 
     fn trace(&self, ctx: Ctx) {
-        (**self).trace(ctx)
+        (**self).trace(ctx);
     }
 }
 

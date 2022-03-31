@@ -49,7 +49,7 @@ impl Report {
         let file = File::open("report.json")?;
         let mut report: Report = serde_json::from_reader(file)?;
 
-        for (k, new) in self.tests.iter() {
+        for (k, new) in &self.tests {
             if let Some(old) = report.tests.remove(k) {
                 Self::write_compare(k, &old, new, stdout, c)?;
             } else {
@@ -78,10 +78,10 @@ impl Report {
         c: &Colors,
     ) -> Result<()> {
         match (new, old) {
-            (TestResult::Passed, TestResult::Passed) => {}
-            (TestResult::Error(_), TestResult::Error(_)) => {}
-            (TestResult::Panic(_), TestResult::Panic(_)) => {}
-            (TestResult::Failed(_), TestResult::Failed(_)) => {}
+            (TestResult::Passed, TestResult::Passed)
+            | (TestResult::Error(_), TestResult::Error(_))
+            | (TestResult::Panic(_), TestResult::Panic(_))
+            | (TestResult::Failed(_), TestResult::Failed(_)) => {}
             (TestResult::Passed, _) => {
                 stdout.set_color(&c.passed)?;
                 write!(stdout, "{:<10}", "IMPROVED")?;
@@ -153,7 +153,7 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
             tests.insert(path.to_path_buf(), res);
             Result::<(), anyhow::Error>::Ok(())
         })()
-        .unwrap()
+        .unwrap();
     })?;
 
     let report = Report { tests };

@@ -50,13 +50,13 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<
     };
 
     let mut strip_prefix = true;
-    if radix != 0 {
+    if radix == 0 {
+        radix = 10;
+    } else {
         strip_prefix = radix == 16;
         if !(2..36).contains(&radix) {
             return Ok(Value::nan(ctx));
         }
-    } else {
-        radix = 10
     }
     let mut radix = radix as u32;
 

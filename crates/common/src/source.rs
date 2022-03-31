@@ -75,8 +75,8 @@ impl Source {
                 lines.push(Span {
                     low: u32::try_from(low.offset_from(base)).expect("source to big for span"),
                     hi: u32::try_from(hi.offset_from(base)).expect("source to big for span"),
-                })
-            })
+                });
+            });
         }
     }
 
@@ -97,7 +97,7 @@ impl Source {
         let line_str = &self.source[line_span.low as usize..line_span.hi as usize];
         let mut column = 0;
         let mut chars = line_str.chars();
-        while ((chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize) as u32) < span.low
+        while (chars.as_str().as_ptr() as usize - self.source.as_ptr() as usize) < span.low as usize
         {
             column += 1;
             chars.next();
@@ -183,14 +183,14 @@ impl Source {
             if let Some(x) = prefix.next() {
                 pre_len += 1;
                 buffer.push_front(x);
-                pushed = true
+                pushed = true;
             }
             if buffer.len() >= MAX_LINE_LENGTH {
                 break;
             }
             if let Some(x) = postfix.next() {
                 buffer.push_back(x);
-                pushed = true
+                pushed = true;
             }
             if !pushed {
                 break;
@@ -220,7 +220,7 @@ impl Source {
         }
         writeln!(w, "|")?;
         write!(w, "{} | ", line_str)?;
-        for c in buffer.iter() {
+        for c in &buffer {
             write!(w, "{}", c)?;
         }
         writeln!(w)?;

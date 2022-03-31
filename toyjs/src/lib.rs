@@ -35,11 +35,11 @@ impl ToyJs {
     }
 
     pub fn collect_debt(&self) {
-        self.vm.collect_debt()
+        self.vm.collect_debt();
     }
 
     pub fn collect_full(&self) {
-        self.vm.collect_full()
+        self.vm.collect_full();
     }
 }
 

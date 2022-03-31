@@ -22,6 +22,7 @@ impl Default for Interner {
 
 impl Interner {
     /// Create a new interner
+
     pub fn new() -> Self {
         Interner {
             map: FxHashMap::default(),
@@ -35,9 +36,9 @@ impl Interner {
     pub fn with_constants(constants: &[&str]) {
         let mut interner = Interner::new();
         for (idx, s) in constants.iter().enumerate() {
-            let id = interner.values.insert((s.to_string(), usize::MAX));
+            let id = interner.values.insert(((*s).to_string(), usize::MAX));
             assert_eq!(id, StringId::new(idx));
-            interner.map.insert(s.to_string(), id);
+            interner.map.insert((*s).to_string(), id);
         }
     }
 

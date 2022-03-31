@@ -209,7 +209,7 @@ impl<A: Allocator> SymbolTable<A> {
     /// Travese the given scope and all its children in prefix order.
     pub fn traverse_scopes<F: FnMut(ScopeId, &Scope<A>)>(&self, scope: ScopeId, f: &mut F) {
         f(scope, &self.scopes[scope]);
-        for child in self.scopes[scope].children.iter() {
+        for child in &self.scopes[scope].children {
             self.traverse_scopes(*child, f);
         }
     }

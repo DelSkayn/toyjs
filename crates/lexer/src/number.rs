@@ -1,4 +1,4 @@
-use super::*;
+use super::{is_radix, ErrorKind, LexResult, Lexer, Token};
 use token::{Literal, Number, TokenKind};
 
 impl<'a> Lexer<'a> {
@@ -22,15 +22,15 @@ impl<'a> Lexer<'a> {
                     let s = self.interner.intern("0");
                     return Ok(self.token_num(Number::Big(s)));
                 }
-                Some(b'b') | Some(b'B') => {
+                Some(b'b' | b'B') => {
                     self.eat_byte();
                     return self.lex_non_decimal(2, str_start);
                 }
-                Some(b'o') | Some(b'O') => {
+                Some(b'o' | b'O') => {
                     self.eat_byte();
                     return self.lex_non_decimal(8, str_start);
                 }
-                Some(b'x') | Some(b'X') => {
+                Some(b'x' | b'X') => {
                     self.eat_byte();
                     return self.lex_non_decimal(16, str_start);
                 }
@@ -43,12 +43,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Lex the integer part.
-        while self
-            .peek_byte()
-            .as_ref()
-            .map(u8::is_ascii_digit)
-            .unwrap_or(false)
-        {
+        while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
             self.eat_byte();
         }
         let mut big = false;
@@ -58,7 +53,7 @@ impl<'a> Lexer<'a> {
                 self.eat_byte();
                 return self.lex_number_mantissa(str_start);
             }
-            Some(b'e') | Some(b'E') => {
+            Some(b'e' | b'E') => {
                 // Number has an exponent.
                 self.eat_byte();
                 return self.lex_number_exponent(str_start);
@@ -105,16 +100,11 @@ impl<'a> Lexer<'a> {
     ///
     /// `str_start` should be the byte offset of the start of the number token.
     fn lex_number_mantissa(&mut self, str_start: usize) -> LexResult<Token> {
-        while self
-            .peek_byte()
-            .as_ref()
-            .map(u8::is_ascii_digit)
-            .unwrap_or(false)
-        {
+        while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
             self.eat_byte();
         }
         match self.peek_byte() {
-            Some(b'e') | Some(b'E') => {
+            Some(b'e' | b'E') => {
                 // Number has a exponent.
                 self.next_byte();
                 return self.lex_number_exponent(str_start);
@@ -137,12 +127,7 @@ impl<'a> Lexer<'a> {
         // An exponent number can start with `-`, `+` or a digit.
         if start == b'-' || start == b'+' || start.is_ascii_digit() {
             self.next_byte();
-            while self
-                .peek_byte()
-                .as_ref()
-                .map(u8::is_ascii_digit)
-                .unwrap_or(false)
-            {
+            while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
                 self.next_byte();
             }
             return self.lex_number_string(str_start);
@@ -155,11 +140,7 @@ impl<'a> Lexer<'a> {
     ///
     /// `str_start` should be the byte offset of the start of the number token.
     fn lex_non_decimal(&mut self, radix: u8, str_start: usize) -> LexResult<Token> {
-        while self
-            .peek_byte()
-            .map(|c| is_radix(c, radix))
-            .unwrap_or(false)
-        {
+        while self.peek_byte().map_or(false, |c| is_radix(c, radix)) {
             self.next_byte();
         }
         let mut big = false;

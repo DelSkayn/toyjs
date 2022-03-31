@@ -78,7 +78,7 @@ impl Object {
             let idx = key.cast_int();
             if idx >= 0 {
                 let idx = idx as usize;
-                if self.map_backdown.get().map(|x| idx < x).unwrap_or(true) {
+                if self.map_backdown.get().map_or(true, |x| idx < x) {
                     return match (*self.array.get()).get(idx).copied() {
                         Some(x) => Ok(x),
                         None => {
@@ -118,13 +118,7 @@ impl Object {
 
         if key.is_int() {
             let idx = key.cast_int();
-            if idx >= 0
-                && self
-                    .map_backdown
-                    .get()
-                    .map(|x| (idx as usize) < x)
-                    .unwrap_or(true)
-            {
+            if idx >= 0 && self.map_backdown.get().map_or(true, |x| (idx as usize) < x) {
                 let idx = idx as usize;
                 let len = (*self.array.get()).len();
                 if len <= idx {
@@ -169,9 +163,9 @@ impl Object {
             if idx >= 0 {
                 let idx = idx as usize;
                 if (*self.array.get()).len() <= idx {
-                    (*self.array.get()).resize(idx + 1, Value::undefined())
+                    (*self.array.get()).resize(idx + 1, Value::undefined());
                 }
-                (*self.array.get())[idx] = value
+                (*self.array.get())[idx] = value;
             }
         } else {
             let string = realm.to_string(key)?;
@@ -207,14 +201,14 @@ unsafe impl Trace for Object {
                 ctx.mark(x);
             }
             if let Some(x) = self.function.as_ref() {
-                x.trace(ctx)
+                x.trace(ctx);
             }
-            for (_k, v) in (*self.values.get()).iter() {
+            for (_k, v) in &(*self.values.get()) {
                 #[cfg(feature = "dump-gc-trace")]
                 println!("MARK: obj.{}", _k);
                 v.trace(ctx);
             }
-            for v in (*self.array.get()).iter() {
+            for v in &(*self.array.get()) {
                 #[cfg(feature = "dump-gc-trace")]
                 println!("MARK: obj.entry");
                 v.trace(ctx);

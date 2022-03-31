@@ -163,27 +163,25 @@ impl<A: Allocator> Expr<A> {
         match *self {
             Expr::Prime(ref x) => match x {
                 PrimeExpr::Variable(_) => true,
-                PrimeExpr::Eval(_) => false,
-                PrimeExpr::Literal(_) => false,
-                PrimeExpr::Covered(_) => false,
-                PrimeExpr::Object(_) => false,
-                PrimeExpr::Array(_) => false,
-                PrimeExpr::Function(_, _, _, _) => false,
-                PrimeExpr::This => false,
-                PrimeExpr::NewTarget => false,
+                PrimeExpr::Eval(_)
+                | PrimeExpr::Literal(_)
+                | PrimeExpr::Covered(_)
+                | PrimeExpr::Object(_)
+                | PrimeExpr::Array(_)
+                | PrimeExpr::Function(_, _, _, _)
+                | PrimeExpr::This
+                | PrimeExpr::NewTarget => false,
             },
             Expr::Assign(ref left, ref op, _) => match op {
                 AssignOperator::Assign => left.is_assignable(),
                 _ => false,
             },
-            Expr::Binary(..) => false,
-            Expr::UnaryPrefix(..) => false,
+            Expr::Binary(..) | Expr::UnaryPrefix(..) => false,
             Expr::UnaryPostfix(_, ref op) => match *op {
-                PostfixOperator::Dot(_) => true,
-                PostfixOperator::Index(_) => true,
-                PostfixOperator::Call(_) => false,
-                PostfixOperator::AddOne => false,
-                PostfixOperator::SubtractOne => false,
+                PostfixOperator::Dot(_) | PostfixOperator::Index(_) => true,
+                PostfixOperator::Call(_)
+                | PostfixOperator::AddOne
+                | PostfixOperator::SubtractOne => false,
             },
         }
     }
@@ -262,8 +260,7 @@ impl Hash for Literal {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match *self {
-            Literal::Null => {}
-            Literal::Undefined => {}
+            Literal::Null | Literal::Undefined => {}
             Literal::Float(x) => x.to_bits().hash(state),
             Literal::Integer(x) => x.hash(state),
             Literal::Boolean(x) => x.hash(state),

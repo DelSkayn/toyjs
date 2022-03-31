@@ -21,7 +21,7 @@ pub enum NumericOperator {
     Pow,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExecutionContext {
     pub function: Gc<Object>,
     pub this: Value,
@@ -29,11 +29,6 @@ pub struct ExecutionContext {
 }
 
 impl Copy for ExecutionContext {}
-impl Clone for ExecutionContext {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
 
 unsafe impl Trace for ExecutionContext {
     fn needs_trace() -> bool
@@ -100,14 +95,14 @@ impl Realm {
                     let object =
                         Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
                     let res = Value::from(object);
-                    self.stack.write(dst, res)
+                    self.stack.write(dst, res);
                 }
                 Instruction::CreateArray { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
                     let object =
                         Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
                     let res = Value::from(object);
-                    self.stack.write(dst, res)
+                    self.stack.write(dst, res);
                 }
                 Instruction::IndexAssign { obj, key, val } => {
                     let obj = self.stack.read(obj);
@@ -120,7 +115,7 @@ impl Realm {
                         catch_unwind!(self, instr, ctx, obj.index_set(key, val, self));
                     } else {
                         // TODO proper error value
-                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?
+                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
                     }
                 }
                 Instruction::Index { dst, obj, key } => {
@@ -133,10 +128,10 @@ impl Realm {
                             ctx,
                             obj.unsafe_cast_object().index(key, self)
                         );
-                        self.stack.write(dst, res)
+                        self.stack.write(dst, res);
                     } else {
                         // TODO proper error value
-                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?
+                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
                     }
                 }
 
@@ -263,7 +258,7 @@ impl Realm {
                     let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
                     let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
                     let res = left & right;
-                    self.stack.write(dst, res.into())
+                    self.stack.write(dst, res.into());
                 }
                 Instruction::BitwiseOr { dst, left, righ } => {
                     let left = self.stack.read(left);
@@ -271,7 +266,7 @@ impl Realm {
                     let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
                     let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
                     let res = left | right;
-                    self.stack.write(dst, res.into())
+                    self.stack.write(dst, res.into());
                 }
                 Instruction::BitwiseXor { dst, left, righ } => {
                     let left = self.stack.read(left);
@@ -279,12 +274,12 @@ impl Realm {
                     let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
                     let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
                     let res = left ^ right;
-                    self.stack.write(dst, res.into())
+                    self.stack.write(dst, res.into());
                 }
                 Instruction::BitwiseNot { dst, src } => {
                     let src = self.stack.read(src);
                     let src = catch_unwind!(self, instr, ctx, self.to_int32(src));
-                    self.stack.write(dst, (!src).into())
+                    self.stack.write(dst, (!src).into());
                 }
                 Instruction::ShiftLeft { dst, left, righ } => {
                     let left = self.stack.read(left);
@@ -353,7 +348,7 @@ impl Realm {
                     let right = self.stack.read(righ);
                     let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, false));
                     let res = res.is_false() && !res.is_undefined();
-                    self.stack.write(dst, res.into())
+                    self.stack.write(dst, res.into());
                 }
 
                 Instruction::Less { dst, left, righ } => {
@@ -371,18 +366,18 @@ impl Realm {
                     let right = self.stack.read(righ);
                     let res = catch_unwind!(self, instr, ctx, self.less_then(left, right, true));
                     let res = res.is_false() && !res.is_undefined();
-                    self.stack.write(dst, res.into())
+                    self.stack.write(dst, res.into());
                 }
 
                 Instruction::IsNullish { dst, op } => {
                     let src = self.stack.read(op as u8);
                     let nullish = self.is_nullish(src);
-                    self.stack.write(dst, Value::from(nullish))
+                    self.stack.write(dst, Value::from(nullish));
                 }
                 Instruction::Not { dst, src } => {
                     let src = self.stack.read(src as u8);
                     let falsish = self.is_falsish(src);
-                    self.stack.write(dst, Value::from(falsish))
+                    self.stack.write(dst, Value::from(falsish));
                 }
                 Instruction::Negative { dst, op } => {
                     let src = self.stack.read(op);
@@ -397,9 +392,9 @@ impl Realm {
                     } else if number.is_float() {
                         let number = -number.cast_float();
                         if number as i32 as f64 == number {
-                            self.stack.write(dst, Value::from(number as i32))
+                            self.stack.write(dst, Value::from(number as i32));
                         } else {
-                            self.stack.write(dst, Value::from(number))
+                            self.stack.write(dst, Value::from(number));
                         }
                     }
                 }
@@ -412,13 +407,13 @@ impl Realm {
                 Instruction::JumpFalse { cond, tgt } => {
                     let cond = self.stack.read(cond);
                     if self.is_falsish(cond) {
-                        instr.jump(tgt)
+                        instr.jump(tgt);
                     }
                 }
                 Instruction::JumpTrue { cond, tgt } => {
                     let cond = self.stack.read(cond);
                     if !self.is_falsish(cond) {
-                        instr.jump(tgt)
+                        instr.jump(tgt);
                     }
                 }
 

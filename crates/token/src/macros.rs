@@ -1,4 +1,4 @@
-/// A short hand for writing TokenKind's
+/// A short hand for writing `TokenKind`'s
 #[macro_export]
 macro_rules! t {
     ("strict_directive"$($rest:tt)*) => {

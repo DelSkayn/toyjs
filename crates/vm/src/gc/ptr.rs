@@ -43,12 +43,12 @@ impl<T: fmt::Debug + Trace> fmt::Debug for Gc<T> {
 impl<T: Trace + 'static> Gc<T> {
     #[inline]
     pub fn into_raw(this: Self) -> *mut () {
-        this.0.as_ptr() as *mut _
+        this.0.as_ptr().cast::<()>()
     }
 
     #[inline]
     pub fn from_raw(this: *mut ()) -> Self {
-        Gc(NonNull::new(this as *mut GcBox<T>).unwrap())
+        Gc(NonNull::new(this.cast::<GcBox<T>>()).unwrap())
     }
 
     #[inline]
@@ -100,6 +100,6 @@ unsafe impl<T: Trace + 'static> Trace for Gc<T> {
 
     #[inline]
     fn trace(&self, ctx: super::Ctx) {
-        ctx.mark(*self)
+        ctx.mark(*self);
     }
 }

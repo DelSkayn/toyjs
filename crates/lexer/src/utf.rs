@@ -1,6 +1,6 @@
 //! handling characters which are not ASCII.
 
-use super::*;
+use super::{chars, t, ErrorKind, LexResult, Lexer, Token};
 use std::char;
 use unicode_xid::UnicodeXID;
 
@@ -10,11 +10,11 @@ impl<'a> Lexer<'a> {
     /// Returns the next byte which has a utf-8 continue marker.
     fn next_continue_byte(&mut self) -> LexResult<u8> {
         let peek = self.peek_byte().ok_or(ErrorKind::InvalidUnicodeSequence)?;
-        if peek & 0xC0 != 0x80 {
-            Err(ErrorKind::InvalidUnicodeSequence)
-        } else {
+        if peek & 0xC0 == 0x80 {
             self.eat_byte();
             Ok(peek)
+        } else {
+            Err(ErrorKind::InvalidUnicodeSequence)
         }
     }
 

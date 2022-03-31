@@ -15,7 +15,7 @@ enum AllocValue {
 }
 
 impl AllocValue {
-    pub fn is_arg(&self) -> bool {
+    pub fn is_arg(self) -> bool {
         matches!(self, AllocValue::Arg(_))
     }
 }

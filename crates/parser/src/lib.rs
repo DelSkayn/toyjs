@@ -159,12 +159,12 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
             match self.lexer.next()? {
                 None => return Ok(None),
                 Some(x) => {
-                    if x.kind != t!("\n") {
+                    if x.kind == t!("\n") {
+                        self.peek_lt = Some(x);
+                    } else {
                         self.last_span = x.span;
                         self.peek = Some(x);
                         return Ok(Some(x));
-                    } else {
-                        self.peek_lt = Some(x);
                     }
                 }
             }

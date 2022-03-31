@@ -78,7 +78,7 @@ impl FormattedError<'_> {
             }
             // Todo marked in the parser
             ErrorKind::Todo {
-                ref file,
+                file,
                 ref line,
                 ref token,
             } => {
@@ -125,10 +125,10 @@ impl FormattedError<'_> {
                         write!(w, " expected one of: [")?;
                         let mut first = true;
                         for e in expected.iter() {
-                            if !first {
-                                write!(w, ",")?;
-                            } else {
+                            if first {
                                 first = false;
+                            } else {
+                                write!(w, ",")?;
                             }
                             if e == &"\n" {
                                 write!(w, "\\n")?;
