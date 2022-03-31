@@ -257,7 +257,35 @@ impl Realm {
                     );
                     self.stack.write(dst, res);
                 }
-
+                Instruction::BitwiseAnd { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
+                    let res = left & right;
+                    self.stack.write(dst, res.into())
+                }
+                Instruction::BitwiseOr { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
+                    let res = left | right;
+                    self.stack.write(dst, res.into())
+                }
+                Instruction::BitwiseXor { dst, left, righ } => {
+                    let left = self.stack.read(left);
+                    let right = self.stack.read(righ);
+                    let left = catch_unwind!(self, instr, ctx, self.to_int32(left));
+                    let right = catch_unwind!(self, instr, ctx, self.to_int32(right));
+                    let res = left ^ right;
+                    self.stack.write(dst, res.into())
+                }
+                Instruction::BitwiseNot { dst, src } => {
+                    let src = self.stack.read(src);
+                    let src = catch_unwind!(self, instr, ctx, self.to_int32(src));
+                    self.stack.write(dst, (!src).into())
+                }
                 Instruction::ShiftLeft { dst, left, righ } => {
                     let left = self.stack.read(left);
                     let right = self.stack.read(righ);
@@ -463,7 +491,6 @@ impl Realm {
                         None => return Ok(return_value),
                     }
                 }
-                x => panic!("invalid Instruction {}", x),
             }
         }
     }
@@ -592,11 +619,11 @@ impl Realm {
         } else if number.is_float() {
             let f = number.cast_float();
             if f.is_normal() {
-                let res = f.abs().floor() as i32;
-                if f.is_sign_positive() {
-                    res
+                let res = f.abs().floor().copysign(f) as i64 % (2 << 32);
+                if res >= (2 << 31) {
+                    (res - (2 << 32)) as i32
                 } else {
-                    -res
+                    res as i32
                 }
             } else {
                 0

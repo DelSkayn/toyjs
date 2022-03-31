@@ -97,7 +97,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("+") => PrefixOperator::Positive,
                 t!("-") => PrefixOperator::Negative,
                 t!("!") => PrefixOperator::Not,
-                t!("~") => PrefixOperator::BinaryNot,
+                t!("~") => PrefixOperator::BitwiseNot,
                 t!("++") => {
                     let expr = self.parse_ops_rec(r_bp)?;
                     if !expr.is_assignable() {

@@ -193,7 +193,6 @@ define_instructions! {
         Upvalue{dst: u8, slot: u16},
         UpvalueAssign{src: u8, slot: u16},
 
-        In{dst: u8, left:u8, righ:u8},
         InstanceOf{dst: u8, left:u8, righ:u8},
         TypeOf{ dst: u8, src: u8},
 
@@ -207,6 +206,7 @@ define_instructions! {
         BitwiseAnd{dst: u8, left: u8, righ:u8},
         BitwiseOr{dst: u8, left: u8, righ:u8},
         BitwiseXor{dst: u8, left: u8, righ:u8},
+        BitwiseNot{dst: u8, src: u8},
 
         ShiftLeft{dst: u8, left: u8, righ:u8},
         ShiftRight{dst: u8, left: u8, righ:u8},
@@ -225,9 +225,6 @@ define_instructions! {
 
         Negative{dst: u8, op: u8},
         Positive{dst: u8, op: u8},
-
-        ToNumber{dst: u8, op: u8},
-        ToBool{dst: u8, op: u8},
 
         IsNullish{dst: u8, op: u8},
         Not{ dst: u8, src: u8},
