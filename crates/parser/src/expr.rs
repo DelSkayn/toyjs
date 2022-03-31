@@ -78,7 +78,22 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("delete") => PrefixOperator::Delete,
                 t!("void") => PrefixOperator::Void,
                 t!("typeof") => PrefixOperator::TypeOf,
-                t!("new") => PrefixOperator::New,
+                t!("new") => {
+                    if self.eat(t!("."))? {
+                        let peek = self.peek_kind()?;
+                        let tgt = self.lexer.interner.intern("target");
+                        if peek == Some(TokenKind::Ident(tgt)) {
+                            if !self.state.r#return {
+                                unexpected!(self => "new.target expression is not allowed here");
+                            }
+                            self.next()?;
+                            return Ok(Expr::Prime(ast::PrimeExpr::NewTarget));
+                        } else {
+                            unexpected!(self);
+                        }
+                    }
+                    PrefixOperator::New
+                }
                 t!("+") => PrefixOperator::Positive,
                 t!("-") => PrefixOperator::Negative,
                 t!("!") => PrefixOperator::Not,

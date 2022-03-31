@@ -142,7 +142,7 @@ impl Realm {
                     ExecutionContext {
                         function,
                         this,
-                        new_target: Value::empty(),
+                        new_target: Value::undefined(),
                     },
                 )
             }
@@ -151,7 +151,7 @@ impl Realm {
                 let mut ctx = ExecutionContext {
                     function,
                     this,
-                    new_target: Value::empty(),
+                    new_target: Value::undefined(),
                 };
                 let res = x(self, &mut ctx);
                 self.stack.pop(self.vm.borrow().gc());
@@ -162,7 +162,7 @@ impl Realm {
                 let mut ctx = ExecutionContext {
                     function,
                     this,
-                    new_target: Value::empty(),
+                    new_target: Value::undefined(),
                 };
                 let res = x(self, &mut ctx);
                 self.stack.pop(self.vm.borrow().gc());
@@ -173,7 +173,7 @@ impl Realm {
                 let mut ctx = ExecutionContext {
                     function,
                     this,
-                    new_target: Value::empty(),
+                    new_target: Value::undefined(),
                 };
                 let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, &mut ctx);
                 self.stack.pop(self.vm.borrow().gc());

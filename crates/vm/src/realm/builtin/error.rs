@@ -27,7 +27,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
     realm: &Realm,
     exec: &mut ExecutionContext,
 ) -> Result<Value, Value> {
-    let new_target = if exec.new_target.is_empty() {
+    let new_target = if exec.new_target.is_undefined() {
         exec.function.into()
     } else {
         exec.new_target

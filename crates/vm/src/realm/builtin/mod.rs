@@ -27,8 +27,7 @@ pub struct Builtin {
 }
 
 unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
-    if exec.new_target.is_empty()
-        || exec.new_target.is_undefined()
+    if exec.new_target.is_undefined()
         || (exec.new_target.is_object()
             && exec.new_target.unsafe_cast_object().ptr_eq(exec.function))
     {

@@ -93,6 +93,7 @@ impl Realm {
                     self.stack.write(dst, func.into());
                 }
                 Instruction::LoadThis { dst } => self.stack.write(dst, ctx.this),
+                Instruction::LoadTarget { dst } => self.stack.write(dst, ctx.new_target),
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.vm.borrow().collect_debt(&ctx);

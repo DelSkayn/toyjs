@@ -734,6 +734,11 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.builder.push(Instruction::LoadThis { dst: dst.0 });
                 ExprValue::new_in(dst, self.alloc.clone())
             }
+            PrimeExpr::NewTarget => {
+                let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.push(Instruction::LoadTarget { dst: dst.0 });
+                ExprValue::new_in(dst, self.alloc.clone())
+            }
             PrimeExpr::Eval(args) => {
                 let expr = self.compile_expressions(None, args).eval(self);
                 self.builder.push(Instruction::Push { src: expr.0 });
