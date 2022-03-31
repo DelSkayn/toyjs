@@ -177,9 +177,9 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 }
                 _ => ast::ForDecl::Expr(self.parse_single_expr()?),
             };
+            expect!(self, ";");
             Some(decl)
         };
-        expect!(self, ";");
         let cond = if self.eat(t!(";"))? {
             None
         } else {

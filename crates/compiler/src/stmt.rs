@@ -426,9 +426,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             let reg = self.compile_expressions(None, post).eval(self);
             self.builder.free_temp(reg);
         }
-        let back_jump = self.builder.push(Instruction::Jump { tgt: 1 });
+        let back_jump = self.builder.push(Instruction::Jump { tgt: 0 });
+        self.builder.patch_jump(back_jump, before_cond);
         if let Some((patch_cond, cond)) = patch_cond {
-            self.builder.patch_jump(back_jump, before_cond);
             self.builder
                 .patch_jump(patch_cond, self.builder.next_instruction_id());
             for x in cond.false_list {
