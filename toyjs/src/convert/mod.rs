@@ -19,6 +19,13 @@ unsafe impl<'js> FromJs<'js> for Value<'js> {
     }
 }
 
+unsafe impl<'js> FromJs<'js> for String<'js> {
+    const NEEDS_GC: bool = true;
+    fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        ctx.coerce_string(value)
+    }
+}
+
 unsafe impl<'js> FromJs<'js> for f64 {
     const NEEDS_GC: bool = false;
     fn from_js(ctx: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {

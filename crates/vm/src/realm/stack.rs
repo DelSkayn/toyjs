@@ -362,15 +362,15 @@ impl Stack {
     }
 
     #[inline(always)]
-    pub fn read(&self, register: u8) -> Value {
+    pub unsafe fn read(&self, register: u8) -> Value {
         debug_assert!((register as usize) < self.frame_size());
-        unsafe { self.frame.get().add(register as usize).read() }
+        self.frame.get().add(register as usize).read()
     }
 
     #[inline(always)]
-    pub fn write(&self, register: u8, v: Value) {
+    pub unsafe fn write(&self, register: u8, v: Value) {
         debug_assert!((register as usize) < self.frame_size());
-        unsafe { self.frame.get().add(register as usize).write(v) }
+        self.frame.get().add(register as usize).write(v)
     }
 }
 
