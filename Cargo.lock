@@ -791,6 +791,7 @@ dependencies = [
  "anyhow",
  "clap 3.1.6",
  "serde",
+ "serde_json",
  "serde_yaml",
  "termcolor",
  "toyjs",
