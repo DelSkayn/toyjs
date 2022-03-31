@@ -36,7 +36,7 @@ impl Report {
                 cur = new;
                 i -= 1;
             }
-            fs::rename("report.json", format!("report.1.json"))?;
+            fs::rename("report.json", "report.1.json")?;
         }
         let file = File::create("report.json")?;
         serde_json::to_writer(file, self)?;
@@ -87,14 +87,14 @@ impl Report {
                 stdout.set_color(&c.base)?;
                 writeln!(stdout, "{}", k.display())?;
             }
-            (ref x, TestResult::Passed) => {
+            (x, TestResult::Passed) => {
                 stdout.set_color(&c.error)?;
                 write!(stdout, "{:<10}", "REGRESSED")?;
                 stdout.set_color(&c.base)?;
                 writeln!(stdout, "{}", k.display())?;
                 write_result(x, stdout, c)?;
             }
-            (ref a, ref b) => {
+            (a, b) => {
                 stdout.set_color(&c.failure)?;
                 write!(stdout, "{:<10}", "CHANGED")?;
                 stdout.set_color(&c.base)?;

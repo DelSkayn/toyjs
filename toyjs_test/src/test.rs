@@ -86,8 +86,8 @@ impl Test {
 
             let meta = &source[start..start + end];
             // A single test uses \r instead of new line which breaks the yaml parser.
-            if meta.contains("\r") {
-                let source = meta.replace("\r", "\n");
+            if meta.contains('\r') {
+                let source = meta.replace('\r', "\n");
                 serde_yaml::from_str(&source).context("could not parse test metadata")?
             } else {
                 serde_yaml::from_str(meta).context("could not parse test metadata")?
