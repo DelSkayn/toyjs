@@ -1,6 +1,9 @@
 use super::{Allocator, Parser, Result};
 
-use ast::{AssignOperator, BinaryOperator, Expr, PostfixOperator, PrefixOperator};
+use ast::{
+    symbol_table::ScopeKind, ArrowBody, AssignOperator, BinaryOperator, Expr, PostfixOperator,
+    PrefixOperator, PrimeExpr,
+};
 use token::{t, TokenKind};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
@@ -17,7 +20,8 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
         | t!("&=")
         | t!("^=")
         | t!("|=")
-        | t!("**=") => Some((2, 1)),
+        | t!("**=")
+        | t!("=>") => Some((2, 1)),
         t!("?") => Some((4, 3)),
         t!("??") => Some((6, 5)),
         t!("||") => Some((7, 8)),
@@ -60,7 +64,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     pub(crate) fn parse_expr(&mut self) -> Result<Vec<Expr<A>, A>> {
         let mut res = Vec::new_in(self.alloc.clone());
         loop {
-            res.push(self.parse_ops_rec(0)?);
+            res.push(self.parse_single_expr()?);
             if !self.eat(t!(","))? {
                 break;
             }
@@ -69,7 +73,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     }
 
     pub(crate) fn parse_single_expr(&mut self) -> Result<Expr<A>> {
-        self.parse_ops_rec(0)
+        let res = self.parse_ops_rec(0)?;
+        if self.peek_lt()?.map(|x| x.kind) == Some(t!("=>")) {
+            return self.reparse_arrow_function(res);
+        }
+        Ok(res)
     }
 
     fn parse_prefix_op(&mut self, r_bp: u8) -> Result<Expr<A>> {
@@ -172,6 +180,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 let expr = Box::new_in(expr, self.alloc.clone());
                 BinaryOperator::Ternary(expr)
             }
+            t!("=>") => return self.reparse_arrow_function(lhs),
             t!("??") => BinaryOperator::NullCoalessing,
             t!("?.") => BinaryOperator::TenaryNull,
             t!("||") => BinaryOperator::Or,
@@ -274,5 +283,59 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             break;
         }
         Ok(lhs)
+    }
+
+    fn reparse_arrow_function(&mut self, expr: Expr<A>) -> Result<Expr<A>> {
+        let scope = self.symbol_table.push_scope(ScopeKind::Function);
+        let params = self.reparse_as_param(dbg!(expr))?;
+        let body = if self.peek_kind()? == Some(t!("{")) {
+            let block = self.alter_state(
+                |s| {
+                    s.r#return = true;
+                    s.r#continue = false;
+                    s.r#break = false;
+                },
+                |this| {
+                    expect!(this, "{");
+                    let mut stmts = Vec::new_in(this.alloc.clone());
+                    while !this.eat(t!("}"))? {
+                        stmts.push(this.parse_stmt()?)
+                    }
+                    Ok(stmts)
+                },
+            )?;
+            ArrowBody::Block(block)
+        } else {
+            let expr = self.parse_single_expr()?;
+            ArrowBody::Expr(Box::new_in(expr, self.alloc.clone()))
+        };
+
+        Ok(Expr::Prime(PrimeExpr::ArrowFunction(scope, params, body)))
+    }
+
+    fn reparse_as_param(&mut self, expr: Expr<A>) -> Result<ast::Params<A>> {
+        match expr {
+            Expr::Prime(ast::PrimeExpr::Variable(symbol)) => {
+                let symbol = self.symbol_table.reparse_function_param(symbol);
+                let mut res = Vec::new_in(self.alloc.clone());
+                res.push(symbol);
+                Ok(ast::Params(res, None))
+            }
+            Expr::Prime(ast::PrimeExpr::Covered(exprs)) => {
+                let mut res = Vec::new_in(self.alloc.clone());
+                for e in exprs {
+                    if let Expr::Prime(ast::PrimeExpr::Variable(s)) = e {
+                        res.push(self.symbol_table.reparse_function_param(s));
+                    } else {
+                        unexpected!(self => "could not parse left hand side as arrow function parameters");
+                    }
+                }
+                Ok(ast::Params(res, None))
+            }
+            Expr::Prime(ast::PrimeExpr::ArrowArgs(x)) => Ok(x),
+            _ => {
+                unexpected!(self => "could not parse left hand side as arrow function parameters");
+            }
+        }
     }
 }

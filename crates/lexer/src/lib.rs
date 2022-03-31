@@ -408,6 +408,10 @@ impl<'a> Lexer<'a> {
                         _ => self.token(t!("==")),
                     }
                 }
+                Some(b'>') => {
+                    self.eat_byte();
+                    self.token(t!("=>"))
+                }
                 _ => self.token(t!("=")),
             },
             b'!' => match self.peek_byte() {

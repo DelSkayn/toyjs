@@ -15,7 +15,27 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             t!("(") => {
                 self.next()?;
                 // Covered expression, or arrow function
-                let expr = self.parse_expr()?;
+                if self.eat(t!(")"))? {
+                    if self.peek_kind()? != Some(t!("=>")) {
+                        unexpected!(self,"=>" => "expected arrow function declaration");
+                    }
+                    return Ok(PrimeExpr::ArrowArgs(ast::Params(
+                        Vec::new_in(self.alloc.clone()),
+                        None,
+                    )));
+                }
+                let expr = match self.parse_expr() {
+                    Ok(x) => x,
+                    Err(e) => {
+                        if let Ok(x) = self.parse_params(true) {
+                            return Ok(PrimeExpr::ArrowArgs(x));
+                        }
+                        if self.peek_kind()? != Some(t!("=>")) {
+                            unexpected!(self,"=>" => "expected arrow function declaration");
+                        }
+                        return Err(e);
+                    }
+                };
                 expect!(self, ")");
                 Ok(PrimeExpr::Covered(expr))
             }
@@ -84,7 +104,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             expect_bind!(self, let bind = "ident");
             if self.peek_kind()? == Some(t!("(")) {
                 let scope = self.symbol_table.push_scope(ScopeKind::Function);
-                let params = self.parse_params()?;
+                let params = self.parse_params(false)?;
                 expect!(self, "{");
                 let stmts = self.alter_state::<_, _, Result<_>>(
                     |s| {
@@ -153,7 +173,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             })
             .transpose()?;
         let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.parse_params()?;
+        let params = self.parse_params(false)?;
         expect!(self, "{");
         let stmts = self.alter_state::<_, _, Result<_>>(
             |s| {

@@ -169,6 +169,8 @@ impl<A: Allocator> Expr<A> {
                 | PrimeExpr::Object(_)
                 | PrimeExpr::Array(_)
                 | PrimeExpr::Function(_, _, _, _)
+                | PrimeExpr::ArrowFunction(_, _, _)
+                | PrimeExpr::ArrowArgs(_)
                 | PrimeExpr::This
                 | PrimeExpr::NewTarget => false,
             },
@@ -189,13 +191,22 @@ impl<A: Allocator> Expr<A> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub enum ArrowBody<A: Allocator> {
+    Expr(Box<Expr<A>, A>),
+    Block(Vec<Stmt<A>, A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum PrimeExpr<A: Allocator> {
     Literal(Literal),
     Variable(SymbolId),
     Covered(Vec<Expr<A>, A>),
+    ArrowArgs(Params<A>),
     Object(Vec<(StringId, Expr<A>), A>),
     Array(Vec<Expr<A>, A>),
     Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
+    ArrowFunction(ScopeId, Params<A>, ArrowBody<A>),
     // A direct eval call
     Eval(Vec<Expr<A>, A>),
     This,
