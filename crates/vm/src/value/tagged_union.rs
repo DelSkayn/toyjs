@@ -232,6 +232,46 @@ impl Value {
             _ => panic!(),
         }
     }
+
+    #[inline]
+    pub fn into_int(self) -> Option<i32> {
+        match self {
+            Value::Integer(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn into_float(self) -> Option<f64> {
+        match self {
+            Value::Float(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn into_bool(self) -> Option<bool> {
+        match self {
+            Value::Boolean(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn into_string(self) -> Option<Gc<String>> {
+        match self {
+            Value::String(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn into_object(self) -> Option<Gc<Object>> {
+        match self {
+            Value::Object(x) => Some(x),
+            _ => None,
+        }
+    }
 }
 
 impl From<bool> for Value {
