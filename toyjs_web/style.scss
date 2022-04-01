@@ -1,0 +1,41 @@
+$background: rgb(47, 45, 56);
+$foreground: rgb(223, 232, 237);
+
+html{
+    padding: 0;
+    margin: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: $background;
+    color: $foreground;
+}
+
+body{
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+    display: flex;
+}
+
+#main{
+    flex: 1;
+    max-width: 64em;
+    padding: 1em;
+    display: flex;
+}
+
+#inner{
+    flex: 1;
+    border-radius: 8px;
+    box-shadow: 0px 12px 17px rgba(0,0,0,0.3);
+    overflow: hidden;
+}
+
+#term{
+    padding: 4px;
+    width: 100%;
+    height: 100%;
+    background-color: rgb(0,0,0);
+}
