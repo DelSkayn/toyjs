@@ -3,6 +3,7 @@ members = [
     "crates/*",
     "toyjs",
     "toyjs_test",
+    "toyjs_web",
 ]
 
 [profile.release]
