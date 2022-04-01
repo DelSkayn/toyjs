@@ -6,6 +6,8 @@ Built for experimentation with building dynamic languages.
 This interpreter is very much under development and lacks support for a large part of the
 javascript language.
 
+You can play around with
+
 ## Features
  - Register based bytecode VM
  - Handwritten parser.
@@ -30,6 +32,11 @@ These binaries are:
  - `dump_ast` which dumps the generated abstract syntax tree
  - `dump_bytecode` which dumps bytecode to be executed by the vm.
  - `toyjs_test` a tool to run the `test262` tests on the interpreter
+
+# WASM
+The interpreter also compiles to wasm!
+
+You can play around with a simple REPL in your browser [here](https://delskayn.github.io/toyjs/).
 
 ## Crates
 The toyjs interpreter consists of various crates.
