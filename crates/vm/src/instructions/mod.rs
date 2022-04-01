@@ -113,6 +113,14 @@ unsafe impl Trace for ByteCode {
     fn trace(&self, ctx: gc::Ctx) {
         self.constants.iter().for_each(|x| x.trace(ctx));
     }
+
+    fn finalize(&self, atoms: &crate::atom::Atoms) {
+        for c in self.constants.iter() {
+            if let Some(a) = c.into_atom() {
+                atoms.decrement(a);
+            }
+        }
+    }
 }
 
 impl fmt::Display for ByteCode {

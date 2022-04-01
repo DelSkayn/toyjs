@@ -102,6 +102,12 @@ impl Registers {
     }
 
     pub fn registers_needed(&self) -> u8 {
+        // At this point no more temporaries should be allocated
+        debug_assert!(self
+            .registers
+            .iter()
+            .find(|x| **x == AllocValue::Temp)
+            .is_none());
         self.max_allocated
     }
 }

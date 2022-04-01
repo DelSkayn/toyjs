@@ -3,30 +3,38 @@ use std::alloc::Allocator;
 use ast::Literal;
 use common::{
     collections::HashMap,
-    interner::Interner,
+    interner::{Interner, StringId},
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
-use vm::{gc::GcArena, Value};
+use vm::{atom::Atoms, gc::GcArena, Value};
 
 newtype_key! {
     pub struct ConstantId(pub(crate) u32);
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+pub enum LiteralOrAtom {
+    Literal(Literal),
+    Atom(StringId),
+}
+
 pub struct Constants<'a, A: Allocator> {
     constants: SlotStack<Value, ConstantId, A>,
-    map: HashMap<Literal, ConstantId>,
+    map: HashMap<LiteralOrAtom, ConstantId>,
     gc: &'a GcArena,
     interner: &'a mut Interner,
+    atoms: &'a Atoms,
 }
 
 impl<'a, A: Allocator> Constants<'a, A> {
-    pub fn new_in(interner: &'a mut Interner, gc: &'a GcArena, alloc: A) -> Self {
+    pub fn new_in(interner: &'a mut Interner, atoms: &'a Atoms, gc: &'a GcArena, alloc: A) -> Self {
         Constants {
             constants: SlotStack::new_in(alloc),
             map: HashMap::default(),
             gc,
             interner,
+            atoms,
         }
     }
 
@@ -35,26 +43,34 @@ impl<'a, A: Allocator> Constants<'a, A> {
         self.push_constant(Literal::String(id))
     }
 
-    pub fn push_constant(&mut self, literal: Literal) -> ConstantId {
-        let constants = &mut self.constants;
-        let gc = self.gc;
-        let interner = &*self.interner;
-        *self.map.entry(literal).or_insert_with(|| match literal {
-            Literal::Null => constants.push(Value::null()),
-            Literal::Undefined => constants.push(Value::undefined()),
-            Literal::Float(x) => constants.push(Value::from(x)),
-            Literal::Boolean(x) => constants.push(Value::from(x)),
-            Literal::Integer(x) => constants.push(Value::from(x)),
-            Literal::String(x) => {
-                let str = gc.allocate(
-                    interner
-                        .lookup(x)
-                        .expect("symbol name string no longer exists")
-                        .to_string(),
-                );
-                constants.push(Value::from(str))
-            }
+    pub fn push_atom(&mut self, s: StringId) -> ConstantId {
+        *self.map.entry(LiteralOrAtom::Atom(s)).or_insert_with(|| {
+            let atom = self.atoms.atomize_string(
+                self.interner
+                    .lookup(s)
+                    .expect("symbol name string no longer exists"),
+            );
+            self.constants.push(Value::from(atom))
         })
+    }
+
+    pub fn push_constant(&mut self, literal: Literal) -> ConstantId {
+        *self
+            .map
+            .entry(LiteralOrAtom::Literal(literal))
+            .or_insert_with(|| match literal {
+                Literal::Null => self.constants.push(Value::null()),
+                Literal::Undefined => self.constants.push(Value::undefined()),
+                Literal::Float(x) => self.constants.push(Value::from(x)),
+                Literal::Boolean(x) => self.constants.push(Value::from(x)),
+                Literal::Integer(x) => self.constants.push(Value::from(x)),
+                Literal::String(x) => {
+                    let s = self
+                        .gc
+                        .allocate(self.interner.lookup(x).unwrap().to_string());
+                    self.constants.push(s.into())
+                }
+            })
     }
 
     pub fn into_constants(self) -> Box<[Value], A> {
