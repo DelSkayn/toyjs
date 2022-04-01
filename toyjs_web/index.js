@@ -15,6 +15,7 @@ import("./pkg").then(({ToyJs}) => {
     }
     term.onKey((key,_) => {
             const code = key.key.charCodeAt(0);
+            console.log(key.key);
             if (code == 13) { // CR
                 term.writeln("");
                 let pending_delim = 0;
@@ -31,12 +32,15 @@ import("./pkg").then(({ToyJs}) => {
                     term.write("> ");
                     input = "";
                 }else{
+                    input += "\n";
                     term.write("... ");
                 }
             } else if (code < 32 || code == 127) { // Control
                 if (code == 127){
-                    term.write("\x08 \x08");
-                    input = input.slice(0,input.length - 1)
+                    if (input.length > 0 && input.slice(-1) != "\n"){
+                        term.write("\x08 \x08");
+                        input = input.slice(0,input.length - 1)
+                    }
                 }
                 return;
             } else { // Visible
@@ -47,4 +51,8 @@ import("./pkg").then(({ToyJs}) => {
     term.open(document.getElementById("term"));
     fit.fit();
     term.write("> ");
+
+    window.onresize = () => {
+        fit.fit();
+    }
 });
