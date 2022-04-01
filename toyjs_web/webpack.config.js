@@ -10,7 +10,7 @@ module.exports = (env, argv) => {
       compress: argv.mode === 'production',
       port: 8000
     },
-    entry: './bootstrap.js',
+    entry: './index.js',
     output: {
       path: distPath,
       filename: "toyjs.js",
@@ -18,14 +18,6 @@ module.exports = (env, argv) => {
     },
     module: {
       rules: [
-        {
-          test: /\.s[ac]ss$/i,
-          use: [
-            'style-loader',
-            'css-loader',
-            'sass-loader',
-          ],
-        },
         {
           test: /\.css$/i,
           use: [
