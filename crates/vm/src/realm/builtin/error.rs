@@ -1,6 +1,6 @@
-use crate::{object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value};
+use crate::{atom, object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value};
 
-use super::{common_keys::CommonKeys, BuiltinAccessor};
+use super::BuiltinAccessor;
 
 pub struct Error;
 impl BuiltinAccessor for Error {
@@ -34,8 +34,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
     };
 
     let proto = if let Some(obj) = new_target.into_object() {
-        let key = realm.vm().allocate::<String>("prototype".into());
-        obj.index(key.into(), realm)?
+        obj.index(atom::constant::prototype, realm)
     } else {
         Value::undefined()
     };
@@ -67,21 +66,12 @@ pub unsafe fn construct(
 ) -> Gc<Object> {
     let object = Object::alloc_error(realm, Some(prototype));
     if let Some(message) = message {
-        let key = realm.vm().allocate::<String>("message".into());
-        object
-            .raw_index_set(key.into(), message.into(), realm)
-            .unwrap();
+        object.index_set(atom::constant::message, message.into(), realm)
     }
-    if let Some(options) = options {
-        if options.is_object() {
-            let key = realm.vm().allocate::<String>("cause".into());
-            let value = options
-                .unsafe_cast_object()
-                .index(key.into(), realm)
-                .unwrap();
-            if !value.is_undefined() {
-                object.raw_index_set(key.into(), value, realm).unwrap()
-            }
+    if let Some(options) = options.and_then(|x| x.into_object()) {
+        let value = options.index(atom::constant::cause, realm);
+        if !value.is_undefined() {
+            object.index_set(atom::constant::cause, value, realm);
         }
     }
     object
@@ -93,12 +83,10 @@ pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Va
         .into_object()
         .ok_or_else(|| realm.create_type_error("this is not an object"))?;
 
-    let key = realm.vm().allocate::<String>("name".into());
-    let name = this.index(key.into(), realm).unwrap();
+    let name = this.index(atom::constant::name, realm);
     let name = realm.to_string(name)?;
 
-    let key = realm.vm().allocate::<String>("message".into());
-    let message = this.index(key.into(), realm).unwrap();
+    let message = this.index(atom::constant::message, realm);
     let message = realm.to_string(message)?;
 
     let res = realm
@@ -109,7 +97,6 @@ pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Va
 
 pub unsafe fn init_native<T: BuiltinAccessor>(
     realm: &Realm,
-    keys: &CommonKeys,
     name: Gc<String>,
     construct_proto: Gc<Object>,
     proto_proto: Gc<Object>,
@@ -121,18 +108,15 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
         crate::object::FunctionKind::Static(construct_vm::<T>),
     );
 
-    error_construct
-        .raw_index_set(keys.prototype.into(), error_proto.into(), realm)
-        .unwrap();
-    error_proto
-        .raw_index_set(keys.constructor.into(), error_construct.into(), realm)
-        .unwrap();
+    error_construct.index_set(atom::constant::prototype, error_proto.into(), realm);
+    error_proto.index_set(atom::constant::constructor, error_construct.into(), realm);
 
-    error_proto
-        .raw_index_set(keys.message.into(), keys.empty.into(), realm)
-        .unwrap();
-    let key = realm.vm().allocate::<String>("name".into()).into();
-    error_proto.raw_index_set(key, name.into(), realm).unwrap();
+    error_proto.index_set(
+        atom::constant::message,
+        realm.vm().allocate(String::new()).into(),
+        realm,
+    );
+    error_proto.index_set(atom::constant::name, name.into(), realm);
 
     (error_construct, error_proto)
 }

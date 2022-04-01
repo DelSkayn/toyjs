@@ -3,6 +3,7 @@
 use std::cell::{Cell, UnsafeCell};
 
 use crate::{
+    atom::Atom,
     gc::{Gc, Trace},
     Realm, Value,
 };
@@ -24,7 +25,7 @@ bitflags::bitflags! {
 /// A javascript object
 pub struct Object {
     pub prototype: Option<Gc<Object>>,
-    values: UnsafeCell<HashMap<String, Value>>,
+    values: UnsafeCell<HashMap<Atom, Value>>,
     array: UnsafeCell<Vec<Value>>,
     pub flags: ObjectFlags,
     pub function: Option<FunctionKind>,
@@ -70,39 +71,30 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index(&self, key: Value, realm: &Realm) -> Result<Value, Value> {
+    pub unsafe fn index(&self, key: Atom, realm: &Realm) -> Value {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
-        if key.is_int() {
-            let idx = key.cast_int();
-            if idx >= 0 {
-                let idx = idx as usize;
-                if self.map_backdown.get().map_or(true, |x| idx < x) {
-                    return match (*self.array.get()).get(idx).copied() {
-                        Some(x) => Ok(x),
-                        None => {
-                            if let Some(proto) = self.prototype {
-                                proto.index(key, realm)
-                            } else {
-                                Ok(Value::undefined())
-                            }
-                        }
-                    };
-                }
+        if let Some(idx) = key.into_idx() {
+            let idx = idx as usize;
+            if self.map_backdown.get().map_or(true, |x| idx < x) {
+                match (*self.array.get()).get(idx).copied() {
+                    Some(x) => return x,
+                    None => {
+                        return self
+                            .prototype
+                            .map(|x| x.index(key, realm))
+                            .unwrap_or(Value::undefined())
+                    }
+                };
             }
         }
-        let string = realm.to_string(key)?;
-        match (*self.values.get()).get(&*string).copied() {
-            Some(x) => Ok(x),
-            None => {
-                if let Some(x) = self.prototype {
-                    x.index(key, realm)
-                } else {
-                    Ok(Value::undefined())
-                }
-            }
-        }
+
+        (*self.values.get()).get(&key).copied().unwrap_or_else(|| {
+            self.prototype
+                .map(|x| x.index(key, realm))
+                .unwrap_or(Value::undefined())
+        })
     }
 
     /// Index into the object and set the value assiociated with the key.
@@ -111,14 +103,13 @@ impl Object {
     ///
     /// Value objects must be valid.
     /// The realm should be the same realm the object was created in.
-    pub unsafe fn index_set(&self, key: Value, value: Value, realm: &Realm) -> Result<(), Value> {
+    pub unsafe fn index_set(&self, key: Atom, value: Value, realm: &Realm) {
         // All uses of unsafe cell are save since no value can hold a reference to
         // an value in the hashmap or vec.
         // And object is not Sync nor Send.
 
-        if key.is_int() {
-            let idx = key.cast_int();
-            if idx >= 0 && self.map_backdown.get().map_or(true, |x| (idx as usize) < x) {
+        if let Some(idx) = key.into_idx() {
+            if self.map_backdown.get().map_or(true, |x| (idx as usize) < x) {
                 let idx = idx as usize;
                 let len = (*self.array.get()).len();
                 if len <= idx {
@@ -129,49 +120,22 @@ impl Object {
                         self.map_backdown.set(Some(capacity));
                         if idx < capacity {
                             (*self.array.get())[idx] = value;
-                            return Ok(());
+                            return;
                         }
                     } else {
                         (*self.array.get()).resize(idx + 1, Value::undefined());
                         (*self.array.get())[idx] = value;
-                        return Ok(());
+                        return;
                     }
                 } else {
                     (*self.array.get())[idx] = value;
-                    return Ok(());
+                    return;
                 }
             }
         }
-        let string = realm.to_string(key)?;
-        (*self.values.get()).insert(string.to_string(), value);
-        Ok(())
-    }
-
-    /// Set a property of the object directly, skipping possible setters.
-    pub unsafe fn raw_index_set(
-        &self,
-        key: Value,
-        value: Value,
-        realm: &Realm,
-    ) -> Result<(), Value> {
-        // All uses of unsafe cell are save since no value can hold a reference to
-        // an value in the hashmap or vec.
-        // And object is not Sync nor Send.
-
-        if key.is_int() {
-            let idx = key.cast_int();
-            if idx >= 0 {
-                let idx = idx as usize;
-                if (*self.array.get()).len() <= idx {
-                    (*self.array.get()).resize(idx + 1, Value::undefined());
-                }
-                (*self.array.get())[idx] = value;
-            }
-        } else {
-            let string = realm.to_string(key)?;
-            (*self.values.get()).insert(string.to_string(), value);
-        }
-        Ok(())
+        if (*self.values.get()).insert(key, value).is_none() {
+            realm.vm().increment(key)
+        };
     }
 
     #[inline]

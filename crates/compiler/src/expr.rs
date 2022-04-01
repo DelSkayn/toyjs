@@ -73,7 +73,7 @@ impl AssignmentTarget {
         match self {
             Self::Variable(x) => this.compile_symbol_use(placement, *x),
             Self::Dot(register, string) => {
-                let reg = this.compile_literal(placement, Literal::String(*string));
+                let reg = this.compile_atom(placement, *string);
                 this.builder.push(Instruction::Index {
                     dst: reg.0,
                     obj: register.0,
@@ -116,10 +116,8 @@ impl AssignmentTarget {
             Self::Variable(symbol_id) => {
                 let symbol = &this.symbol_table.symbols()[symbol_id];
                 if !this.symbol_table.is_symbol_local(symbol_id) {
-                    let name = this.compile_literal(
-                        None,
-                        Literal::String(this.symbol_table.symbols()[symbol_id].ident),
-                    );
+                    let name =
+                        this.compile_atom(None, this.symbol_table.symbols()[symbol_id].ident);
                     this.builder.free_temp(name);
 
                     this.builder.push(Instruction::GlobalAssign {
@@ -138,7 +136,7 @@ impl AssignmentTarget {
                 }
             }
             Self::Dot(obj, name) => {
-                let name = this.compile_literal(None, Literal::String(name));
+                let name = this.compile_atom(None, name);
                 this.builder.free_temp(name);
                 this.builder.push(Instruction::IndexAssign {
                     obj: obj.0,
@@ -222,7 +220,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             Expr::UnaryPostfix(expr, op) => match *op {
                 PostfixOperator::Dot(name) => {
                     let expr = self.compile_expr(None, expr).eval(self);
-                    let key = self.compile_literal(None, Literal::String(name));
+                    let key = self.compile_atom(None, name);
                     self.builder.free_temp(expr);
                     self.builder.free_temp(key);
                     let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
@@ -821,7 +819,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 place
             }
         } else {
-            let name = self.compile_literal(None, Literal::String(symbol.ident));
+            let name = self.compile_atom(None, symbol.ident);
             if let Some(place) = placement {
                 self.builder.free_temp(name);
                 self.builder.push(Instruction::GlobalIndex {
@@ -860,6 +858,26 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         register
     }
 
+    /// Compile the use of a literal expression
+    /// Will put result of expression in given placement register if there is one.
+    pub(crate) fn compile_atom(
+        &mut self,
+        placement: Option<Register>,
+        ident: StringId,
+    ) -> Register {
+        let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        let constant = self.constants.push_atom(ident);
+        if constant.0 < u16::MAX as u32 {
+            self.builder.push(Instruction::LoadConst {
+                dst: register.0,
+                cons: constant.0 as u16,
+            });
+        } else {
+            panic!("To many constants")
+        }
+        register
+    }
+
     /// Compile the use of a string expression
     /// Will put result of expression in given placement register if there is one.
     pub(crate) fn compile_string(&mut self, placement: Option<Register>, string: &str) -> Register {
@@ -884,7 +902,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let mut object = None;
         for (name, value) in bindings {
             let expr = self.compile_expr(None, value).eval(self);
-            let key = self.compile_literal(None, Literal::String(*name));
+            let key = self.compile_atom(None, *name);
             if object.is_none() {
                 let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 self.builder.push(Instruction::CreateObject { dst: dst.0 });
@@ -976,7 +994,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let instr = match *lhs {
             Expr::UnaryPostfix(ref lhs, PostfixOperator::Dot(ident)) => {
                 let obj = self.compile_expr(None, lhs).eval(self);
-                let key = self.compile_literal(None, Literal::String(ident));
+                let key = self.compile_atom(None, ident);
                 CallType::Method { key, obj }
             }
             Expr::UnaryPostfix(ref lhs, PostfixOperator::Index(ref expr)) => {

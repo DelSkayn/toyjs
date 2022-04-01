@@ -194,6 +194,7 @@ where {
                 &ast,
                 &(*user_data).symbol_table,
                 &mut (*user_data).interner,
+                (*self.ctx).vm().atoms(),
                 (*self.ctx).vm().gc(),
                 Global,
             );
@@ -226,6 +227,7 @@ where {
             &ast,
             &(*user_data).symbol_table,
             &mut (*user_data).interner,
+            (*self.ctx).vm().atoms(),
             (*self.ctx).vm().gc(),
             Global,
         );

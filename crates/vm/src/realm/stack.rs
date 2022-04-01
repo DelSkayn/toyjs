@@ -314,6 +314,7 @@ impl Stack {
         new.cast::<u8>().offset(offset).cast()
     }
 
+    #[cold]
     fn grow(&self, capacity: usize) {
         unsafe {
             let capacity = capacity.next_power_of_two().max(8);
