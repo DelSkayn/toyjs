@@ -104,11 +104,8 @@ impl Registers {
     pub fn registers_needed(&self) -> u8 {
         // At this point no more temporaries should be allocated
         debug_assert!(
-            self.registers
-                .iter()
-                .find(|x| **x == AllocValue::Temp)
-                .is_none(),
-            "register {} still alloctated as temp",
+            !self.registers.iter().any(|x| *x == AllocValue::Temp),
+            "register {} still allocated as temp",
             self.registers
                 .iter()
                 .enumerate()
