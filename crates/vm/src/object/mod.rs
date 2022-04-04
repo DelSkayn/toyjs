@@ -177,4 +177,12 @@ unsafe impl Trace for Object {
             }
         }
     }
+
+    fn finalize(&self, atoms: &crate::atom::Atoms) {
+        unsafe {
+            (*self.values.get())
+                .keys()
+                .for_each(|x| atoms.decrement(*x))
+        }
+    }
 }

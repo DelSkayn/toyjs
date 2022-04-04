@@ -192,7 +192,6 @@ impl Realm {
     }
 
     pub unsafe fn eval(&self, bc: Gc<ByteCode>) -> Result<Value, Value> {
-        dbg!(self.vm().atoms());
         let func = self.construct_script_function(bc);
         self.enter_call(func)
     }

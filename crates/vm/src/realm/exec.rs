@@ -112,9 +112,13 @@ impl Realm {
 
                     if let Some(obj) = obj.into_object() {
                         self.vm.borrow().write_barrier(obj);
-                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                        obj.index_set(key, val, self);
-                        self.vm().decrement(key);
+                        if let Some(key) = key.into_atom() {
+                            obj.index_set(key, val, self);
+                        } else {
+                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                            obj.index_set(key, val, self);
+                            self.vm().decrement(key);
+                        }
                     } else {
                         // TODO proper error value
                         self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
@@ -124,9 +128,14 @@ impl Realm {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
                     if let Some(obj) = obj.into_object() {
-                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                        let res = obj.index(key, self);
-                        self.vm().decrement(key);
+                        let res = if let Some(key) = key.into_atom() {
+                            obj.index(key, self)
+                        } else {
+                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                            let res = obj.index(key, self);
+                            self.vm().decrement(key);
+                            res
+                        };
                         self.stack.write(dst, res);
                     } else {
                         // TODO proper error value
@@ -137,10 +146,15 @@ impl Realm {
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
                     let obj = self.global;
-                    let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                    let src = obj.index(key, self);
-                    self.vm().decrement(key);
-                    self.stack.write(dst, src);
+                    let res = if let Some(key) = key.into_atom() {
+                        obj.index(key, self)
+                    } else {
+                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                        let res = obj.index(key, self);
+                        self.vm().decrement(key);
+                        res
+                    };
+                    self.stack.write(dst, res);
                 }
 
                 Instruction::GlobalAssign { key, src } => {
@@ -148,9 +162,13 @@ impl Realm {
                     let key = self.stack.read(key);
                     let src = self.stack.read(src);
                     self.vm.borrow().write_barrier(obj);
-                    let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                    obj.index_set(key, src, self);
-                    self.vm().decrement(key);
+                    if let Some(key) = key.into_atom() {
+                        obj.index_set(key, src, self);
+                    } else {
+                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                        obj.index_set(key, src, self);
+                        self.vm().decrement(key);
+                    }
                 }
 
                 Instruction::Upvalue { dst, slot } => {
@@ -936,10 +954,10 @@ impl Realm {
             let keys = if prefer_string {
                 [atom::constant::toString, atom::constant::valueOf]
             } else {
-                [atom::constant::toString, atom::constant::valueOf]
+                [atom::constant::valueOf, atom::constant::toString]
             };
             for k in keys {
-                let func = v.index(k.into(), self);
+                let func = v.index(k, self);
                 if let Some(func) = func.into_object() {
                     if func.is_function() {
                         let res = self.enter_method_call(func, v.into())?;
