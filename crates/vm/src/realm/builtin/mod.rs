@@ -1,4 +1,5 @@
 use crate::{
+    atom,
     gc::Trace,
     object::{FunctionKind, ObjectFlags},
     Gc, Object, Realm, Value,
@@ -48,8 +49,7 @@ unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result
     }
 
     let proto = if let Some(object) = exec.new_target.into_object() {
-        let key = realm.vm().allocate::<String>("prototype".into());
-        object.index(key.into(), realm).unwrap()
+        object.index(atom::constant::prototype, realm)
     } else {
         Value::undefined()
     };
@@ -125,10 +125,7 @@ impl Default for Builtin {
 
 impl Realm {
     pub unsafe fn init_builtin(&mut self) {
-        let keys = CommonKeys::new(self);
-
         let object_proto = Object::alloc(self, None, ObjectFlags::empty());
-        let key_to_string = self.vm().allocate::<String>("toString".into());
         self.builtin.object_proto = Some(object_proto);
 
         let func_proto = Object::alloc_function(
@@ -140,78 +137,56 @@ impl Realm {
 
         self.builtin.function_proto = Some(func_proto);
 
-        object_proto
-            .index_set(
-                key_to_string.into(),
-                Object::alloc_function(
-                    self,
-                    Some(func_proto),
-                    ObjectFlags::empty(),
-                    FunctionKind::Static(object_to_string),
-                )
-                .into(),
+        object_proto.index_set(
+            atom::constant::toString,
+            Object::alloc_function(
                 self,
+                Some(func_proto),
+                ObjectFlags::empty(),
+                FunctionKind::Static(object_to_string),
             )
-            .unwrap();
+            .into(),
+            self,
+        );
 
         let object_construct = Object::alloc_constructor(
             self,
             Some(func_proto),
             FunctionKind::Static(object_construct),
         );
-        object_construct
-            .raw_index_set(keys.prototype.into(), object_proto.into(), self)
-            .unwrap();
-        object_construct
-            .raw_index_set(keys.length.into(), 1.into(), self)
-            .unwrap();
-        object_proto
-            .raw_index_set(keys.constructor.into(), object_construct.into(), self)
-            .unwrap();
+        object_construct.index_set(atom::constant::prototype, object_proto.into(), self);
+        object_construct.index_set(atom::constant::length, 1.into(), self);
+        object_proto.index_set(atom::constant::constructor, object_construct.into(), self);
         self.builtin.object_construct = Some(object_construct);
 
         let global = Object::alloc(self, Some(object_proto), ObjectFlags::empty());
-        let key = self.vm().allocate::<String>("Object".into()).into();
-        global
-            .raw_index_set(key, object_construct.into(), self)
-            .unwrap();
+        global.index_set(atom::constant::Object, object_construct.into(), self);
         self.global = global;
 
         let name = self.vm().allocate::<String>("Error".into());
         let (error_construct, error_proto) =
-            error::init_native::<error::Error>(self, &keys, name, func_proto, object_proto);
+            error::init_native::<error::Error>(self, name, func_proto, object_proto);
 
-        let key = self.vm().allocate::<String>("toString".into());
         let func = Object::alloc_function(
             self,
             Some(func_proto),
             ObjectFlags::empty(),
             FunctionKind::Static(error::to_string),
         );
-        error_proto
-            .raw_index_set(key.into(), func.into(), self)
-            .unwrap();
+        error_proto.index_set(atom::constant::toString, func.into(), self);
         self.builtin.error_proto = Some(error_proto);
-        global
-            .index_set(name.into(), error_construct.into(), self)
-            .unwrap();
+        global.index_set(atom::constant::Error, error_construct.into(), self);
 
         let name = self.vm().allocate::<String>("SyntaxError".into());
         let (error_construct, error_proto) =
-            error::init_native::<error::TypeError>(self, &keys, name, error_construct, error_proto);
+            error::init_native::<error::TypeError>(self, name, error_construct, error_proto);
         self.builtin.syntax_error_proto = Some(error_proto);
-        global
-            .index_set(name.into(), error_construct.into(), self)
-            .unwrap();
+        global.index_set(atom::constant::SyntaxError, error_construct.into(), self);
 
         let name = self.vm().allocate::<String>("TypeError".into());
         let (error_construct, error_proto) =
-            error::init_native::<error::TypeError>(self, &keys, name, error_construct, error_proto);
+            error::init_native::<error::TypeError>(self, name, error_construct, error_proto);
         self.builtin.type_error_proto = Some(error_proto);
-        global
-            .index_set(name.into(), error_construct.into(), self)
-            .unwrap();
-
-        self.builtin.keys = Some(keys);
+        global.index_set(atom::constant::TypeError, error_construct.into(), self);
     }
 }

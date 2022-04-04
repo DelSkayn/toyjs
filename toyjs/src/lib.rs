@@ -16,6 +16,8 @@ mod string;
 pub use string::String;
 mod value;
 pub use value::Value;
+mod atom;
+pub use atom::Atom;
 use vm::{realm::RealmBox, Vm};
 pub mod error;
 pub use error::{Error, Result};

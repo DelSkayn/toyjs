@@ -13,6 +13,8 @@ mod ptr;
 pub use ptr::Gc;
 use ptr::{Color, GcBox, GcBoxPtr};
 
+use crate::atom::Atoms;
+
 const PAUSE_FACTOR: f64 = 0.5;
 const TIMING_FACTOR: f64 = 1.5;
 const MIN_SLEEP: usize = 4096;
@@ -168,10 +170,10 @@ impl GcArena {
     /// All gc pointers held by the programm allocated with the current `GcArena` must be reachable
     /// from the root handed as an argument to this function.
     /// Any gc pointers which where not reachable from the program will be freed.
-    pub unsafe fn collect_full<T: Trace>(&self, root: &T) {
+    pub unsafe fn collect_full<T: Trace>(&self, root: &T, atoms: &Atoms) {
         self.allocation_debt.set(f64::INFINITY);
         self.phase.set(Phase::Wake);
-        self.collect_debt(root);
+        self.collect_debt(root, atoms);
     }
 
     /// Run Collection for some time.
@@ -182,7 +184,7 @@ impl GcArena {
     /// from the root handed as an argument to this function.
     /// If any new pointers are added into a structure which could contain
     /// Any gc pointers which where not reachable from the program will be freed.
-    pub unsafe fn collect_debt<T: Trace>(&self, root: &T) {
+    pub unsafe fn collect_debt<T: Trace>(&self, root: &T, atoms: &Atoms) {
         #[cfg(feature = "dump-gc-trace")]
         println!("ENTER_COLLECT");
 
@@ -271,6 +273,7 @@ impl GcArena {
                             self.total_allocated.set(self.total_allocated.get() - size);
                             #[cfg(feature = "dump-gc-trace")]
                             x.as_ref().free.set(true);
+                            (*x.as_ref().value.get()).finalize(atoms);
                             Box::from_raw(x.as_ptr());
                         } else {
                             self.remembered_size.set(self.remembered_size.get() + size);
@@ -302,10 +305,11 @@ impl GcArena {
     /// # Safety
     ///
     /// One should ensure that no more pointer remain after calling this function.
-    pub unsafe fn collect_all(&self) {
+    pub unsafe fn collect_all(&self, atoms: &Atoms) {
         let mut ptr = self.all.get();
         while let Some(p) = ptr {
             ptr = p.as_ref().next.get();
+            (*p.as_ref().value.get()).finalize(atoms);
             Box::from_raw(p.as_ptr());
         }
     }

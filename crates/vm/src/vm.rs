@@ -1,13 +1,15 @@
 use std::cell::UnsafeCell;
 
 use crate::{
+    atom::{Atom, Atoms},
     gc::Trace,
     lock::{Guard, Lock, Ref},
     realm::RealmBox,
-    Gc, GcArena,
+    Gc, GcArena, Realm, Value,
 };
 
 pub struct VmInner {
+    atoms: Atoms,
     gc: GcArena,
     realms: UnsafeCell<Vec<RealmBox>>,
 }
@@ -15,12 +17,12 @@ pub struct VmInner {
 impl VmInner {
     pub unsafe fn collect_debt<T: Trace>(&self, trace: T) {
         self.gc
-            .collect_debt(&((*self.realms.get()).as_slice(), trace));
+            .collect_debt(&((*self.realms.get()).as_slice(), trace), &self.atoms);
     }
 
     pub unsafe fn collect_full<T: Trace>(&self, trace: T) {
         self.gc
-            .collect_full(&((*self.realms.get()).as_slice(), trace));
+            .collect_full(&((*self.realms.get()).as_slice(), trace), &self.atoms);
     }
 
     pub fn allocate<T: Trace + 'static>(&self, v: T) -> Gc<T> {
@@ -53,11 +55,31 @@ impl VmInner {
             }
         }
     }
+
+    pub fn atoms(&self) -> &Atoms {
+        &self.atoms
+    }
+
+    pub unsafe fn atomize(&self, value: Value, realm: &Realm) -> Result<Atom, Value> {
+        self.atoms.atomize(value, realm)
+    }
+
+    pub fn atomize_string(&self, text: &str) -> Atom {
+        self.atoms.atomize_string(text)
+    }
+
+    pub fn increment(&self, atom: Atom) {
+        self.atoms.increment(atom)
+    }
+
+    pub fn decrement(&self, atom: Atom) {
+        self.atoms.decrement(atom)
+    }
 }
 
 impl Drop for VmInner {
     fn drop(&mut self) {
-        unsafe { self.gc.collect_all() }
+        unsafe { self.gc.collect_all(&self.atoms) }
     }
 }
 
@@ -67,6 +89,7 @@ pub struct Vm(pub(crate) Ref<Lock<VmInner>>);
 impl Vm {
     pub fn new() -> Vm {
         Vm(Ref::new(Lock::new(VmInner {
+            atoms: Atoms::new(),
             gc: GcArena::new(),
             realms: UnsafeCell::new(Vec::new()),
         })))

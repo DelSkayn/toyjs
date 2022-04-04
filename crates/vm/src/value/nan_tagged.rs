@@ -1,4 +1,5 @@
 use crate::{
+    atom::Atom,
     gc::{Ctx, Gc, Trace},
     Object,
 };
@@ -21,7 +22,7 @@ pub const TAG_BASE: u64 = 0x0000_0000_0000_0000;
 pub const TAG_OBJECT: u64 = 0x0001_0000_0000_0000;
 pub const TAG_STRING: u64 = 0x0002_0000_0000_0000;
 pub const TAG_BIGINT: u64 = 0x0003_0000_0000_0000;
-pub const TAG_SYMBOL: u64 = 0x0004_0000_0000_0000;
+pub const TAG_ATOM: u64 = 0x0004_0000_0000_0000;
 pub const TAG_UNUSED1: u64 = 0x0005_0000_0000_0000;
 //pub const TAG_UNUSED2: u64 = 0x0007_0000_0000_0000;
 pub const TAG_INT: u64 = 0x0006_0000_0000_0000;
@@ -145,6 +146,11 @@ impl Value {
         unsafe { self.0.bits & TAG_MASK == TAG_STRING }
     }
 
+    #[inline]
+    pub fn is_atom(self) -> bool {
+        unsafe { self.0.bits & TAG_MASK == TAG_ATOM }
+    }
+
     /// Is this value a function.
     #[inline]
     pub unsafe fn is_function(self) -> bool {
@@ -221,6 +227,19 @@ impl Value {
         }
     }
 
+    /// Convert the value to `Atom`
+    ///
+    /// # Safety
+    ///
+    /// Will return arbitrary values if `is_float` returns false
+    #[inline]
+    pub fn cast_atom(self) -> Atom {
+        unsafe {
+            debug_assert!(self.is_atom());
+            Atom::from_raw(self.0.int as u32)
+        }
+    }
+
     /// Convert the value to [`Object`]
     ///
     /// # Safety
@@ -290,6 +309,15 @@ impl Value {
             None
         }
     }
+
+    #[inline]
+    pub fn into_atom(self) -> Option<Atom> {
+        if self.is_atom() {
+            unsafe { Some(Atom::from_raw(self.0.int as u32)) }
+        } else {
+            None
+        }
+    }
 }
 
 impl From<bool> for Value {
@@ -337,6 +365,15 @@ impl From<Gc<Object>> for Value {
     }
 }
 
+impl From<Atom> for Value {
+    #[inline]
+    fn from(v: Atom) -> Value {
+        Value(ValueUnion {
+            bits: TAG_ATOM | v.into_raw() as u32 as u64,
+        })
+    }
+}
+
 unsafe impl Trace for Value {
     fn needs_trace() -> bool
     where
@@ -376,7 +413,10 @@ impl fmt::Debug for Value {
                     obj.finish()
                 }
                 TAG_BIGINT => todo!(),
-                TAG_SYMBOL => todo!(),
+                TAG_ATOM => f
+                    .debug_tuple("JSValue::ATOM")
+                    .field(&self.cast_atom())
+                    .finish(),
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
                     .field(&self.cast_int())

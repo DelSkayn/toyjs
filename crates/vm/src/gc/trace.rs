@@ -1,3 +1,5 @@
+use crate::atom::Atoms;
+
 use super::Ctx;
 
 /// Objects which can be contained in a gc pointer.
@@ -28,6 +30,8 @@ pub unsafe trait Trace {
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
+
+    fn finalize(&self, _atoms: &Atoms) {}
 }
 
 macro_rules! impl_trace_primitive{
