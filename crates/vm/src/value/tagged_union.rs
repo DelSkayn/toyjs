@@ -1,6 +1,7 @@
 use std::{fmt, mem};
 
 use crate::{
+    atom::Atom,
     gc::{Ctx, Gc, Trace},
     Object,
 };
@@ -12,6 +13,7 @@ pub enum Value {
     Boolean(bool),
     String(Gc<String>),
     Object(Gc<Object>),
+    Atom(Atom),
     Undefined,
     Null,
     Empty,
@@ -138,6 +140,15 @@ impl Value {
         }
     }
 
+    /// Is this value a string.
+    #[inline]
+    pub fn is_atom(self) -> bool {
+        match self {
+            Value::Atom(_) => true,
+            _ => false,
+        }
+    }
+
     /// Is this value a function.
     #[inline]
     pub unsafe fn is_function(self) -> bool {
@@ -233,6 +244,19 @@ impl Value {
         }
     }
 
+    /// Convert the value to `Atom`
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarentee that the value is an string
+    #[inline]
+    pub unsafe fn unsafe_cast_atom(self) -> Atom {
+        match self {
+            Value::Atom(x) => x,
+            _ => panic!(),
+        }
+    }
+
     #[inline]
     pub fn into_int(self) -> Option<i32> {
         match self {
@@ -269,6 +293,14 @@ impl Value {
     pub fn into_object(self) -> Option<Gc<Object>> {
         match self {
             Value::Object(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    #[inline]
+    pub fn into_atom(self) -> Option<Atom> {
+        match self {
+            Value::Atom(x) => Some(x),
             _ => None,
         }
     }
@@ -309,6 +341,13 @@ impl From<Gc<Object>> for Value {
     }
 }
 
+impl From<Atom> for Value {
+    #[inline]
+    fn from(v: Atom) -> Value {
+        Value::Atom(v)
+    }
+}
+
 unsafe impl Trace for Value {
     fn needs_trace() -> bool
     where
@@ -335,6 +374,7 @@ impl fmt::Debug for Value {
             Value::Empty => f.debug_tuple("JSValue::Empty").finish(),
             Value::String(x) => f.debug_tuple("JSValue::String").field(&x).finish(),
             Value::Object(x) => f.debug_tuple("JSValue::Object").field(&x).finish(),
+            Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
             Value::Integer(x) => f.debug_tuple("JSValue::Int").field(&x).finish(),
             Value::Float(x) => f.debug_tuple("JSValue::Float").field(&x).finish(),
         }
