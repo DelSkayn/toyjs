@@ -273,6 +273,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         righ: one.0,
                     });
                     ass.compile_assign(self, dst);
+                    ass.free_temp(self);
                     self.builder.free_temp(dst);
                     ExprValue::new_in(value, self.alloc.clone())
                 }
@@ -301,6 +302,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         righ: one.0,
                     });
                     ass.compile_assign(self, dst);
+                    ass.free_temp(self);
                     self.builder.free_temp(dst);
                     ExprValue::new_in(value, self.alloc.clone())
                 }
@@ -365,6 +367,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         righ: one.0,
                     });
                     ass.compile_assign(self, dst);
+                    ass.free_temp(self);
                     if let (Some(to), Some(from)) = (placement, tgt_placement) {
                         self.builder.push(Instruction::Move {
                             src: from.0,
@@ -384,6 +387,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         .or(placement)
                         .unwrap_or_else(|| self.builder.alloc_temp());
 
+                    ass.free_temp(self);
                     self.builder.push(Instruction::Sub {
                         dst: dst.0,
                         left: value.0,
@@ -577,6 +581,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         if let AssignOperator::Assign = op {
             let expr = self.compile_expr(place, value).eval(self);
             assign_target.compile_assign(self, expr);
+            assign_target.free_temp(self);
             return expr;
         }
 
