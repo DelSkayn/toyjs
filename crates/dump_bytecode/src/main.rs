@@ -31,9 +31,9 @@ fn main() -> Result<(), io::Error> {
     let mut variables = SymbolTable::new();
     let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
     let gc = GcArena::new();
-    let mut atoms = Atoms::new();
+    let atoms = Atoms::new();
     let bytecode =
-        Compiler::compile_script(&script, &variables, &mut interner, &mut atoms, &gc, Global);
+        Compiler::compile_script(&script, &variables, &mut interner, &atoms, &gc, Global);
     println!("{}", bytecode);
     Ok(())
 }

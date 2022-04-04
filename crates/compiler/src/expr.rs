@@ -431,7 +431,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     ) -> ExprValue<A> {
         match op {
             BinaryOperator::And => {
-                let mut left = self.compile_expr(None, left);
+                let mut left = self.compile_expr(placement, left);
                 left.false_list
                     .push(self.builder.push(Instruction::JumpFalse {
                         cond: left.register.0,
@@ -450,7 +450,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 };
             }
             BinaryOperator::Or => {
-                let mut left = self.compile_expr(None, left);
+                let mut left = self.compile_expr(placement, left);
                 left.true_list
                     .push(self.builder.push(Instruction::JumpTrue {
                         cond: left.register.0,
