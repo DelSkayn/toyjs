@@ -7,7 +7,6 @@ pub mod slotmap;
 pub mod cell_vec;
 pub mod interner;
 pub mod source;
-pub mod atom;
 
 pub mod collections {
     pub use fxhash::FxHashMap as HashMap;
