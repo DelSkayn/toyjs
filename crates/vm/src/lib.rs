@@ -37,4 +37,5 @@ pub use vm::*;
 pub mod realm;
 pub use realm::Realm;
 
+pub mod atom;
 pub mod lock;

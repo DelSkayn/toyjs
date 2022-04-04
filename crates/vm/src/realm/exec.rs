@@ -1,6 +1,7 @@
 use std::{mem, u8};
 
 use crate::{
+    atom::{self, Atom},
     gc::Trace,
     instructions::{Instruction, Upvalue},
     object::{FunctionKind, Object, ObjectFlags, VmFunction, RECURSIVE_FUNC_PANIC},
@@ -111,7 +112,13 @@ impl Realm {
 
                     if let Some(obj) = obj.into_object() {
                         self.vm.borrow().write_barrier(obj);
-                        catch_unwind!(self, instr, ctx, obj.index_set(key, val, self));
+                        if let Some(key) = key.into_atom() {
+                            obj.index_set(key, val, self);
+                        } else {
+                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                            obj.index_set(key, val, self);
+                            self.vm().decrement(key);
+                        }
                     } else {
                         // TODO proper error value
                         self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
@@ -121,7 +128,14 @@ impl Realm {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
                     if let Some(obj) = obj.into_object() {
-                        let res = catch_unwind!(self, instr, ctx, obj.index(key, self));
+                        let res = if let Some(key) = key.into_atom() {
+                            obj.index(key, self)
+                        } else {
+                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                            let res = obj.index(key, self);
+                            self.vm().decrement(key);
+                            res
+                        };
                         self.stack.write(dst, res);
                     } else {
                         // TODO proper error value
@@ -132,19 +146,29 @@ impl Realm {
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
                     let obj = self.global;
-                    let src = catch_unwind!(self, instr, ctx, obj.index(key, self));
-                    self.stack.write(dst, src);
+                    let res = if let Some(key) = key.into_atom() {
+                        obj.index(key, self)
+                    } else {
+                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                        let res = obj.index(key, self);
+                        self.vm().decrement(key);
+                        res
+                    };
+                    self.stack.write(dst, res);
                 }
 
                 Instruction::GlobalAssign { key, src } => {
                     let obj = self.global;
+                    let key = self.stack.read(key);
+                    let src = self.stack.read(src);
                     self.vm.borrow().write_barrier(obj);
-                    catch_unwind!(
-                        self,
-                        instr,
-                        ctx,
-                        obj.index_set(self.stack.read(key), self.stack.read(src), self)
-                    );
+                    if let Some(key) = key.into_atom() {
+                        obj.index_set(key, src, self);
+                    } else {
+                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
+                        obj.index_set(key, src, self);
+                        self.vm().decrement(key);
+                    }
                 }
 
                 Instruction::Upvalue { dst, slot } => {
@@ -649,6 +673,10 @@ impl Realm {
         })
     }
 
+    pub unsafe fn to_atom(&self, value: Value) -> Result<Atom, Value> {
+        self.vm().atomize(value, self)
+    }
+
     pub unsafe fn strict_equal(&self, left: Value, right: Value) -> bool {
         if !left.same_type(right) {
             #[cfg(debug_assertions)]
@@ -902,9 +930,7 @@ impl Realm {
             return Err(self.create_type_error("right hand instanceof operand is not a function"));
         }
 
-        let tgt_proto = right
-            .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
-            .unwrap();
+        let tgt_proto = right.index(atom::constant::prototype, self);
         let tgt_proto = tgt_proto
             .into_object()
             .ok_or_else(|| self.create_type_error("object prototype is not an object"))?;
@@ -926,18 +952,12 @@ impl Realm {
             //TODO @@toPrimitive
 
             let keys = if prefer_string {
-                [
-                    self.vm().allocate::<String>("toString".into()),
-                    self.vm().allocate::<String>("valueOf".into()),
-                ]
+                [atom::constant::toString, atom::constant::valueOf]
             } else {
-                [
-                    self.vm().allocate::<String>("valueOf".into()),
-                    self.vm().allocate::<String>("toString".into()),
-                ]
+                [atom::constant::valueOf, atom::constant::toString]
             };
             for k in keys {
-                let func = v.index(k.into(), self).unwrap();
+                let func = v.index(k, self);
                 if let Some(func) = func.into_object() {
                     if func.is_function() {
                         let res = self.enter_method_call(func, v.into())?;
@@ -1006,20 +1026,8 @@ impl Realm {
         let function =
             Object::alloc_constructor(self, self.builtin.object_proto, FunctionKind::Vm(function));
         let proto = Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
-        proto
-            .raw_index_set(
-                self.builtin.keys.as_ref().unwrap().constructor.into(),
-                function.into(),
-                self,
-            )
-            .unwrap();
-        function
-            .raw_index_set(
-                self.builtin.keys.as_ref().unwrap().prototype.into(),
-                proto.into(),
-                self,
-            )
-            .unwrap();
+        proto.index_set(atom::constant::constructor, function.into(), self);
+        function.index_set(atom::constant::prototype, proto.into(), self);
         function
     }
 
@@ -1034,7 +1042,11 @@ impl Realm {
         let object = object
             .into_object()
             .ok_or_else(|| self.create_type_error(INDEX_NON_OBJECT))?;
-        let function = object.index(key, self)?;
+
+        let atom = self.to_atom(key)?;
+        let function = object.index(atom, self);
+        self.vm().decrement(atom);
+
         let function = function
             .into_object()
             .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
@@ -1166,9 +1178,7 @@ impl Realm {
                 let bc_function = &bc.functions[func.function as usize];
                 self.stack.enter(bc_function.registers);
 
-                let proto = function
-                    .index(self.builtin.keys.as_ref().unwrap().prototype.into(), self)
-                    .unwrap();
+                let proto = function.index(atom::constant::prototype, self);
                 let this_object = if proto.is_object() {
                     Object::alloc(self, Some(proto.unsafe_cast_object()), ObjectFlags::empty())
                 } else {
@@ -1217,6 +1227,7 @@ impl Realm {
         }
     }
 
+    #[cold]
     pub unsafe fn create_type_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
         builtin::error::construct(
@@ -1228,6 +1239,7 @@ impl Realm {
         .into()
     }
 
+    #[cold]
     pub unsafe fn create_syntax_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
         builtin::error::construct(

@@ -1,4 +1,4 @@
-use crate::{error::Result, Ctx, Function, Object, String, Value};
+use crate::{error::Result, Atom, Ctx, Error, Function, Object, String, Value};
 use std::string::String as StdString;
 
 /// A trait to convert javascript Values to rust.
@@ -107,5 +107,54 @@ impl<'js> IntoJs<'js> for i32 {
 impl<'js> IntoJs<'js> for bool {
     fn into_js(self, ctx: Ctx<'js>) -> Value<'js> {
         unsafe { Value::wrap(ctx, vm::Value::from(self)) }
+    }
+}
+
+pub trait IntoAtom<'js> {
+    fn into_atom(self, ctx: Ctx<'js>) -> Result<Atom<'js>>;
+}
+
+impl<'js> IntoAtom<'js> for i32 {
+    fn into_atom(self, ctx: Ctx<'js>) -> Result<Atom<'js>> {
+        unsafe {
+            let atom = (*ctx.ctx)
+                .vm()
+                .atomize(self.into(), &(*ctx.ctx))
+                .map_err(|e| Error::wrap(ctx, e))?;
+            Ok(Atom::wrap(ctx, atom))
+        }
+    }
+}
+
+impl<'js> IntoAtom<'js> for f64 {
+    fn into_atom(self, ctx: Ctx<'js>) -> Result<Atom<'js>> {
+        unsafe {
+            let atom = (*ctx.ctx)
+                .vm()
+                .atomize(self.into(), &(*ctx.ctx))
+                .map_err(|e| Error::wrap(ctx, e))?;
+            Ok(Atom::wrap(ctx, atom))
+        }
+    }
+}
+
+impl<'js> IntoAtom<'js> for &str {
+    fn into_atom(self, ctx: Ctx<'js>) -> Result<Atom<'js>> {
+        unsafe {
+            let atom = (*ctx.ctx).vm().atomize_string(self);
+            Ok(Atom::wrap(ctx, atom))
+        }
+    }
+}
+
+impl<'js> IntoAtom<'js> for Value<'js> {
+    fn into_atom(self, ctx: Ctx<'js>) -> Result<Atom<'js>> {
+        unsafe {
+            let atom = (*ctx.ctx)
+                .vm()
+                .atomize(self.into_vm(), &(*ctx.ctx))
+                .map_err(|e| Error::wrap(ctx, e))?;
+            Ok(Atom::wrap(ctx, atom))
+        }
     }
 }

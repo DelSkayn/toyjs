@@ -10,6 +10,7 @@ use common::{
 //use constants::Constants;
 //use lexical_info::LexicalInfo;
 use vm::{
+    atom::Atoms,
     gc::GcArena,
     instructions::{ByteCode, ByteFunction, Instruction},
 };
@@ -41,13 +42,14 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
     fn new(
         symbol_table: &'a SymbolTable<A>,
         interner: &'a mut Interner,
+        atoms: &'a Atoms,
         gc: &'a GcArena,
         root: ScopeId,
         alloc: A,
     ) -> Self {
         Compiler {
             symbol_table,
-            constants: Constants::new_in(interner, gc, Global),
+            constants: Constants::new_in(interner, atoms, gc, Global),
             builder: ScriptBuilder::new_in(alloc.clone(), root),
             alloc,
         }
@@ -57,10 +59,18 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         script: &'a Script<A>,
         symbol_table: &'a SymbolTable<A>,
         interner: &'a mut Interner,
+        atoms: &'a Atoms,
         gc: &'a GcArena,
         alloc: A,
     ) -> ByteCode {
-        let mut this = Compiler::new(symbol_table, interner, gc, symbol_table.global(), alloc);
+        let mut this = Compiler::new(
+            symbol_table,
+            interner,
+            atoms,
+            gc,
+            symbol_table.global(),
+            alloc,
+        );
 
         let res = script
             .0

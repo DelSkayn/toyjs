@@ -67,10 +67,8 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                         }
                     } else if let Some(expr) = expr {
                         let expr = self.compile_expr(None, expr).eval(self);
-                        let name = self.compile_literal(
-                            None,
-                            Literal::String(self.symbol_table.symbols()[*symbol].ident),
-                        );
+                        let name =
+                            self.compile_atom(None, self.symbol_table.symbols()[*symbol].ident);
                         self.builder.push(Instruction::GlobalAssign {
                             key: name.0,
                             src: expr.0,
@@ -93,10 +91,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     dst: fnc.0,
                     func: id.0,
                 });
-                let key = self.compile_literal(
-                    None,
-                    Literal::String(self.symbol_table.symbols()[*symbol].ident),
-                );
+                let key = self.compile_atom(None, self.symbol_table.symbols()[*symbol].ident);
                 self.builder.push(Instruction::GlobalAssign {
                     key: key.0,
                     src: fnc.0,
