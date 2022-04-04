@@ -15,7 +15,6 @@ import("./pkg").then(({ToyJs}) => {
     }
     term.onKey((key,_) => {
             const code = key.key.charCodeAt(0);
-            console.log(key.key);
             if (code == 13) { // CR
                 term.writeln("");
                 let pending_delim = 0;
