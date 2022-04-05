@@ -45,7 +45,7 @@ impl InstructionReader {
 
     pub unsafe fn next(&mut self) -> Instruction {
         #[cfg(debug_assertions)]
-        debug_assert!(self.cur < self.last);
+        debug_assert!(self.cur < self.last, "instruction reader read outside of function boundary");
         let res = self.cur.read();
         self.cur = self.cur.add(1);
         res

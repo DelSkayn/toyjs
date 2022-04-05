@@ -1,24 +1,26 @@
-use crate::{atom, object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value};
+use crate::{
+    atom, object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value, VmInner,
+};
 
 use super::BuiltinAccessor;
 
 pub struct Error;
 impl BuiltinAccessor for Error {
-    fn access(builtin: &super::Builtin) -> Option<Gc<Object>> {
+    fn access(builtin: &super::Builtin) -> Gc<Object> {
         builtin.error_proto
     }
 }
 
 pub struct SyntaxError;
 impl BuiltinAccessor for SyntaxError {
-    fn access(builtin: &super::Builtin) -> Option<Gc<Object>> {
+    fn access(builtin: &super::Builtin) -> Gc<Object> {
         builtin.syntax_error_proto
     }
 }
 
 pub struct TypeError;
 impl BuiltinAccessor for TypeError {
-    fn access(builtin: &super::Builtin) -> Option<Gc<Object>> {
+    fn access(builtin: &super::Builtin) -> Gc<Object> {
         builtin.type_error_proto
     }
 }
@@ -40,7 +42,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
     };
     let proto = proto
         .into_object()
-        .unwrap_or_else(|| T::access(&realm.builtin).unwrap());
+        .unwrap_or_else(|| T::access(&realm.builtin));
 
     let (message, options) = if realm.stack.frame_size() >= 1 {
         let message = realm.stack.read(0);
@@ -64,7 +66,7 @@ pub unsafe fn construct(
     message: Option<Gc<String>>,
     options: Option<Value>,
 ) -> Gc<Object> {
-    let object = Object::alloc_error(realm, Some(prototype));
+    let object = Object::alloc_error(realm.vm(), Some(prototype));
     if let Some(message) = message {
         object.index_set(atom::constant::message, message.into(), realm)
     }
@@ -96,27 +98,27 @@ pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Va
 }
 
 pub unsafe fn init_native<T: BuiltinAccessor>(
-    realm: &Realm,
+    vm: &VmInner,
     name: Gc<String>,
     construct_proto: Gc<Object>,
     proto_proto: Gc<Object>,
 ) -> (Gc<Object>, Gc<Object>) {
-    let error_proto = Object::alloc(realm, Some(proto_proto), ObjectFlags::empty());
+    let error_proto = Object::alloc(vm, Some(proto_proto), ObjectFlags::empty());
     let error_construct = Object::alloc_constructor(
-        realm,
+        vm,
         Some(construct_proto),
         crate::object::FunctionKind::Static(construct_vm::<T>),
     );
 
-    error_construct.index_set(atom::constant::prototype, error_proto.into(), realm);
-    error_proto.index_set(atom::constant::constructor, error_construct.into(), realm);
+    error_construct.raw_index_set(atom::constant::prototype, error_proto.into(), vm);
+    error_proto.raw_index_set(atom::constant::constructor, error_construct.into(), vm);
 
-    error_proto.index_set(
+    error_proto.raw_index_set(
         atom::constant::message,
-        realm.vm().allocate(String::new()).into(),
-        realm,
+        vm.allocate(String::new()).into(),
+        vm,
     );
-    error_proto.index_set(atom::constant::name, name.into(), realm);
+    error_proto.raw_index_set(atom::constant::name, name.into(), vm);
 
     (error_construct, error_proto)
 }
