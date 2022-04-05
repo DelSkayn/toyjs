@@ -96,14 +96,16 @@ impl Realm {
                 .borrow()
                 .allocate(Object::new(None, ObjectFlags::empty()));
             let stack = Stack::new();
-            let mut res = Realm {
+
+            let builtin = Builtin::new(vm.borrow(), global);
+
+            let res = Realm {
                 vm,
-                builtin: Builtin::new(),
+                builtin,
                 global,
                 stack,
                 user_data: Box::into_raw(Box::new(user_data)),
             };
-            res.init_builtin();
             let res = RealmBox::new(res);
             vm.borrow().add_realm(res);
             res
@@ -118,8 +120,8 @@ impl Realm {
     pub unsafe fn construct_script_function(&self, script: Gc<ByteCode>) -> Gc<Object> {
         debug_assert!(script.functions[0].upvalues.is_empty());
         Object::alloc_function(
-            self,
-            self.builtin.function_proto,
+            self.vm(),
+            self.builtin.function_proto.into(),
             ObjectFlags::empty(),
             FunctionKind::Vm(VmFunction {
                 bc: script,

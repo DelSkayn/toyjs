@@ -76,8 +76,8 @@ impl Realm {
                     self.vm.borrow().collect_debt(&ctx);
                     let func = self.construct_function(func, &instr, ctx.function);
                     let func = Object::alloc_function(
-                        self,
-                        self.builtin.function_proto,
+                        self.vm(),
+                        Some(self.builtin.function_proto),
                         ObjectFlags::empty(),
                         FunctionKind::Vm(func),
                     );
@@ -93,15 +93,21 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object =
-                        Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+                    let object = Object::alloc(
+                        self.vm(),
+                        Some(self.builtin.object_proto),
+                        ObjectFlags::empty(),
+                    );
                     let res = Value::from(object);
                     self.stack.write(dst, res);
                 }
                 Instruction::CreateArray { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object =
-                        Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+                    let object = Object::alloc(
+                        self.vm(),
+                        Some(self.builtin.object_proto),
+                        ObjectFlags::empty(),
+                    );
                     let res = Value::from(object);
                     self.stack.write(dst, res);
                 }
@@ -605,7 +611,11 @@ impl Realm {
 
     pub unsafe fn to_object(&self, value: Value) -> Gc<Object> {
         if value.is_null() || value.is_undefined() {
-            return Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+            return Object::alloc(
+                self.vm(),
+                Some(self.builtin.object_proto),
+                ObjectFlags::empty(),
+            );
         }
         todo!()
     }
@@ -1023,9 +1033,16 @@ impl Realm {
         function: Gc<Object>,
     ) -> Gc<Object> {
         let function = self.construct_function(function_id, reader, function);
-        let function =
-            Object::alloc_constructor(self, self.builtin.object_proto, FunctionKind::Vm(function));
-        let proto = Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty());
+        let function = Object::alloc_constructor(
+            self.vm(),
+            self.builtin.object_proto.into(),
+            FunctionKind::Vm(function),
+        );
+        let proto = Object::alloc(
+            self.vm(),
+            self.builtin.object_proto.into(),
+            ObjectFlags::empty(),
+        );
         proto.index_set(atom::constant::constructor, function.into(), self);
         function.index_set(atom::constant::prototype, proto.into(), self);
         function
@@ -1180,9 +1197,17 @@ impl Realm {
 
                 let proto = function.index(atom::constant::prototype, self);
                 let this_object = if proto.is_object() {
-                    Object::alloc(self, Some(proto.unsafe_cast_object()), ObjectFlags::empty())
+                    Object::alloc(
+                        self.vm(),
+                        Some(proto.unsafe_cast_object()),
+                        ObjectFlags::empty(),
+                    )
                 } else {
-                    Object::alloc(self, self.builtin.object_proto, ObjectFlags::empty())
+                    Object::alloc(
+                        self.vm(),
+                        self.builtin.object_proto.into(),
+                        ObjectFlags::empty(),
+                    )
                 };
 
                 let instr = InstructionReader::from_bc(bc, func.function);
@@ -1230,24 +1255,12 @@ impl Realm {
     #[cold]
     pub unsafe fn create_type_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
-        builtin::error::construct(
-            self,
-            self.builtin.type_error_proto.unwrap(),
-            Some(message),
-            None,
-        )
-        .into()
+        builtin::error::construct(self, self.builtin.type_error_proto, Some(message), None).into()
     }
 
     #[cold]
     pub unsafe fn create_syntax_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
-        builtin::error::construct(
-            self,
-            self.builtin.syntax_error_proto.unwrap(),
-            Some(message),
-            None,
-        )
-        .into()
+        builtin::error::construct(self, self.builtin.syntax_error_proto, Some(message), None).into()
     }
 }

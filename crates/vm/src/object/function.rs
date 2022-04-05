@@ -5,7 +5,7 @@ use crate::{
     instructions::ByteCode,
     object::Object,
     realm::{ExecutionContext, UpvalueObject},
-    Gc, Realm, Value,
+    Gc, Realm, Value, VmInner,
 };
 use std::{
     cell::{Cell, RefCell, UnsafeCell},
@@ -76,14 +76,12 @@ impl Object {
     }
 
     pub unsafe fn alloc_function(
-        realm: &Realm,
+        vm: &VmInner,
         prototype: Option<Gc<Object>>,
         flags: ObjectFlags,
         function: FunctionKind,
     ) -> Gc<Self> {
-        realm
-            .vm()
-            .allocate(Self::new_function(prototype, flags, function))
+        vm.allocate(Self::new_function(prototype, flags, function))
     }
 
     /// Create a functions from a function in a bytecode set.
@@ -92,13 +90,11 @@ impl Object {
     }
 
     pub unsafe fn alloc_constructor(
-        realm: &Realm,
+        vm: &VmInner,
         prototype: Option<Gc<Object>>,
         function: FunctionKind,
     ) -> Gc<Self> {
-        realm
-            .vm()
-            .allocate(Self::new_constructor(prototype, function))
+        vm.allocate(Self::new_constructor(prototype, function))
     }
 
     #[inline]

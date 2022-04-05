@@ -89,8 +89,8 @@ impl<'js> Ctx<'js> {
     pub fn create_object(self) -> Object<'js> {
         unsafe {
             let object = vm::Object::alloc(
-                &(*self.ctx),
-                (*self.ctx).builtin.object_proto,
+                (*self.ctx).vm(),
+                (*self.ctx).builtin.object_proto.into(),
                 ObjectFlags::empty(),
             );
             (*self.ctx).stack.push(object.into());
@@ -102,7 +102,7 @@ impl<'js> Ctx<'js> {
     pub fn create_object_proto(self, prototype: Option<Object<'js>>) -> Object<'js> {
         unsafe {
             let object = vm::Object::alloc(
-                &(*self.ctx),
+                (*self.ctx).vm(),
                 prototype.map(|x| x.into_vm()),
                 ObjectFlags::empty(),
             );
@@ -150,8 +150,8 @@ impl<'js> Ctx<'js> {
     ) -> Function<'js>
 where {
         let function = vm::Object::alloc_function(
-            &(*self.ctx),
-            (*self.ctx).builtin.function_proto,
+            (*self.ctx).vm(),
+            (*self.ctx).builtin.function_proto.into(),
             ObjectFlags::empty(),
             vm::object::FunctionKind::Static(f),
         );
@@ -171,8 +171,8 @@ where {
                 f(ctx, args).map(Value::into_vm).map_err(|e| e.into_vm(ctx))
             });
             let function = vm::Object::alloc_function(
-                &(*self.ctx),
-                (*self.ctx).builtin.function_proto,
+                (*self.ctx).vm(),
+                (*self.ctx).builtin.function_proto.into(),
                 ObjectFlags::empty(),
                 vm::object::FunctionKind::Shared(func),
             );

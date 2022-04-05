@@ -576,10 +576,17 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         value: &'a Expr<A>,
     ) -> Register {
         let assign_target = AssignmentTarget::from_expr(self, assign);
-        let place = assign_target.placement(self);
+        let assign_place = assign_target.placement(self);
+        let place = assign_place.or(placement);
 
         if let AssignOperator::Assign = op {
             let expr = self.compile_expr(place, value).eval(self);
+            if let (Some(dst), Some(src)) = (placement, assign_place) {
+                self.builder.push(Instruction::Move {
+                    dst: dst.0,
+                    src: src.0,
+                });
+            }
             assign_target.compile_assign(self, expr);
             assign_target.free_temp(self);
             return expr;

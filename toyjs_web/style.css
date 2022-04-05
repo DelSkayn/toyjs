@@ -5,7 +5,7 @@ html{
     width: 100vw;
     height: 100vh;
     background-color: rgb(47, 45, 56);
-    color: rgb(133, 118, 137);
+    color: rgb(164, 157, 155);
     box-sizing: border-box;
 }
 
@@ -23,7 +23,7 @@ div{
 }
 
 .header{
-    font-family: "sans-serif";
+    font-family: sans-serif;
     line-height:0.5;
 }
 

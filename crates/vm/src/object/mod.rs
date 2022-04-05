@@ -5,7 +5,7 @@ use std::cell::{Cell, UnsafeCell};
 use crate::{
     atom::Atom,
     gc::{Gc, Trace},
-    Realm, Value,
+    Realm, Value, VmInner,
 };
 use common::collections::HashMap;
 
@@ -18,6 +18,7 @@ bitflags::bitflags! {
     pub struct ObjectFlags: u8{
         const ERROR = 0b1;
         const CONSTRUCTOR = 0b10;
+        const ARRAY= 0b100;
     }
 }
 
@@ -53,16 +54,16 @@ impl Object {
 
     #[inline]
     pub unsafe fn alloc(
-        realm: &Realm,
+        vm: &VmInner,
         prototype: Option<Gc<Object>>,
         flags: ObjectFlags,
     ) -> Gc<Self> {
-        realm.vm.allocate(Self::new(prototype, flags))
+        vm.allocate(Self::new(prototype, flags))
     }
 
     #[inline]
-    pub unsafe fn alloc_error(realm: &Realm, prototype: Option<Gc<Object>>) -> Gc<Self> {
-        realm.vm().allocate(Self::new_error(prototype))
+    pub unsafe fn alloc_error(vm: &VmInner, prototype: Option<Gc<Object>>) -> Gc<Self> {
+        vm.allocate(Self::new_error(prototype))
     }
 
     /// Index into the object and return the value assiociated with the key.
@@ -135,6 +136,47 @@ impl Object {
         }
         if (*self.values.get()).insert(key, value).is_none() {
             realm.vm().increment(key)
+        };
+    }
+
+    /// Index into the object and set the value assiociated with the key.
+    ///
+    /// # Safety
+    ///
+    /// Value objects must be valid.
+    /// The realm should be the same realm the object was created in.
+    pub unsafe fn raw_index_set(&self, key: Atom, value: Value, vm: &VmInner) {
+        // All uses of unsafe cell are save since no value can hold a reference to
+        // an value in the hashmap or vec.
+        // And object is not Sync nor Send.
+
+        if let Some(idx) = key.into_idx() {
+            if self.map_backdown.get().map_or(true, |x| (idx as usize) < x) {
+                let idx = idx as usize;
+                let len = (*self.array.get()).len();
+                if len <= idx {
+                    if (idx - len) as f64 / len as f64 > ARRAY_BACKDOWN_PROCENT {
+                        // Fill up to capacity since that part is already allocated any way.
+                        let capacity = (*self.array.get()).capacity();
+                        (*self.array.get()).resize(capacity, Value::undefined());
+                        self.map_backdown.set(Some(capacity));
+                        if idx < capacity {
+                            (*self.array.get())[idx] = value;
+                            return;
+                        }
+                    } else {
+                        (*self.array.get()).resize(idx + 1, Value::undefined());
+                        (*self.array.get())[idx] = value;
+                        return;
+                    }
+                } else {
+                    (*self.array.get())[idx] = value;
+                    return;
+                }
+            }
+        }
+        if (*self.values.get()).insert(key, value).is_none() {
+            vm.increment(key)
         };
     }
 
