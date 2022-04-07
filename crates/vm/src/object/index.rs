@@ -116,6 +116,16 @@ impl Gc<Object> {
         self.raw_index_set_prop(vm, key, Property::ordinary(value));
     }
 
+    pub unsafe fn raw_index_set_flags(
+        self,
+        vm: &VmInner,
+        key: Atom,
+        value: Value,
+        flags: PropertyFlags,
+    ) {
+        self.raw_index_set_prop(vm, key, Property::new_value(value, flags));
+    }
+
     pub unsafe fn raw_index_set_prop(self, vm: &VmInner, key: Atom, value: Property) {
         match (*self.map.get()).entry(key) {
             Entry::Occupied(x) => {

@@ -29,6 +29,7 @@ bitflags::bitflags! {
         const ENUMARABLE = 0b10;
         const CONFIGURABLE = 0b100;
         const ORDINARY = Self::WRITABLE.bits | Self::ENUMARABLE.bits | Self::CONFIGURABLE.bits;
+        #[doc(hidden)]
         const __ACCESSOR = 0b1000;
     }
 }
