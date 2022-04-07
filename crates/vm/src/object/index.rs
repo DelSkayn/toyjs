@@ -102,7 +102,7 @@ impl Gc<Object> {
 
                 // safe because all the indecies stored in the should be valid.
                 self.properties
-                    .set_unchecked(*x.get(), Property::ordinary(value))
+                    .set_unchecked(*x.get(), Property::new_value(value, prop.flags))
             }
             Entry::Vacant(x) => {
                 x.insert(self.properties.len());

@@ -124,6 +124,7 @@ impl fmt::Debug for Property {
 }
 
 impl Property {
+    #[inline]
     pub const fn ordinary(value: Value) -> Self {
         Property {
             value: PropertyValue { value },
@@ -131,6 +132,7 @@ impl Property {
         }
     }
 
+    #[inline]
     pub const fn new_value(value: Value, flags: PropertyFlags) -> Self {
         debug_assert!(!flags.contains(PropertyFlags::__ACCESSOR));
         Property {
@@ -139,6 +141,7 @@ impl Property {
         }
     }
 
+    #[inline]
     pub fn new_accessor(value: Value, flags: PropertyFlags) -> Self {
         debug_assert!(!flags.contains(PropertyFlags::__ACCESSOR));
         Property {
@@ -147,6 +150,7 @@ impl Property {
         }
     }
 
+    #[inline]
     pub fn get_accessor(&self) -> Option<&Accessor> {
         if self.flags.contains(PropertyFlags::__ACCESSOR) {
             unsafe { Some(&self.value.accessor) }
