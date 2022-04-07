@@ -84,6 +84,10 @@ impl Gc<Object> {
                 debug_assert!(self.properties.len() >= *x.get());
                 // safe because all the indecies stored in the should be valid.
                 let prop = self.properties.get_unchecked(*x.get());
+                if !prop.flags.contains(PropertyFlags::WRITABLE) {
+                    //TODO strict
+                    return Ok(());
+                }
                 if let Some(accessor) = prop.get_accessor() {
                     if let Some(set) = accessor.set {
                         if !set.is_function() {
@@ -96,10 +100,6 @@ impl Gc<Object> {
                     return Ok(());
                 }
 
-                if !prop.flags.contains(PropertyFlags::WRITABLE) {
-                    //TODO strict
-                    return Ok(());
-                }
                 // safe because all the indecies stored in the should be valid.
                 self.properties
                     .set_unchecked(*x.get(), Property::ordinary(value))
@@ -112,10 +112,12 @@ impl Gc<Object> {
         Ok(())
     }
 
+    #[inline]
     pub unsafe fn raw_index_set(self, vm: &VmInner, key: Atom, value: Value) {
         self.raw_index_set_prop(vm, key, Property::ordinary(value));
     }
 
+    #[inline]
     pub unsafe fn raw_index_set_flags(
         self,
         vm: &VmInner,
