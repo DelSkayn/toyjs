@@ -593,14 +593,15 @@ impl Realm {
         }
     }
 
-    pub unsafe fn to_object(&self, value: Value) -> Gc<Object> {
-        if value.is_null() || value.is_undefined() {
-            return Object::new_gc(
-                self.vm(),
-                Some(self.builtin.object_proto),
-                ObjectFlags::ORDINARY,
-                ObjectKind::Ordinary,
-            );
+    pub unsafe fn to_object(&self, value: Value) -> Result<Gc<Object>, Value> {
+        if let Some(x) = value.into_object() {
+            return Ok(x);
+        }
+        if value.is_null() {
+            return Err(self.create_type_error("can't convert null to object"));
+        }
+        if value.is_undefined() {
+            return Err(self.create_type_error("can't convert undefined to object"));
         }
         todo!()
     }

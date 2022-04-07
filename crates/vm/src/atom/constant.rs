@@ -48,5 +48,8 @@ define_atom!(
     SyntaxError,
     TypeError,
     length,
-    globalThis
+    globalThis,
+    getPrototypeOf,
+    is,
+    isExtensible
 );

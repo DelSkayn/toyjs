@@ -1,18 +1,12 @@
-use common::collections::HashMap;
-
 use crate::{
     gc::Trace,
     instructions::ByteCode,
-    object::Object,
     realm::{ExecutionContext, UpvalueObject},
-    Gc, Realm, Value, VmInner,
+    Gc, Realm, Value,
 };
-use std::{
-    cell::{Cell, RefCell, UnsafeCell},
-    fmt,
-};
+use std::{cell::RefCell, fmt};
 
-use super::ObjectFlags;
+use super::{Object, ObjectFlags, ObjectKind};
 
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
@@ -28,7 +22,7 @@ pub struct VmFunction {
     pub upvalues: Box<[Gc<UpvalueObject>]>,
 }
 
-unsafe impl Trace for FunctionKind {
+unsafe impl Trace for VmFunction {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -37,12 +31,10 @@ unsafe impl Trace for FunctionKind {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        if let FunctionKind::Vm(ref x) = self {
-            #[cfg(feature = "dump-gc-trace")]
-            println!("MARK: obj.function");
-            ctx.mark(x.bc);
-            x.upvalues.iter().copied().for_each(|x| ctx.mark(x));
-        }
+        #[cfg(feature = "dump-gc-trace")]
+        println!("MARK: obj.function");
+        ctx.mark(self.bc);
+        self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }
 }
 
@@ -60,53 +52,27 @@ impl fmt::Debug for FunctionKind {
 }
 
 impl Object {
-    pub fn new_function(
-        prototype: Option<Gc<Object>>,
-        flags: ObjectFlags,
-        function: FunctionKind,
-    ) -> Self {
-        Self {
-            prototype,
-            values: UnsafeCell::new(HashMap::default()),
-            array: UnsafeCell::new(Vec::new()),
-            flags,
-            function: Some(function),
-            map_backdown: Cell::new(None),
-        }
-    }
-
-    pub unsafe fn alloc_function(
-        vm: &VmInner,
-        prototype: Option<Gc<Object>>,
-        flags: ObjectFlags,
-        function: FunctionKind,
-    ) -> Gc<Self> {
-        vm.allocate(Self::new_function(prototype, flags, function))
-    }
-
-    /// Create a functions from a function in a bytecode set.
-    pub fn new_constructor(prototype: Option<Gc<Object>>, function: FunctionKind) -> Self {
-        Self::new_function(prototype, ObjectFlags::CONSTRUCTOR, function)
-    }
-
-    pub unsafe fn alloc_constructor(
-        vm: &VmInner,
-        prototype: Option<Gc<Object>>,
-        function: FunctionKind,
-    ) -> Gc<Self> {
-        vm.allocate(Self::new_constructor(prototype, function))
-    }
-
     #[inline]
     pub(crate) fn as_vm_function(&self) -> &VmFunction {
-        match self.function {
-            Some(FunctionKind::Vm(ref x)) => x,
+        match self.kind {
+            ObjectKind::VmFn(ref x) => x,
             _ => panic!("not a vm function"),
         }
     }
 
     #[inline]
     pub fn is_function(&self) -> bool {
-        self.function.is_some()
+        matches!(
+            self.kind,
+            ObjectKind::VmFn(_)
+                | ObjectKind::SharedFn(_)
+                | ObjectKind::StaticFn(_)
+                | ObjectKind::MutableFn(_)
+        )
+    }
+
+    #[inline]
+    pub fn is_constructor(&self) -> bool {
+        self.flags.contains(ObjectFlags::CONSTRUCTOR)
     }
 }
