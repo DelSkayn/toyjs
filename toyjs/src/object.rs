@@ -1,9 +1,9 @@
-use vm::Gc;
+use vm::{object2::ObjectKind, Gc};
 
 use crate::{
     convert::{FromJs, IntoAtom, IntoJs},
     error::Result,
-    Ctx, Value,
+    Ctx, Error, Value,
 };
 
 #[derive(Clone, Copy)]
@@ -22,7 +22,10 @@ impl<'js> Object<'js> {
     }
 
     pub fn is_error(self) -> bool {
-        self.ptr.is_error()
+        match self.ptr.kind {
+            ObjectKind::Error => true,
+            _ => false,
+        }
     }
 
     pub fn get<K, V>(self, key: K) -> Result<'js, V>
@@ -32,7 +35,13 @@ impl<'js> Object<'js> {
     {
         unsafe {
             let key = key.into_atom(self.ctx)?;
-            let v = self.ptr.index(key.into_vm(), &(*self.ctx.ctx));
+            let v = self
+                .ptr
+                .index(&(*self.ctx.ctx), key.into_vm())
+                .map_err(|e| {
+                    self.ctx.push_value(e);
+                    Error::wrap(self.ctx, e)
+                })?;
             if V::NEEDS_GC {
                 self.ctx.push_value(v);
             }
@@ -47,11 +56,16 @@ impl<'js> Object<'js> {
     {
         unsafe {
             let key = key.into_atom(self.ctx)?;
-            self.ptr.index_set(
-                key.into_vm(),
-                value.into_js(self.ctx).into_vm(),
-                &(*self.ctx.ctx),
-            );
+            self.ptr
+                .index_set(
+                    &(*self.ctx.ctx),
+                    key.into_vm(),
+                    value.into_js(self.ctx).into_vm(),
+                )
+                .map_err(|e| {
+                    self.ctx.push_value(e);
+                    Error::wrap(self.ctx, e)
+                })?;
             Ok(())
         }
     }
