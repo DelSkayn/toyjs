@@ -1,3 +1,5 @@
+use vm::object::PropertyFlags;
+
 use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Error, Result};
 
 pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
@@ -106,6 +108,15 @@ pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js
         .into_js(ctx))
 }
 
+pub fn is_finite<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
+    let num = ctx.coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?;
+    if let Some(f) = num.into_f64() {
+        Ok(f.is_finite().into_js(ctx))
+    } else {
+        Ok(true.into_js(ctx))
+    }
+}
+
 pub fn init(ctx: Ctx) {
     let global = ctx.global();
     let console = ctx.create_object();
@@ -119,12 +130,22 @@ pub fn init(ctx: Ctx) {
 
     global.set("console", console).unwrap();
     global.set("eval", create_static_fn!(ctx, eval)).unwrap();
-    global.set("undefined", Value::undefined(ctx)).unwrap();
-    global.set("NaN", f64::NAN).unwrap();
+    global
+        .raw_set_flags("undefined", Value::undefined(ctx), PropertyFlags::empty())
+        .unwrap();
+    global
+        .raw_set_flags("NaN", f64::NAN, PropertyFlags::empty())
+        .unwrap();
+    global
+        .raw_set_flags("Infinity", f64::INFINITY, PropertyFlags::empty())
+        .unwrap();
     global
         .set("parseInt", create_static_fn!(ctx, parse_int))
         .unwrap();
     global.set("isNaN", create_static_fn!(ctx, is_nan)).unwrap();
+    global
+        .set("isFinite", create_static_fn!(ctx, is_finite))
+        .unwrap();
     global
         .set("assert", create_static_fn!(ctx, assert))
         .unwrap();

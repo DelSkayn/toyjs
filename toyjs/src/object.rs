@@ -1,4 +1,7 @@
-use vm::{object::ObjectKind, Gc};
+use vm::{
+    object::{ObjectKind, PropertyFlags},
+    Gc,
+};
 
 use crate::{
     convert::{FromJs, IntoAtom, IntoJs},
@@ -63,6 +66,39 @@ impl<'js> Object<'js> {
                     self.ctx.push_value(e);
                     Error::wrap(self.ctx, e)
                 })?;
+            Ok(())
+        }
+    }
+
+    pub fn raw_set<K, V>(self, key: K, value: V) -> Result<'js, ()>
+    where
+        K: IntoAtom<'js>,
+        V: IntoJs<'js>,
+    {
+        unsafe {
+            let key = key.into_atom(self.ctx)?;
+            self.ptr.raw_index_set(
+                (*self.ctx.ctx).vm(),
+                key.into_vm(),
+                value.into_js(self.ctx).into_vm(),
+            );
+            Ok(())
+        }
+    }
+
+    pub fn raw_set_flags<K, V>(self, key: K, value: V, flags: PropertyFlags) -> Result<'js, ()>
+    where
+        K: IntoAtom<'js>,
+        V: IntoJs<'js>,
+    {
+        unsafe {
+            let key = key.into_atom(self.ctx)?;
+            self.ptr.raw_index_set_flags(
+                (*self.ctx.ctx).vm(),
+                key.into_vm(),
+                value.into_js(self.ctx).into_vm(),
+                flags,
+            );
             Ok(())
         }
     }
