@@ -5,7 +5,7 @@ use std::{any::Any, ptr::NonNull};
 use crate::{
     gc::Trace,
     instructions::ByteCode,
-    object::{FunctionKind, Object, ObjectFlags, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{Object, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
     vm::{Vm, VmInner},
     Gc, Value,
 };
@@ -76,7 +76,6 @@ unsafe impl Trace for RealmBox {
 
 pub struct Realm {
     pub(crate) vm: VmBox,
-    pub global: Gc<Object>,
     pub stack: Stack,
     pub builtin: Builtin,
     pub user_data: *mut dyn Any,
@@ -92,17 +91,13 @@ impl Realm {
             let vm = vm.0.lock();
             let vm = VmBox::new(&*vm);
 
-            let global = vm
-                .borrow()
-                .allocate(Object::new(None, ObjectFlags::empty()));
             let stack = Stack::new();
 
-            let builtin = Builtin::new(vm.borrow(), global);
+            let builtin = Builtin::new(vm.borrow());
 
             let res = Realm {
                 vm,
                 builtin,
-                global,
                 stack,
                 user_data: Box::into_raw(Box::new(user_data)),
             };
@@ -119,11 +114,11 @@ impl Realm {
 
     pub unsafe fn construct_script_function(&self, script: Gc<ByteCode>) -> Gc<Object> {
         debug_assert!(script.functions[0].upvalues.is_empty());
-        Object::alloc_function(
+        Object::new_gc(
             self.vm(),
             self.builtin.function_proto.into(),
-            ObjectFlags::empty(),
-            FunctionKind::Vm(VmFunction {
+            ObjectFlags::ORDINARY,
+            ObjectKind::VmFn(VmFunction {
                 bc: script,
                 function: 0,
                 upvalues: Box::new([]),
@@ -135,8 +130,8 @@ impl Realm {
         function: Gc<Object>,
         this: Value,
     ) -> Result<Value, Value> {
-        match function.function {
-            Some(FunctionKind::Vm(ref x)) => {
+        match function.kind {
+            ObjectKind::VmFn(ref x) => {
                 let instr = InstructionReader::from_bc(x.bc, x.function);
                 self.stack.enter(instr.function(x.function).registers);
                 self.execute(
@@ -148,7 +143,7 @@ impl Realm {
                     },
                 )
             }
-            Some(FunctionKind::Shared(ref x)) => {
+            ObjectKind::SharedFn(ref x) => {
                 self.stack.enter(0);
                 let mut ctx = ExecutionContext {
                     function,
@@ -159,7 +154,7 @@ impl Realm {
                 self.stack.pop(self.vm.borrow().gc());
                 res
             }
-            Some(FunctionKind::Static(x)) => {
+            ObjectKind::StaticFn(x) => {
                 self.stack.enter(0);
                 let mut ctx = ExecutionContext {
                     function,
@@ -170,7 +165,7 @@ impl Realm {
                 self.stack.pop(self.vm.borrow().gc());
                 res
             }
-            Some(FunctionKind::Mutable(ref x)) => {
+            ObjectKind::MutableFn(ref x) => {
                 self.stack.enter(0);
                 let mut ctx = ExecutionContext {
                     function,
@@ -181,7 +176,7 @@ impl Realm {
                 self.stack.pop(self.vm.borrow().gc());
                 res
             }
-            None => panic!("enter_call called with object which was not a function"),
+            _ => panic!("enter_call called with object which was not a function"),
         }
     }
 
@@ -190,7 +185,7 @@ impl Realm {
     /// # panic
     /// Will panic if the object given is not a function
     pub unsafe fn enter_call(&self, function: Gc<Object>) -> Result<Value, Value> {
-        self.enter_method_call(function, self.global.into())
+        self.enter_method_call(function, self.builtin.global.into())
     }
 
     pub unsafe fn eval(&self, bc: Gc<ByteCode>) -> Result<Value, Value> {
@@ -220,7 +215,6 @@ unsafe impl Trace for Realm {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        ctx.mark(self.global);
         self.stack.trace(ctx);
         self.builtin.trace(ctx);
     }

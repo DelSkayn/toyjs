@@ -1,5 +1,6 @@
 use crate::{
-    atom, object::ObjectFlags, realm::ExecutionContext, Gc, Object, Realm, Value, VmInner,
+    atom, object::ObjectFlags, object2::ObjectKind, realm::ExecutionContext, Gc, Object, Realm,
+    Value, VmInner,
 };
 
 use super::BuiltinAccessor;
@@ -36,7 +37,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
     };
 
     let proto = if let Some(obj) = new_target.into_object() {
-        obj.index(atom::constant::prototype, realm)
+        obj.index(realm, atom::constant::prototype)?
     } else {
         Value::undefined()
     };
@@ -49,7 +50,16 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
         let message = realm.to_string(message)?;
         let message = realm.vm().allocate::<String>(message.as_str().into());
         let options = if realm.stack.frame_size() >= 2 {
-            Some(realm.stack.read(1))
+            if let Some(options) = realm.stack.read(1).into_object() {
+                let value = options.index(realm, atom::constant::cause)?;
+                if !value.is_undefined() {
+                    Some(value)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -64,17 +74,19 @@ pub unsafe fn construct(
     realm: &Realm,
     prototype: Gc<Object>,
     message: Option<Gc<String>>,
-    options: Option<Value>,
+    cause: Option<Value>,
 ) -> Gc<Object> {
-    let object = Object::alloc_error(realm.vm(), Some(prototype));
+    let object = Object::new_gc(
+        realm.vm(),
+        Some(prototype),
+        ObjectFlags::ORDINARY,
+        ObjectKind::Error,
+    );
     if let Some(message) = message {
-        object.index_set(atom::constant::message, message.into(), realm)
+        object.raw_index_set(realm.vm(), atom::constant::message, message.into())
     }
-    if let Some(options) = options.and_then(|x| x.into_object()) {
-        let value = options.index(atom::constant::cause, realm);
-        if !value.is_undefined() {
-            object.index_set(atom::constant::cause, value, realm);
-        }
+    if let Some(cause) = cause {
+        object.raw_index_set(realm.vm(), atom::constant::cause, cause);
     }
     object
 }
@@ -85,10 +97,10 @@ pub unsafe fn to_string(realm: &Realm, exec: &mut ExecutionContext) -> Result<Va
         .into_object()
         .ok_or_else(|| realm.create_type_error("this is not an object"))?;
 
-    let name = this.index(atom::constant::name, realm);
+    let name = this.index(realm, atom::constant::name)?;
     let name = realm.to_string(name)?;
 
-    let message = this.index(atom::constant::message, realm);
+    let message = this.index(realm, atom::constant::message)?;
     let message = realm.to_string(message)?;
 
     let res = realm
@@ -103,22 +115,28 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
     construct_proto: Gc<Object>,
     proto_proto: Gc<Object>,
 ) -> (Gc<Object>, Gc<Object>) {
-    let error_proto = Object::alloc(vm, Some(proto_proto), ObjectFlags::empty());
-    let error_construct = Object::alloc_constructor(
+    let error_proto = Object::new_gc(
+        vm,
+        Some(proto_proto),
+        ObjectFlags::empty(),
+        ObjectKind::Ordinary,
+    );
+    let error_construct = Object::new_gc(
         vm,
         Some(construct_proto),
-        crate::object::FunctionKind::Static(construct_vm::<T>),
+        ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
+        ObjectKind::StaticFn(construct_vm::<T>),
     );
 
-    error_construct.raw_index_set(atom::constant::prototype, error_proto.into(), vm);
-    error_proto.raw_index_set(atom::constant::constructor, error_construct.into(), vm);
+    error_construct.raw_index_set(vm, atom::constant::prototype, error_proto.into());
+    error_proto.raw_index_set(vm, atom::constant::constructor, error_construct.into());
 
     error_proto.raw_index_set(
+        vm,
         atom::constant::message,
         vm.allocate(String::new()).into(),
-        vm,
     );
-    error_proto.raw_index_set(atom::constant::name, name.into(), vm);
+    error_proto.raw_index_set(vm, atom::constant::name, name.into());
 
     (error_construct, error_proto)
 }

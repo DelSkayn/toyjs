@@ -4,7 +4,7 @@ use crate::{
     atom::{self, Atom},
     gc::Trace,
     instructions::{Instruction, Upvalue},
-    object::{FunctionKind, Object, ObjectFlags, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{Object, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
     Gc, Value,
 };
 
@@ -70,16 +70,16 @@ impl Realm {
                     self.stack.write(dst, instr.constant(cons as u32));
                 }
                 Instruction::LoadGlobal { dst } => {
-                    self.stack.write(dst, Value::from(self.global));
+                    self.stack.write(dst, Value::from(self.builtin.global));
                 }
                 Instruction::LoadFunction { dst, func } => {
                     self.vm.borrow().collect_debt(&ctx);
                     let func = self.construct_function(func, &instr, ctx.function);
-                    let func = Object::alloc_function(
+                    let func = Object::new_gc(
                         self.vm(),
                         Some(self.builtin.function_proto),
-                        ObjectFlags::empty(),
-                        FunctionKind::Vm(func),
+                        ObjectFlags::ORDINARY,
+                        ObjectKind::VmFn(func),
                     );
                     self.stack.write(dst, func.into());
                 }
@@ -93,20 +93,22 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object = Object::alloc(
+                    let object = Object::new_gc(
                         self.vm(),
                         Some(self.builtin.object_proto),
-                        ObjectFlags::empty(),
+                        ObjectFlags::ORDINARY,
+                        ObjectKind::Ordinary,
                     );
                     let res = Value::from(object);
                     self.stack.write(dst, res);
                 }
                 Instruction::CreateArray { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object = Object::alloc(
+                    let object = Object::new_gc(
                         self.vm(),
-                        Some(self.builtin.object_proto),
-                        ObjectFlags::empty(),
+                        Some(self.builtin.array_proto),
+                        ObjectFlags::ORDINARY,
+                        ObjectKind::Array,
                     );
                     let res = Value::from(object);
                     self.stack.write(dst, res);
@@ -118,63 +120,45 @@ impl Realm {
 
                     if let Some(obj) = obj.into_object() {
                         self.vm.borrow().write_barrier(obj);
-                        if let Some(key) = key.into_atom() {
-                            obj.index_set(key, val, self);
-                        } else {
-                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                            obj.index_set(key, val, self);
-                            self.vm().decrement(key);
-                        }
+                        catch_unwind!(self, instr, ctx, obj.index_set_value(self, key, val));
                     } else {
                         // TODO proper error value
-                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
+                        self.unwind_error(
+                            &mut instr,
+                            &mut ctx,
+                            self.create_type_error("tried to index primitive"),
+                        )?;
                     }
                 }
                 Instruction::Index { dst, obj, key } => {
                     let obj = self.stack.read(obj);
                     let key = self.stack.read(key);
                     if let Some(obj) = obj.into_object() {
-                        let res = if let Some(key) = key.into_atom() {
-                            obj.index(key, self)
-                        } else {
-                            let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                            let res = obj.index(key, self);
-                            self.vm().decrement(key);
-                            res
-                        };
+                        let res = catch_unwind!(self, instr, ctx, obj.index_value(self, key));
                         self.stack.write(dst, res);
                     } else {
                         // TODO proper error value
-                        self.unwind_error(&mut instr, &mut ctx, Value::undefined())?;
+                        self.unwind_error(
+                            &mut instr,
+                            &mut ctx,
+                            self.create_type_error("tried to index primitive"),
+                        )?;
                     }
                 }
 
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.stack.read(key);
-                    let obj = self.global;
-                    let res = if let Some(key) = key.into_atom() {
-                        obj.index(key, self)
-                    } else {
-                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                        let res = obj.index(key, self);
-                        self.vm().decrement(key);
-                        res
-                    };
+                    let obj = self.builtin.global;
+                    let res = catch_unwind!(self, instr, ctx, obj.index_value(self, key));
                     self.stack.write(dst, res);
                 }
 
                 Instruction::GlobalAssign { key, src } => {
-                    let obj = self.global;
+                    let obj = self.builtin.global;
                     let key = self.stack.read(key);
                     let src = self.stack.read(src);
                     self.vm.borrow().write_barrier(obj);
-                    if let Some(key) = key.into_atom() {
-                        obj.index_set(key, src, self);
-                    } else {
-                        let key = catch_unwind!(self, instr, ctx, self.to_atom(key));
-                        obj.index_set(key, src, self);
-                        self.vm().decrement(key);
-                    }
+                    catch_unwind!(self, instr, ctx, obj.index_set_value(self, key, src));
                 }
 
                 Instruction::Upvalue { dst, slot } => {
@@ -611,10 +595,11 @@ impl Realm {
 
     pub unsafe fn to_object(&self, value: Value) -> Gc<Object> {
         if value.is_null() || value.is_undefined() {
-            return Object::alloc(
+            return Object::new_gc(
                 self.vm(),
                 Some(self.builtin.object_proto),
-                ObjectFlags::empty(),
+                ObjectFlags::ORDINARY,
+                ObjectKind::Ordinary,
             );
         }
         todo!()
@@ -940,7 +925,7 @@ impl Realm {
             return Err(self.create_type_error("right hand instanceof operand is not a function"));
         }
 
-        let tgt_proto = right.index(atom::constant::prototype, self);
+        let tgt_proto = right.index(self, atom::constant::prototype)?;
         let tgt_proto = tgt_proto
             .into_object()
             .ok_or_else(|| self.create_type_error("object prototype is not an object"))?;
@@ -967,7 +952,7 @@ impl Realm {
                 [atom::constant::valueOf, atom::constant::toString]
             };
             for k in keys {
-                let func = v.index(k, self);
+                let func = v.index(self, k)?;
                 if let Some(func) = func.into_object() {
                     if func.is_function() {
                         let res = self.enter_method_call(func, v.into())?;
@@ -1033,18 +1018,20 @@ impl Realm {
         function: Gc<Object>,
     ) -> Gc<Object> {
         let function = self.construct_function(function_id, reader, function);
-        let function = Object::alloc_constructor(
+        let function = Object::new_gc(
             self.vm(),
             self.builtin.object_proto.into(),
-            FunctionKind::Vm(function),
+            ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
+            ObjectKind::VmFn(function),
         );
-        let proto = Object::alloc(
+        let proto = Object::new_gc(
             self.vm(),
             self.builtin.object_proto.into(),
-            ObjectFlags::empty(),
+            ObjectFlags::ORDINARY,
+            ObjectKind::Ordinary,
         );
-        proto.index_set(atom::constant::constructor, function.into(), self);
-        function.index_set(atom::constant::prototype, proto.into(), self);
+        proto.raw_index_set(self.vm(), atom::constant::constructor, function.into());
+        function.raw_index_set(self.vm(), atom::constant::prototype, proto.into());
         function
     }
 
@@ -1060,20 +1047,14 @@ impl Realm {
             .into_object()
             .ok_or_else(|| self.create_type_error(INDEX_NON_OBJECT))?;
 
-        let atom = self.to_atom(key)?;
-        let function = object.index(atom, self);
-        self.vm().decrement(atom);
+        let function = object.index_value(self, key)?;
 
         let function = function
             .into_object()
             .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
 
-        let kind = function
-            .function
-            .as_ref()
-            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
-        match kind {
-            FunctionKind::Vm(ref func) => {
+        match function.kind {
+            ObjectKind::VmFn(ref func) => {
                 let bc = func.bc;
                 let bc_function = &bc.functions[func.function as usize];
                 self.stack
@@ -1083,7 +1064,7 @@ impl Realm {
                 *instr = InstructionReader::from_bc(bc, func.function);
                 Ok(None)
             }
-            FunctionKind::Static(x) => {
+            ObjectKind::StaticFn(x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = x(self, ctx)?;
@@ -1091,7 +1072,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
-            FunctionKind::Mutable(ref x) => {
+            ObjectKind::MutableFn(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, object.into());
                 self.stack.enter(0);
@@ -1101,7 +1082,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
-            FunctionKind::Shared(ref x) => {
+            ObjectKind::SharedFn(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, object.into());
                 self.stack.enter(0);
@@ -1111,6 +1092,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
+            _ => Err(self.create_type_error(NOT_A_FUNCTION)),
         }
     }
 
@@ -1125,12 +1107,8 @@ impl Realm {
         let function = funct
             .into_object()
             .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
-        let kind = function
-            .function
-            .as_ref()
-            .ok_or_else(|| self.create_type_error(NOT_A_FUNCTION))?;
-        match kind {
-            FunctionKind::Vm(ref func) => {
+        match function.kind {
+            ObjectKind::VmFn(ref func) => {
                 let bc = func.bc;
                 let bc_function = &bc.functions[func.function as usize];
                 self.stack
@@ -1140,7 +1118,7 @@ impl Realm {
                 *instr = InstructionReader::from_bc(bc, func.function);
                 Ok(None)
             }
-            FunctionKind::Static(x) => {
+            ObjectKind::StaticFn(x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = x(self, ctx)?;
@@ -1148,7 +1126,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
-            FunctionKind::Mutable(ref x) => {
+            ObjectKind::MutableFn(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
@@ -1158,7 +1136,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
-            FunctionKind::Shared(ref x) => {
+            ObjectKind::SharedFn(ref x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
@@ -1168,6 +1146,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(Some(res))
             }
+            _ => Err(self.create_type_error(NOT_A_FUNCTION)),
         }
     }
 
@@ -1181,34 +1160,23 @@ impl Realm {
         let function = function
             .into_object()
             .ok_or_else(|| self.create_type_error(NOT_A_CONSTRUCTOR))?;
-        let kind = function
-            .function
-            .as_ref()
-            .ok_or_else(|| self.create_type_error(NOT_A_CONSTRUCTOR))?;
         if !function.is_constructor() {
             return Err(self.create_type_error(NOT_A_CONSTRUCTOR));
         }
 
-        match kind {
-            FunctionKind::Vm(ref func) => {
+        match function.kind {
+            ObjectKind::VmFn(ref func) => {
                 let bc = func.bc;
                 let bc_function = &bc.functions[func.function as usize];
                 self.stack.enter(bc_function.registers);
 
-                let proto = function.index(atom::constant::prototype, self);
-                let this_object = if proto.is_object() {
-                    Object::alloc(
-                        self.vm(),
-                        Some(proto.unsafe_cast_object()),
-                        ObjectFlags::empty(),
-                    )
-                } else {
-                    Object::alloc(
-                        self.vm(),
-                        self.builtin.object_proto.into(),
-                        ObjectFlags::empty(),
-                    )
-                };
+                let proto = function.index(self, atom::constant::prototype)?;
+                let this_object = Object::new_gc(
+                    self.vm(),
+                    Some(proto.into_object().unwrap_or(self.builtin.object_proto)),
+                    ObjectFlags::ORDINARY,
+                    ObjectKind::Ordinary,
+                );
 
                 let instr = InstructionReader::from_bc(bc, func.function);
                 let res = self.execute(
@@ -1225,7 +1193,7 @@ impl Realm {
                     Ok(this_object.into())
                 }
             }
-            FunctionKind::Static(func) => {
+            ObjectKind::StaticFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func(self, ctx)?;
@@ -1233,7 +1201,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(res)
             }
-            FunctionKind::Shared(func) => {
+            ObjectKind::SharedFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func(self, ctx)?;
@@ -1241,7 +1209,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(res)
             }
-            FunctionKind::Mutable(func) => {
+            ObjectKind::MutableFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
                 let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
@@ -1249,6 +1217,7 @@ impl Realm {
                 ctx.function = function;
                 Ok(res)
             }
+            _ => Err(self.create_type_error(NOT_A_CONSTRUCTOR)),
         }
     }
 

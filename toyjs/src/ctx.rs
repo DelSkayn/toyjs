@@ -8,6 +8,7 @@ use parser::Parser;
 use vm::{
     gc::Trace,
     object::{ObjectFlags, SharedFn},
+    object2::ObjectKind,
 };
 
 use crate::{
@@ -73,7 +74,7 @@ impl<'js> Ctx<'js> {
     /// Returns the global object of the current context.
     pub fn global(self) -> Object<'js> {
         unsafe {
-            let object = (*self.ctx).global;
+            let object = (*self.ctx).builtin.global;
             Object::wrap(self, object)
         }
     }
@@ -88,10 +89,11 @@ impl<'js> Ctx<'js> {
     }
     pub fn create_object(self) -> Object<'js> {
         unsafe {
-            let object = vm::Object::alloc(
+            let object = vm::Object::new_gc(
                 (*self.ctx).vm(),
                 (*self.ctx).builtin.object_proto.into(),
-                ObjectFlags::empty(),
+                ObjectFlags::ORDINARY,
+                ObjectKind::Ordinary,
             );
             (*self.ctx).stack.push(object.into());
             Object::wrap(self, object)
@@ -101,10 +103,11 @@ impl<'js> Ctx<'js> {
     /// Creates a new empty object
     pub fn create_object_proto(self, prototype: Option<Object<'js>>) -> Object<'js> {
         unsafe {
-            let object = vm::Object::alloc(
+            let object = vm::Object::new_gc(
                 (*self.ctx).vm(),
                 prototype.map(|x| x.into_vm()),
-                ObjectFlags::empty(),
+                ObjectFlags::ORDINARY,
+                ObjectKind::Ordinary,
             );
             (*self.ctx).stack.push(object.into());
             Object::wrap(self, object)
@@ -149,11 +152,11 @@ impl<'js> Ctx<'js> {
         ) -> std::result::Result<vm::Value, vm::Value>,
     ) -> Function<'js>
 where {
-        let function = vm::Object::alloc_function(
+        let function = vm::Object::new_gc(
             (*self.ctx).vm(),
             (*self.ctx).builtin.function_proto.into(),
-            ObjectFlags::empty(),
-            vm::object::FunctionKind::Static(f),
+            ObjectFlags::ORDINARY,
+            vm::object::ObjectKind::StaticFn(f),
         );
         self.push_value(function.into());
         Function::wrap(self, function)
@@ -170,11 +173,11 @@ where {
                 let args = Arguments::from_ctx(ctx);
                 f(ctx, args).map(Value::into_vm).map_err(|e| e.into_vm(ctx))
             });
-            let function = vm::Object::alloc_function(
+            let function = vm::Object::new_gc(
                 (*self.ctx).vm(),
                 (*self.ctx).builtin.function_proto.into(),
-                ObjectFlags::empty(),
-                vm::object::FunctionKind::Shared(func),
+                ObjectFlags::ORDINARY,
+                vm::object::ObjectKind::SharedFn(func),
             );
             self.push_value(function.into());
             Function::wrap(self, function)
