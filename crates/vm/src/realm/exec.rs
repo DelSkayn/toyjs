@@ -589,7 +589,7 @@ impl Realm {
             let primitive = self.to_primitive(value, true)?;
             Ok(self.to_string(primitive)?)
         } else {
-            todo!()
+            todo!("to string :{:?}", value)
         }
     }
 

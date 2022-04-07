@@ -22,10 +22,7 @@ impl<'js> Object<'js> {
     }
 
     pub fn is_error(self) -> bool {
-        match self.ptr.kind {
-            ObjectKind::Error => true,
-            _ => false,
-        }
+        matches!(self.ptr.kind, ObjectKind::Error)
     }
 
     pub fn get<K, V>(self, key: K) -> Result<'js, V>

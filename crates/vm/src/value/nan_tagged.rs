@@ -408,10 +408,10 @@ impl fmt::Debug for Value {
                     .debug_tuple("JSValue::String")
                     .field(&self.unsafe_cast_string())
                     .finish(),
-                TAG_OBJECT => {
-                    let mut obj = f.debug_tuple("JSValue::Object");
-                    obj.finish()
-                }
+                TAG_OBJECT => f
+                    .debug_tuple("JSValue::Object")
+                    .field(&self.unsafe_cast_object())
+                    .finish(),
                 TAG_BIGINT => todo!(),
                 TAG_ATOM => f
                     .debug_tuple("JSValue::ATOM")

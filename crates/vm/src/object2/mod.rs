@@ -43,6 +43,29 @@ pub enum ObjectKind {
     StaticFn(StaticFn),
 }
 
+unsafe impl Trace for ObjectKind {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, ctx: crate::gc::Ctx) {
+        match *self {
+            Self::Ordinary
+            | Self::Array
+            | Self::Error
+            | Self::MutableFn(_)
+            | Self::SharedFn(_)
+            | Self::StaticFn(_) => {}
+            Self::VmFn(ref x) => {
+                x.trace(ctx);
+            }
+        }
+    }
+}
+
 impl fmt::Debug for ObjectKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -106,6 +129,14 @@ impl Property {
             flags: PropertyFlags::ORDINARY,
         }
     }
+
+    fn get_accessor(&self) -> Option<&Accessor> {
+        if self.flags.contains(PropertyFlags::ACCESSOR) {
+            unsafe { Some(&self.value.accessor) }
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl Trace for Property {
@@ -119,8 +150,12 @@ unsafe impl Trace for Property {
     fn trace(&self, ctx: crate::gc::Ctx) {
         unsafe {
             if self.flags.contains(PropertyFlags::ACCESSOR) {
-                self.value.accessor.get.map(|x| ctx.mark(x));
-                self.value.accessor.set.map(|x| ctx.mark(x));
+                if let Some(x) = self.value.accessor.get {
+                    ctx.mark(x)
+                };
+                if let Some(x) = self.value.accessor.set {
+                    ctx.mark(x)
+                };
             } else {
                 self.value.value.trace(ctx)
             }
@@ -148,9 +183,11 @@ impl Elements {
 
     pub fn set(&self, key: usize, v: Value) {
         unsafe {
+            // Safe as we only hold the mutable reference within this scope and no references can
+            // escape.
             match *self.0.get() {
                 ElementsInner::Array(ref mut array) => {
-                    if key > array.len() {
+                    if key >= array.len() {
                         if key > Self::BACKDOWN_MINIMUM
                             && key > (array.len() as f64 * Self::BACKDOWN_RATIO).floor() as usize
                         {
@@ -167,6 +204,7 @@ impl Elements {
                         array.resize(key, Value::empty());
                         array.push(v);
                     } else {
+                        // Safe because key bound is checked above
                         *array.get_unchecked_mut(key) = v
                     }
                 }
@@ -179,6 +217,8 @@ impl Elements {
 
     pub fn get(&self, key: usize) -> Option<Value> {
         unsafe {
+            // Safe as we only hold the mutable reference within this scope and no references can
+            // escape.
             match *self.0.get() {
                 ElementsInner::Array(ref array) => {
                     array
@@ -202,6 +242,8 @@ unsafe impl Trace for Elements {
 
     fn trace(&self, ctx: crate::gc::Ctx) {
         unsafe {
+            // Safe as we only hold the mutable reference within this scope and no references can
+            // escape.
             match *self.0.get() {
                 ElementsInner::Array(ref x) => {
                     x.iter().for_each(|x| x.trace(ctx));
@@ -236,8 +278,13 @@ unsafe impl Trace for Object {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
+        if let Some(x) = self.prototype {
+            ctx.mark(x)
+        };
         self.elements.trace(ctx);
+        self.kind.trace(ctx);
         unsafe {
+            // Safe as none of the references from the iterator escape the scope.
             self.properties.unsafe_iter().for_each(|x| x.trace(ctx));
         }
     }

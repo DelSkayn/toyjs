@@ -32,8 +32,10 @@ fn main() -> Result<(), io::Error> {
     let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
     let gc = GcArena::new();
     let atoms = Atoms::new();
+
     let bytecode =
         Compiler::compile_script(&script, &variables, &mut interner, &atoms, &gc, Global);
+    println!("atoms: {:#?}", atoms);
     println!("{}", bytecode);
     Ok(())
 }

@@ -62,13 +62,13 @@ impl Object {
 
     #[inline]
     pub fn is_function(&self) -> bool {
-        match self.kind {
+        matches!(
+            self.kind,
             ObjectKind::VmFn(_)
-            | ObjectKind::SharedFn(_)
-            | ObjectKind::StaticFn(_)
-            | ObjectKind::MutableFn(_) => true,
-            _ => false,
-        }
+                | ObjectKind::SharedFn(_)
+                | ObjectKind::StaticFn(_)
+                | ObjectKind::MutableFn(_)
+        )
     }
 
     #[inline]
