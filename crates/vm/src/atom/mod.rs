@@ -14,8 +14,20 @@ pub type AtomInt = u32;
 pub const ATOM_MAX: AtomInt = (u32::MAX >> 1) as AtomInt;
 pub const STRING_FLAG: AtomInt = !(u32::MAX >> 1) as AtomInt;
 
-#[derive(Clone, Copy, Hash, Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Hash, Eq, PartialEq)]
 pub struct Atom(AtomInt);
+
+impl fmt::Debug for Atom {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(x) = self.into_idx() {
+            f.debug_tuple("Atom::Int").field(&x).finish()
+        } else {
+            f.debug_tuple("Atom::String")
+                .field(&(self.0 & !STRING_FLAG))
+                .finish()
+        }
+    }
+}
 
 impl Atom {
     pub const fn into_raw(self) -> AtomInt {

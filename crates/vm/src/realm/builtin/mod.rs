@@ -142,7 +142,7 @@ impl Builtin {
         let object_construct = Object::new_gc(
             vm,
             Some(function_proto),
-            ObjectFlags::ORDINARY,
+            ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
             ObjectKind::StaticFn(object_construct),
         );
         object_construct.raw_index_set(vm, atom::constant::prototype, object_proto.into());
@@ -156,6 +156,7 @@ impl Builtin {
             ObjectKind::Ordinary,
         );
 
+        global.raw_index_set(vm, atom::constant::globalThis, global.into());
         global.raw_index_set(vm, atom::constant::Object, object_construct.into());
 
         let array_proto = Object::new_gc(

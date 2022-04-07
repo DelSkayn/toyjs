@@ -274,6 +274,7 @@ impl GcArena {
                             #[cfg(feature = "dump-gc-trace")]
                             x.as_ref().free.set(true);
                             (*x.as_ref().value.get()).finalize(atoms);
+                            #[cfg(not(feature = "dump-gc-trace"))]
                             Box::from_raw(x.as_ptr());
                         } else {
                             self.remembered_size.set(self.remembered_size.get() + size);

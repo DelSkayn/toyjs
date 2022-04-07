@@ -4,7 +4,7 @@ use std::{
     slice::Iter,
 };
 
-/// A vector which allows push and poping from a immutable refrence but does not allow
+/// A vector which allows push and poping from a shared ref but does not allow
 /// obtaining references to internal values.
 #[derive(Debug)]
 pub struct CellVec<T, A: Allocator = Global>(UnsafeCell<Vec<T, A>>);
@@ -54,6 +54,9 @@ impl<T, A: Allocator> CellVec<T, A> {
         unsafe { (*self.0.get()).clear() }
     }
 
+    /// # Safety
+    ///
+    /// None of the other functions can be called while holding on to the iterator.
     #[inline]
     pub unsafe fn unsafe_iter(&self) -> Iter<T> {
         (*self.0.get()).iter()
@@ -64,17 +67,12 @@ impl<T, A: Allocator> CellVec<T, A> {
         unsafe { (*self.0.get())[idx] = value }
     }
 
+    /// # Safety
+    ///
+    /// Idx must be smaller the length of the vector.
     #[inline]
     pub unsafe fn set_unchecked(&self, idx: usize, value: T) {
         *(*self.0.get()).get_unchecked_mut(idx) = value
-    }
-
-    pub unsafe fn unsafe_as_slice(&self) -> &[T] {
-        (*self.0.get()).as_slice()
-    }
-
-    pub unsafe fn unsafe_as_mut_slice(&self) -> &mut [T] {
-        (*self.0.get()).as_mut_slice()
     }
 }
 
@@ -84,6 +82,9 @@ impl<T: Clone, A: Allocator> CellVec<T, A> {
         unsafe { (*self.0.get()).get(idx).cloned() }
     }
 
+    /// # Safety
+    ///
+    /// Idx must be smaller the length of the vector.
     #[inline]
     pub unsafe fn get_unchecked(&self, idx: usize) -> T {
         (*self.0.get()).get_unchecked(idx).clone()

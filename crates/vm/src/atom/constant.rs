@@ -47,5 +47,6 @@ define_atom!(
     Error,
     SyntaxError,
     TypeError,
-    length
+    length,
+    globalThis
 );

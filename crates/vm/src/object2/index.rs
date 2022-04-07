@@ -32,6 +32,7 @@ impl Gc<Object> {
 
         if let Some(idx) = (*self.map.get()).get(&key).copied() {
             debug_assert!(self.properties.len() > idx as usize);
+            // safe because all the indecies stored in the should be valid.
             let p = self.properties.get_unchecked(idx);
             if p.flags.contains(PropertyFlags::ACCESSOR) {
                 if let Some(get) = p.value.accessor.get {
@@ -45,6 +46,8 @@ impl Gc<Object> {
                         .map(|p| p.index(realm, key))
                         .unwrap_or_else(|| Ok(Value::undefined()));
                 }
+            } else {
+                return Ok(p.value.value);
             }
         }
 
@@ -79,9 +82,10 @@ impl Gc<Object> {
         match (*self.map.get()).entry(key) {
             Entry::Occupied(x) => {
                 debug_assert!(self.properties.len() >= *x.get());
+                // safe because all the indecies stored in the should be valid.
                 let prop = self.properties.get_unchecked(*x.get());
-                if prop.flags.contains(PropertyFlags::ACCESSOR) {
-                    if let Some(set) = prop.value.accessor.set {
+                if let Some(accessor) = prop.get_accessor() {
+                    if let Some(set) = accessor.set {
                         if !set.is_function() {
                             return Err(realm.create_type_error("setter is not a function"));
                         }
@@ -96,11 +100,9 @@ impl Gc<Object> {
                     //TODO strict
                     return Ok(());
                 }
+                // safe because all the indecies stored in the should be valid.
                 self.properties
-                    .unsafe_as_mut_slice()
-                    .get_unchecked_mut(*x.get())
-                    .value
-                    .value = value;
+                    .set_unchecked(*x.get(), Property::ordinary(value))
             }
             Entry::Vacant(x) => {
                 x.insert(self.properties.len());
@@ -114,6 +116,7 @@ impl Gc<Object> {
         match (*self.map.get()).entry(key) {
             Entry::Occupied(x) => {
                 debug_assert!(self.properties.len() >= *x.get());
+                // safe because all the indecies stored in the should be valid.
                 self.properties
                     .set_unchecked(*x.get(), Property::ordinary(value));
             }
