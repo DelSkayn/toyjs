@@ -1,13 +1,14 @@
 use crate::{
     atom,
     gc::Trace,
-    object::{ObjectFlags, ObjectKind},
+    object::{ObjectFlags, ObjectKind, Property, PropertyFlags, StaticFn},
     Gc, Object, Realm, Value, VmInner,
 };
 
 use super::ExecutionContext;
 
 pub mod error;
+pub mod object;
 
 pub trait BuiltinAccessor {
     fn access(builtin: &Builtin) -> Gc<Object>;
@@ -17,7 +18,6 @@ pub struct Builtin {
     pub global: Gc<Object>,
     // the %Object% value
     pub object_proto: Gc<Object>,
-    pub object_construct: Gc<Object>,
     pub function_proto: Gc<Object>,
     pub array_proto: Gc<Object>,
     pub error_proto: Gc<Object>,
@@ -36,57 +36,11 @@ unsafe impl Trace for Builtin {
     fn trace(&self, ctx: crate::gc::Ctx) {
         ctx.mark(self.global);
         ctx.mark(self.object_proto);
-        ctx.mark(self.object_construct);
         ctx.mark(self.function_proto);
         ctx.mark(self.error_proto);
         ctx.mark(self.syntax_error_proto);
         ctx.mark(self.type_error_proto);
     }
-}
-
-unsafe fn object_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
-    if exec.new_target.is_undefined()
-        || exec
-            .new_target
-            .into_object()
-            .map_or(false, |x| x.ptr_eq(exec.function))
-    {
-        if realm.stack.frame_size() == 0 {
-            return Ok(Object::new_gc(
-                realm.vm(),
-                Some(realm.builtin.object_proto),
-                ObjectFlags::empty(),
-                ObjectKind::Ordinary,
-            )
-            .into());
-        }
-        let value = realm.stack.read(0);
-        if value.is_undefined() || value.is_null() {
-            return Ok(Object::new_gc(
-                realm.vm(),
-                Some(realm.builtin.object_proto),
-                ObjectFlags::empty(),
-                ObjectKind::Ordinary,
-            )
-            .into());
-        }
-        return Ok(realm.to_object(value).into());
-    }
-
-    let proto = if let Some(object) = exec.new_target.into_object() {
-        object.index(realm, atom::constant::prototype)?
-    } else {
-        Value::undefined()
-    };
-    let proto = proto.into_object().unwrap_or(realm.builtin.error_proto);
-
-    let object = Object::new_gc(
-        realm.vm(),
-        Some(proto),
-        ObjectFlags::ORDINARY,
-        ObjectKind::Ordinary,
-    );
-    Ok(object.into())
 }
 
 unsafe fn array_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
@@ -117,59 +71,56 @@ unsafe fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Va
     Ok(realm.vm().allocate("[object Object]".to_string()).into())
 }
 
+fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn) -> Gc<Object> {
+    Object::new_gc(
+        vm,
+        Some(proto),
+        ObjectFlags::ORDINARY,
+        ObjectKind::StaticFn(f),
+    )
+}
+
 impl Builtin {
     pub unsafe fn new(vm: &VmInner) -> Self {
-        let object_proto = Object::new_gc(vm, None, ObjectFlags::ORDINARY, ObjectKind::Ordinary);
-
-        let function_proto = Object::new_gc(
+        // Short names because there used often
+        // object prototype
+        let op = Object::new_gc(vm, None, ObjectFlags::ORDINARY, ObjectKind::Ordinary);
+        // function prototype
+        let fp = Object::new_gc(
             vm,
-            Some(object_proto),
+            Some(op),
             ObjectFlags::ORDINARY,
             ObjectKind::StaticFn(function_proto),
         );
 
-        object_proto.raw_index_set(
+        op.raw_index_set(
             vm,
             atom::constant::toString,
             Object::new_gc(
                 vm,
-                Some(function_proto),
+                Some(fp),
                 ObjectFlags::ORDINARY,
                 ObjectKind::StaticFn(object_to_string),
             )
             .into(),
         );
-        let object_construct = Object::new_gc(
+        let global = Object::new_gc(vm, Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
+        global.raw_index_set_prop(
             vm,
-            Some(function_proto),
-            ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
-            ObjectKind::StaticFn(object_construct),
+            atom::constant::globalThis,
+            Property::new_value(
+                global.into(),
+                PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
+            ),
         );
-        object_construct.raw_index_set(vm, atom::constant::prototype, object_proto.into());
-        object_construct.raw_index_set(vm, atom::constant::length, 1.into());
-        object_proto.raw_index_set(vm, atom::constant::constructor, object_construct.into());
+        object::init(vm, op, fp, global);
 
-        let global = Object::new_gc(
-            vm,
-            Some(object_proto),
-            ObjectFlags::ORDINARY,
-            ObjectKind::Ordinary,
-        );
-
-        global.raw_index_set(vm, atom::constant::globalThis, global.into());
-        global.raw_index_set(vm, atom::constant::Object, object_construct.into());
-
-        let array_proto = Object::new_gc(
-            vm,
-            Some(object_proto),
-            ObjectFlags::empty(),
-            ObjectKind::Ordinary,
-        );
+        let array_proto = Object::new_gc(vm, Some(op), ObjectFlags::empty(), ObjectKind::Ordinary);
         array_proto.raw_index_set(vm, atom::constant::length, 0.into());
 
         let array_constructor = Object::new_gc(
             vm,
-            Some(function_proto),
+            Some(fp),
             ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
             ObjectKind::StaticFn(array_construct),
         );
@@ -178,12 +129,11 @@ impl Builtin {
         array_proto.raw_index_set(vm, atom::constant::constructor, array_constructor.into());
 
         let name = vm.allocate::<String>("Error".into());
-        let (error_construct, error_proto) =
-            error::init_native::<error::Error>(vm, name, function_proto, object_proto);
+        let (error_construct, error_proto) = error::init_native::<error::Error>(vm, name, fp, op);
 
         let func = Object::new_gc(
             vm,
-            Some(function_proto),
+            Some(fp),
             ObjectFlags::ORDINARY,
             ObjectKind::StaticFn(error::to_string),
         );
@@ -202,9 +152,8 @@ impl Builtin {
 
         Builtin {
             global,
-            object_proto,
-            object_construct,
-            function_proto,
+            object_proto: op,
+            function_proto: fp,
             array_proto,
             error_proto,
             syntax_error_proto,

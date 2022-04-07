@@ -31,9 +31,8 @@ pub use value::Value;
 //pub mod object;
 //pub use object::Object;
 
-pub mod object2;
-pub use object2 as object;
-pub use object2::Object;
+pub mod object;
+pub use object::Object;
 
 mod vm;
 pub use vm::*;

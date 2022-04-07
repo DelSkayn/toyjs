@@ -34,8 +34,8 @@ impl Gc<Object> {
             debug_assert!(self.properties.len() > idx as usize);
             // safe because all the indecies stored in the should be valid.
             let p = self.properties.get_unchecked(idx);
-            if p.flags.contains(PropertyFlags::ACCESSOR) {
-                if let Some(get) = p.value.accessor.get {
+            if let Some(accessor) = p.get_accessor() {
+                if let Some(get) = accessor.get {
                     if !get.is_function() {
                         return Err(realm.create_type_error("getter is not a function"));
                     }
@@ -113,17 +113,20 @@ impl Gc<Object> {
     }
 
     pub unsafe fn raw_index_set(self, vm: &VmInner, key: Atom, value: Value) {
+        self.raw_index_set_prop(vm, key, Property::ordinary(value));
+    }
+
+    pub unsafe fn raw_index_set_prop(self, vm: &VmInner, key: Atom, value: Property) {
         match (*self.map.get()).entry(key) {
             Entry::Occupied(x) => {
                 debug_assert!(self.properties.len() >= *x.get());
                 // safe because all the indecies stored in the should be valid.
-                self.properties
-                    .set_unchecked(*x.get(), Property::ordinary(value));
+                self.properties.set_unchecked(*x.get(), value);
             }
             Entry::Vacant(x) => {
                 x.insert(self.properties.len());
                 vm.increment(key);
-                self.properties.push(Property::ordinary(value));
+                self.properties.push(value);
             }
         }
     }

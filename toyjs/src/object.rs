@@ -1,4 +1,4 @@
-use vm::{object2::ObjectKind, Gc};
+use vm::{object::ObjectKind, Gc};
 
 use crate::{
     convert::{FromJs, IntoAtom, IntoJs},

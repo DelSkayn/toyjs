@@ -1,6 +1,8 @@
 use crate::{
-    atom, object::ObjectFlags, object2::ObjectKind, realm::ExecutionContext, Gc, Object, Realm,
-    Value, VmInner,
+    atom,
+    object::{ObjectFlags, ObjectKind},
+    realm::ExecutionContext,
+    Gc, Object, Realm, Value, VmInner,
 };
 
 use super::BuiltinAccessor;

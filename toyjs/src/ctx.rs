@@ -7,8 +7,7 @@ use lexer::Lexer;
 use parser::Parser;
 use vm::{
     gc::Trace,
-    object::{ObjectFlags, SharedFn},
-    object2::ObjectKind,
+    object::{ObjectFlags, ObjectKind, SharedFn},
 };
 
 use crate::{
