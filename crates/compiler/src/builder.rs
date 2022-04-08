@@ -93,7 +93,7 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
 
         for (idx, p) in params.0.iter().enumerate() {
             if idx >= 16 {
-                todo!()
+                todo!("more then 16 arguments")
             }
             registers.alloc_arg(*p);
         }

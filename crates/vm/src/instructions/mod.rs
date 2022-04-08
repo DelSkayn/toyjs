@@ -81,7 +81,7 @@ impl ByteCode {
     }
 
     pub fn is_valid(&self) -> Result<(), ValidationError> {
-        todo!()
+        todo!("bytecode valid")
     }
 
     // # Safety

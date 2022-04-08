@@ -150,7 +150,19 @@ impl FormattedError<'_> {
                 self.source
                     .format_span_block(&mut w, self.error.origin, None)?;
             }
-            _ => todo!(),
+            ErrorKind::LexerError(LexerErrorKind::InvalidUnicodeSequence) => {
+                writeln!(w, "invalid escape code")?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
+            }
+            ErrorKind::LexerError(LexerErrorKind::InvalidToken) => {
+                writeln!(w, "invalid token")?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
+            }
+            ref x => todo!("error kind: {:?}", x),
         }
         Ok(())
     }

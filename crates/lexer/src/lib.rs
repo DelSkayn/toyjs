@@ -277,7 +277,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some(b'.') => {
                     self.eat_byte();
-                    todo!()
+                    todo!("token ?.")
                     /*
                     if self.peek_byte().map(Self::is_digit).unwrap_or(false) {
                         self.cur -= 1;
@@ -474,7 +474,7 @@ impl<'a> Lexer<'a> {
             // but are specified by ecmascript as such.
             b'$' | b'_' => self.lex_ident(self.offset - 1)?,
 
-            b'\\' => todo!(),
+            b'\\' => todo!("token \\ "),
             b'\'' => self.lex_string(b'\'')?,
             b'\"' => self.lex_string(b'\"')?,
 

@@ -481,7 +481,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 });
                 return ExprValue::new_in(dst, self.alloc.clone());
             }
-            BinaryOperator::TenaryNull => todo!(),
+            BinaryOperator::TenaryNull => todo!("operator tenary null"),
             BinaryOperator::NullCoalessing => {
                 let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 self.compile_expr(Some(dst), left).eval(self);
@@ -679,7 +679,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                     righ: expr.0,
                 });
             }
-            _ => todo!(),
+            ref x => todo!("AssignOperator: {:?}", x),
         }
 
         assign_target.compile_assign(self, dst);
@@ -971,7 +971,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             let func = self.compile_expr(None, expr).eval(self);
             for (idx, arg) in args.iter().enumerate() {
                 if idx >= 16 {
-                    todo!()
+                    todo!("more then 16 arguments")
                 }
                 let reg = self.compile_expr(None, arg).eval(self);
                 self.builder.free_temp(reg);
@@ -1022,7 +1022,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
 
         for (idx, arg) in args.iter().enumerate() {
             if idx >= 16 {
-                todo!()
+                todo!("more then 16 arguments")
             }
             let reg = self.compile_expr(None, arg).eval(self);
             self.builder.free_temp(reg);

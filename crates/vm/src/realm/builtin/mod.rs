@@ -60,7 +60,7 @@ unsafe fn array_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<
         )));
     }
 
-    todo!()
+    todo!("array construct")
 }
 
 fn function_proto(_: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {

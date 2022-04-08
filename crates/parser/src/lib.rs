@@ -200,6 +200,6 @@ impl<'source, A: Allocator + Clone> Parser<'source, A> {
     }
 
     fn do_parse_module(self) -> Result<ast::Script<A>> {
-        todo!()
+        todo!("parsing module")
     }
 }
