@@ -9,6 +9,12 @@ use std::{
 #[derive(Debug)]
 pub struct CellVec<T, A: Allocator = Global>(UnsafeCell<Vec<T, A>>);
 
+impl<T: Clone, A: Allocator + Clone> Clone for CellVec<T, A> {
+    fn clone(&self) -> Self {
+        unsafe { Self(UnsafeCell::new((*self.0.get()).clone())) }
+    }
+}
+
 /// It is save to send the vector across threads since there can be no references to internal
 /// values.
 unsafe impl<T: Send, A: Allocator + Send> Send for CellVec<T, A> {}
@@ -27,6 +33,11 @@ impl<T, A: Allocator> CellVec<T, A> {
     #[inline]
     pub fn new_in(alloc: A) -> Self {
         CellVec(UnsafeCell::new(Vec::new_in(alloc)))
+    }
+
+    #[inline]
+    pub fn into_inner(self) -> Vec<T, A> {
+        self.0.into_inner()
     }
 
     #[inline]

@@ -1,6 +1,6 @@
 use crate::{
     atom,
-    object::{ObjectFlags, ObjectKind},
+    object::{ObjectFlags, ObjectKind, PropertyFlags},
     realm::ExecutionContext,
     Gc, Object, Realm, Value, VmInner,
 };
@@ -70,7 +70,7 @@ unsafe fn is(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value
         let a = realm.stack.read(0);
         if realm.stack.frame_size() > 1 {
             let b = realm.stack.read(0);
-            return Ok(realm.strict_equal(a, b).into());
+            Ok(realm.strict_equal(a, b).into())
         } else {
             Ok(a.is_undefined().into())
         }
@@ -91,6 +91,40 @@ unsafe fn is_extensible(realm: &Realm, _exec: &mut ExecutionContext) -> Result<V
     }
 }
 
+unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+    let args = realm.stack.frame_size();
+    if args == 0 {
+        return Ok(Value::undefined());
+    }
+    let to = realm.to_object(realm.stack.read(0))?;
+    if args == 1 {
+        return Ok(to.into());
+    }
+
+    // Keep `to` alive during for the duration of the function
+    realm.stack.push_temp(to.into());
+
+    for i in 1..realm.stack.frame_size() {
+        let from = realm.to_object(realm.stack.read(i as u8))?;
+        from.elements.for_each(|idx, value| {
+            // These are all elements so we can use raw as no getter can be triggered
+            to.elements.set(idx, value);
+        });
+        // Need to just straight up clone since getters can add or remove object keys.
+        let properties = from.properties.clone();
+        for p in properties.into_inner().into_iter() {
+            if let Some(prop) = from.raw_index_prop(p.key) {
+                if prop.flags.contains(PropertyFlags::ENUMERABLE) {
+                    if let Some(value) = p.get(from, realm)? {
+                        to.raw_index_set(realm.vm(), p.key, value)
+                    }
+                }
+            }
+        }
+    }
+    Ok(to.into())
+}
+
 pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Object>) {
     let construct = Object::new_gc(
         vm,
@@ -100,14 +134,17 @@ pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Obje
     );
     construct.raw_index_set(vm, atom::constant::prototype, op.into());
 
-    let get_prototype_of = new_func(vm, fp, get_prototype_of);
+    let get_prototype_of = new_func(vm, fp, get_prototype_of, 1);
     construct.raw_index_set(vm, atom::constant::getPrototypeOf, get_prototype_of.into());
 
-    let is = new_func(vm, fp, is);
+    let is = new_func(vm, fp, is, 2);
     construct.raw_index_set(vm, atom::constant::is, is.into());
 
-    let is_extensible = new_func(vm, fp, is_extensible);
+    let is_extensible = new_func(vm, fp, is_extensible, 1);
     construct.raw_index_set(vm, atom::constant::isExtensible, is_extensible.into());
+
+    let assign = new_func(vm, fp, assign, 2);
+    construct.raw_index_set(vm, atom::constant::assign, assign.into());
 
     construct.raw_index_set(vm, atom::constant::length, 1.into());
     op.raw_index_set(vm, atom::constant::constructor, construct.into());
