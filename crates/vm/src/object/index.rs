@@ -2,7 +2,10 @@ use std::collections::hash_map::Entry;
 
 use crate::{atom::Atom, Gc, Realm, Value, VmInner};
 
-use super::{Object, Property, PropertyFlags, PropertyValue};
+use super::{
+    property::{Accessor, SetResult},
+    Object, Property, PropertyFlags, PropertyValue,
+};
 
 impl Gc<Object> {
     #[inline]
@@ -30,24 +33,21 @@ impl Gc<Object> {
             }
         }
 
-        if let Some(idx) = (*self.map.get()).get(&key).copied() {
-            debug_assert!(self.properties.len() > idx as usize);
-            // safe because all the indecies stored in the should be valid.
-            if let Some(x) = self.properties.get_unchecked(idx).get(self, realm)? {
-                return Ok(x);
+        if let Some(prop) = self.properties.get(key) {
+            match prop.into_value() {
+                PropertyValue::Value(x) => return Ok(x),
+                PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
+                    return realm.enter_method_call(get, self.into())
+                }
+                PropertyValue::Accessor(Accessor { get: None, .. }) => {
+                    return Ok(Value::undefined())
+                }
             }
         }
 
         self.prototype
             .map(|p| p.index(realm, key))
             .unwrap_or_else(|| Ok(Value::undefined()))
-    }
-
-    pub(crate) unsafe fn raw_index_prop(self, key: Atom) -> Option<Property> {
-        (*self.map.get())
-            .get(&key)
-            .copied()
-            .map(|x| self.properties.get_unchecked(x))
     }
 
     #[inline]
@@ -73,49 +73,29 @@ impl Gc<Object> {
             self.elements.set(idx as usize, value);
         }
 
-        match (*self.map.get()).entry(key) {
-            Entry::Occupied(x) => {
-                debug_assert!(self.properties.len() >= *x.get());
-                // safe because all the indecies stored in the should be valid.
-                let mut prop = self.properties.get_unchecked(*x.get());
-                if !prop.flags.contains(PropertyFlags::WRITABLE) {
-                    //TODO strict
-                    return Ok(());
-                }
-                if let Some(accessor) = prop.get_accessor() {
-                    if let Some(set) = accessor.set {
-                        if !set.is_function() {
-                            return Err(realm.create_type_error("setter is not a function"));
-                        }
-                        realm.stack.push(value);
-                        realm.enter_method_call(set, self.into())?;
-                    }
-                    //TODO strict
-                    return Ok(());
-                }
-
-                prop.value.value = value;
-                self.properties.set_unchecked(*x.get(), prop)
+        match self.properties.set_value(key, value) {
+            SetResult::Setter(x) => {
+                realm.stack.push(value);
+                realm.enter_method_call(x, self.into())?;
+                return Ok(());
             }
-            Entry::Vacant(x) => {
-                x.insert(self.properties.len());
-                self.properties.push(Property {
-                    value: PropertyValue { value },
-                    key,
-                    flags: PropertyFlags::ORDINARY,
-                });
+            SetResult::Vacant => {
+                realm.vm().increment(key);
             }
+            SetResult::Occupied => {}
         }
         Ok(())
     }
 
     #[inline]
-    pub unsafe fn raw_index_set(self, vm: &VmInner, key: Atom, value: Value) {
+    pub unsafe fn raw_index_set<V: Into<Value>>(self, vm: &VmInner, key: Atom, value: V) {
         self.raw_index_set_prop(
             vm,
             key,
             Property {
-                value: PropertyValue { value },
+                value: PropertyValue {
+                    value: value.into(),
+                },
                 key,
                 flags: PropertyFlags::ORDINARY,
             },
@@ -142,17 +122,8 @@ impl Gc<Object> {
     }
 
     unsafe fn raw_index_set_prop(self, vm: &VmInner, key: Atom, value: Property) {
-        match (*self.map.get()).entry(key) {
-            Entry::Occupied(x) => {
-                debug_assert!(self.properties.len() >= *x.get());
-                // safe because all the indecies stored in the should be valid.
-                self.properties.set_unchecked(*x.get(), value);
-            }
-            Entry::Vacant(x) => {
-                x.insert(self.properties.len());
-                vm.increment(key);
-                self.properties.push(value);
-            }
+        if self.properties.set(key, value) {
+            vm.increment(key);
         }
     }
 }
