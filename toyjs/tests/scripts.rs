@@ -8,6 +8,7 @@ const PARSE_INT_SOURCE: &str = include_str!("./parseInt.js");
 const CALL_DEEP_SOURCE: &str = include_str!("./callDeep.js");
 const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
 const THIS_SOURCE: &str = include_str!("./this.js");
+const OBJECT_SOURCE: &str = include_str!("./object.js");
 
 fn eval_script(s: &str) {
     let toyjs = ToyJs::new();
@@ -55,4 +56,9 @@ fn script_var_for() {
 #[test]
 fn script_this() {
     eval_script(THIS_SOURCE);
+}
+
+#[test]
+fn script_object() {
+    eval_script(OBJECT_SOURCE);
 }

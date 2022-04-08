@@ -85,7 +85,7 @@ pub unsafe fn construct(
         ObjectKind::Error,
     );
     if let Some(message) = message {
-        object.raw_index_set(realm.vm(), atom::constant::message, message.into())
+        object.raw_index_set(realm.vm(), atom::constant::message, message)
     }
     if let Some(cause) = cause {
         object.raw_index_set(realm.vm(), atom::constant::cause, cause);
@@ -130,15 +130,11 @@ pub unsafe fn init_native<T: BuiltinAccessor>(
         ObjectKind::StaticFn(construct_vm::<T>),
     );
 
-    error_construct.raw_index_set(vm, atom::constant::prototype, error_proto.into());
-    error_proto.raw_index_set(vm, atom::constant::constructor, error_construct.into());
+    error_construct.raw_index_set(vm, atom::constant::prototype, error_proto);
+    error_proto.raw_index_set(vm, atom::constant::constructor, error_construct);
 
-    error_proto.raw_index_set(
-        vm,
-        atom::constant::message,
-        vm.allocate(String::new()).into(),
-    );
-    error_proto.raw_index_set(vm, atom::constant::name, name.into());
+    error_proto.raw_index_set(vm, atom::constant::message, vm.allocate(String::new()));
+    error_proto.raw_index_set(vm, atom::constant::name, name);
 
     (error_construct, error_proto)
 }

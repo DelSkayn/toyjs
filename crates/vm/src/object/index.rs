@@ -1,10 +1,8 @@
-use std::collections::hash_map::Entry;
-
 use crate::{atom::Atom, Gc, Realm, Value, VmInner};
 
 use super::{
-    property::{Accessor, SetResult},
-    Object, Property, PropertyFlags, PropertyValue,
+    property::{Accessor, PropertyValue, SetResult},
+    Object, Property, PropertyFlags,
 };
 
 impl Gc<Object> {
@@ -88,42 +86,21 @@ impl Gc<Object> {
     }
 
     #[inline]
-    pub unsafe fn raw_index_set<V: Into<Value>>(self, vm: &VmInner, key: Atom, value: V) {
+    pub fn raw_index_set<V: Into<Value>>(self, vm: &VmInner, key: Atom, value: V) {
         self.raw_index_set_prop(
             vm,
-            key,
-            Property {
-                value: PropertyValue {
-                    value: value.into(),
-                },
-                key,
-                flags: PropertyFlags::ORDINARY,
-            },
+            Property::value(value.into(), PropertyFlags::ORDINARY, key),
         );
     }
 
     #[inline]
-    pub unsafe fn raw_index_set_flags(
-        self,
-        vm: &VmInner,
-        key: Atom,
-        value: Value,
-        flags: PropertyFlags,
-    ) {
-        self.raw_index_set_prop(
-            vm,
-            key,
-            Property {
-                value: PropertyValue { value },
-                key,
-                flags,
-            },
-        );
+    pub fn raw_index_set_flags(self, vm: &VmInner, key: Atom, value: Value, flags: PropertyFlags) {
+        self.raw_index_set_prop(vm, Property::value(value, flags, key));
     }
 
-    unsafe fn raw_index_set_prop(self, vm: &VmInner, key: Atom, value: Property) {
-        if self.properties.set(key, value) {
-            vm.increment(key);
+    fn raw_index_set_prop(self, vm: &VmInner, value: Property) {
+        if self.properties.set(value) {
+            vm.increment(value.key);
         }
     }
 }

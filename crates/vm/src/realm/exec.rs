@@ -691,6 +691,9 @@ impl Realm {
             }
             return false;
         }
+        if left.is_undefined() || left.is_null() {
+            return true;
+        }
         if let Some(left) = left.into_int() {
             return left == right.cast_int();
         }
@@ -703,7 +706,7 @@ impl Realm {
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();
         }
-        todo!()
+        todo!("strict_equal left: {:?}, right: {:?}", left, right);
     }
 
     pub unsafe fn equal(&self, left: Value, right: Value) -> Result<bool, Value> {
@@ -1031,8 +1034,8 @@ impl Realm {
             ObjectFlags::ORDINARY,
             ObjectKind::Ordinary,
         );
-        proto.raw_index_set(self.vm(), atom::constant::constructor, function.into());
-        function.raw_index_set(self.vm(), atom::constant::prototype, proto.into());
+        proto.raw_index_set(self.vm(), atom::constant::constructor, function);
+        function.raw_index_set(self.vm(), atom::constant::prototype, proto);
         function
     }
 

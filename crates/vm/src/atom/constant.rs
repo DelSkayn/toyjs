@@ -52,5 +52,12 @@ define_atom!(
     getPrototypeOf,
     is,
     isExtensible,
-    assign
+    assign,
+    enumerable,
+    configurable,
+    value,
+    writable,
+    get,
+    set,
+    create
 );
