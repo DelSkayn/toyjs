@@ -88,6 +88,7 @@ unsafe impl<T: Trace> Trace for Box<T> {
         T::needs_trace()
     }
 
+    #[inline]
     fn trace(&self, ctx: Ctx) {
         (**self).trace(ctx);
     }
@@ -101,6 +102,7 @@ unsafe impl<T: Trace> Trace for &[T] {
         T::needs_trace()
     }
 
+    #[inline]
     fn trace(&self, ctx: Ctx) {
         self.iter().for_each(|x| x.trace(ctx));
     }
@@ -134,8 +136,25 @@ unsafe impl<T: Trace> Trace for std::rc::Rc<T> {
         T::needs_trace()
     }
 
+    #[inline]
     fn trace(&self, ctx: Ctx) {
         (**self).trace(ctx);
+    }
+}
+
+unsafe impl<T: Trace> Trace for Option<T> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    #[inline]
+    fn trace(&self, ctx: Ctx) {
+        if let Some(ref x) = self {
+            x.trace(ctx)
+        }
     }
 }
 
