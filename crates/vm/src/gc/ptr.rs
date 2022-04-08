@@ -35,7 +35,7 @@ impl<T: Trace + ?Sized> Clone for Gc<T> {
 impl<T: fmt::Debug + Trace> fmt::Debug for Gc<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gc")
-            .field("pointer", unsafe { &(*self.0.as_ref().value.get()) })
+            .field("pointer", &unsafe { self.0.as_ref().value.get() })
             .finish()
     }
 }

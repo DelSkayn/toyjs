@@ -78,9 +78,7 @@ fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn, len: i32) -> Gc<Object
         ObjectFlags::ORDINARY,
         ObjectKind::StaticFn(f),
     );
-    unsafe {
-        object.raw_index_set(vm, atom::constant::length, len.into());
-    }
+    object.raw_index_set(vm, atom::constant::length, len);
     object
 }
 
@@ -105,8 +103,7 @@ impl Builtin {
                 Some(fp),
                 ObjectFlags::ORDINARY,
                 ObjectKind::StaticFn(object_to_string),
-            )
-            .into(),
+            ),
         );
         let global = Object::new_gc(vm, Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
         global.raw_index_set_flags(
@@ -118,7 +115,7 @@ impl Builtin {
         object::init(vm, op, fp, global);
 
         let array_proto = Object::new_gc(vm, Some(op), ObjectFlags::empty(), ObjectKind::Ordinary);
-        array_proto.raw_index_set(vm, atom::constant::length, 0.into());
+        array_proto.raw_index_set(vm, atom::constant::length, 0);
 
         let array_constructor = Object::new_gc(
             vm,
@@ -126,9 +123,9 @@ impl Builtin {
             ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
             ObjectKind::StaticFn(array_construct),
         );
-        array_constructor.raw_index_set(vm, atom::constant::prototype, array_proto.into());
+        array_constructor.raw_index_set(vm, atom::constant::prototype, array_proto);
 
-        array_proto.raw_index_set(vm, atom::constant::constructor, array_constructor.into());
+        array_proto.raw_index_set(vm, atom::constant::constructor, array_constructor);
 
         let name = vm.allocate::<String>("Error".into());
         let (error_construct, error_proto) = error::init_native::<error::Error>(vm, name, fp, op);
@@ -139,18 +136,18 @@ impl Builtin {
             ObjectFlags::ORDINARY,
             ObjectKind::StaticFn(error::to_string),
         );
-        error_proto.raw_index_set(vm, atom::constant::toString, func.into());
-        global.raw_index_set(vm, atom::constant::Error, error_construct.into());
+        error_proto.raw_index_set(vm, atom::constant::toString, func);
+        global.raw_index_set(vm, atom::constant::Error, error_construct);
 
         let name = vm.allocate::<String>("SyntaxError".into());
         let (error_construct, syntax_error_proto) =
             error::init_native::<error::TypeError>(vm, name, error_construct, error_proto);
-        global.raw_index_set(vm, atom::constant::SyntaxError, error_construct.into());
+        global.raw_index_set(vm, atom::constant::SyntaxError, error_construct);
 
         let name = vm.allocate::<String>("TypeError".into());
         let (error_construct, type_error_proto) =
             error::init_native::<error::TypeError>(vm, name, error_construct, error_proto);
-        global.raw_index_set(vm, atom::constant::TypeError, error_construct.into());
+        global.raw_index_set(vm, atom::constant::TypeError, error_construct);
 
         Builtin {
             global,

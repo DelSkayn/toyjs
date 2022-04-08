@@ -1,17 +1,23 @@
 use std::{
     alloc::{Allocator, Global},
     cell::UnsafeCell,
+    fmt,
     slice::Iter,
 };
 
 /// A vector which allows push and poping from a shared ref but does not allow
 /// obtaining references to internal values.
-#[derive(Debug)]
 pub struct CellVec<T, A: Allocator = Global>(UnsafeCell<Vec<T, A>>);
 
 impl<T: Clone, A: Allocator + Clone> Clone for CellVec<T, A> {
     fn clone(&self) -> Self {
         unsafe { Self(UnsafeCell::new((*self.0.get()).clone())) }
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for CellVec<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe { (*self.0.get()).fmt(f) }
     }
 }
 

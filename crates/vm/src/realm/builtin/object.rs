@@ -1,6 +1,6 @@
 use crate::{
     atom,
-    object::{ObjectFlags, ObjectKind, PropertyFlags},
+    object::{ObjectFlags, ObjectKind, Property, PropertyFlags},
     realm::ExecutionContext,
     Gc, Object, Realm, Value, VmInner,
 };
@@ -111,18 +111,80 @@ unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
             to.elements.set(idx, value);
         });
         // Need to just straight up clone since getters can add or remove object keys.
-        let properties = from.properties.clone();
-        for p in properties.into_inner().into_iter() {
-            if let Some(prop) = from.raw_index_prop(p.key) {
-                if prop.flags.contains(PropertyFlags::ENUMERABLE) {
-                    if let Some(value) = p.get(from, realm)? {
-                        to.raw_index_set(realm.vm(), p.key, value)
-                    }
-                }
+        let properties = from.properties.clone_properties();
+        for p in properties {
+            let prop = if let Some(prop) = from.properties.get(p.key) {
+                prop
+            } else {
+                continue;
+            };
+            if !prop.flags.contains(PropertyFlags::ENUMERABLE) {
+                continue;
+            }
+            let v = if let Some(x) = prop.into_value().get(realm, from)? {
+                x
+            } else {
+                continue;
+            };
+
+            if to
+                .properties
+                .set(Property::value(v, PropertyFlags::ORDINARY, p.key))
+            {
+                realm.vm().increment(p.key);
             }
         }
     }
     Ok(to.into())
+}
+
+unsafe fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+    if realm.stack.frame_size() == 0 {
+        return Err(realm.create_type_error("Object.create requires atleast a single argument"));
+    }
+    let arg = realm.stack.read(0);
+    if !arg.is_object() && !arg.is_null() {
+        return Err(realm.create_type_error("argument is not a object or null"));
+    }
+    let obj = Object::new_gc(
+        realm.vm(),
+        arg.into_object(),
+        ObjectFlags::ORDINARY,
+        ObjectKind::Ordinary,
+    );
+    if realm.stack.frame_size() == 1 {
+        return Ok(obj.into());
+    }
+
+    // Keep to alive
+    realm.stack.push_temp(obj.into());
+
+    let from = realm.stack.read(1);
+    let from = realm.to_object(from)?;
+    let properties = from.properties.clone_properties();
+    for p in properties {
+        let prop = if let Some(prop) = from.properties.get(p.key) {
+            prop
+        } else {
+            continue;
+        };
+        if !prop.flags.contains(PropertyFlags::ENUMERABLE) {
+            continue;
+        }
+        let v = if let Some(x) = prop.into_value().get(realm, from)? {
+            x
+        } else {
+            continue;
+        };
+        let prop = if let Some(prop) = v.into_object() {
+            prop
+        } else {
+            return Err(realm.create_type_error("properties entry value is not a object"));
+        };
+        let prop = Property::from_object(realm, prop, p.key)?;
+        obj.properties.set(prop);
+    }
+    Ok(obj.into())
 }
 
 pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Object>) {
@@ -132,22 +194,25 @@ pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Obje
         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
         ObjectKind::StaticFn(construct),
     );
-    construct.raw_index_set(vm, atom::constant::prototype, op.into());
+    construct.raw_index_set(vm, atom::constant::prototype, op);
 
     let get_prototype_of = new_func(vm, fp, get_prototype_of, 1);
-    construct.raw_index_set(vm, atom::constant::getPrototypeOf, get_prototype_of.into());
+    construct.raw_index_set(vm, atom::constant::getPrototypeOf, get_prototype_of);
 
     let is = new_func(vm, fp, is, 2);
-    construct.raw_index_set(vm, atom::constant::is, is.into());
+    construct.raw_index_set(vm, atom::constant::is, is);
 
     let is_extensible = new_func(vm, fp, is_extensible, 1);
-    construct.raw_index_set(vm, atom::constant::isExtensible, is_extensible.into());
+    construct.raw_index_set(vm, atom::constant::isExtensible, is_extensible);
 
     let assign = new_func(vm, fp, assign, 2);
-    construct.raw_index_set(vm, atom::constant::assign, assign.into());
+    construct.raw_index_set(vm, atom::constant::assign, assign);
 
-    construct.raw_index_set(vm, atom::constant::length, 1.into());
-    op.raw_index_set(vm, atom::constant::constructor, construct.into());
+    let create = new_func(vm, fp, create, 2);
+    construct.raw_index_set(vm, atom::constant::create, create);
 
-    global.raw_index_set(vm, atom::constant::Object, construct.into())
+    construct.raw_index_set(vm, atom::constant::length, 1);
+    op.raw_index_set(vm, atom::constant::constructor, construct);
+
+    global.raw_index_set(vm, atom::constant::Object, construct)
 }

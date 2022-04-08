@@ -1,17 +1,12 @@
-use std::{
-    cell::{RefCell, UnsafeCell},
-    fmt,
-};
-
-use common::{cell_vec::CellVec, collections::HashMap};
+use std::{cell::RefCell, fmt};
 
 use crate::{gc::Trace, Gc, VmInner};
 
 mod function;
-use function::{MutableFn, SharedFn, StaticFn, VmFunction};
+pub use function::{MutableFn, SharedFn, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC};
 mod property;
 use property::Properties;
-pub use property::{Property, PropertyFlags};
+pub use property::{GetResult, Property, PropertyFlags, PropertyValue, SetResult};
 mod elements;
 use elements::Elements;
 

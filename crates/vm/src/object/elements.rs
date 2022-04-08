@@ -17,10 +17,7 @@ impl Elements {
     const BACKDOWN_MINIMUM: usize = 8;
 
     pub fn new() -> Self {
-        Elements({
-            let value = ElementsInner::Array(Vec::new());
-            UnsafeCell { value }
-        })
+        Elements(UnsafeCell::new(ElementsInner::Array(Vec::new())))
     }
 
     pub fn set(&self, key: usize, v: Value) {
