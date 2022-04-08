@@ -412,7 +412,7 @@ impl fmt::Debug for Value {
                     .debug_tuple("JSValue::Object")
                     .field(&self.unsafe_cast_object())
                     .finish(),
-                TAG_BIGINT => todo!(),
+                TAG_BIGINT => todo!("big int"),
                 TAG_ATOM => f
                     .debug_tuple("JSValue::ATOM")
                     .field(&self.cast_atom())

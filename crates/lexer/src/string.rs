@@ -37,10 +37,10 @@ impl<'a> Lexer<'a> {
     }
 
     fn digit_from_byte(c: u8) -> LexResult<u8> {
-        if !is_radix(c, 16) {
-            return Err(ErrorKind::InvalidEscapeCode);
-        }
-        Ok(from_ascii_digit(c))
+        (c as char)
+            .to_digit(16)
+            .map(|x| x as u8)
+            .ok_or(ErrorKind::InvalidNumber)
     }
 
     /// Lexes escape codes in a string.

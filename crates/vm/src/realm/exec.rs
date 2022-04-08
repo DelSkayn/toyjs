@@ -603,7 +603,7 @@ impl Realm {
         if value.is_undefined() {
             return Err(self.create_type_error("can't convert undefined to object"));
         }
-        todo!()
+        todo!("toObject: {:?}", value)
     }
 
     /// Implements type conversion [`ToNumber`](https://tc39.es/ecma262/#sec-tonumber)
@@ -628,7 +628,7 @@ impl Realm {
             let prim = self.to_primitive(value, false)?;
             Ok(self.to_number(prim)?)
         } else {
-            todo!()
+            todo!("toNumber {:?}", value)
         }
     }
 
@@ -836,14 +836,14 @@ impl Realm {
         } else if let Some(left) = left.into_float() {
             left
         } else {
-            todo!()
+            panic!("to_number did not return a number");
         };
         let right = if let Some(right) = right.into_int() {
             right as f64
         } else if let Some(right) = right.into_float() {
             right
         } else {
-            todo!()
+            panic!("to_number did not return a number");
         };
         let res = left + right;
         if res as i32 as f64 == res {
@@ -867,14 +867,14 @@ impl Realm {
         } else if let Some(left) = left.into_float() {
             left
         } else {
-            todo!()
+            panic!("to_number did not return a number");
         };
         let right = if let Some(right) = right.into_int() {
             right as f64
         } else if let Some(right) = right.into_float() {
             right
         } else {
-            todo!()
+            panic!("to_number did not return a number");
         };
         let res = match op {
             NumericOperator::Sub => left - right,
