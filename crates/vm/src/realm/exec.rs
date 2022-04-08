@@ -697,6 +697,9 @@ impl Realm {
         if let Some(left) = left.into_int() {
             return left == right.cast_int();
         }
+        if let Some(left) = left.into_bool() {
+            return left == right.cast_bool();
+        }
         if let Some(left) = left.into_string() {
             return left == right.unsafe_cast_string();
         }

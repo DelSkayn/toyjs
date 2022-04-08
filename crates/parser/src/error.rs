@@ -151,13 +151,25 @@ impl FormattedError<'_> {
                     .format_span_block(&mut w, self.error.origin, None)?;
             }
             ErrorKind::LexerError(LexerErrorKind::InvalidUnicodeSequence) => {
-                writeln!(w, "invalid escape code")?;
+                writeln!(w, "invalid unicode escape code")?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
+            }
+            ErrorKind::LexerError(LexerErrorKind::InvalidEscapeCode) => {
+                writeln!(w, "invalid unicode escape code")?;
                 self.source.format_span_line(&mut w, self.error.origin)?;
                 self.source
                     .format_span_block(&mut w, self.error.origin, None)?;
             }
             ErrorKind::LexerError(LexerErrorKind::InvalidToken) => {
                 writeln!(w, "invalid token")?;
+                self.source.format_span_line(&mut w, self.error.origin)?;
+                self.source
+                    .format_span_block(&mut w, self.error.origin, None)?;
+            }
+            ErrorKind::LexerError(LexerErrorKind::UnClosedString) => {
+                writeln!(w, "string not closed")?;
                 self.source.format_span_line(&mut w, self.error.origin)?;
                 self.source
                     .format_span_block(&mut w, self.error.origin, None)?;
