@@ -1,7 +1,7 @@
 use crate::{
     atom,
     gc::Trace,
-    object::{ObjectFlags, ObjectKind, Property, PropertyFlags, StaticFn},
+    object::{ObjectFlags, ObjectKind, PropertyFlags, StaticFn},
     Gc, Object, Realm, Value, VmInner,
 };
 
@@ -71,13 +71,17 @@ unsafe fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Va
     Ok(realm.vm().allocate("[object Object]".to_string()).into())
 }
 
-fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn) -> Gc<Object> {
-    Object::new_gc(
+fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn, len: i32) -> Gc<Object> {
+    let object = Object::new_gc(
         vm,
         Some(proto),
         ObjectFlags::ORDINARY,
         ObjectKind::StaticFn(f),
-    )
+    );
+    unsafe {
+        object.raw_index_set(vm, atom::constant::length, len.into());
+    }
+    object
 }
 
 impl Builtin {
@@ -105,13 +109,11 @@ impl Builtin {
             .into(),
         );
         let global = Object::new_gc(vm, Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
-        global.raw_index_set_prop(
+        global.raw_index_set_flags(
             vm,
             atom::constant::globalThis,
-            Property::new_value(
-                global.into(),
-                PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
-            ),
+            global.into(),
+            PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
         );
         object::init(vm, op, fp, global);
 

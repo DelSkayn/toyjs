@@ -6,7 +6,7 @@ use std::{
 
 use common::{cell_vec::CellVec, collections::HashMap};
 
-use crate::{atom::Atom, gc::Trace, Gc, Value, VmInner};
+use crate::{atom::Atom, gc::Trace, Gc, Realm, Value, VmInner};
 
 mod function;
 pub use function::{MutableFn, SharedFn, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC};
@@ -26,9 +26,9 @@ bitflags::bitflags! {
     pub struct PropertyFlags: u8{
         const WRITABLE = 0b1;
         // Has either a getter and/or a setter
-        const ENUMARABLE = 0b10;
+        const ENUMERABLE = 0b10;
         const CONFIGURABLE = 0b100;
-        const ORDINARY = Self::WRITABLE.bits | Self::ENUMARABLE.bits | Self::CONFIGURABLE.bits;
+        const ORDINARY = Self::WRITABLE.bits | Self::ENUMERABLE.bits | Self::CONFIGURABLE.bits;
         #[doc(hidden)]
         const __ACCESSOR = 0b1000;
     }
@@ -100,9 +100,10 @@ union PropertyValue {
 }
 
 #[derive(Clone, Copy)]
-pub struct Property {
-    flags: PropertyFlags,
+pub(crate) struct Property {
+    pub flags: PropertyFlags,
     value: PropertyValue,
+    pub key: Atom,
 }
 
 impl fmt::Debug for Property {
@@ -112,11 +113,12 @@ impl fmt::Debug for Property {
                 f.debug_struct("Property::Accessor")
                     .field("value", &self.value.accessor)
                     .field("flags", &self.flags)
+                    .field("key", &self.flags)
                     .finish()
             } else {
                 f.debug_struct("Property::Ordinary")
                     .field("value", &self.value.value)
-                    .field("flags", &self.flags)
+                    .field("key", &self.flags)
                     .finish()
             }
         }
@@ -125,37 +127,31 @@ impl fmt::Debug for Property {
 
 impl Property {
     #[inline]
-    pub const fn ordinary(value: Value) -> Self {
-        Property {
-            value: PropertyValue { value },
-            flags: PropertyFlags::ORDINARY,
-        }
-    }
-
-    #[inline]
-    pub const fn new_value(value: Value, flags: PropertyFlags) -> Self {
-        debug_assert!(!flags.contains(PropertyFlags::__ACCESSOR));
-        Property {
-            flags,
-            value: PropertyValue { value },
-        }
-    }
-
-    #[inline]
-    pub fn new_accessor(value: Value, flags: PropertyFlags) -> Self {
-        debug_assert!(!flags.contains(PropertyFlags::__ACCESSOR));
-        Property {
-            flags: flags | PropertyFlags::__ACCESSOR,
-            value: PropertyValue { value },
-        }
-    }
-
-    #[inline]
-    pub fn get_accessor(&self) -> Option<&Accessor> {
+    fn get_accessor(&self) -> Option<&Accessor> {
         if self.flags.contains(PropertyFlags::__ACCESSOR) {
             unsafe { Some(&self.value.accessor) }
         } else {
             None
+        }
+    }
+
+    pub fn is_enumerable(&self) -> bool {
+        self.flags.contains(PropertyFlags::ENUMERABLE)
+    }
+
+    pub unsafe fn get(&self, this: Gc<Object>, realm: &Realm) -> Result<Option<Value>, Value> {
+        if self.flags.contains(PropertyFlags::__ACCESSOR) {
+            if let Some(get) = self.value.accessor.get {
+                if get.is_function() {
+                    return realm.enter_method_call(get, this.into()).map(Some);
+                } else {
+                    return Err(realm.create_type_error("getter is not a function"));
+                }
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(Some(self.value.value))
         }
     }
 }
@@ -251,6 +247,22 @@ impl Elements {
             }
         }
     }
+
+    pub fn for_each<F: FnMut(usize, Value)>(&self, mut f: F) {
+        unsafe {
+            match *self.0.get() {
+                ElementsInner::Array(ref array) => array
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter(|x| !x.1.is_empty())
+                    .for_each(|(a, b)| f(a, b)),
+                ElementsInner::Tree(ref t) => {
+                    t.iter().map(|(a, b)| (*a, *b)).for_each(|(a, b)| f(a, b))
+                }
+            }
+        }
+    }
 }
 
 unsafe impl Trace for Elements {
@@ -282,10 +294,10 @@ pub struct Object {
     pub prototype: Option<Gc<Object>>,
     pub flags: ObjectFlags,
 
-    map: UnsafeCell<HashMap<Atom, usize>>,
-    properties: CellVec<Property>,
+    pub(crate) map: UnsafeCell<HashMap<Atom, usize>>,
+    pub(crate) properties: CellVec<Property>,
 
-    elements: Elements,
+    pub(crate) elements: Elements,
 
     pub kind: ObjectKind,
 }

@@ -51,5 +51,6 @@ define_atom!(
     globalThis,
     getPrototypeOf,
     is,
-    isExtensible
+    isExtensible,
+    assign
 );
