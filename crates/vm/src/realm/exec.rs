@@ -1074,8 +1074,9 @@ impl Realm {
             ObjectKind::StaticFn(x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
-                let res = x(self, ctx)?;
+                let res = x(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.function = function;
                 Ok(Some(res))
             }
@@ -1083,8 +1084,9 @@ impl Realm {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, object.into());
                 self.stack.enter(0);
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
@@ -1093,8 +1095,9 @@ impl Realm {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, object.into());
                 self.stack.enter(0);
-                let res = (*x)(self, ctx)?;
+                let res = (*x)(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
@@ -1128,8 +1131,9 @@ impl Realm {
             ObjectKind::StaticFn(x) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
-                let res = x(self, ctx)?;
+                let res = x(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.function = function;
                 Ok(Some(res))
             }
@@ -1137,8 +1141,9 @@ impl Realm {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
-                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                let res = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
@@ -1147,8 +1152,9 @@ impl Realm {
                 let function = mem::replace(&mut ctx.function, function);
                 let this = mem::replace(&mut ctx.this, funct);
                 self.stack.enter(0);
-                let res = (*x)(self, ctx)?;
+                let res = (*x)(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.this = this;
                 ctx.function = function;
                 Ok(Some(res))
@@ -1203,24 +1209,27 @@ impl Realm {
             ObjectKind::StaticFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
-                let res = func(self, ctx)?;
+                let res = func(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.function = function;
                 Ok(res)
             }
             ObjectKind::SharedFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
-                let res = func(self, ctx)?;
+                let res = func(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.function = function;
                 Ok(res)
             }
             ObjectKind::MutableFn(ref func) => {
                 let function = mem::replace(&mut ctx.function, function);
                 self.stack.enter(0);
-                let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx)?;
+                let res = func.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC)(self, ctx);
                 self.stack.pop(self.vm.borrow().gc());
+                let res = res?;
                 ctx.function = function;
                 Ok(res)
             }

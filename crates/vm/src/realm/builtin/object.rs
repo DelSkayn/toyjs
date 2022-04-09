@@ -138,6 +138,33 @@ unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
     Ok(to.into())
 }
 
+unsafe fn define_prop(to: Gc<Object>, from: Gc<Object>, realm: &Realm) -> Result<(), Value> {
+    let properties = from.properties.clone_properties();
+    for p in properties {
+        let prop = if let Some(prop) = from.properties.get(p.key) {
+            prop
+        } else {
+            continue;
+        };
+        if !prop.flags.contains(PropertyFlags::ENUMERABLE) {
+            continue;
+        }
+        let v = if let Some(x) = prop.into_value().get(realm, from)? {
+            x
+        } else {
+            continue;
+        };
+        let prop = if let Some(prop) = v.into_object() {
+            prop
+        } else {
+            return Err(realm.create_type_error("properties entry value is not a object"));
+        };
+        let prop = Property::from_object(realm, prop, p.key)?;
+        to.properties.set(prop);
+    }
+    Ok(())
+}
+
 unsafe fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     if realm.stack.frame_size() == 0 {
         return Err(realm.create_type_error("Object.create requires atleast a single argument"));
@@ -161,29 +188,27 @@ unsafe fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
 
     let from = realm.stack.read(1);
     let from = realm.to_object(from)?;
-    let properties = from.properties.clone_properties();
-    for p in properties {
-        let prop = if let Some(prop) = from.properties.get(p.key) {
-            prop
-        } else {
-            continue;
-        };
-        if !prop.flags.contains(PropertyFlags::ENUMERABLE) {
-            continue;
-        }
-        let v = if let Some(x) = prop.into_value().get(realm, from)? {
-            x
-        } else {
-            continue;
-        };
-        let prop = if let Some(prop) = v.into_object() {
-            prop
-        } else {
-            return Err(realm.create_type_error("properties entry value is not a object"));
-        };
-        let prop = Property::from_object(realm, prop, p.key)?;
-        obj.properties.set(prop);
+    define_prop(obj, from, realm)?;
+    Ok(obj.into())
+}
+
+unsafe fn define_properties(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+    if realm.stack.frame_size() < 2 {
+        return Err(
+            realm.create_type_error("Object.defineProperties requires atleast a two arguments")
+        );
     }
+    let obj = realm.stack.read(0);
+    let prop = realm.stack.read(1);
+    let object = if let Some(obj) = obj.into_object() {
+        obj
+    } else {
+        return Err(realm
+            .create_type_error("Object.defineProperties requires a object as its first argument"));
+    };
+
+    let prop = realm.to_object(prop)?;
+    define_prop(object, prop, realm)?;
     Ok(obj.into())
 }
 
@@ -210,6 +235,9 @@ pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Obje
 
     let create = new_func(vm, fp, create, 2);
     construct.raw_index_set(vm, atom::constant::create, create);
+
+    let define_properties = new_func(vm, fp, define_properties, 2);
+    construct.raw_index_set(vm, atom::constant::defineProperties, define_properties);
 
     construct.raw_index_set(vm, atom::constant::length, 1);
     op.raw_index_set(vm, atom::constant::constructor, construct);
