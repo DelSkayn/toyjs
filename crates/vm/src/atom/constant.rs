@@ -59,5 +59,6 @@ define_atom!(
     writable,
     get,
     set,
-    create
+    create,
+    defineProperties
 );
