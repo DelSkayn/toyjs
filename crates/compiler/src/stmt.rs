@@ -471,15 +471,24 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
         tgt.compile_assign(self, tgt_reg);
 
+        self.builder.push_flow_scope();
         self.compile_stmt(stmt);
+        let flow_scope = self.builder.pop_flow_scope();
 
-        // stmt
+        for x in flow_scope.patch_continue {
+            self.builder.patch_jump(x, start);
+        }
 
         let j = self.builder.push(Instruction::Jump { tgt: 0 });
         self.builder.patch_jump(j, start);
 
         self.builder.free_temp(iter);
         self.builder.free_temp(tgt_reg);
+
+        for x in flow_scope.patch_break {
+            self.builder
+                .patch_jump(x, self.builder.next_instruction_id());
+        }
 
         self.builder
             .patch_jump(jump_head, self.builder.next_instruction_id());

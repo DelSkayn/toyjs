@@ -218,7 +218,6 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     }
 
     fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForDecl<A>) -> Result<ast::Stmt<A>> {
-        dbg!(&decl);
         let binding = match decl {
             ast::ForDecl::Stmt(stmt) => match *stmt {
                 ast::Stmt::Let(binding, None) => binding,
@@ -247,7 +246,13 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
 
         expect!(self, ")");
 
-        let stmt = self.parse_stmt()?;
+        let stmt = self.alter_state(
+            |x| {
+                x.r#continue = true;
+                x.r#break = true;
+            },
+            Self::parse_stmt,
+        )?;
 
         if is_of {
             Ok(ast::Stmt::For(ast::For::ForOf(
