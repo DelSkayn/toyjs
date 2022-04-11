@@ -37,6 +37,7 @@ unsafe impl Trace for Builtin {
         ctx.mark(self.global);
         ctx.mark(self.object_proto);
         ctx.mark(self.function_proto);
+        ctx.mark(self.array_proto);
         ctx.mark(self.error_proto);
         ctx.mark(self.syntax_error_proto);
         ctx.mark(self.type_error_proto);

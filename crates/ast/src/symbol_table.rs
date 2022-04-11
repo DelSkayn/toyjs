@@ -132,6 +132,15 @@ pub struct SymbolTable<A: Allocator> {
     alloc: A,
 }
 
+impl<A: Allocator> fmt::Debug for SymbolTable<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SymbolTable")
+            .field("scopes", &self.scopes)
+            .field("symbols", &self.symbols)
+            .finish()
+    }
+}
+
 impl Default for SymbolTable<Global> {
     fn default() -> Self {
         Self::new()

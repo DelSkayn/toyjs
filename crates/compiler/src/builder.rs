@@ -1,6 +1,6 @@
 use std::{alloc::Allocator, convert::TryInto};
 
-use ast::{ScopeId, SymbolId};
+use ast::{symbol_table::ScopeKind, ScopeId, SymbolId, SymbolTable};
 use common::{
     newtype_key,
     slotmap::{SlotKey, SlotStack},
@@ -62,14 +62,15 @@ impl<A: Allocator + Clone> BuilderFunction<A> {
     }
 }
 
-pub struct ScriptBuilder<A: Allocator + Clone> {
+pub struct ScriptBuilder<'a, A: Allocator + Clone> {
     functions: SlotStack<BuilderFunction<A>, FunctionId, A>,
     current: FunctionId,
     alloc: A,
+    symbol_table: &'a SymbolTable<A>,
 }
 
-impl<A: Allocator + Clone> ScriptBuilder<A> {
-    pub fn new_in(alloc: A, start_scope: ScopeId) -> Self {
+impl<'a, A: Allocator + Clone> ScriptBuilder<'a, A> {
+    pub fn new_in(alloc: A, symbol_table: &'a SymbolTable<A>, start_scope: ScopeId) -> Self {
         let mut functions = SlotStack::new_in(alloc.clone());
         let current = functions.push(BuilderFunction {
             parent: None,
@@ -84,6 +85,7 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             functions,
             current,
             alloc,
+            symbol_table,
         }
     }
 
@@ -182,7 +184,8 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             .expect("tried to capture a variable of a non parent scope");
 
         // Is the upvalue local
-        if self.functions[parent].scope == var_scope {
+
+        if self.is_in_function_scope(self.functions[parent].scope, var_scope) {
             let register = self.functions[parent].registers.alloc_symbol(symbol);
             return self.functions[self.current].upvalues.push(Upvalue {
                 kind: UpvalueKind::Local(register),
@@ -197,6 +200,23 @@ impl<A: Allocator + Clone> ScriptBuilder<A> {
             kind: UpvalueKind::Parent(slot),
             symbol,
         })
+    }
+
+    fn is_in_function_scope(&self, function: ScopeId, target: ScopeId) -> bool {
+        if function == target {
+            return true;
+        }
+
+        let scopes = self.symbol_table.scopes();
+        for c in scopes[function].children.iter().copied() {
+            if scopes[c].kind == ScopeKind::Function {
+                continue;
+            }
+            if self.is_in_function_scope(c, target) {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn next_instruction_id(&self) -> InstructionId {

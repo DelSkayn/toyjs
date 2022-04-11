@@ -35,7 +35,7 @@ pub struct Compiler<'a, A: Allocator + Clone> {
     alloc: A,
     symbol_table: &'a SymbolTable<A>,
     constants: Constants<'a, Global>,
-    builder: ScriptBuilder<A>,
+    builder: ScriptBuilder<'a, A>,
 }
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -50,7 +50,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         Compiler {
             symbol_table,
             constants: Constants::new_in(interner, atoms, gc, Global),
-            builder: ScriptBuilder::new_in(alloc.clone(), root),
+            builder: ScriptBuilder::new_in(alloc.clone(), symbol_table, root),
             alloc,
         }
     }

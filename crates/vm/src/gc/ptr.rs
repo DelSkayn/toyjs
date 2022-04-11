@@ -77,7 +77,12 @@ impl<T: Trace> Deref for Gc<T> {
     fn deref(&self) -> &Self::Target {
         unsafe {
             #[cfg(feature = "gc-dump-trace")]
-            debug_assert!(!(*self.0.as_ptr()).free.get(), "accessed freed pointer");
+            debug_assert!(
+                !(*self.0.as_ptr()).free.get(),
+                "accessed freed pointer: {:?}",
+                self.0.as_ptr()
+            );
+
             let value = addr_of!((*self.0.as_ptr()).value);
             &(*(*value).get())
         }
