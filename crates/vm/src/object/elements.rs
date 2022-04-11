@@ -1,10 +1,13 @@
-use std::{cell::UnsafeCell, collections::BTreeMap};
+use std::{cell::UnsafeCell, collections::BTreeMap, ptr};
 
 use crate::{gc::Trace, Value};
 
 enum ElementsInner {
     Array(Vec<Value>),
-    Tree(BTreeMap<usize, Value>),
+    Tree {
+        tree: BTreeMap<usize, Value>,
+        len: usize,
+    },
 }
 
 #[derive(Debug)]
@@ -20,6 +23,47 @@ impl Elements {
         Elements(UnsafeCell::new(ElementsInner::Array(Vec::new())))
     }
 
+    pub fn len(&self) -> usize {
+        unsafe {
+            match *self.0.get() {
+                ElementsInner::Array(ref x) => x.len(),
+                ElementsInner::Tree { len, .. } => len,
+            }
+        }
+    }
+
+    pub fn set_len(&self, new_len: usize) {
+        unsafe {
+            match *self.0.get() {
+                ElementsInner::Tree {
+                    ref mut tree,
+                    ref mut len,
+                } => {
+                    if new_len < *len {
+                        tree.split_off(&new_len);
+                    }
+                    *len = new_len;
+                }
+                ElementsInner::Array(ref mut array) => {
+                    if new_len > Self::BACKDOWN_MINIMUM
+                        && new_len > (array.len() as f64 * Self::BACKDOWN_RATIO).floor() as usize
+                    {
+                        let tree: BTreeMap<usize, Value> = array
+                            .iter()
+                            .copied()
+                            .filter(|x| !x.is_empty())
+                            .enumerate()
+                            .collect();
+
+                        ptr::replace(self.0.get(), ElementsInner::Tree { tree, len: new_len });
+                        return;
+                    }
+                    array.resize(new_len, Value::empty());
+                }
+            }
+        }
+    }
+
     pub fn set(&self, key: usize, v: Value) {
         unsafe {
             // Safe as we only hold the mutable reference within this scope and no references can
@@ -30,14 +74,15 @@ impl Elements {
                         if key > Self::BACKDOWN_MINIMUM
                             && key > (array.len() as f64 * Self::BACKDOWN_RATIO).floor() as usize
                         {
-                            let mut map: BTreeMap<usize, Value> = array
+                            let mut tree: BTreeMap<usize, Value> = array
                                 .iter()
                                 .copied()
                                 .filter(|x| !x.is_empty())
                                 .enumerate()
                                 .collect();
-                            map.insert(key, v);
-                            (*self.0.get()) = ElementsInner::Tree(map);
+
+                            tree.insert(key, v);
+                            ptr::replace(self.0.get(), ElementsInner::Tree { tree, len: key });
                             return;
                         }
                         array.resize(key, Value::empty());
@@ -47,8 +92,12 @@ impl Elements {
                         *array.get_unchecked_mut(key) = v
                     }
                 }
-                ElementsInner::Tree(ref mut tree) => {
+                ElementsInner::Tree {
+                    ref mut tree,
+                    ref mut len,
+                } => {
                     tree.insert(key, v);
+                    *len = (*len).max(key);
                 }
             }
         }
@@ -65,7 +114,7 @@ impl Elements {
                         .copied()
                         .and_then(|x| if x.is_empty() { None } else { Some(x) })
                 }
-                ElementsInner::Tree(ref tree) => tree.get(&key).copied(),
+                ElementsInner::Tree { ref tree, .. } => tree.get(&key).copied(),
             }
         }
     }
@@ -79,9 +128,10 @@ impl Elements {
                     .enumerate()
                     .filter(|x| !x.1.is_empty())
                     .for_each(|(a, b)| f(a, b)),
-                ElementsInner::Tree(ref t) => {
-                    t.iter().map(|(a, b)| (*a, *b)).for_each(|(a, b)| f(a, b))
-                }
+                ElementsInner::Tree { ref tree, .. } => tree
+                    .iter()
+                    .map(|(a, b)| (*a, *b))
+                    .for_each(|(a, b)| f(a, b)),
             }
         }
     }
@@ -103,8 +153,8 @@ unsafe impl Trace for Elements {
                 ElementsInner::Array(ref x) => {
                     x.iter().for_each(|x| x.trace(ctx));
                 }
-                ElementsInner::Tree(ref x) => {
-                    x.values().for_each(|x| x.trace(ctx));
+                ElementsInner::Tree { ref tree, .. } => {
+                    tree.values().for_each(|x| x.trace(ctx));
                 }
             }
         }

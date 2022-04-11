@@ -2,7 +2,7 @@ use std::{
     alloc::{self, Layout},
     cell::{Cell, UnsafeCell},
     convert::TryInto,
-    isize,
+    fmt, isize,
     ptr::NonNull,
 };
 
@@ -414,6 +414,26 @@ unsafe impl Trace for Stack {
                 cur = cur.sub(1);
                 cur.read().trace(ctx);
             }
+        }
+    }
+}
+
+impl fmt::Debug for Stack {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "STACK")?;
+        unsafe {
+            let mut i = 0;
+            let root = self.root.get().as_ptr();
+            while root.add(i) != self.stack.get() {
+                write!(f, "{} {:?}", i, &root.add(i).read())?;
+                if root.add(i) == self.frame.get() {
+                    writeln!(f, " < f")?;
+                } else {
+                    writeln!(f)?;
+                }
+                i += 1;
+            }
+            Ok(())
         }
     }
 }

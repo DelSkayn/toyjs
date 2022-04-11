@@ -126,12 +126,13 @@ impl fmt::Debug for Property {
                 f.debug_struct("Property::Accessor")
                     .field("value", &self.value.accessor)
                     .field("flags", &self.flags)
-                    .field("key", &self.flags)
+                    .field("key", &self.key)
                     .finish()
             } else {
                 f.debug_struct("Property::Ordinary")
                     .field("value", &self.value.value)
-                    .field("key", &self.flags)
+                    .field("flags", &self.flags)
+                    .field("key", &self.key)
                     .finish()
             }
         }

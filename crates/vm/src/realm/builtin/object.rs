@@ -7,11 +7,11 @@ use crate::{
 
 use super::new_func;
 
-unsafe fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
+fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
     Ok(realm.vm().allocate("[object Object]".to_string()).into())
 }
 
-unsafe fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     if exec.new_target.is_undefined()
         || exec
             .new_target
@@ -38,11 +38,13 @@ unsafe fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value,
             )
             .into());
         }
-        return Ok(realm.to_object(value)?.into());
+        unsafe {
+            return Ok(realm.to_object(value)?.into());
+        }
     }
 
     let proto = if let Some(object) = exec.new_target.into_object() {
-        object.index(realm, atom::constant::prototype)?
+        unsafe { object.index(realm, atom::constant::prototype)? }
     } else {
         Value::undefined()
     };
@@ -57,16 +59,16 @@ unsafe fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value,
     Ok(object.into())
 }
 
-unsafe fn get_prototype_of(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn get_prototype_of(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     let value = realm.stack.read_arg(0).unwrap_or_else(Value::undefined);
-    let object = realm.to_object(value)?;
+    let object = unsafe { realm.to_object(value)? };
     Ok(object
         .prototype
         .map(Value::from)
         .unwrap_or(Value::undefined()))
 }
 
-unsafe fn is(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn is(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     if let Some(a) = realm.stack.read_arg(0) {
         if let Some(b) = realm.stack.read_arg(1) {
             Ok(realm.strict_equal(a, b).into())
@@ -78,7 +80,7 @@ unsafe fn is(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value
     }
 }
 
-unsafe fn is_extensible(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn is_extensible(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     let res = realm
         .stack
         .read_arg(0)
@@ -87,13 +89,13 @@ unsafe fn is_extensible(realm: &Realm, _exec: &mut ExecutionContext) -> Result<V
     Ok(res.into())
 }
 
-unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     let to = if let Some(arg) = realm.stack.read_arg(0) {
         arg
     } else {
         return Ok(Value::undefined());
     };
-    let to = realm.to_object(to)?;
+    let to = unsafe { realm.to_object(to)? };
     if realm.stack.frame_size() == 1 {
         return Ok(to.into());
     }
@@ -102,7 +104,16 @@ unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
     realm.stack.push_temp(to.into());
 
     for i in 1..realm.stack.frame_size() {
-        let from = realm.to_object(realm.stack.read(i as u8))?;
+        let from = unsafe { realm.stack.read(i as u8) };
+        let from = if let Some(from) = from.into_object() {
+            from
+        } else {
+            unsafe {
+                let f = realm.to_object(realm.stack.read(i as u8))?;
+                realm.stack.push_temp(f.into());
+                f
+            }
+        };
         from.elements.for_each(|idx, value| {
             // These are all elements so we can use raw as no getter can be triggered
             to.elements.set(idx, value);
@@ -121,7 +132,7 @@ unsafe fn assign(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
             if prop.is_accessor() {
                 realm.vm().write_barrier(to);
             }
-            let v = if let Some(x) = prop.into_value().get(realm, from)? {
+            let v = if let Some(x) = unsafe { prop.into_value().get(realm, from)? } {
                 x
             } else {
                 continue;
@@ -165,7 +176,7 @@ unsafe fn define_prop(to: Gc<Object>, from: Gc<Object>, realm: &Realm) -> Result
     Ok(())
 }
 
-unsafe fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     let arg = realm.stack.read_arg(0).ok_or_else(|| {
         realm.create_type_error("Object.create requires atleast a single argument")
     })?;
@@ -185,20 +196,34 @@ unsafe fn create(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, V
     // Keep to alive
     realm.stack.push_temp(obj.into());
 
-    let from = realm.stack.read(1);
-    let from = realm.to_object(from)?;
-    define_prop(obj, from, realm)?;
+    let from = unsafe { realm.stack.read(1) };
+    let from = if let Some(from) = from.into_object() {
+        from
+    } else {
+        unsafe {
+            let f = realm.to_object(from)?;
+            realm.stack.push_temp(f.into());
+            f
+        }
+    };
+    unsafe {
+        define_prop(obj, from, realm)?;
+    }
     Ok(obj.into())
 }
 
-unsafe fn define_properties(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
+fn define_properties(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value> {
     if realm.stack.frame_size() < 2 {
         return Err(
             realm.create_type_error("Object.defineProperties requires atleast a two arguments")
         );
     }
-    let obj = realm.stack.read(0);
-    let prop = realm.stack.read(1);
+    let obj = realm.stack.read_arg(0).unwrap_or_else(|| {
+        realm.create_type_error("Object.defineProperties requires atleast a two arguments")
+    });
+    let prop = realm.stack.read_arg(1).unwrap_or_else(|| {
+        realm.create_type_error("Object.defineProperties requires atleast a two arguments")
+    });
     let object = if let Some(obj) = obj.into_object() {
         obj
     } else {
@@ -206,8 +231,18 @@ unsafe fn define_properties(realm: &Realm, _exec: &mut ExecutionContext) -> Resu
             .create_type_error("Object.defineProperties requires a object as its first argument"));
     };
 
-    let prop = realm.to_object(prop)?;
-    define_prop(object, prop, realm)?;
+    let prop = if let Some(prop) = prop.into_object() {
+        prop
+    } else {
+        unsafe {
+            let p = realm.to_object(prop)?;
+            realm.stack.push_temp(p.into());
+            p
+        }
+    };
+    unsafe {
+        define_prop(object, prop, realm)?;
+    }
     Ok(obj.into())
 }
 
@@ -287,7 +322,7 @@ fn is_sealed(realm: &Realm, _exec: &mut ExecutionContext) -> Result<Value, Value
     Ok(true.into())
 }
 
-pub unsafe fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Object>) {
+pub fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Object>) {
     let construct = Object::new_gc(
         vm,
         Some(fp),

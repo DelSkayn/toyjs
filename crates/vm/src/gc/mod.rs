@@ -120,11 +120,7 @@ impl GcArena {
             })));
 
             #[cfg(feature = "gc-dump-trace")]
-            println!(
-                "ALLOC: {} ptr: {:?}",
-                (*ptr.as_ref().value.get()).name(),
-                ptr.as_ptr()
-            );
+            print!("ALLOC: {}", (*ptr.as_ref().value.get()).name(),);
 
             #[cfg(feature = "gc-force-collect-full")]
             self.wakeup_total.set(0);
@@ -145,6 +141,9 @@ impl GcArena {
             if self.phase.get() == Phase::Sweep && self.sweep_prev.get().is_none() {
                 self.sweep_prev.set(self.all.get());
             }
+
+            #[cfg(feature = "gc-dump-trace")]
+            println!(":{:?}", Gc(ptr));
 
             Gc(ptr)
         }
