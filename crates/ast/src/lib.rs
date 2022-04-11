@@ -40,6 +40,19 @@ pub struct Case<A: Allocator> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub enum For<A: Allocator> {
+    CStyle(
+        Option<ForDecl<A>>,
+        Option<Vec<Expr<A>, A>>,
+        Option<Vec<Expr<A>, A>>,
+        Box<Stmt<A>, A>,
+    ),
+    ForIn(SymbolId, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
+    ForOf(SymbolId, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
     Let(SymbolId, Option<Expr<A>>),
@@ -53,12 +66,7 @@ pub enum Stmt<A: Allocator> {
     Switch(Vec<Expr<A>, A>, Vec<Case<A>, A>, Option<Vec<Stmt<A>, A>>),
     While(Vec<Expr<A>, A>, Box<Stmt<A>, A>),
     DoWhile(Box<Stmt<A>, A>, Vec<Expr<A>, A>),
-    For(
-        Option<ForDecl<A>>,
-        Option<Vec<Expr<A>, A>>,
-        Option<Vec<Expr<A>, A>>,
-        Box<Stmt<A>, A>,
-    ),
+    For(For<A>),
     Block(ScopeId, Vec<Stmt<A>, A>),
     Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
     Return(Option<Vec<Expr<A>, A>>),

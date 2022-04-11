@@ -177,6 +177,12 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 }
                 _ => ast::ForDecl::Expr(self.parse_single_expr()?),
             };
+            if self.peek_kind()? == Some(t!("in")) {
+                return self.parse_for_in_of(false, decl);
+            }
+            if self.peek_kind()? == Some(t!("of")) {
+                return self.parse_for_in_of(true, decl);
+            }
             expect!(self, ";");
             Some(decl)
         };
@@ -203,12 +209,58 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
         )?;
         self.symbol_table.pop_scope();
 
-        Ok(ast::Stmt::For(
+        Ok(ast::Stmt::For(ast::For::CStyle(
             decl,
             cond,
             post,
             Box::new_in(stmt, self.alloc.clone()),
-        ))
+        )))
+    }
+
+    fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForDecl<A>) -> Result<ast::Stmt<A>> {
+        let binding = match decl {
+            ast::ForDecl::Stmt(stmt) => match *stmt {
+                ast::Stmt::Let(binding, None) => binding,
+                ast::Stmt::Var(x) if x.len() == 0 => {
+                    if x[0].1.is_some() {
+                        unexpected!(self => "a for-in/of loop declaration can't have an initializer")
+                    }
+                    x[0].0
+                }
+                ast::Stmt::Let(_, Some(_)) => {
+                    unexpected!(self => "a for-in/of loop declaration can't have an initializer")
+                }
+                _ => unexpected!(self => "invalid for-in/of left-hand side"),
+            },
+            ast::ForDecl::Expr(ast::Expr::Prime(ast::PrimeExpr::Variable(x))) => x,
+            _ => unexpected!(self => "invalid for-in/of left-hand side"),
+        };
+
+        if is_of {
+            expect!(self, "of");
+        } else {
+            expect!(self, "in");
+        }
+
+        let e = self.parse_expr()?;
+
+        expect!(self, ")");
+
+        let stmt = self.parse_stmt()?;
+
+        if is_of {
+            Ok(ast::Stmt::For(ast::For::ForOf(
+                binding,
+                e,
+                Box::new_in(stmt, self.alloc.clone()),
+            )))
+        } else {
+            Ok(ast::Stmt::For(ast::For::ForIn(
+                binding,
+                e,
+                Box::new_in(stmt, self.alloc.clone()),
+            )))
+        }
     }
 
     fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {

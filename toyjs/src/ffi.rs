@@ -11,7 +11,7 @@ macro_rules! create_static_fn {
             ) -> Result<::vm::Value, ::vm::Value> {
                 unsafe {
                     let ctx = $crate::Ctx::wrap(realm);
-                    let args = $crate::ffi::Arguments::from_ctx(ctx);
+                    let args = $crate::Arguments::from_ctx(ctx);
                     super::$func(ctx, args)
                         .map(|x| x.into_vm())
                         .map_err(|x| x.into_vm(ctx))
@@ -30,6 +30,7 @@ pub struct Arguments<'js> {
 }
 
 impl<'js> Arguments<'js> {
+    #[doc(hidden)]
     pub unsafe fn from_ctx(ctx: Ctx<'js>) -> Self {
         Arguments {
             len: (*ctx.ctx).stack.frame_size(),

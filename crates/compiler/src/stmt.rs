@@ -1,7 +1,12 @@
-use ast::{ArrowBody, Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt};
+use ast::{ArrowBody, Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt, SymbolId};
 use vm::instructions::Instruction;
 
-use crate::{builder::FunctionId, expr::ExprValue, register::Register, Compiler};
+use crate::{
+    builder::FunctionId,
+    expr::{AssignmentTarget, ExprValue},
+    register::Register,
+    Compiler,
+};
 use std::alloc::Allocator;
 
 impl<'a, A: Allocator + Clone> Compiler<'a, A> {
@@ -29,9 +34,16 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 self.compile_do_while(block, cond);
                 None
             }
-            Stmt::For(decl, cond, post, block) => {
+            Stmt::For(ast::For::CStyle(decl, cond, post, block)) => {
                 self.compile_for(decl, cond.as_deref(), post.as_deref(), block);
                 None
+            }
+            Stmt::For(ast::For::ForIn(decl, expr, stmt)) => {
+                self.compile_for_in(*decl, expr, &*stmt);
+                None
+            }
+            Stmt::For(ast::For::ForOf(_decl, _expr, _stmt)) => {
+                todo!("for of");
             }
             Stmt::Continue => {
                 self.builder.push_continue();
@@ -436,5 +448,42 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
             self.builder
                 .patch_jump(x, self.builder.next_instruction_id());
         }
+    }
+
+    pub fn compile_for_in(&mut self, decl: SymbolId, expr: &'a [Expr<A>], stmt: &'a Stmt<A>) {
+        let tgt = AssignmentTarget::from_symbol(decl);
+        let res = self.compile_expressions(None, expr).eval(self);
+        self.builder.free_temp(res);
+        let iter = self.builder.alloc_temp();
+        self.builder.push(Instruction::IterHead {
+            dst: iter.0,
+            obj: res.0,
+        });
+        let jump_head = self.builder.push(Instruction::Jump { tgt: 0 });
+
+        let tgt_reg = tgt
+            .placement(self)
+            .unwrap_or_else(|| self.builder.alloc_temp());
+        let start = self.builder.push(Instruction::Iter {
+            dst: tgt_reg.0,
+            obj: iter.0,
+        });
+        let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
+        tgt.compile_assign(self, tgt_reg);
+
+        self.compile_stmt(stmt);
+
+        // stmt
+
+        let j = self.builder.push(Instruction::Jump { tgt: 0 });
+        self.builder.patch_jump(j, start);
+
+        self.builder.free_temp(iter);
+        self.builder.free_temp(tgt_reg);
+
+        self.builder
+            .patch_jump(jump_head, self.builder.next_instruction_id());
+        self.builder
+            .patch_jump(jump_iter, self.builder.next_instruction_id());
     }
 }

@@ -373,6 +373,14 @@ impl Stack {
         debug_assert!((register as usize) < self.frame_size());
         self.frame.get().add(register as usize).write(v)
     }
+
+    pub fn read_arg(&self, idx: u8) -> Option<Value> {
+        if self.frame_size() > idx as usize {
+            Some(unsafe { self.read(idx) })
+        } else {
+            None
+        }
+    }
 }
 
 unsafe impl Trace for Stack {
@@ -384,7 +392,7 @@ unsafe impl Trace for Stack {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        #[cfg(feature = "dump-gc-trace")]
+        #[cfg(feature = "gc-dump-trace")]
         println!("TRACE: stack.frames");
 
         unsafe {
@@ -398,7 +406,7 @@ unsafe impl Trace for Stack {
             }
         }
 
-        #[cfg(feature = "dump-gc-trace")]
+        #[cfg(feature = "gc-dump-trace")]
         println!("TRACE: stack.stack");
         let mut cur = self.stack.get();
         while cur > self.root.get().as_ptr() {

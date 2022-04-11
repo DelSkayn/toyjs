@@ -20,7 +20,8 @@ criterion = "0.3.5"
 
 [features]
 tagged-union = ["vm/tagged-union"]
-dump-gc-trace = ["vm/dump-gc-trace"]
+gc-dump-trace = ["vm/gc-dump-trace"]
+gc-force-collect-full = ["vm/gc-force-collect-full"]
 
 [[bench]]
 name = "startup"

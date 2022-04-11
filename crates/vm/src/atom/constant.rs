@@ -60,5 +60,10 @@ define_atom!(
     get,
     set,
     create,
-    defineProperties
+    defineProperties,
+    defineProperty,
+    freeze,
+    seal,
+    isFrozen,
+    isSealed
 );

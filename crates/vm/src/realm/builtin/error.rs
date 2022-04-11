@@ -72,7 +72,7 @@ pub unsafe fn construct_vm<T: BuiltinAccessor>(
     Ok(construct(realm, proto, message, options).into())
 }
 
-pub unsafe fn construct(
+pub fn construct(
     realm: &Realm,
     prototype: Gc<Object>,
     message: Option<Gc<String>>,

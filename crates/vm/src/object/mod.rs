@@ -11,6 +11,8 @@ mod elements;
 use elements::Elements;
 
 mod index;
+mod iterator;
+pub use iterator::ForInIterator;
 
 bitflags::bitflags! {
     pub struct ObjectFlags: u8{
@@ -28,6 +30,7 @@ pub enum ObjectKind {
     MutableFn(RefCell<MutableFn>),
     SharedFn(SharedFn),
     StaticFn(StaticFn),
+    ForInIterator(ForInIterator),
 }
 
 unsafe impl Trace for ObjectKind {
@@ -49,6 +52,9 @@ unsafe impl Trace for ObjectKind {
             Self::VmFn(ref x) => {
                 x.trace(ctx);
             }
+            Self::ForInIterator(ref x) => {
+                x.trace(ctx);
+            }
         }
     }
 }
@@ -66,6 +72,7 @@ impl fmt::Debug for ObjectKind {
                 Self::MutableFn(_) => "MutableFn",
                 Self::SharedFn(_) => "SharedFn",
                 Self::StaticFn(_) => "StaticFn",
+                Self::ForInIterator(_) => "ForInIterator",
             }
         )
     }

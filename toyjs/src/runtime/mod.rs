@@ -1,17 +1,6 @@
 use vm::object::PropertyFlags;
 
-use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Error, Result};
-
-pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
-    let mut idx = 0;
-    while let Some(x) = args.get(idx) {
-        if x.is_falseish() {
-            return Err(Error::Value(Value::undefined(ctx)));
-        }
-        idx += 1;
-    }
-    Ok(Value::undefined(ctx))
-}
+use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Result};
 
 pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let mut idx = 0;
@@ -145,8 +134,5 @@ pub fn init(ctx: Ctx) {
     global.set("isNaN", create_static_fn!(ctx, is_nan)).unwrap();
     global
         .set("isFinite", create_static_fn!(ctx, is_finite))
-        .unwrap();
-    global
-        .set("assert", create_static_fn!(ctx, assert))
         .unwrap();
 }

@@ -46,6 +46,10 @@ impl Atom {
         Atom(v | STRING_FLAG)
     }
 
+    const fn to_str_idx(self) -> u32 {
+        self.0 & !STRING_FLAG
+    }
+
     pub const fn into_idx(self) -> Option<u32> {
         if self.0 & STRING_FLAG == 0 {
             Some(self.0)
@@ -104,6 +108,21 @@ impl Atoms {
             Some(res)
         } else {
             None
+        }
+    }
+
+    pub fn lookup(&self, atom: Atom) -> Option<String> {
+        unsafe {
+            if atom.into_idx().is_some() {
+                None
+            } else {
+                (*self.entries.get())
+                    .get(atom.to_str_idx() as usize)
+                    .and_then(|x| match x {
+                        AtomEntry::Filled { text, .. } => Some(text.to_string()),
+                        _ => None,
+                    })
+            }
         }
     }
 

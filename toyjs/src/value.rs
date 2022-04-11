@@ -11,7 +11,8 @@ impl<'js> Value<'js> {
         Value { ctx, value: val }
     }
 
-    pub(crate) fn into_vm(self) -> vm::Value {
+    #[doc(hidden)]
+    pub fn into_vm(self) -> vm::Value {
         self.value
     }
 

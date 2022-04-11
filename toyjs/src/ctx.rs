@@ -52,7 +52,8 @@ pub struct Ctx<'js> {
 impl<'js> Ctx<'js> {
     // # Safety
     // If created this pointer should remain valid for the entire duration of 'js
-    pub(crate) unsafe fn wrap(ctx: *const vm::Realm) -> Self {
+    #[doc(hidden)]
+    pub unsafe fn wrap(ctx: *const vm::Realm) -> Self {
         Ctx {
             ctx,
             marker: PhantomData,
