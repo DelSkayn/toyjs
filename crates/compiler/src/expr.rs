@@ -964,7 +964,7 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
         if array.is_none() {
             let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
-            self.builder.push(Instruction::CreateObject { dst: dst.0 });
+            self.builder.push(Instruction::CreateArray { dst: dst.0 });
             array = Some(dst);
         }
         array.unwrap()

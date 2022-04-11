@@ -7,7 +7,7 @@ use crate::{
 
 use super::new_func;
 
-fn array_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+pub fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     let proto = if let Some(object) = exec.new_target.into_object() {
         unsafe { object.index(realm, atom::constant::prototype)? }
     } else {
@@ -97,7 +97,7 @@ pub fn init(vm: &VmInner, op: Gc<Object>, fp: Gc<Object>, global: Gc<Object>) ->
         vm,
         Some(fp),
         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
-        ObjectKind::StaticFn(array_construct),
+        ObjectKind::StaticFn(construct),
     );
     array_constructor.raw_index_set_flags(
         vm,
