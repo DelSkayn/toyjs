@@ -237,9 +237,13 @@ define_instructions! {
         IsNullish{dst: u8, op: u8},
         Not{ dst: u8, src: u8},
 
+        IterHead{dst: u8, obj: u8},
+        Iter{dst: u8, obj: u8},
+
         JumpTrue{cond: u8, tgt:i16},
         JumpFalse{cond: u8, tgt:i16},
         Jump{tgt:i16},
+
 
         Try{ dst: u8, tgt: i16},
         Untry{ dst: u8 },

@@ -1,4 +1,6 @@
-use toyjs::{Context, ToyJs};
+use toyjs::{
+    convert::FromJs, create_static_fn, Arguments, Context, Ctx, Error, Result, ToyJs, Value,
+};
 
 const THROW_SOURCE: &str = include_str!("./throw.js");
 const UPVALUE_SOURCE: &str = include_str!("./upvalue.js");
@@ -10,11 +12,33 @@ const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
 const THIS_SOURCE: &str = include_str!("./this.js");
 const OBJECT_SOURCE: &str = include_str!("./object.js");
 
+pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
+    if let Some(x) = args.get(0) {
+        if x.is_falseish() {
+            if let Some(x) = args
+                .get(1)
+                .and_then(|x| toyjs::String::from_js(ctx, x).ok())
+            {
+                return Err(Error::Type(x.to_string()));
+            } else {
+                return Err(Error::Type("Assertion failed".to_string()));
+            }
+        }
+    }
+    Ok(Value::undefined(ctx))
+}
+
 fn eval_script(s: &str) {
     let toyjs = ToyJs::new();
     let ctx = Context::new(&toyjs);
     ctx.with(|ctx| {
-        ctx.eval::<(), _>(s).unwrap();
+        ctx.global()
+            .set("assert", create_static_fn!(ctx, assert))
+            .unwrap();
+        match ctx.eval::<(), _>(s) {
+            Ok(_) => {}
+            Err(e) => panic!("error: {}", e),
+        }
     });
 }
 

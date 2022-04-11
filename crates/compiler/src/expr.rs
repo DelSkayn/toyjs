@@ -37,7 +37,7 @@ impl<A: Allocator + Clone> ExprValue<A> {
     }
 }
 
-enum AssignmentTarget {
+pub enum AssignmentTarget {
     Variable(SymbolId),
     Dot(Register, StringId),
     Index(Register, Register),
@@ -62,6 +62,10 @@ impl AssignmentTarget {
             }
             x => panic!("expression is not assignable: {:?}", x),
         }
+    }
+
+    pub fn from_symbol(id: SymbolId) -> Self {
+        AssignmentTarget::Variable(id)
     }
 
     /// Returns a register which contains the value of the assignment target.

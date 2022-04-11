@@ -108,8 +108,8 @@ impl Realm {
     }
 
     #[inline]
-    pub unsafe fn vm(&self) -> &VmInner {
-        self.vm.borrow()
+    pub fn vm(&self) -> &VmInner {
+        unsafe { self.vm.borrow() }
     }
 
     pub unsafe fn construct_script_function(&self, script: Gc<ByteCode>) -> Gc<Object> {

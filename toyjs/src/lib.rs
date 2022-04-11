@@ -2,12 +2,13 @@
 #![allow(dead_code)]
 #![allow(clippy::new_without_default)]
 
-use std::mem;
+use std::{mem, panic::UnwindSafe};
 
 mod ctx;
 mod ffi;
 pub use ctx::Ctx;
 use ctx::UserData;
+pub use ffi::Arguments;
 mod function;
 pub use function::Function;
 mod object;
@@ -44,6 +45,8 @@ impl ToyJs {
         self.vm.collect_full();
     }
 }
+
+impl UnwindSafe for ToyJs {}
 
 pub struct Context {
     vm: Vm,

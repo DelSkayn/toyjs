@@ -24,6 +24,8 @@ impl PropertyFlags {
     pub const ORDINARY: PropertyFlags =
         PropertyFlags(Self::WRITABLE.0 | Self::ENUMERABLE.0 | Self::CONFIGURABLE.0);
 
+    pub const BUILTIN: PropertyFlags = PropertyFlags(Self::WRITABLE.0 | Self::CONFIGURABLE.0);
+
     const ACCESSOR: PropertyFlags = PropertyFlags(0b1000);
 
     #[inline]
@@ -34,6 +36,12 @@ impl PropertyFlags {
     #[inline]
     pub fn contains(self, flag: PropertyFlags) -> bool {
         (self.0 & flag.0) == flag.0
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn clear(self, flag: PropertyFlags) -> Self {
+        PropertyFlags(self.0 & !flag.0)
     }
 }
 
@@ -147,6 +155,10 @@ impl Property {
         }
     }
 
+    pub fn is_accessor(&self) -> bool {
+        self.flags.contains(PropertyFlags::ACCESSOR)
+    }
+
     pub fn into_value(self) -> PropertyValue {
         unsafe {
             if self.flags.contains(PropertyFlags::ACCESSOR) {
@@ -155,6 +167,13 @@ impl Property {
                 PropertyValue::Value(self.value.value)
             }
         }
+    }
+
+    pub unsafe fn from_value(realm: &Realm, value: Value, atom: Atom) -> Result<Self, Value> {
+        let obj = value.into_object().ok_or_else(|| {
+            realm.create_type_error("can't build properties from non object value")
+        })?;
+        Self::from_object(realm, obj, atom)
     }
 
     pub unsafe fn from_object(realm: &Realm, obj: Gc<Object>, atom: Atom) -> Result<Self, Value> {
@@ -317,7 +336,6 @@ impl Properties {
             properties: CellVec::new(),
         }
     }
-
     #[inline]
     pub fn lookup_idx(&self, atom: Atom) -> Option<usize> {
         unsafe { (*self.map.get()).get(&atom).copied() }
@@ -338,6 +356,30 @@ impl Properties {
 
     pub fn set_idx(&self, idx: usize, property: Property) {
         self.properties.set(idx, property)
+    }
+
+    pub fn freeze(&self) {
+        unsafe {
+            let len = self.properties.len();
+            let ptr = self.properties.as_mut_ptr();
+            for i in 0..len {
+                let ptr = ptr.add(i);
+                (*ptr).flags = (*ptr)
+                    .flags
+                    .clear(PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE);
+            }
+        }
+    }
+
+    pub fn seal(&self) {
+        unsafe {
+            let len = self.properties.len();
+            let ptr = self.properties.as_mut_ptr();
+            for i in 0..len {
+                let ptr = ptr.add(i);
+                (*ptr).flags = (*ptr).flags.clear(PropertyFlags::CONFIGURABLE);
+            }
+        }
     }
 
     pub fn set(&self, value: Property) -> bool {
@@ -395,5 +437,9 @@ impl Properties {
                 GetResult::None
             }
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.properties.len()
     }
 }

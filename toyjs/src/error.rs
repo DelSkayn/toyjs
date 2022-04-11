@@ -7,6 +7,7 @@ pub type Result<'js, T> = std::result::Result<T, Error<'js>>;
 #[derive(Debug)]
 pub enum Error<'js> {
     Syntax(String),
+    Type(String),
     Value(Value<'js>),
 }
 
@@ -15,10 +16,12 @@ impl<'js> Error<'js> {
         Error::Value(Value::wrap(ctx, value))
     }
 
-    pub(crate) fn into_vm(self, ctx: Ctx<'js>) -> vm::Value {
+    #[doc(hidden)]
+    pub fn into_vm(self, ctx: Ctx<'js>) -> vm::Value {
         match self {
             Error::Value(x) => x.into_vm(),
             Error::Syntax(x) => unsafe { (*ctx.ctx).create_syntax_error(x) },
+            Error::Type(x) => unsafe { (*ctx.ctx).create_type_error(x) },
         }
     }
 }
@@ -38,6 +41,9 @@ impl<'js> fmt::Display for Error<'js> {
             }
             Error::Syntax(x) => {
                 write!(f, "Uncaught SyntaxError: {}", x)?;
+            }
+            Error::Type(x) => {
+                write!(f, "Uncaught TypeError: {}", x)?;
             }
         }
         Ok(())

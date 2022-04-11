@@ -16,9 +16,6 @@ macro_rules! t {
     ("static"$($rest:tt)*) => {
         $crate::TokenKind::Ident($crate::interner::consts::STATIC)
     };
-    ("of"$($rest:tt)*) => {
-        $crate::TokenKind::Ident($crate::interner::consts::OF)
-    };
     ("import"$($rest:tt)*) => {
         $crate::TokenKind::Ident($crate::interner::consts::IMPORT)
     };
@@ -294,6 +291,9 @@ macro_rules! t {
     };
     ("in"$($rest:tt)*) => {
         $crate::TokenKind::Keyword($crate::Keyword::In)
+    };
+    ("of"$($rest:tt)*) => {
+        $crate::TokenKind::Keyword($crate::Keyword::Of)
     };
     ("instanceof"$($rest:tt)*) => {
         $crate::TokenKind::Keyword($crate::Keyword::Instanceof)

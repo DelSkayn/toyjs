@@ -71,6 +71,10 @@ impl<T, A: Allocator> CellVec<T, A> {
         unsafe { (*self.0.get()).clear() }
     }
 
+    pub fn as_mut_ptr(&self) -> *mut T {
+        unsafe { (*self.0.get()).as_mut_ptr() }
+    }
+
     /// # Safety
     ///
     /// None of the other functions can be called while holding on to the iterator.

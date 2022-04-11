@@ -67,6 +67,8 @@ impl Gc<Object> {
     }
 
     pub unsafe fn index_set(self, realm: &Realm, key: Atom, value: Value) -> Result<(), Value> {
+        realm.vm().write_barrier(self);
+
         if let Some(idx) = key.into_idx() {
             self.elements.set(idx as usize, value);
         }
@@ -94,11 +96,18 @@ impl Gc<Object> {
     }
 
     #[inline]
-    pub fn raw_index_set_flags(self, vm: &VmInner, key: Atom, value: Value, flags: PropertyFlags) {
-        self.raw_index_set_prop(vm, Property::value(value, flags, key));
+    pub fn raw_index_set_flags<V: Into<Value>>(
+        self,
+        vm: &VmInner,
+        key: Atom,
+        value: V,
+        flags: PropertyFlags,
+    ) {
+        self.raw_index_set_prop(vm, Property::value(value.into(), flags, key));
     }
 
     fn raw_index_set_prop(self, vm: &VmInner, value: Property) {
+        vm.write_barrier(self);
         if self.properties.set(value) {
             vm.increment(value.key);
         }

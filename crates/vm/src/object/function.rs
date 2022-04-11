@@ -31,7 +31,7 @@ unsafe impl Trace for VmFunction {
     }
 
     fn trace(&self, ctx: crate::gc::Ctx) {
-        #[cfg(feature = "dump-gc-trace")]
+        #[cfg(feature = "gc-dump-trace")]
         println!("MARK: obj.function");
         ctx.mark(self.bc);
         self.upvalues.iter().copied().for_each(|x| ctx.mark(x));

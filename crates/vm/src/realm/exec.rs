@@ -4,7 +4,7 @@ use crate::{
     atom::{self, Atom},
     gc::Trace,
     instructions::{Instruction, Upvalue},
-    object::{Object, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{ForInIterator, Object, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
     Gc, Value,
 };
 
@@ -119,7 +119,6 @@ impl Realm {
                     let val = self.stack.read(val);
 
                     if let Some(obj) = obj.into_object() {
-                        self.vm.borrow().write_barrier(obj);
                         catch_unwind!(self, instr, ctx, obj.index_set_value(self, key, val));
                     } else {
                         // TODO proper error value
@@ -157,7 +156,6 @@ impl Realm {
                     let obj = self.builtin.global;
                     let key = self.stack.read(key);
                     let src = self.stack.read(src);
-                    self.vm.borrow().write_barrier(obj);
                     catch_unwind!(self, instr, ctx, obj.index_set_value(self, key, src));
                 }
 
@@ -413,6 +411,39 @@ impl Realm {
                     let number = catch_unwind!(self, instr, ctx, self.to_number(src));
                     self.stack.write(dst, number);
                 }
+
+                Instruction::IterHead { dst, obj } => {
+                    let iter = self.stack.read(obj);
+                    self.vm().collect_debt(&ctx);
+                    if let Some(iter) = iter.into_object() {
+                        let iter = ForInIterator::new(iter);
+                        let iter = Object::new_gc(
+                            self.vm(),
+                            Some(self.builtin.object_proto),
+                            ObjectFlags::ORDINARY,
+                            ObjectKind::ForInIterator(iter),
+                        );
+                        self.stack.write(dst, iter.into());
+                        instr.next();
+                    }
+                }
+
+                Instruction::Iter { dst, obj } => {
+                    let iter = self.stack.read(obj);
+                    if let Some(obj) = iter.into_object() {
+                        if let Some(x) = obj.next(self) {
+                            self.stack.write(dst, x);
+                            instr.next();
+                        }
+                    } else {
+                        self.unwind_error(
+                            &mut instr,
+                            &mut ctx,
+                            self.create_type_error("iterator is not an object"),
+                        )?
+                    }
+                }
+
                 Instruction::Jump { tgt } => instr.jump(tgt),
                 Instruction::JumpFalse { cond, tgt } => {
                     let cond = self.stack.read(cond);
@@ -1237,8 +1268,17 @@ impl Realm {
         }
     }
 
+    pub fn atom_to_value(&self, atom: Atom) -> Value {
+        if let Some(idx) = atom.into_idx() {
+            Value::from(idx as i32)
+        } else {
+            let s = self.vm().atoms().lookup(atom).unwrap();
+            self.vm().allocate(s).into()
+        }
+    }
+
     #[cold]
-    pub unsafe fn create_type_error(&self, message: impl Into<String>) -> Value {
+    pub fn create_type_error(&self, message: impl Into<String>) -> Value {
         let message = self.vm().allocate(message.into());
         builtin::error::construct(self, self.builtin.type_error_proto, Some(message), None).into()
     }

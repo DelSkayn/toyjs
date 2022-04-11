@@ -67,10 +67,6 @@ fn function_proto(_: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
     Ok(Value::undefined())
 }
 
-unsafe fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
-    Ok(realm.vm().allocate("[object Object]".to_string()).into())
-}
-
 fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn, len: i32) -> Gc<Object> {
     let object = Object::new_gc(
         vm,
@@ -78,7 +74,7 @@ fn new_func(vm: &VmInner, proto: Gc<Object>, f: StaticFn, len: i32) -> Gc<Object
         ObjectFlags::ORDINARY,
         ObjectKind::StaticFn(f),
     );
-    object.raw_index_set(vm, atom::constant::length, len);
+    object.raw_index_set_flags(vm, atom::constant::length, len, PropertyFlags::CONFIGURABLE);
     object
 }
 
@@ -95,27 +91,17 @@ impl Builtin {
             ObjectKind::StaticFn(function_proto),
         );
 
-        op.raw_index_set(
-            vm,
-            atom::constant::toString,
-            Object::new_gc(
-                vm,
-                Some(fp),
-                ObjectFlags::ORDINARY,
-                ObjectKind::StaticFn(object_to_string),
-            ),
-        );
         let global = Object::new_gc(vm, Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
         global.raw_index_set_flags(
             vm,
             atom::constant::globalThis,
-            global.into(),
+            global,
             PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
         );
         object::init(vm, op, fp, global);
 
         let array_proto = Object::new_gc(vm, Some(op), ObjectFlags::empty(), ObjectKind::Ordinary);
-        array_proto.raw_index_set(vm, atom::constant::length, 0);
+        array_proto.raw_index_set_flags(vm, atom::constant::length, 0, PropertyFlags::BUILTIN);
 
         let array_constructor = Object::new_gc(
             vm,
@@ -123,9 +109,19 @@ impl Builtin {
             ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
             ObjectKind::StaticFn(array_construct),
         );
-        array_constructor.raw_index_set(vm, atom::constant::prototype, array_proto);
+        array_constructor.raw_index_set_flags(
+            vm,
+            atom::constant::prototype,
+            array_proto,
+            PropertyFlags::BUILTIN,
+        );
 
-        array_proto.raw_index_set(vm, atom::constant::constructor, array_constructor);
+        array_proto.raw_index_set_flags(
+            vm,
+            atom::constant::constructor,
+            array_constructor,
+            PropertyFlags::BUILTIN,
+        );
 
         let name = vm.allocate::<String>("Error".into());
         let (error_construct, error_proto) = error::init_native::<error::Error>(vm, name, fp, op);
@@ -136,18 +132,33 @@ impl Builtin {
             ObjectFlags::ORDINARY,
             ObjectKind::StaticFn(error::to_string),
         );
-        error_proto.raw_index_set(vm, atom::constant::toString, func);
-        global.raw_index_set(vm, atom::constant::Error, error_construct);
+        error_proto.raw_index_set_flags(vm, atom::constant::toString, func, PropertyFlags::BUILTIN);
+        global.raw_index_set_flags(
+            vm,
+            atom::constant::Error,
+            error_construct,
+            PropertyFlags::BUILTIN,
+        );
 
         let name = vm.allocate::<String>("SyntaxError".into());
         let (error_construct, syntax_error_proto) =
             error::init_native::<error::TypeError>(vm, name, error_construct, error_proto);
-        global.raw_index_set(vm, atom::constant::SyntaxError, error_construct);
+        global.raw_index_set_flags(
+            vm,
+            atom::constant::SyntaxError,
+            error_construct,
+            PropertyFlags::BUILTIN,
+        );
 
         let name = vm.allocate::<String>("TypeError".into());
         let (error_construct, type_error_proto) =
             error::init_native::<error::TypeError>(vm, name, error_construct, error_proto);
-        global.raw_index_set(vm, atom::constant::TypeError, error_construct);
+        global.raw_index_set_flags(
+            vm,
+            atom::constant::TypeError,
+            error_construct,
+            PropertyFlags::BUILTIN,
+        );
 
         Builtin {
             global,
