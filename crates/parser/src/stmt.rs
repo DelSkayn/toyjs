@@ -218,10 +218,11 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
     }
 
     fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForDecl<A>) -> Result<ast::Stmt<A>> {
+        dbg!(&decl);
         let binding = match decl {
             ast::ForDecl::Stmt(stmt) => match *stmt {
                 ast::Stmt::Let(binding, None) => binding,
-                ast::Stmt::Var(x) if x.len() == 0 => {
+                ast::Stmt::Var(x) if x.len() == 1 => {
                     if x[0].1.is_some() {
                         unexpected!(self => "a for-in/of loop declaration can't have an initializer")
                     }
