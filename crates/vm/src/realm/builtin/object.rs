@@ -11,7 +11,7 @@ fn object_to_string(realm: &Realm, _: &mut ExecutionContext) -> Result<Value, Va
     Ok(realm.vm().allocate("[object Object]".to_string()).into())
 }
 
-fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
+pub fn construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
     if exec.new_target.is_undefined()
         || exec
             .new_target

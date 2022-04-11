@@ -93,25 +93,17 @@ impl Realm {
                 Instruction::Move { dst, src } => self.stack.write(dst, self.stack.read(src)),
                 Instruction::CreateObject { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object = Object::new_gc(
-                        self.vm(),
-                        Some(self.builtin.object_proto),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::Ordinary,
-                    );
-                    let res = Value::from(object);
+                    self.stack.enter(0);
+                    let res = builtin::object::construct(self, &mut ctx).unwrap();
+                    self.stack.pop(self.vm().gc());
                     self.stack.write(dst, res);
                 }
                 Instruction::CreateArray { dst } => {
                     self.vm.borrow().collect_debt(&ctx);
-                    let object = Object::new_gc(
-                        self.vm(),
-                        Some(self.builtin.array_proto),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::Array,
-                    );
-                    builtin::array::define_length(self.vm(), self.builtin.function_proto, object);
-                    self.stack.write(dst, object.into());
+                    self.stack.enter(0);
+                    let object = builtin::array::construct(self, &mut ctx).unwrap();
+                    self.stack.pop(self.vm().gc());
+                    self.stack.write(dst, object);
                 }
                 Instruction::IndexAssign { obj, key, val } => {
                     let obj = self.stack.read(obj);
