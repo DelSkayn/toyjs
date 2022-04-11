@@ -65,5 +65,6 @@ define_atom!(
     freeze,
     seal,
     isFrozen,
-    isSealed
+    isSealed,
+    Array
 );

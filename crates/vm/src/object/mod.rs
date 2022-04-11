@@ -6,7 +6,7 @@ mod function;
 pub use function::{MutableFn, SharedFn, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC};
 mod property;
 use property::Properties;
-pub use property::{GetResult, Property, PropertyFlags, PropertyValue, SetResult};
+pub use property::{Accessor, GetResult, Property, PropertyFlags, PropertyValue, SetResult};
 mod elements;
 use elements::Elements;
 

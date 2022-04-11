@@ -7,6 +7,7 @@ use crate::{
 
 use super::ExecutionContext;
 
+pub mod array;
 pub mod error;
 pub mod object;
 
@@ -42,26 +43,6 @@ unsafe impl Trace for Builtin {
         ctx.mark(self.syntax_error_proto);
         ctx.mark(self.type_error_proto);
     }
-}
-
-unsafe fn array_construct(realm: &Realm, exec: &mut ExecutionContext) -> Result<Value, Value> {
-    let proto = if let Some(object) = exec.new_target.into_object() {
-        object.index(realm, atom::constant::prototype)?
-    } else {
-        Value::undefined()
-    };
-    let proto = proto.into_object().unwrap_or(realm.builtin.array_proto);
-
-    if realm.stack.frame_size() == 0 {
-        return Ok(Value::from(Object::new_gc(
-            realm.vm(),
-            Some(proto),
-            ObjectFlags::empty(),
-            ObjectKind::Array,
-        )));
-    }
-
-    todo!("array construct")
 }
 
 fn function_proto(_: &Realm, _: &mut ExecutionContext) -> Result<Value, Value> {
@@ -100,29 +81,7 @@ impl Builtin {
             PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
         );
         object::init(vm, op, fp, global);
-
-        let array_proto = Object::new_gc(vm, Some(op), ObjectFlags::empty(), ObjectKind::Ordinary);
-        array_proto.raw_index_set_flags(vm, atom::constant::length, 0, PropertyFlags::BUILTIN);
-
-        let array_constructor = Object::new_gc(
-            vm,
-            Some(fp),
-            ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
-            ObjectKind::StaticFn(array_construct),
-        );
-        array_constructor.raw_index_set_flags(
-            vm,
-            atom::constant::prototype,
-            array_proto,
-            PropertyFlags::BUILTIN,
-        );
-
-        array_proto.raw_index_set_flags(
-            vm,
-            atom::constant::constructor,
-            array_constructor,
-            PropertyFlags::BUILTIN,
-        );
+        let array_proto = array::init(vm, op, fp, global);
 
         let name = vm.allocate::<String>("Error".into());
         let (error_construct, error_proto) = error::init_native::<error::Error>(vm, name, fp, op);

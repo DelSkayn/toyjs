@@ -110,8 +110,8 @@ impl Realm {
                         ObjectFlags::ORDINARY,
                         ObjectKind::Array,
                     );
-                    let res = Value::from(object);
-                    self.stack.write(dst, res);
+                    builtin::array::define_length(self.vm(), self.builtin.function_proto, object);
+                    self.stack.write(dst, object.into());
                 }
                 Instruction::IndexAssign { obj, key, val } => {
                     let obj = self.stack.read(obj);
@@ -704,7 +704,7 @@ impl Realm {
         self.vm().atomize(value, self)
     }
 
-    pub unsafe fn strict_equal(&self, left: Value, right: Value) -> bool {
+    pub fn strict_equal(&self, left: Value, right: Value) -> bool {
         if !left.same_type(right) {
             #[cfg(debug_assertions)]
             if left.is_number() && right.is_number() {
@@ -732,10 +732,14 @@ impl Realm {
             return left == right.cast_bool();
         }
         if let Some(left) = left.into_string() {
-            return left == right.unsafe_cast_string();
+            unsafe {
+                return left == right.unsafe_cast_string();
+            }
         }
         if let Some(left) = left.into_object() {
-            return left.ptr_eq(right.unsafe_cast_object());
+            unsafe {
+                return left.ptr_eq(right.unsafe_cast_object());
+            }
         }
         if left.is_float() && right.is_float() {
             return left.cast_float() == right.cast_float();

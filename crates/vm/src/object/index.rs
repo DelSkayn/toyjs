@@ -31,21 +31,25 @@ impl Gc<Object> {
             }
         }
 
-        if let Some(prop) = self.properties.get(key) {
-            match prop.into_value() {
-                PropertyValue::Value(x) => return Ok(x),
-                PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
-                    return realm.enter_method_call(get, self.into())
-                }
-                PropertyValue::Accessor(Accessor { get: None, .. }) => {
-                    return Ok(Value::undefined())
+        let mut cur = self;
+        loop {
+            if let Some(prop) = cur.properties.get(key) {
+                match prop.into_value() {
+                    PropertyValue::Value(x) => return Ok(x),
+                    PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
+                        return realm.enter_method_call(get, self.into())
+                    }
+                    PropertyValue::Accessor(Accessor { get: None, .. }) => {
+                        return Ok(Value::undefined())
+                    }
                 }
             }
+            if let Some(x) = cur.prototype {
+                cur = x;
+            } else {
+                return Ok(Value::undefined());
+            }
         }
-
-        self.prototype
-            .map(|p| p.index(realm, key))
-            .unwrap_or_else(|| Ok(Value::undefined()))
     }
 
     #[inline]
@@ -106,7 +110,7 @@ impl Gc<Object> {
         self.raw_index_set_prop(vm, Property::value(value.into(), flags, key));
     }
 
-    fn raw_index_set_prop(self, vm: &VmInner, value: Property) {
+    pub fn raw_index_set_prop(self, vm: &VmInner, value: Property) {
         vm.write_barrier(self);
         if self.properties.set(value) {
             vm.increment(value.key);
