@@ -1,11 +1,16 @@
+use std::io;
+
+/*
 use std::{
     env,
     io::{self, Write},
 };
 
 use toyjs::{Context, ToyJs};
+*/
 
 fn main() -> io::Result<()> {
+    /*
     let toyjs = ToyJs::new();
     let ctx = Context::new(&toyjs);
     if let Some(x) = env::args().nth(1) {
@@ -86,5 +91,6 @@ fn main() -> io::Result<()> {
         });
         buffer.clear();
     }
+        */
     Ok(())
 }

@@ -1,4 +1,6 @@
-#![feature(allocator_api)]
+use std::io;
+
+/* #![feature(allocator_api)]
 
 use ast::SymbolTable;
 use common::{interner::Interner, source::Source};
@@ -21,21 +23,24 @@ fn get_input() -> Result<Box<dyn Read>, io::Error> {
     }
 }
 
+*/
 fn main() -> Result<(), io::Error> {
-    let mut read = get_input()?;
-    let mut buffer = String::new();
-    read.read_to_string(&mut buffer)?;
-    let source = Source::from_string(buffer);
-    let mut interner = Interner::new();
-    let lexer = Lexer::new(&source, &mut interner);
-    let mut variables = SymbolTable::new();
-    let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
-    let gc = GcArena::new();
-    let atoms = Atoms::new();
+    /*
+        let mut read = get_input()?;
+        let mut buffer = String::new();
+        read.read_to_string(&mut buffer)?;
+        let source = Source::from_string(buffer);
+        let mut interner = Interner::new();
+        let lexer = Lexer::new(&source, &mut interner);
+        let mut variables = SymbolTable::new();
+        let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
+        let gc = GcArena::new();
+        let atoms = Atoms::new();
 
-    let bytecode =
-        Compiler::compile_script(&script, &variables, &mut interner, &atoms, &gc, Global);
-    println!("atoms: {:#?}", atoms);
-    println!("{}", bytecode);
+        let bytecode =
+            Compiler::compile_script(&script, &variables, &mut interner, &atoms, &gc, Global);
+        println!("atoms: {:#?}", atoms);
+        println!("{}", bytecode);
+    */
     Ok(())
 }

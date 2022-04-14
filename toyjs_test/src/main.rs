@@ -1,3 +1,4 @@
+/*
 #![allow(dead_code)]
 
 use std::path::Path;
@@ -11,7 +12,9 @@ mod commands;
 mod harness;
 mod test;
 
-fn main() -> Result<()> {
+*/
+fn main() -> Result<(), ()> {
+    /*
     let args = args::Args::parse();
 
     let path = args.path.as_deref().unwrap_or("./test262");
@@ -24,4 +27,6 @@ fn main() -> Result<()> {
             commands::single::run(Path::new(path).join(single_path), &harness)
         }
     }
+    */
+    Ok(())
 }

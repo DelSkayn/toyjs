@@ -1,3 +1,4 @@
+/*
 #![feature(allocator_api)]
 #![allow(dead_code)]
 #![allow(clippy::new_without_default)]
@@ -88,3 +89,4 @@ impl Drop for Context {
         unsafe { self.realm.free() }
     }
 }
+*/

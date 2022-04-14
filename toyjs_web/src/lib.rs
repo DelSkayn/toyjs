@@ -1,3 +1,4 @@
+/*
 #![recursion_limit = "512"]
 
 use std::panic::{self, UnwindSafe};
@@ -60,3 +61,4 @@ impl ToyJs {
         }
     }
 }
+*/

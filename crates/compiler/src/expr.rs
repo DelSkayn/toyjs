@@ -1023,14 +1023,22 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
                 CallType::Procedure { func }
             }
         };
+        // Temp fix for args
+        // Don't like allocing so many registers for each argument
+        let args: Vec<_> = args
+            .iter()
+            .enumerate()
+            .map(|(idx, arg)| {
+                if idx >= 16 {
+                    todo!()
+                }
+                self.compile_expr(None, arg).eval(self)
+            })
+            .collect();
 
-        for (idx, arg) in args.iter().enumerate() {
-            if idx >= 16 {
-                todo!("more then 16 arguments")
-            }
-            let reg = self.compile_expr(None, arg).eval(self);
-            self.builder.free_temp(reg);
-            self.builder.push(Instruction::Push { src: reg.0 });
+        for r in args {
+            self.builder.push(Instruction::Push { src: r.0 });
+            self.builder.free_temp(r);
         }
 
         match instr {

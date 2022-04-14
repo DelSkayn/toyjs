@@ -1,3 +1,4 @@
+/*
 #![allow(dead_code, unused_imports)]
 #![feature(allocator_api)]
 
@@ -96,3 +97,4 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 }
+*/
