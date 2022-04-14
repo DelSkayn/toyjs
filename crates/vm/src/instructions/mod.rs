@@ -64,13 +64,21 @@ pub struct ByteCode {
     pub constants: Box<[Value]>,
     /// The functions defined in this bytecode, the entry function is always the first one.
     pub functions: Box<[ByteFunction]>,
-    //// All instructions beloning to all functions defined in the bytecode.
+    //// All instructions belonging to all functions defined in the bytecode.
     pub instructions: Box<[Instruction]>,
 }
 
 impl ByteCode {
     /// Makes sure that bytecode is valid and returns a struct signifying that the bytecode has
     /// been validated.
+    ///
+    /// Bytecode is valid if it follows the following rules
+    ///
+    /// - The last instruction of all functions is either `Return`, `ReturnUndefined` or `Throw`
+    /// - No jump instruction jumps outside of their function's instruction range.
+    /// - No instruction accesses a register with an id larger then the number of registers
+    /// specified for the function.
+    /// - No instruction loads a function or constant with an invalid ID
     pub fn validate(self) -> Result<ValidByteCode, (Self, ValidationError)> {
         unsafe {
             match self.is_valid() {

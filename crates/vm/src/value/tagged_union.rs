@@ -1,28 +1,27 @@
 use std::{fmt, mem};
 
 use crate::{
-    atom::Atom,
-    gc::{Ctx, Gc, Trace},
-    Object,
+    gc::{Gc, Trace, Tracer},
+    object::Object,
 };
 
 #[derive(Clone, Copy)]
-pub enum Value<'gc> {
+pub enum Value<'gc, 'cell> {
     Float(f64),
     Integer(i32),
     Boolean(bool),
-    String(Gc<'gc, String>),
-    Object(Gc<'gc, Object>),
+    String(Gc<'gc, 'cell, String>),
+    Object(Gc<'gc, 'cell, Object>),
     //Atom(Atom),
     Undefined,
     Null,
     Empty,
 }
 
-impl Value {
+impl<'gc, 'cell> Value<'gc, 'cell> {
     /// Returns wether two values have the same data type.
     #[inline]
-    pub fn same_type(self, other: Value) -> bool {
+    pub fn same_type(self, other: Self) -> bool {
         mem::discriminant(&self) == mem::discriminant(&other)
     }
 
@@ -140,6 +139,7 @@ impl Value {
         }
     }
 
+    /*
     /// Is this value a string.
     #[inline]
     pub fn is_atom(self) -> bool {
@@ -148,12 +148,15 @@ impl Value {
             _ => false,
         }
     }
+    */
 
+    /*
     /// Is this value a function.
     #[inline]
     pub unsafe fn is_function(self) -> bool {
         self.is_object() && self.unsafe_cast_object().is_function()
     }
+    */
 
     /// Create a new value containing the undefined javascript value.
     #[inline]
@@ -204,7 +207,7 @@ impl Value {
     }
 
     #[inline]
-    pub fn into_string(self) -> Option<Gc<'gc, String>> {
+    pub fn into_string(self) -> Option<Gc<'gc, 'cell, String>> {
         match self {
             Value::String(x) => Some(x),
             _ => None,
@@ -212,7 +215,7 @@ impl Value {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<Gc<'gc, Object>> {
+    pub fn into_object(self) -> Option<Gc<'gc, 'cell, Object>> {
         match self {
             Value::Object(x) => Some(x),
             _ => None,
@@ -230,37 +233,37 @@ impl Value {
     */
 }
 
-impl From<bool> for Value {
+impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: bool) -> Value {
+    fn from(v: bool) -> Self {
         Value::Boolean(v)
     }
 }
 
-impl From<i32> for Value {
+impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: i32) -> Value {
+    fn from(v: i32) -> Self {
         Value::Integer(v)
     }
 }
 
-impl From<f64> for Value {
+impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: f64) -> Value {
+    fn from(v: f64) -> Self {
         Value::Float(v)
     }
 }
 
-impl From<Gc<String>> for Value {
+impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: Gc<String>) -> Value {
+    fn from(v: Gc<'gc, 'cell, String>) -> Self {
         Value::String(v)
     }
 }
 
-impl From<Gc<Object>> for Value {
+impl<'gc, 'cell> From<Gc<'gc, 'cell, Object>> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: Gc<Object>) -> Value {
+    fn from(v: Gc<'gc, 'cell, Object>) -> Self {
         Value::Object(v)
     }
 }
@@ -274,7 +277,7 @@ impl From<Atom> for Value {
 }
 */
 
-unsafe impl Trace for Value {
+unsafe impl<'gc, 'cell> Trace<'cell> for Value<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -282,7 +285,7 @@ unsafe impl Trace for Value {
         true
     }
 
-    fn trace(&self, ctx: Ctx) {
+    fn trace(&self, ctx: Tracer<'_, 'cell>) {
         match *self {
             Value::Object(x) => ctx.mark(x),
             Value::String(x) => ctx.mark(x),
@@ -291,16 +294,16 @@ unsafe impl Trace for Value {
     }
 }
 
-impl fmt::Debug for Value {
+impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Boolean(x) => f.debug_tuple("JSValue::Bool").field(&x).finish(),
             Value::Null => f.debug_tuple("JSValue::Null").finish(),
             Value::Undefined => f.debug_tuple("JSValue::Undefined").finish(),
             Value::Empty => f.debug_tuple("JSValue::Empty").finish(),
-            Value::String(x) => f.debug_tuple("JSValue::String").field(&x).finish(),
-            Value::Object(x) => f.debug_tuple("JSValue::Object").field(&x).finish(),
-            Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
+            Value::String(_) => f.debug_tuple("JSValue::String").finish(),
+            Value::Object(_) => f.debug_tuple("JSValue::Object").finish(),
+            //Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
             Value::Integer(x) => f.debug_tuple("JSValue::Int").field(&x).finish(),
             Value::Float(x) => f.debug_tuple("JSValue::Float").field(&x).finish(),
         }
