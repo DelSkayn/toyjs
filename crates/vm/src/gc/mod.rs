@@ -143,7 +143,7 @@ pub unsafe trait Trace<'cell> {
         Self: Sized;
 
     /// Traces the type for any gc pointers.
-    fn trace<'a>(&self, trace: Tracer<'a, 'cell>);
+    fn trace(&self, trace: Tracer<'_, 'cell>);
 }
 
 struct GcBox<'cell, T: ?Sized> {
@@ -208,7 +208,14 @@ impl<'gc, 'cell, T: Trace<'cell> + 'static> Gc<'gc, 'cell, T> {
 #[repr(transparent)]
 pub struct GcRoot<'rt, 'cell, T: ?Sized> {
     ptr: Gc<'rt, 'cell, T>,
-    marker: PhantomData<&'rt ()>,
+}
+
+impl<'rt, 'cell, T: ?Sized> GcRoot<'rt, 'cell, T> {
+    pub unsafe fn assume_rooted<'gc>(ptr: Gc<'gc, 'cell, T>) -> Self {
+        Self {
+            ptr: mem::transmute(ptr),
+        }
+    }
 }
 
 impl<'gc, 'cell, T: ?Sized> Copy for GcRoot<'gc, 'cell, T> {}
