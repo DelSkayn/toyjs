@@ -7,13 +7,13 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub enum Value {
+pub enum Value<'gc> {
     Float(f64),
     Integer(i32),
     Boolean(bool),
-    String(Gc<String>),
-    Object(Gc<Object>),
-    Atom(Atom),
+    String(Gc<'gc, String>),
+    Object(Gc<'gc, Object>),
+    //Atom(Atom),
     Undefined,
     Null,
     Empty,
@@ -179,84 +179,6 @@ impl Value {
         Value::Float(f64::NAN)
     }
 
-    /// Convert the value to `bool`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_bool` returns false
-    #[inline]
-    pub fn cast_bool(self) -> bool {
-        match self {
-            Value::Boolean(x) => x,
-            _ => panic!(),
-        }
-    }
-
-    /// Convert the value to `i32`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_int` returns false
-    #[inline]
-    pub fn cast_int(self) -> i32 {
-        match self {
-            Value::Integer(x) => x,
-            _ => panic!(),
-        }
-    }
-
-    /// Convert the value to `f64`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_float` returns false
-    #[inline]
-    pub fn cast_float(self) -> f64 {
-        match self {
-            Value::Float(x) => x,
-            _ => panic!(),
-        }
-    }
-
-    /// Convert the value to [`Object`]
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an object
-    #[inline]
-    pub unsafe fn unsafe_cast_object(self) -> Gc<Object> {
-        match self {
-            Value::Object(x) => x,
-            _ => panic!(),
-        }
-    }
-
-    /// Convert the value to `String`
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an string
-    #[inline]
-    pub unsafe fn unsafe_cast_string(self) -> Gc<String> {
-        match self {
-            Value::String(x) => x,
-            _ => panic!(),
-        }
-    }
-
-    /// Convert the value to `Atom`
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an string
-    #[inline]
-    pub unsafe fn unsafe_cast_atom(self) -> Atom {
-        match self {
-            Value::Atom(x) => x,
-            _ => panic!(),
-        }
-    }
-
     #[inline]
     pub fn into_int(self) -> Option<i32> {
         match self {
@@ -282,7 +204,7 @@ impl Value {
     }
 
     #[inline]
-    pub fn into_string(self) -> Option<Gc<String>> {
+    pub fn into_string(self) -> Option<Gc<'gc, String>> {
         match self {
             Value::String(x) => Some(x),
             _ => None,
@@ -290,13 +212,14 @@ impl Value {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<Gc<Object>> {
+    pub fn into_object(self) -> Option<Gc<'gc, Object>> {
         match self {
             Value::Object(x) => Some(x),
             _ => None,
         }
     }
 
+    /*
     #[inline]
     pub fn into_atom(self) -> Option<Atom> {
         match self {
@@ -304,6 +227,7 @@ impl Value {
             _ => None,
         }
     }
+    */
 }
 
 impl From<bool> for Value {
@@ -341,12 +265,14 @@ impl From<Gc<Object>> for Value {
     }
 }
 
+/*
 impl From<Atom> for Value {
     #[inline]
     fn from(v: Atom) -> Value {
         Value::Atom(v)
     }
 }
+*/
 
 unsafe impl Trace for Value {
     fn needs_trace() -> bool
