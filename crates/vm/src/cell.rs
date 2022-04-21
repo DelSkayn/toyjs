@@ -40,6 +40,7 @@ macro_rules! new_cell_owner {
     ($name:ident) => {
         let tag = unsafe { $crate::cell::Id::new() };
         let _cell_owner;
+        #[allow(unused_mut)]
         let mut $name = unsafe { $crate::cell::CellOwner::new(tag) };
         {
             if false {
