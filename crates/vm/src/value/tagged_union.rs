@@ -11,7 +11,7 @@ pub enum Value<'gc, 'cell> {
     Integer(i32),
     Boolean(bool),
     String(Gc<'gc, 'cell, String>),
-    Object(Gc<'gc, 'cell, Object>),
+    Object(Gc<'gc, 'cell, Object<'gc, 'cell>>),
     //Atom(Atom),
     Undefined,
     Null,
@@ -215,7 +215,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<Gc<'gc, 'cell, Object>> {
+    pub fn into_object(self) -> Option<Gc<'gc, 'cell, Object<'gc, 'cell>>> {
         match self {
             Value::Object(x) => Some(x),
             _ => None,
@@ -261,9 +261,9 @@ impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<Gc<'gc, 'cell, Object>> for Value<'gc, 'cell> {
+impl<'gc, 'cell> From<Gc<'gc, 'cell, Object<'gc, 'cell>>> for Value<'gc, 'cell> {
     #[inline]
-    fn from(v: Gc<'gc, 'cell, Object>) -> Self {
+    fn from(v: Gc<'gc, 'cell, Object<'gc, 'cell>>) -> Self {
         Value::Object(v)
     }
 }
@@ -277,7 +277,7 @@ impl From<Atom> for Value {
 }
 */
 
-unsafe impl<'gc, 'cell> Trace<'cell> for Value<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Value<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,

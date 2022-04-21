@@ -21,14 +21,14 @@ enum Color {
 
 /// A set of roots which mark the alive pointers in the GC.
 pub struct RootSet<'cell> {
-    roots: CellVec<GcBoxPtr<'static>>,
+    roots: CellVec<GcBoxPtr<'static, 'cell>>,
 
-    all: Cell<Option<GcBoxPtr<'cell>>>,
-    grays: CellVec<GcBoxPtr<'cell>>,
-    grays_again: CellVec<GcBoxPtr<'cell>>,
+    all: Cell<Option<GcBoxPtr<'static, 'cell>>>,
+    grays: CellVec<GcBoxPtr<'static, 'cell>>,
+    grays_again: CellVec<GcBoxPtr<'static, 'cell>>,
 
-    sweep: Cell<Option<GcBoxPtr<'cell>>>,
-    sweep_prev: Cell<Option<GcBoxPtr<'cell>>>,
+    sweep: Cell<Option<GcBoxPtr<'static, 'cell>>>,
+    sweep_prev: Cell<Option<GcBoxPtr<'static, 'cell>>>,
     phase: Cell<Phase>,
 
     total_allocated: Cell<usize>,
@@ -60,14 +60,14 @@ impl<'cell> RootSet<'cell> {
         }
     }
 
-    fn write_barrier<T: Trace<'cell> + 'static>(&self, gc: Gc<'_, 'cell, T>) {
+    fn write_barrier<'rt, T: Trace<'rt, 'cell>>(&self, gc: Gc<'rt, 'cell, T>) {
         if !T::needs_trace() {
             return;
         }
         unsafe {
             if self.phase.get() == Phase::Mark && gc.ptr.as_ref().color.get() == Color::Black {
                 gc.ptr.as_ref().color.set(Color::Gray);
-                self.grays_again.push(gc.ptr);
+                self.grays_again.push(mem::transmute(gc.ptr));
             }
         }
     }
@@ -92,7 +92,7 @@ pub struct Tracer<'gc, 'cell>(pub(crate) &'gc RootSet<'cell>);
 
 impl<'gc, 'cell> Tracer<'gc, 'cell> {
     /// Mark a pointer as alive.
-    pub fn mark<'ptr, T: Trace<'cell> + 'static>(self, gc: Gc<'ptr, 'cell, T>) {
+    pub fn mark<T: Trace<'gc, 'cell> + 'gc>(self, gc: Gc<'gc, 'cell, T>) {
         unsafe {
             let r = gc.ptr.as_ref();
             if r.color.get() != Color::White {
@@ -101,13 +101,13 @@ impl<'gc, 'cell> Tracer<'gc, 'cell> {
 
             r.color.set(Color::Gray);
             if T::needs_trace() {
-                self.0.grays.push(gc.ptr);
+                self.0.grays.push(mem::transmute(gc.ptr));
             }
         }
     }
 
     /// Mark a pointer with a dynamic type as alive.
-    pub fn mark_dynamic<'ptr>(self, gc: Gc<'ptr, 'cell, dyn Trace<'cell>>) {
+    pub fn mark_dynamic(self, gc: Gc<'gc, 'cell, dyn Trace<'gc, 'cell>>) {
         unsafe {
             let r = gc.ptr.as_ref();
             if r.color.get() != Color::White {
@@ -115,7 +115,7 @@ impl<'gc, 'cell> Tracer<'gc, 'cell> {
             }
 
             r.color.set(Color::Gray);
-            self.0.grays.push(gc.ptr);
+            self.0.grays.push(mem::transmute(gc.ptr));
         }
     }
 }
@@ -133,7 +133,7 @@ impl<'gc, 'cell> Tracer<'gc, 'cell> {
 /// - `trace` marks all pointers contained in the type and calls `trace` all types contained in this type which implement `Trace`.
 /// - The type must not dereferences a `Gc` pointer in its drop implementation.
 ///
-pub unsafe trait Trace<'cell> {
+pub unsafe trait Trace<'gc, 'cell> {
     /// Returns whether the type can contain any Gc pointers and thus needs to be traced.
     ///
     /// The value returned is used as an optimization.
@@ -143,16 +143,16 @@ pub unsafe trait Trace<'cell> {
         Self: Sized;
 
     /// Traces the type for any gc pointers.
-    fn trace(&self, trace: Tracer<'_, 'cell>);
+    fn trace(&self, trace: Tracer<'gc, 'cell>);
 }
 
 struct GcBox<'cell, T: ?Sized> {
-    next: Cell<Option<GcBoxPtr<'cell>>>,
+    next: Cell<Option<GcBoxPtr<'static, 'cell>>>,
     color: Cell<Color>,
     value: LCell<'cell, T>,
 }
 
-type GcBoxPtr<'cell> = NonNull<GcBox<'cell, dyn Trace<'cell>>>;
+type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace<'gc, 'cell>>>;
 
 /// A pointer to a gc allocated value.
 pub struct Gc<'gc, 'cell, T: ?Sized> {
@@ -167,7 +167,7 @@ impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'static> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: ?Sized + Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
     // Borrow the contained value
     #[inline]
     pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
@@ -175,7 +175,7 @@ impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'static> Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: Trace<'cell> + 'static> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
     // Borrow the contained value mutably
     #[inline]
     pub fn borrow_mut<'a, 'rt>(
@@ -254,7 +254,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     /// Allocate a new garbage collected value.
-    pub fn allocate<'gc, T: Trace<'cell> + 'static>(&'gc self, t: T) -> Gc<'gc, 'cell, T> {
+    pub fn allocate<'gc, T: Trace<'gc, 'cell> + 'static>(&'gc self, t: T) -> Gc<'gc, 'cell, T> {
         unsafe {
             let layout = Layout::new::<GcBox<T>>();
             let ptr = NonNull::new(alloc::alloc(layout).cast::<GcBox<T>>()).unwrap();
@@ -278,7 +278,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                 );
             }
 
-            self.root.all.set(Some(ptr));
+            self.root.all.set(Some(mem::transmute(ptr)));
 
             if self.root.phase.get() == Phase::Sweep && self.root.sweep_prev.get().is_none() {
                 self.root.sweep_prev.set(self.root.all.get());
@@ -299,12 +299,12 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     /// pointers.
     ///
     #[inline]
-    pub fn write_barrier<T: Trace<'cell> + 'static>(&self, gc: Gc<'_, 'cell, T>) {
+    pub fn write_barrier<'gc, T: Trace<'gc, 'cell>>(&self, gc: Gc<'gc, 'cell, T>) {
         self.root.write_barrier(gc)
     }
 
     /// Run Collection to completion for a full cycle.
-    pub fn collect_full<T: Trace<'cell>>(&mut self, owner: &CellOwner<'cell>) {
+    pub fn collect_full<T: Trace<'rt, 'cell>>(&mut self, owner: &CellOwner<'cell>) {
         self.root.allocation_debt.set(f64::INFINITY);
         self.root.phase.set(Phase::Wake);
         self.collect(owner);

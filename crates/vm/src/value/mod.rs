@@ -20,7 +20,7 @@ impl<'gc, 'cell> std::ops::Deref for ValueRoot<'gc, 'cell> {
 
 impl<'gc, 'cell> ValueRoot<'gc, 'cell> {
     #[inline]
-    pub fn into_object(self) -> Option<GcRoot<'gc, 'cell, Object>> {
+    pub fn into_object(self) -> Option<GcRoot<'gc, 'cell, Object<'gc, 'cell>>> {
         unsafe { self.0.into_object().map(|x| GcRoot::assume_rooted(x)) }
     }
 
@@ -36,7 +36,7 @@ impl<'gc, 'cell> From<GcRoot<'gc, 'cell, String>> for ValueRoot<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<GcRoot<'gc, 'cell, Object>> for ValueRoot<'gc, 'cell> {
+impl<'gc, 'cell> From<GcRoot<'gc, 'cell, Object<'gc, 'cell>>> for ValueRoot<'gc, 'cell> {
     fn from(v: GcRoot<'gc, 'cell, Object>) -> Self {
         ValueRoot(Value::from(*v))
     }

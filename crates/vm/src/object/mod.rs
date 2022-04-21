@@ -1,8 +1,10 @@
-use crate::gc::{Trace, Tracer};
+use crate::gc::{Gc, Trace, Tracer};
 
-pub struct Object {}
+pub struct Object<'gc, 'cell> {
+    prototype: Option<Gc<'gc, 'cell, Object<'gc, 'cell>>>,
+}
 
-unsafe impl<'cell> Trace<'cell> for Object {
+unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Object<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -10,5 +12,7 @@ unsafe impl<'cell> Trace<'cell> for Object {
         false
     }
 
-    fn trace(&self, _trace: Tracer<'_, 'cell>) {}
+    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+        self.prototype.trace(trace);
+    }
 }
