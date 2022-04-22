@@ -38,6 +38,13 @@ impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
         self.ptr
     }
 
+    pub unsafe fn from_ptr(ptr: NonNull<GcBox<'cell, T>>) -> Self {
+        Gc {
+            ptr,
+            marker: PhantomData,
+        }
+    }
+
     // Borrow the contained value
     #[inline]
     pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
