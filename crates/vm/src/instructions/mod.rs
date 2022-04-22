@@ -22,11 +22,12 @@
 
 #[macro_use]
 mod macros;
-use crate::{
-    gc::{self, Trace},
-    Value,
-};
 use std::{error::Error, fmt};
+
+use crate::{
+    gc::{Gc, Trace, Tracer},
+    value::Value,
+};
 
 #[derive(Debug)]
 pub enum ValidationError {}
@@ -57,18 +58,21 @@ pub struct ByteFunction {
     pub upvalues: Box<[Upvalue]>,
 }
 
+pub type GcByteCode<'gc, 'cell> = Gc<'gc, 'cell, ByteCode<'gc, 'cell>>;
+
 /// A generic set of instructions, functions and constants.
 #[derive(Debug)]
-pub struct ByteCode {
+pub struct ByteCode<'gc, 'cell> {
     /// Constants used in this bytecode set.
-    pub constants: Box<[Value]>,
+    pub constants: Box<[Value<'gc, 'cell>]>,
     /// The functions defined in this bytecode, the entry function is always the first one.
     pub functions: Box<[ByteFunction]>,
     //// All instructions belonging to all functions defined in the bytecode.
     pub instructions: Box<[Instruction]>,
 }
 
-impl ByteCode {
+/*
+impl<'gc, 'cell> ByteCode<'gc, 'cell> {
     /// Makes sure that bytecode is valid and returns a struct signifying that the bytecode has
     /// been validated.
     ///
@@ -99,18 +103,9 @@ impl ByteCode {
         ValidByteCode(self)
     }
 }
+*/
 
-/// Byte code which has been validated to ensure that the assumptions the vm makes about the
-/// bytecode hold hold.
-pub struct ValidByteCode(ByteCode);
-
-impl ValidByteCode {
-    pub fn into_inner(self) -> ByteCode {
-        self.0
-    }
-}
-
-unsafe impl Trace for ByteCode {
+unsafe impl<'gc, 'cell> Trace<'cell> for ByteCode<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -118,20 +113,12 @@ unsafe impl Trace for ByteCode {
         true
     }
 
-    fn trace(&self, ctx: gc::Ctx) {
+    fn trace<'a>(&self, ctx: Tracer<'a, 'cell>) {
         self.constants.iter().for_each(|x| x.trace(ctx));
-    }
-
-    fn finalize(&self, atoms: &crate::atom::Atoms) {
-        for c in self.constants.iter() {
-            if let Some(a) = c.into_atom() {
-                atoms.decrement(a);
-            }
-        }
     }
 }
 
-impl fmt::Display for ByteCode {
+impl<'gc, 'cell> fmt::Display for ByteCode<'gc, 'cell> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "> CONSTANTS")?;
         for (idx, c) in self.constants.iter().enumerate() {

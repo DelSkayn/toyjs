@@ -1,10 +1,46 @@
-use crate::gc::{Gc, Trace, Tracer};
+use std::cell::RefCell;
 
-pub struct Object<'gc, 'cell> {
-    prototype: Option<Gc<'gc, 'cell, Object<'gc, 'cell>>>,
+use common::collections::HashMap;
+
+use crate::{
+    gc::{Gc, Trace, Tracer},
+    value::Value,
+};
+
+use self::function::{MutableFn, SharedFn, StaticFn, VmFunction};
+
+mod function;
+
+pub type GcObject<'gc, 'cell> = Gc<'gc, 'cell, Object<'gc, 'cell>>;
+
+pub enum ObjectKind<'gc, 'cell> {
+    Ordinary,
+    Array,
+    Error,
+    VmFn(VmFunction<'gc, 'cell>),
+    MutableFn(RefCell<MutableFn>),
+    SharedFn(SharedFn),
+    StaticFn(StaticFn),
+    //ForInIterator(ForInIterator),
 }
 
-unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Object<'gc, 'cell> {
+pub struct Object<'gc, 'cell> {
+    prototype: Option<GcObject<'gc, 'cell>>,
+    kind: ObjectKind<'gc, 'cell>,
+    values: HashMap<String, Value<'gc, 'cell>>,
+}
+
+impl<'gc, 'cell> Object<'gc, 'cell> {
+    pub fn new(prototype: Option<GcObject<'gc, 'cell>>, kind: ObjectKind<'gc, 'cell>) -> Self {
+        Object {
+            prototype,
+            values: HashMap::default(),
+            kind,
+        }
+    }
+}
+
+unsafe impl<'gc, 'cell> Trace<'cell> for Object<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -12,7 +48,10 @@ unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Object<'gc, 'cell> {
         false
     }
 
-    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
         self.prototype.trace(trace);
+        for v in self.values.values() {
+            v.trace(trace);
+        }
     }
 }
