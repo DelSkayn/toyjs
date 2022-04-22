@@ -17,7 +17,7 @@ mod impl_trace;
 macro_rules! root {
     ($arena:expr, $value:ident) => {
         let __guard = $arena._root($value);
-        let $value = unsafe { $value.rebind(__guard.0) };
+        let $value = unsafe { $value.rebind(&__guard) };
     };
 }
 
