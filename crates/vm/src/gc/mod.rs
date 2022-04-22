@@ -1,99 +1,68 @@
+mod ptr;
 use std::{
     alloc::{self, Layout},
-    cell::Cell,
+    cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem,
-    ptr::{self, NonNull},
+    ptr::{drop_in_place, NonNull},
 };
 
-use common::cell_vec::CellVec;
-
-use crate::cell::{CellOwner, LCell};
+use common::{cell_vec::CellVec, collections::HashMap};
+pub use ptr::Gc;
+use ptr::{Color, GcBoxPtr};
 
 mod impl_trace;
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-enum Color {
-    White,
-    Gray,
-    Black,
+#[macro_export]
+macro_rules! root {
+    ($arena:expr, $value:ident) => {
+        let __guard = $arena._root($value);
+        let $value = unsafe { $value.rebind(__guard.0) };
+    };
 }
 
-/// A set of roots which mark the alive pointers in the GC.
-pub struct RootSet<'cell> {
-    roots: CellVec<GcBoxPtr<'static, 'cell>>,
-
-    all: Cell<Option<GcBoxPtr<'static, 'cell>>>,
-    grays: CellVec<GcBoxPtr<'static, 'cell>>,
-    grays_again: CellVec<GcBoxPtr<'static, 'cell>>,
-
-    sweep: Cell<Option<GcBoxPtr<'static, 'cell>>>,
-    sweep_prev: Cell<Option<GcBoxPtr<'static, 'cell>>>,
-    phase: Cell<Phase>,
-
-    total_allocated: Cell<usize>,
-    remembered_size: Cell<usize>,
-    wakeup_total: Cell<usize>,
-    allocation_debt: Cell<f64>,
-}
-
-impl<'cell> RootSet<'cell> {
-    const PAUSE_FACTOR: f64 = 0.5;
-    const TIMING_FACTOR: f64 = 1.5;
-    const MIN_SLEEP: usize = 4096;
-
-    pub fn new() -> Self {
-        RootSet {
-            all: Cell::new(None),
-            roots: CellVec::new(),
-            grays: CellVec::new(),
-            grays_again: CellVec::new(),
-
-            sweep: Cell::new(None),
-            sweep_prev: Cell::new(None),
-            phase: Cell::new(Phase::Sleep),
-
-            total_allocated: Cell::new(0),
-            remembered_size: Cell::new(0),
-            wakeup_total: Cell::new(Self::MIN_SLEEP),
-            allocation_debt: Cell::new(0.0),
-        }
-    }
-
-    fn write_barrier<'rt, T: Trace<'rt, 'cell>>(&self, gc: Gc<'rt, 'cell, T>) {
-        if !T::needs_trace() {
-            return;
-        }
+/*
+#[macro_export]
+macro_rules! root_owned {
+    ($arena:expr, $value:expr) => {
         unsafe {
-            if self.phase.get() == Phase::Mark && gc.ptr.as_ref().color.get() == Color::Black {
-                gc.ptr.as_ref().color.set(Color::Gray);
-                self.grays_again.push(mem::transmute(gc.ptr));
-            }
+            let (id, roots) = $arena._root_owned($value);
+            let ptr = $value.rebind(roots);
+            $crate::gc::GcRootHandle::_create(id, ptr, roots)
         }
-    }
+    };
+}
+*/
+
+#[macro_export]
+macro_rules! rebind {
+    ($arena:expr, $value:expr) => {
+        unsafe {
+            let ptr = $value.into_ptr();
+            $arena._rebind(ptr)
+        }
+    };
 }
 
-impl Drop for RootSet<'_> {
-    fn drop(&mut self) {
-        unsafe {
-            while let Some(x) = self.all.get() {
-                self.all.set(x.as_ref().next.get());
-                ptr::drop_in_place(x.as_ptr());
-                let layout = Layout::for_value(x.as_ref());
-                alloc::dealloc(x.as_ptr().cast(), layout);
-            }
-        }
-    }
-}
+#[cfg(test)]
+mod test;
+
+use crate::cell::{CellOwner, Id, LCell};
+
+use self::ptr::GcBox;
 
 /// Context struct for marking life pointers.
 #[derive(Clone, Copy)]
-pub struct Tracer<'gc, 'cell>(pub(crate) &'gc RootSet<'cell>);
+pub struct Tracer<'a, 'cell> {
+    roots: &'a Roots,
+    pub owner: &'a CellOwner<'cell>,
+}
 
-impl<'gc, 'cell> Tracer<'gc, 'cell> {
+impl<'a, 'cell> Tracer<'a, 'cell> {
     /// Mark a pointer as alive.
-    pub fn mark<T: Trace<'gc, 'cell> + 'gc>(self, gc: Gc<'gc, 'cell, T>) {
+    pub fn mark<T: Trace<'cell> + 'a>(self, gc: Gc<'a, 'cell, T>) {
         unsafe {
+            // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
             if r.color.get() != Color::White {
                 return;
@@ -101,21 +70,27 @@ impl<'gc, 'cell> Tracer<'gc, 'cell> {
 
             r.color.set(Color::Gray);
             if T::needs_trace() {
-                self.0.grays.push(mem::transmute(gc.ptr));
+                let ptr: GcBoxPtr<'a, 'cell> = gc.ptr;
+                // Change the lifetimes to static.
+                // Roots implementation ensures that the lifetime constraints are upheld.
+                self.roots.grays.push(mem::transmute(ptr));
             }
         }
     }
 
     /// Mark a pointer with a dynamic type as alive.
-    pub fn mark_dynamic(self, gc: Gc<'gc, 'cell, dyn Trace<'gc, 'cell>>) {
+    pub fn mark_dynamic(self, gc: Gc<'a, 'cell, dyn Trace<'cell>>) {
         unsafe {
+            // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
             if r.color.get() != Color::White {
                 return;
             }
 
             r.color.set(Color::Gray);
-            self.0.grays.push(mem::transmute(gc.ptr));
+            // Change the lifetimes to static.
+            // Roots implementation ensures that the lifetime constraints are upheld.
+            self.roots.grays.push(mem::transmute(gc.ptr));
         }
     }
 }
@@ -133,7 +108,7 @@ impl<'gc, 'cell> Tracer<'gc, 'cell> {
 /// - `trace` marks all pointers contained in the type and calls `trace` all types contained in this type which implement `Trace`.
 /// - The type must not dereferences a `Gc` pointer in its drop implementation.
 ///
-pub unsafe trait Trace<'gc, 'cell> {
+pub unsafe trait Trace<'cell> {
     /// Returns whether the type can contain any Gc pointers and thus needs to be traced.
     ///
     /// The value returned is used as an optimization.
@@ -143,95 +118,7 @@ pub unsafe trait Trace<'gc, 'cell> {
         Self: Sized;
 
     /// Traces the type for any gc pointers.
-    fn trace(&self, trace: Tracer<'gc, 'cell>);
-}
-
-struct GcBox<'cell, T: ?Sized> {
-    next: Cell<Option<GcBoxPtr<'static, 'cell>>>,
-    color: Cell<Color>,
-    value: LCell<'cell, T>,
-}
-
-type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace<'gc, 'cell>>>;
-
-/// A pointer to a gc allocated value.
-pub struct Gc<'gc, 'cell, T: ?Sized> {
-    ptr: NonNull<GcBox<'cell, T>>,
-    marker: PhantomData<&'gc ()>,
-}
-
-impl<'gc, 'cell, T: ?Sized> Copy for Gc<'gc, 'cell, T> {}
-impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'gc, 'cell, T: ?Sized + Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
-    // Borrow the contained value
-    #[inline]
-    pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
-        unsafe { owner.borrow(&self.ptr.as_ref().value) }
-    }
-}
-
-impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
-    // Borrow the contained value mutably
-    #[inline]
-    pub fn borrow_mut<'a, 'rt>(
-        &'a self,
-        owner: &'a mut CellOwner<'cell>,
-        arena: &Arena<'rt, 'cell>,
-    ) -> &'a mut T {
-        if T::needs_trace() {
-            arena.write_barrier(*self);
-        }
-        unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
-    }
-
-    // Borrow the contained value mutably without requiring access to the arena,
-    // Can be used with values which themselfs do not contain `Gc` pointers.
-    //
-    // # Panic
-    //
-    // Will panic if `T::needs_trace()` returns true.
-    #[inline]
-    pub fn borrow_mut_untraced<'a, 'rt>(&'a self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
-        if T::needs_trace() {
-            panic!("called borrow_mut_untraced on pointer which requires tracing")
-        }
-        unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
-    }
-}
-
-/// A pointer to a gc allocated value which is rooted.
-#[repr(transparent)]
-pub struct GcRoot<'rt, 'cell, T: ?Sized> {
-    ptr: Gc<'rt, 'cell, T>,
-}
-
-impl<'rt, 'cell, T: ?Sized> GcRoot<'rt, 'cell, T> {
-    pub unsafe fn assume_rooted<'gc>(ptr: Gc<'gc, 'cell, T>) -> Self {
-        Self {
-            ptr: mem::transmute(ptr),
-        }
-    }
-}
-
-impl<'gc, 'cell, T: ?Sized> Copy for GcRoot<'gc, 'cell, T> {}
-impl<'gc, 'cell, T: ?Sized> Clone for GcRoot<'gc, 'cell, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'rt, 'cell, T: ?Sized> std::ops::Deref for GcRoot<'rt, 'cell, T> {
-    type Target = Gc<'rt, 'cell, T>;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.ptr
-    }
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -242,46 +129,195 @@ enum Phase {
     Sweep,
 }
 
-/// A place which can allocate gc pointers.
+pub struct Roots {
+    // All lifetimes are static as the implementation ensures that the values contained in the
+    // pointer are never borrowed without a CellOwner and the values are valid as long as the
+    // GcBoxPtr exists.
+    /// The root values, point to alive values.
+    roots: CellVec<GcBoxPtr<'static, 'static>>,
+
+    owned_roots: UnsafeCell<HashMap<usize, GcBoxPtr<'static, 'static>>>,
+    next_owned_id: Cell<usize>,
+
+    /// Ptr's which have been marked as alive
+    grays: CellVec<GcBoxPtr<'static, 'static>>,
+    /// Ptr's which might have new alive values as the value pointed to has been mutated.
+    grays_again: CellVec<GcBoxPtr<'static, 'static>>,
+
+    /// Current pointer reached while cleaning up.
+    sweep: Cell<Option<GcBoxPtr<'static, 'static>>>,
+    sweep_prev: Cell<Option<GcBoxPtr<'static, 'static>>>,
+
+    /// The list of all gc allocated pointers.
+    all: Cell<Option<GcBoxPtr<'static, 'static>>>,
+
+    total_allocated: Cell<usize>,
+    remembered_size: Cell<usize>,
+    wakeup_total: Cell<usize>,
+    allocation_debt: Cell<f64>,
+
+    phase: Cell<Phase>,
+}
+
+impl Drop for Roots {
+    fn drop(&mut self) {
+        unsafe {
+            while let Some(x) = self.all.get() {
+                self.all.set(x.as_ref().next.get());
+                drop_in_place(x.as_ptr());
+                let layout = Layout::for_value(x.as_ref());
+                alloc::dealloc(x.as_ptr().cast(), layout);
+            }
+        }
+    }
+}
+
+impl Roots {
+    const PAUSE_FACTOR: f64 = 0.5;
+    const TIMING_FACTOR: f64 = 1.5;
+    const MIN_SLEEP: usize = 4096;
+
+    pub fn new() -> Roots {
+        Roots {
+            roots: CellVec::new(),
+
+            owned_roots: UnsafeCell::new(HashMap::default()),
+            next_owned_id: Cell::new(0),
+
+            grays: CellVec::new(),
+            grays_again: CellVec::new(),
+
+            sweep: Cell::new(None),
+            sweep_prev: Cell::new(None),
+
+            all: Cell::new(None),
+
+            total_allocated: Cell::new(0),
+            remembered_size: Cell::new(0),
+            wakeup_total: Cell::new(Self::MIN_SLEEP),
+            allocation_debt: Cell::new(0.0),
+
+            phase: Cell::new(Phase::Sleep),
+        }
+    }
+
+    fn write_barrier<'a, 'b, T: Trace<'b> + 'a>(&self, gc: Gc<'a, 'b, T>) {
+        if !T::needs_trace() {
+            return;
+        }
+        unsafe {
+            if self.phase.get() == Phase::Mark && gc.ptr.as_ref().color.get() == Color::Black {
+                gc.ptr.as_ref().color.set(Color::Gray);
+                let ptr: GcBoxPtr<'a, 'b> = gc.ptr;
+                self.grays_again.push(mem::transmute(ptr));
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub struct RootGuard<'rt>(pub &'rt Roots);
+
+impl<'rt> Drop for RootGuard<'rt> {
+    fn drop(&mut self) {
+        self.0.roots.pop();
+    }
+}
+
+thread_local! {
+    static ARENA_ACTIVE: Cell<bool> = Cell::new(false);
+}
+
 pub struct Arena<'rt, 'cell> {
-    root: &'rt RootSet<'cell>,
+    roots: &'rt Roots,
+    marker: Id<'cell>,
+}
+
+impl<'rt, 'cell> Drop for Arena<'rt, 'cell> {
+    fn drop(&mut self) {
+        ARENA_ACTIVE.with(|x| x.set(false));
+    }
 }
 
 impl<'rt, 'cell> Arena<'rt, 'cell> {
-    /// Create a new arena.
-    pub fn new(root: &'rt RootSet<'cell>) -> Self {
-        Arena { root }
+    pub fn new(roots: &'rt Roots) -> Self {
+        assert!(!ARENA_ACTIVE.with(|x| x.get()));
+
+        ARENA_ACTIVE.with(|x| x.set(true));
+
+        Arena {
+            roots,
+            marker: unsafe { Id::new() },
+        }
     }
 
-    /// Allocate a new garbage collected value.
-    pub fn allocate<'gc, T: Trace<'gc, 'cell> + 'static>(&'gc self, t: T) -> Gc<'gc, 'cell, T> {
+    #[doc(hidden)]
+    pub unsafe fn _rebind<'gc, T: Trace<'cell> + 'gc>(
+        &'gc self,
+        ptr: NonNull<GcBox<'cell, T>>,
+    ) -> Gc<'gc, 'cell, T> {
+        Gc {
+            ptr,
+            marker: PhantomData,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn _root<'gc, T: Trace<'cell> + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt> {
+        let ptr: GcBoxPtr = t.ptr;
+        unsafe {
+            self.roots.roots.push(mem::transmute(ptr));
+        }
+        RootGuard(self.roots)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn _root_owned<'gc, T: Trace<'cell> + 'gc>(
+        &self,
+        gc: Gc<'gc, 'cell, T>,
+    ) -> (usize, &'rt Roots) {
+        let id = self.roots.next_owned_id.get();
+        self.roots.next_owned_id.set(id + 1);
+
+        let p: GcBoxPtr = gc.into_ptr();
+        (*self.roots.owned_roots.get()).insert(id, mem::transmute(p));
+
+        (id, self.roots)
+    }
+
+    pub fn add<'gc, T: Trace<'cell> + 'gc>(&'gc self, v: T) -> Gc<'gc, 'cell, T> {
         unsafe {
             let layout = Layout::new::<GcBox<T>>();
             let ptr = NonNull::new(alloc::alloc(layout).cast::<GcBox<T>>()).unwrap();
             ptr.as_ptr().write(GcBox {
                 color: Cell::new(Color::White),
-                next: Cell::new(self.root.all.get()),
-                value: LCell::new(t),
+                next: Cell::new(self.roots.all.get()),
+                value: LCell::new(v),
             });
 
-            if self.root.phase.get() == Phase::Sleep
-                && self.root.total_allocated.get() > self.root.wakeup_total.get()
+            self.roots
+                .total_allocated
+                .set(self.roots.total_allocated.get() + layout.size());
+
+            if self.roots.phase.get() == Phase::Sleep
+                && self.roots.total_allocated.get() > self.roots.wakeup_total.get()
             {
-                self.root.phase.set(Phase::Wake);
+                self.roots.phase.set(Phase::Wake);
             }
 
-            if self.root.phase.get() != Phase::Sleep {
-                self.root.allocation_debt.set(
-                    self.root.allocation_debt.get()
+            if self.roots.phase.get() != Phase::Sleep {
+                self.roots.allocation_debt.set(
+                    self.roots.allocation_debt.get()
                         + layout.size() as f64
-                        + layout.size() as f64 / RootSet::TIMING_FACTOR,
+                        + layout.size() as f64 / Roots::TIMING_FACTOR,
                 );
             }
 
-            self.root.all.set(Some(mem::transmute(ptr)));
+            let dyn_ptr: GcBoxPtr = ptr;
+            self.roots.all.set(Some(mem::transmute(dyn_ptr)));
 
-            if self.root.phase.get() == Phase::Sweep && self.root.sweep_prev.get().is_none() {
-                self.root.sweep_prev.set(self.root.all.get());
+            if self.roots.phase.get() == Phase::Sweep && self.roots.sweep_prev.get().is_none() {
+                self.roots.sweep_prev.set(self.roots.all.get());
             }
             Gc {
                 ptr,
@@ -290,139 +326,135 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         }
     }
 
-    pub fn root<'a, T: ?Sized>(&self, ptr: Gc<'a, 'cell, T>) -> GcRoot<'rt, 'cell, T> {
-        let _res: GcRoot<'rt, 'cell, T> = unsafe { mem::transmute(ptr) };
-        todo!()
-    }
-
-    /// Function must be called if the value behind a gc pointer could possible contain new gc
-    /// pointers.
-    ///
-    #[inline]
-    pub fn write_barrier<'gc, T: Trace<'gc, 'cell>>(&self, gc: Gc<'gc, 'cell, T>) {
-        self.root.write_barrier(gc)
-    }
-
-    /// Run Collection to completion for a full cycle.
-    pub fn collect_full<T: Trace<'rt, 'cell>>(&mut self, owner: &CellOwner<'cell>) {
-        self.root.allocation_debt.set(f64::INFINITY);
-        self.root.phase.set(Phase::Wake);
+    pub fn collect_full<'gc>(&'gc mut self, owner: &'gc CellOwner<'cell>) {
+        self.roots.allocation_debt.set(f64::INFINITY);
+        self.roots.phase.set(Phase::Wake);
         self.collect(owner);
     }
 
-    /// Run garbage collection if nessecery.
-    pub fn collect(&mut self, owner: &CellOwner<'cell>) {
-        let root = self.root;
+    pub fn collect<'gc>(&'gc mut self, owner: &'gc CellOwner<'cell>) {
+        let roots = self.roots;
 
         unsafe {
-            if root.phase.get() == Phase::Sleep {
+            if roots.phase.get() == Phase::Sleep {
                 return;
             }
 
-            let work = root.allocation_debt.get();
+            let work = roots.allocation_debt.get();
             let mut work_done = 0usize;
 
             //let mut tmp = HashSet::new();
 
             while work > work_done as f64 {
-                match root.phase.get() {
+                match roots.phase.get() {
                     Phase::Wake => {
-                        root.sweep_prev.set(None);
+                        roots.sweep_prev.set(None);
                         // Trace the root, every value reachable by the root is live.
                         // All gc pointers will be put on into the grays array.
-                        root.roots.unsafe_iter().copied().for_each(|x| {
+                        roots.roots.unsafe_iter().copied().for_each(|x| {
                             x.as_ref().color.set(Color::Gray);
-                            root.grays.push(mem::transmute(x));
+                            roots.grays.push(mem::transmute::<_, NonNull<_>>(x));
                             work_done += mem::size_of_val(x.as_ref());
                         });
+                        for x in (*roots.owned_roots.get()).values().copied() {
+                            x.as_ref().color.set(Color::Gray);
+                            roots.grays.push(mem::transmute::<_, NonNull<_>>(x));
+                            work_done += mem::size_of_val(x.as_ref());
+                        }
 
-                        root.phase.set(Phase::Mark);
+                        roots.phase.set(Phase::Mark);
                     }
                     Phase::Mark => {
-                        if let Some(x) = root.grays.pop() {
+                        if let Some(x) = roots.grays.pop() {
                             //assert!(tmp.insert(x.as_ptr()));
                             let size = mem::size_of_val(x.as_ref());
                             work_done += size;
-                            // ???
-                            x.as_ref().value.borrow(owner).trace(Tracer(self.root));
+                            let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
+                            ptr.as_ref()
+                                .value
+                                .borrow(owner)
+                                .trace(Tracer { roots, owner });
+
                             x.as_ref().color.set(Color::Black);
-                        } else if let Some(x) = root.grays_again.pop() {
+                        } else if let Some(x) = roots.grays_again.pop() {
                             //assert!(!tmp.insert(x.as_ptr()));
-                            x.as_ref().value.borrow(owner).trace(Tracer(self.root));
+                            let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
+
+                            ptr.as_ref()
+                                .value
+                                .borrow(owner)
+                                .trace(Tracer { roots, owner });
                             x.as_ref().color.set(Color::Black);
                         } else {
-                            root.roots.for_each(|x| {
+                            roots.roots.for_each(|x| {
                                 if x.as_ref().color.get() == Color::Gray {
-                                    root.grays.push(mem::transmute(x));
+                                    roots.grays.push(mem::transmute(x));
                                 }
                             });
+                            for x in (*roots.owned_roots.get()).values().copied() {
+                                if x.as_ref().color.get() == Color::Gray {
+                                    roots.grays.push(mem::transmute::<_, NonNull<_>>(x));
+                                }
+                            }
 
                             // Found new values in root
                             // Should continue tracing till no more free values are found.
-                            if !root.grays.is_empty() {
+                            if !roots.grays.is_empty() {
                                 continue;
                             }
 
-                            root.phase.set(Phase::Sweep);
-                            root.sweep.set(self.root.all.get());
+                            roots.phase.set(Phase::Sweep);
+                            roots.sweep.set(roots.all.get());
                         }
                     }
                     Phase::Sweep => {
-                        if let Some(x) = root.sweep.get() {
-                            root.sweep.set(x.as_ref().next.get());
-                            let size = mem::size_of_val(x.as_ref());
+                        if let Some(x) = roots.sweep.get() {
+                            roots.sweep.set(x.as_ref().next.get());
+                            let layout = Layout::for_value(x.as_ref());
 
                             if x.as_ref().color.get() == Color::White {
-                                if let Some(prev) = root.sweep_prev.get() {
+                                if let Some(prev) = roots.sweep_prev.get() {
                                     prev.as_ref().next.set(x.as_ref().next.get());
                                 } else {
-                                    root.all.set(x.as_ref().next.get());
+                                    roots.all.set(x.as_ref().next.get());
                                 }
 
-                                root.total_allocated.set(root.total_allocated.get() - size);
-                                ptr::drop_in_place(x.as_ptr());
-                                let layout = Layout::for_value(x.as_ref());
+                                roots
+                                    .total_allocated
+                                    .set(roots.total_allocated.get() - layout.size());
+                                drop_in_place(x.as_ptr());
                                 alloc::dealloc(x.as_ptr().cast(), layout);
                             } else {
-                                root.remembered_size.set(root.remembered_size.get() + size);
+                                roots
+                                    .remembered_size
+                                    .set(roots.remembered_size.get() + layout.size());
                                 x.as_ref().color.set(Color::White);
-                                root.sweep_prev.set(Some(x));
+                                roots.sweep_prev.set(Some(x));
                             }
                         } else {
-                            root.phase.set(Phase::Sleep);
-                            root.allocation_debt.set(0.0);
-                            root.wakeup_total.set(
-                                root.total_allocated.get()
-                                    + ((root.remembered_size.get() as f64 * RootSet::PAUSE_FACTOR)
+                            roots.phase.set(Phase::Sleep);
+                            roots.allocation_debt.set(0.0);
+                            roots.wakeup_total.set(
+                                roots.total_allocated.get()
+                                    + ((roots.remembered_size.get() as f64 * Roots::PAUSE_FACTOR)
                                         .round()
                                         .min(usize::MAX as f64)
                                         as usize)
-                                        .max(RootSet::MIN_SLEEP),
+                                        .max(Roots::MIN_SLEEP),
                             );
                         }
                     }
                     Phase::Sleep => break,
                 }
             }
-            root.allocation_debt
-                .set((root.allocation_debt.get() - work_done as f64).max(0.0));
+            roots
+                .allocation_debt
+                .set((roots.allocation_debt.get() - work_done as f64).max(0.0));
         }
     }
-}
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn gc() {
-        crate::new_cell_owner!(owner);
-        let root = RootSet::new();
-        let arena = Arena::new(&root);
-
-        let ptr = arena.allocate(1);
-        *ptr.borrow_mut_untraced(&mut owner) += 1;
-
-        assert_eq!(*ptr.borrow(&owner), 2);
+    #[inline]
+    pub fn write_barrier<'a, 'b, T: Trace<'b> + 'a>(&self, gc: Gc<'a, 'b, T>) {
+        self.roots.write_barrier(gc);
     }
 }

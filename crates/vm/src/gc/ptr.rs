@@ -1,8 +1,8 @@
-use std::{cell::Cell, marker::PhantomData, mem, ptr::NonNull};
+use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 
 use crate::cell::{CellOwner, LCell};
 
-use super::{Arena, RootGuard, Trace};
+use super::{Arena, Trace};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Color {
@@ -18,7 +18,7 @@ pub struct GcBox<'cell, T: ?Sized> {
     pub value: LCell<'cell, T>,
 }
 
-pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace<'gc, 'cell> + 'gc>>;
+pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace<'cell> + 'gc>>;
 
 /// A pointer to a gc allocated value.
 pub struct Gc<'gc, 'cell, T: ?Sized> {
@@ -33,7 +33,7 @@ impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: ?Sized + Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
     pub fn into_ptr(self) -> NonNull<GcBox<'cell, T>> {
         self.ptr
     }
@@ -45,7 +45,7 @@ impl<'gc, 'cell, T: ?Sized + Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
     // Borrow the contained value mutably
     #[inline]
     pub fn borrow_mut<'a, 'rt>(
@@ -72,44 +72,18 @@ impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Gc<'gc, 'cell, T> {
         }
         unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
     }
-}
 
-/// A pointer to a gc allocated value which is rooted.
-#[repr(transparent)]
-pub struct GcRoot<'rt, 'cell, T: ?Sized> {
-    ptr: Gc<'rt, 'cell, T>,
-}
-
-impl<'rt, 'cell, T: ?Sized> GcRoot<'rt, 'cell, T> {
-    pub unsafe fn assume_rooted<'gc>(ptr: Gc<'gc, 'cell, T>) -> Self {
-        Self {
-            ptr: mem::transmute(ptr),
-        }
-    }
-
-    #[doc(hidden)]
-    pub unsafe fn assume_rooted_guard<'gc>(
-        _guard: &'rt RootGuard<'_>,
-        ptr: Gc<'gc, 'cell, T>,
-    ) -> GcRoot<'rt, 'cell, T> {
-        Self {
-            ptr: mem::transmute(ptr),
-        }
-    }
-}
-
-impl<'gc, 'cell, T: ?Sized> Copy for GcRoot<'gc, 'cell, T> {}
-impl<'gc, 'cell, T: ?Sized> Clone for GcRoot<'gc, 'cell, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<'rt, 'cell, T: ?Sized> std::ops::Deref for GcRoot<'rt, 'cell, T> {
-    type Target = Gc<'rt, 'cell, T>;
-
+    // Borrow the contained value mutably without requiring access to the arena,
+    // Can be used with values which themselfs do not contain `Gc` pointers.
+    //
+    // # Panic
+    //
+    // Will panic if `T::needs_trace()` returns true.
     #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.ptr
+    pub unsafe fn borrow_mut_untraced_unchecked<'a, 'rt>(
+        &'a self,
+        owner: &'a mut CellOwner<'cell>,
+    ) -> &'a mut T {
+        owner.borrow_mut(&self.ptr.as_ref().value)
     }
 }

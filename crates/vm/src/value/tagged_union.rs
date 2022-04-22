@@ -19,6 +19,18 @@ pub enum Value<'gc, 'cell> {
 }
 
 impl<'gc, 'cell> Value<'gc, 'cell> {
+    pub fn to_static(self) -> Option<Value<'static, 'static>> {
+        match self {
+            Value::Float(x) => Some(Value::Float(x)),
+            Value::Integer(x) => Some(Value::Integer(x)),
+            Value::Boolean(x) => Some(Value::Boolean(x)),
+            Value::Undefined => Some(Value::Undefined),
+            Value::Null => Some(Value::Null),
+            Value::Empty => Some(Value::Empty),
+            _ => None,
+        }
+    }
+
     /// Returns wether two values have the same data type.
     #[inline]
     pub fn same_type(self, other: Self) -> bool {
@@ -277,7 +289,7 @@ impl From<Atom> for Value {
 }
 */
 
-unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Value<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace<'cell> for Value<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -285,7 +297,7 @@ unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Value<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, ctx: Tracer<'_, 'cell>) {
+    fn trace<'a>(&self, ctx: Tracer<'a, 'cell>) {
         match *self {
             Value::Object(x) => ctx.mark(x),
             Value::String(x) => ctx.mark(x),

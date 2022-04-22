@@ -1,14 +1,20 @@
-use super::{Gc, Trace, Tracer};
+use super::{Gc, Roots, Trace, Tracer};
 
 macro_rules! impl_trace_primitive{
 ($($ty:ident,)*) => {
     $(
-        unsafe impl<'gc,'cell> Trace<'gc,'cell> for $ty{
+        unsafe impl<'cell> Trace<'cell> for $ty{
             fn needs_trace() -> bool{
                 false
             }
 
-            fn trace(&self, _t: Tracer<'gc,'cell>){}
+            fn trace<'a>(&self, _t: Tracer<'a,'cell>){}
+        }
+
+        impl<'gc,'cell> Gc<'gc,'cell,$ty>{
+            pub unsafe fn rebind<'rt>(self,_: &'rt Roots) -> Gc<'rt,'cell, $ty>{
+                std::mem::transmute(self)
+            }
         }
     )*
 };
@@ -18,7 +24,7 @@ impl_trace_primitive!(
     bool, char, u8, u16, u32, u64, usize, i8, i16, i32, i64, f32, f64, isize, String, str,
 );
 
-unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell>> Trace<'gc, 'cell> for Option<T> {
+unsafe impl<'cell, T: Trace<'cell>> Trace<'cell> for Option<T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -26,14 +32,14 @@ unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell>> Trace<'gc, 'cell> for Option<T> {
         T::needs_trace()
     }
 
-    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
         if let Some(ref x) = *self {
             x.trace(trace);
         }
     }
 }
 
-unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell>> Trace<'gc, 'cell> for [T] {
+unsafe impl<'cell, T: Trace<'cell>> Trace<'cell> for Box<T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -41,14 +47,27 @@ unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell>> Trace<'gc, 'cell> for [T] {
         T::needs_trace()
     }
 
-    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
+        (**self).trace(trace);
+    }
+}
+
+unsafe impl<'cell, T: Trace<'cell>> Trace<'cell> for [T] {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        T::needs_trace()
+    }
+
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
         for t in self {
             t.trace(trace);
         }
     }
 }
 
-unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Trace<'gc, 'cell> for Gc<'gc, 'cell, T> {
+unsafe impl<'gc, 'cell, T: Trace<'cell>> Trace<'cell> for Gc<'gc, 'cell, T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -56,12 +75,12 @@ unsafe impl<'gc, 'cell, T: Trace<'gc, 'cell> + 'static> Trace<'gc, 'cell> for Gc
         T::needs_trace()
     }
 
-    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
         trace.mark(*self);
     }
 }
 
-unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Gc<'gc, 'cell, dyn Trace<'gc, 'cell>> {
+unsafe impl<'gc, 'cell> Trace<'cell> for Gc<'gc, 'cell, dyn Trace<'cell>> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -69,7 +88,7 @@ unsafe impl<'gc, 'cell> Trace<'gc, 'cell> for Gc<'gc, 'cell, dyn Trace<'gc, 'cel
         true
     }
 
-    fn trace(&self, trace: Tracer<'gc, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
         trace.mark_dynamic(*self);
     }
 }
