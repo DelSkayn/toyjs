@@ -1,4 +1,4 @@
-use super::{Gc, Roots, Trace, Tracer};
+use super::{Gc, Trace, Tracer};
 
 macro_rules! impl_trace_primitive{
 ($($ty:ident,)*) => {
@@ -12,7 +12,7 @@ macro_rules! impl_trace_primitive{
         }
 
         impl<'gc,'cell> Gc<'gc,'cell,$ty>{
-            pub unsafe fn rebind<'rt>(self,_: &'rt Roots) -> Gc<'rt,'cell, $ty>{
+            pub unsafe fn rebind<'rt, T>(self,_: &'rt T) -> Gc<'rt,'cell, $ty>{
                 std::mem::transmute(self)
             }
         }

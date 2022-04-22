@@ -94,3 +94,26 @@ fn double_arena() {
         arena.add(1);
     }
 }
+
+struct Container<'gc, 'cell> {
+    inner: Gc<'gc, 'cell, i32>,
+}
+
+unsafe impl<'gc, 'cell> Trace<'cell> for Container<'gc, 'cell> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
+        trace.mark(self.inner);
+    }
+}
+
+impl<'gc, 'cell> Gc<'gc, 'cell, Container<'gc, 'cell>> {
+    pub unsafe fn rebind<'a, T>(self, _: &'a T) -> Gc<'a, 'cell, Container<'a, 'cell>> {
+        std::mem::transmute(self)
+    }
+}

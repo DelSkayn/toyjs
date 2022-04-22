@@ -1,6 +1,6 @@
 use crate::{
     cell::CellOwner,
-    gc::{self, Gc, Roots, Trace, Tracer},
+    gc::{self, Gc, Trace, Tracer},
     object::ObjectKind,
     GcObject, Object, Value,
 };
@@ -48,7 +48,7 @@ impl<'gc, 'cell> Gc<'gc, 'cell, Realm<'gc, 'cell>> {
     }
 
     #[inline]
-    pub unsafe fn rebind<'rt>(self, _: &'rt Roots) -> Gc<'rt, 'cell, Realm<'rt, 'cell>> {
+    pub unsafe fn rebind<'rt, T>(self, _: &'rt T) -> Gc<'rt, 'cell, Realm<'rt, 'cell>> {
         std::mem::transmute(self)
     }
 }
