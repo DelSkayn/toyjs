@@ -38,8 +38,12 @@ macro_rules! root_owned {
 macro_rules! rebind {
     ($arena:expr, $value:expr) => {
         unsafe {
-            let ptr = $value.into_ptr();
-            $arena._rebind(ptr)
+            // Detach from arena's lifetime.
+            let ptr = Gc::from_ptr($value.into_ptr());
+            // Ensure that the $arena is an arena.
+            let a: &Arena = $arena;
+            // Bind to the lifetime of the arena.
+            ptr.rebind(a)
         }
     };
 }

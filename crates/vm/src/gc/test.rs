@@ -73,7 +73,7 @@ fn rebind_test() {
     let roots2 = Roots::new();
     let arena2 = Arena::new(&roots2);
 
-    let a = arena.add(0);
+    let a = arena.add(0i32);
     let a = rebind!(&arena2, a);
 
     mem::drop(arena);
