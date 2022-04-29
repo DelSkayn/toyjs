@@ -1,7 +1,7 @@
 use crate::{
     gc::{Trace, Tracer},
     instructions::GcByteCode,
-    realm::ExecutionContext,
+    realm::{ExecutionContext, GcUpvalueObject},
     Realm, Value,
 };
 
@@ -30,7 +30,7 @@ pub type StaticFn = for<'gc, 'cell> unsafe fn(
 pub struct VmFunction<'gc, 'cell> {
     pub bc: GcByteCode<'gc, 'cell>,
     pub function: u16,
-    //pub upvalues: Box<[Gc<UpvalueObject>]>,
+    pub upvalues: Box<[GcUpvalueObject<'gc, 'cell>]>,
 }
 
 unsafe impl<'gc, 'cell> Trace for VmFunction<'gc, 'cell> {

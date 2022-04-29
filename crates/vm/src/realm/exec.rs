@@ -1,5 +1,4 @@
 use crate::{
-    atom,
     cell::CellOwner,
     gc::{Arena, Gc},
     instructions::{GcByteCode, Instruction},
