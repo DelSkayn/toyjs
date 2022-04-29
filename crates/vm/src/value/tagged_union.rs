@@ -1,7 +1,8 @@
 use std::{fmt, mem};
 
 use crate::{
-    gc::{Gc, Trace, Tracer},
+    atom::Atom,
+    gc::{Gc, Rebind, Trace, Tracer},
     object::Object,
 };
 
@@ -12,7 +13,7 @@ pub enum Value<'gc, 'cell> {
     Boolean(bool),
     String(Gc<'gc, 'cell, String>),
     Object(Gc<'gc, 'cell, Object<'gc, 'cell>>),
-    //Atom(Atom),
+    Atom(Atom),
     Undefined,
     Null,
     Empty,
@@ -234,7 +235,6 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
         }
     }
 
-    /*
     #[inline]
     pub fn into_atom(self) -> Option<Atom> {
         match self {
@@ -242,7 +242,6 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
             _ => None,
         }
     }
-    */
 }
 
 impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
@@ -262,7 +261,11 @@ impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
 impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: f64) -> Self {
-        Value::Float(v)
+        if v as i32 as f64 == v {
+            Value::Integer(v as i32)
+        } else {
+            Value::Float(v)
+        }
     }
 }
 
@@ -280,16 +283,14 @@ impl<'gc, 'cell> From<Gc<'gc, 'cell, Object<'gc, 'cell>>> for Value<'gc, 'cell> 
     }
 }
 
-/*
-impl From<Atom> for Value {
+impl<'a, 'cell> From<Atom> for Value<'a, 'cell> {
     #[inline]
-    fn from(v: Atom) -> Value {
+    fn from(v: Atom) -> Value<'a, 'cell> {
         Value::Atom(v)
     }
 }
-*/
 
-unsafe impl<'gc, 'cell> Trace<'cell> for Value<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -297,13 +298,17 @@ unsafe impl<'gc, 'cell> Trace<'cell> for Value<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, ctx: Tracer<'a>) {
         match *self {
             Value::Object(x) => ctx.mark(x),
             Value::String(x) => ctx.mark(x),
             _ => {}
         }
     }
+}
+
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Value<'gc, 'cell> {
+    type Output = Value<'a, 'cell>;
 }
 
 impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
@@ -315,7 +320,7 @@ impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
             Value::Empty => f.debug_tuple("JSValue::Empty").finish(),
             Value::String(_) => f.debug_tuple("JSValue::String").finish(),
             Value::Object(_) => f.debug_tuple("JSValue::Object").finish(),
-            //Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
+            Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
             Value::Integer(x) => f.debug_tuple("JSValue::Int").field(&x).finish(),
             Value::Float(x) => f.debug_tuple("JSValue::Float").field(&x).finish(),
         }

@@ -17,22 +17,10 @@ mod impl_trace;
 macro_rules! root {
     ($arena:expr, $value:ident) => {
         let __guard = $arena._root($value);
-        let $value = unsafe { $value.rebind(&__guard) };
+        #[allow(unused_unsafe)]
+        let $value = unsafe { $crate::gc::_rebind_to(&__guard, $value) };
     };
 }
-
-/*
-#[macro_export]
-macro_rules! root_owned {
-    ($arena:expr, $value:expr) => {
-        unsafe {
-            let (id, roots) = $arena._root_owned($value);
-            let ptr = $value.rebind(roots);
-            $crate::gc::GcRootHandle::_create(id, ptr, roots)
-        }
-    };
-}
-*/
 
 #[macro_export]
 macro_rules! rebind {
@@ -43,7 +31,21 @@ macro_rules! rebind {
             // Ensure that the $arena is an arena.
             let a: &Arena = $arena;
             // Bind to the lifetime of the arena.
-            ptr.rebind(a)
+            $crate::gc::_rebind_to(a, ptr)
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! rebind_value {
+    ($arena:expr, $value:expr) => {
+        #[allow(unused_unsafe)]
+        unsafe {
+            let v: Value<'static, '_> = std::mem::transmute($value);
+            // Ensure that the $arena is an arena.
+            let a: &$crate::gc::Arena = $arena;
+            // Bind to the lifetime of the arena.
+            $crate::gc::_rebind_to(a, v)
         }
     };
 }
@@ -57,14 +59,13 @@ use self::ptr::GcBox;
 
 /// Context struct for marking life pointers.
 #[derive(Clone, Copy)]
-pub struct Tracer<'a, 'cell> {
+pub struct Tracer<'a> {
     roots: &'a Roots,
-    pub owner: &'a CellOwner<'cell>,
 }
 
-impl<'a, 'cell> Tracer<'a, 'cell> {
+impl<'a> Tracer<'a> {
     /// Mark a pointer as alive.
-    pub fn mark<T: Trace<'cell> + 'a>(self, gc: Gc<'a, 'cell, T>) {
+    pub fn mark<'cell, T: Trace + 'a>(self, gc: Gc<'a, 'cell, T>) {
         unsafe {
             // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
@@ -83,7 +84,7 @@ impl<'a, 'cell> Tracer<'a, 'cell> {
     }
 
     /// Mark a pointer with a dynamic type as alive.
-    pub fn mark_dynamic(self, gc: Gc<'a, 'cell, dyn Trace<'cell>>) {
+    pub fn mark_dynamic<'cell>(self, gc: Gc<'a, 'cell, dyn Trace>) {
         unsafe {
             // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
@@ -112,7 +113,7 @@ impl<'a, 'cell> Tracer<'a, 'cell> {
 /// - `trace` marks all pointers contained in the type and calls `trace` all types contained in this type which implement `Trace`.
 /// - The type must not dereferences a `Gc` pointer in its drop implementation.
 ///
-pub unsafe trait Trace<'cell> {
+pub unsafe trait Trace {
     /// Returns whether the type can contain any Gc pointers and thus needs to be traced.
     ///
     /// The value returned is used as an optimization.
@@ -122,7 +123,52 @@ pub unsafe trait Trace<'cell> {
         Self: Sized;
 
     /// Traces the type for any gc pointers.
-    fn trace<'a>(&self, trace: Tracer<'a, 'cell>);
+    fn trace<'a>(&self, trace: Tracer<'a>);
+}
+
+pub unsafe trait Rebind<'a>: Sized {
+    type Output;
+}
+
+#[doc(hidden)]
+#[inline(always)] // this should compile down to nothing
+pub unsafe fn _rebind_to<'rt, R, T>(_: &'rt R, v: T) -> T::Output
+where
+    T: Rebind<'rt>,
+{
+    _rebind(v)
+}
+
+#[doc(hidden)]
+#[inline(always)] // this should compile down to nothing
+pub unsafe fn _rebind<'rt, T>(v: T) -> T::Output
+where
+    T: Rebind<'rt>,
+{
+    use std::mem::ManuallyDrop;
+
+    if mem::size_of::<T>() != mem::size_of::<T::Output>() {
+        panic!(
+            "type `{}` implements rebind but its `Output` is a different size. `{}` is {} bytes in size but `{}` is {} bytes",
+            std::any::type_name::<T>(),
+            std::any::type_name::<T>(),
+            std::mem::size_of::<T>(),
+            std::any::type_name::<T::Output>(),
+            std::mem::size_of::<T::Output>(),
+        );
+    }
+
+    union Transmute<T, U> {
+        a: ManuallyDrop<T>,
+        b: ManuallyDrop<U>,
+    }
+
+    ManuallyDrop::into_inner(
+        (Transmute {
+            a: ManuallyDrop::new(v),
+        })
+        .b,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -205,7 +251,7 @@ impl Roots {
         }
     }
 
-    fn write_barrier<'a, 'b, T: Trace<'b> + 'a>(&self, gc: Gc<'a, 'b, T>) {
+    fn write_barrier<'a, 'b, T: Trace + 'a>(&self, gc: Gc<'a, 'b, T>) {
         if !T::needs_trace() {
             return;
         }
@@ -256,18 +302,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[doc(hidden)]
-    pub unsafe fn _rebind<'gc, T: Trace<'cell> + 'gc>(
-        &'gc self,
-        ptr: NonNull<GcBox<'cell, T>>,
-    ) -> Gc<'gc, 'cell, T> {
-        Gc {
-            ptr,
-            marker: PhantomData,
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn _root<'gc, T: Trace<'cell> + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt> {
+    pub fn _root<'gc, T: Trace + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt> {
         let ptr: GcBoxPtr = t.ptr;
         unsafe {
             self.roots.roots.push(mem::transmute(ptr));
@@ -276,7 +311,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[doc(hidden)]
-    pub unsafe fn _root_owned<'gc, T: Trace<'cell> + 'gc>(
+    pub unsafe fn _root_owned<'gc, T: Trace + 'gc>(
         &self,
         gc: Gc<'gc, 'cell, T>,
     ) -> (usize, &'rt Roots) {
@@ -289,14 +324,18 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         (id, self.roots)
     }
 
-    pub fn add<'gc, T: Trace<'cell> + 'gc>(&'gc self, v: T) -> Gc<'gc, 'cell, T> {
+    pub fn add<'gc, T>(&'gc self, v: T) -> Gc<'gc, 'cell, T::Output>
+    where
+        T: Rebind<'gc>,
+        T::Output: Trace,
+    {
         unsafe {
-            let layout = Layout::new::<GcBox<T>>();
-            let ptr = NonNull::new(alloc::alloc(layout).cast::<GcBox<T>>()).unwrap();
+            let layout = Layout::new::<GcBox<T::Output>>();
+            let ptr = NonNull::new(alloc::alloc(layout).cast::<GcBox<T::Output>>()).unwrap();
             ptr.as_ptr().write(GcBox {
                 color: Cell::new(Color::White),
                 next: Cell::new(self.roots.all.get()),
-                value: LCell::new(v),
+                value: LCell::new(_rebind(v)),
             });
 
             self.roots
@@ -374,20 +413,14 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                             let size = mem::size_of_val(x.as_ref());
                             work_done += size;
                             let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
-                            ptr.as_ref()
-                                .value
-                                .borrow(owner)
-                                .trace(Tracer { roots, owner });
+                            ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
 
                             x.as_ref().color.set(Color::Black);
                         } else if let Some(x) = roots.grays_again.pop() {
                             //assert!(!tmp.insert(x.as_ptr()));
                             let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
 
-                            ptr.as_ref()
-                                .value
-                                .borrow(owner)
-                                .trace(Tracer { roots, owner });
+                            ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
                             x.as_ref().color.set(Color::Black);
                         } else {
                             roots.roots.for_each(|x| {
@@ -458,7 +491,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[inline]
-    pub fn write_barrier<'a, 'b, T: Trace<'b> + 'a>(&self, gc: Gc<'a, 'b, T>) {
+    pub fn write_barrier<'a, 'b, T: Trace + 'a>(&self, gc: Gc<'a, 'b, T>) {
         self.roots.write_barrier(gc);
     }
 }

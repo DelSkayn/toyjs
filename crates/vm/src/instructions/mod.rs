@@ -105,7 +105,7 @@ impl<'gc, 'cell> ByteCode<'gc, 'cell> {
 }
 */
 
-unsafe impl<'gc, 'cell> Trace<'cell> for ByteCode<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -113,7 +113,7 @@ unsafe impl<'gc, 'cell> Trace<'cell> for ByteCode<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, ctx: Tracer<'a>) {
         self.constants.iter().for_each(|x| x.trace(ctx));
     }
 }

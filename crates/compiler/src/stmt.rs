@@ -9,7 +9,7 @@ use crate::{
 };
 use std::alloc::Allocator;
 
-impl<'a, A: Allocator + Clone> Compiler<'a, A> {
+impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub(crate) fn compile_stmt(&mut self, stmt: &'a Stmt<A>) -> Option<Register> {
         match stmt {
             Stmt::Empty => None,
