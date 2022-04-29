@@ -10,7 +10,7 @@ use crate::{
     Value,
 };
 
-type GcUpvalueObject<'gc, 'cell> = Gc<'gc, 'cell, UpvalueObject<'gc, 'cell>>;
+pub type GcUpvalueObject<'gc, 'cell> = Gc<'gc, 'cell, UpvalueObject<'gc, 'cell>>;
 
 pub struct UpvalueObject<'gc, 'cell> {
     location: *mut Value<'gc, 'cell>,

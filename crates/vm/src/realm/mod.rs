@@ -7,10 +7,10 @@ use crate::{
     GcObject, Object, Value,
 };
 
-use self::stack::Stack;
-
 mod exec;
 mod stack;
+use self::stack::Stack;
+pub use self::stack::{GcUpvalueObject, UpvalueObject};
 
 pub struct ExecutionContext<'gc, 'cell> {
     pub function: GcObject<'gc, 'cell>,
@@ -38,7 +38,7 @@ pub struct Realm<'gc, 'cell> {
     stack: Stack<'gc, 'cell>,
 }
 
-type GcRealm<'gc, 'cell> = Gc<'gc, 'cell, Realm<'gc, 'cell>>;
+pub type GcRealm<'gc, 'cell> = Gc<'gc, 'cell, Realm<'gc, 'cell>>;
 
 unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
     fn needs_trace() -> bool
@@ -75,7 +75,11 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         bc: GcByteCode<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let vm_function = VmFunction { bc, function: 0 };
+        let vm_function = VmFunction {
+            bc,
+            function: 0,
+            upvalues: Box::new([]),
+        };
         let function = Object::new(None, ObjectKind::VmFn(vm_function));
         let function = arena.add(function);
         let __guard = arena._root(function);

@@ -1,15 +1,15 @@
 use std::cell::RefCell;
 
-use common::collections::HashMap;
+use crate::gc::{Gc, Rebind, Trace, Tracer};
 
-use crate::{
-    gc::{Gc, Rebind, Trace, Tracer},
-    value::Value,
-};
-
-pub use self::function::{MutableFn, SharedFn, StaticFn, VmFunction};
-
+mod elements;
 mod function;
+mod index;
+mod properties;
+
+use elements::Elements;
+pub use function::{MutableFn, SharedFn, StaticFn, VmFunction};
+use properties::Properties;
 
 pub type GcObject<'gc, 'cell> = Gc<'gc, 'cell, Object<'gc, 'cell>>;
 
@@ -24,18 +24,43 @@ pub enum ObjectKind<'gc, 'cell> {
     //ForInIterator(ForInIterator),
 }
 
+unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, trace: Tracer) {
+        match *self {
+            ObjectKind::Ordinary
+            | ObjectKind::Array
+            | ObjectKind::Error
+            | ObjectKind::MutableFn(_)
+            | ObjectKind::SharedFn(_)
+            | ObjectKind::StaticFn(_) => {}
+            ObjectKind::VmFn(ref x) => {
+                x.trace(trace);
+            }
+        }
+    }
+}
+
 pub struct Object<'gc, 'cell> {
     prototype: Option<GcObject<'gc, 'cell>>,
     kind: ObjectKind<'gc, 'cell>,
-    values: HashMap<String, Value<'gc, 'cell>>,
+    properties: Properties<'gc, 'cell>,
+    elements: Elements<'gc, 'cell>,
 }
 
 impl<'gc, 'cell> Object<'gc, 'cell> {
     pub fn new(prototype: Option<GcObject<'gc, 'cell>>, kind: ObjectKind<'gc, 'cell>) -> Self {
         Object {
             prototype,
-            values: HashMap::default(),
             kind,
+            properties: Properties::new(),
+            elements: Elements::new(),
         }
     }
 }
@@ -50,9 +75,8 @@ unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
 
     fn trace(&self, trace: Tracer) {
         self.prototype.trace(trace);
-        for v in self.values.values() {
-            v.trace(trace);
-        }
+        self.kind.trace(trace);
+        self.properties.trace(trace);
     }
 }
 
