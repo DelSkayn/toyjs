@@ -48,7 +48,7 @@ unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
         false
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         self.prototype.trace(trace);
         for v in self.values.values() {
             v.trace(trace);

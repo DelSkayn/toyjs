@@ -38,6 +38,9 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
         self.ptr
     }
 
+    // # Safety
+    //
+    // The pointer given must be one obtained from `[Gc::into_ptr]`
     pub unsafe fn from_ptr(ptr: NonNull<GcBox<'cell, T>>) -> Self {
         Gc {
             ptr,
@@ -46,7 +49,7 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
     }
 
     // Borrow the contained value
-    #[inline]
+    #[inline(always)]
     pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
         unsafe { owner.borrow(&self.ptr.as_ref().value) }
     }
@@ -70,28 +73,28 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
         unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
     }
 
-    // Borrow the contained value mutably without requiring access to the arena,
-    // Can be used with values which themselfs do not contain `Gc` pointers.
-    //
-    // # Panic
-    //
-    // Will panic if `T::needs_trace()` returns true.
+    /// Borrow the contained value mutably without requiring access to the arena,
+    /// Can be used with values which themselfs do not contain `Gc` pointers.
+    ///
+    /// # Panic
+    ///
+    /// Will panic if `T::needs_trace()` returns true.
     #[inline]
-    pub fn borrow_mut_untraced<'a, 'rt>(&'a self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
+    pub fn borrow_mut_untraced<'a>(&'a self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
         if T::needs_trace() {
             panic!("called borrow_mut_untraced on pointer which requires tracing")
         }
         unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
     }
 
-    // Borrow the contained value mutably without requiring access to the arena,
-    // Can be used with values which themselfs do not contain `Gc` pointers.
-    //
-    // # Panic
-    //
-    // Will panic if `T::needs_trace()` returns true.
+    /// Borrow the contained value mutably without requiring access to the arena,
+    /// Can be used with values which themselfs do not contain `Gc` pointers.
+    ///
+    /// # Safety
+    /// User should guarentee that no new gc pointers can be reached from this pointer after
+    /// releasing the borrow.
     #[inline]
-    pub unsafe fn borrow_mut_untraced_unchecked<'a, 'rt>(
+    pub unsafe fn borrow_mut_untraced_unchecked<'a>(
         &'a self,
         owner: &'a mut CellOwner<'cell>,
     ) -> &'a mut T {

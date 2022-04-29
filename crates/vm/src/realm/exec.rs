@@ -3,10 +3,10 @@ use crate::{
     gc::Arena,
     instructions::{GcByteCode, Instruction},
     object::ObjectKind,
-    rebind_value, Object, Realm, Value,
+    rebind_value, Object, Value,
 };
 
-use super::ExecutionContext;
+use super::{ExecutionContext, GcRealm};
 
 pub struct InstructionReader<'gc, 'cell> {
     bc: GcByteCode<'gc, 'cell>,
@@ -73,7 +73,10 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
+impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
+    /// # Safety
+    ///
+    /// Instruction reader must read valid bytecode.
     pub unsafe fn run<'l>(
         &self,
         arena: &'l mut Arena<'_, 'cell>,
@@ -85,30 +88,32 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
             match instr.next(owner) {
                 Instruction::LoadConst { dst, cons } => {
                     let con = instr.constant(cons, owner);
-                    self.stack.write(dst, con);
+                    self.borrow(owner).stack.write(dst, con);
                 }
                 Instruction::LoadGlobal { dst } => {
-                    self.stack.write(dst, self.global.into());
+                    let global = self.borrow(owner).global;
+                    self.borrow(owner).stack.write(dst, global.into());
                 }
                 Instruction::LoadThis { dst } => {
-                    self.stack.write(dst, ctx.this);
+                    self.borrow(owner).stack.write(dst, ctx.this);
                 }
                 Instruction::LoadTarget { dst } => {
-                    self.stack.write(dst, ctx.new_target);
+                    self.borrow(owner).stack.write(dst, ctx.new_target);
                 }
                 Instruction::Move { dst, src } => {
-                    self.stack.write(dst, self.stack.read(src));
+                    let src = self.borrow(owner).stack.read(src);
+                    self.borrow(owner).stack.write(dst, src);
                 }
                 Instruction::CreateObject { dst } => {
                     let object = arena.add(Object::new(None, ObjectKind::Ordinary));
-                    self.stack.write(dst, object.into());
+                    self.borrow(owner).stack.write(dst, object.into());
                 }
                 Instruction::CreateArray { dst } => {
                     let object = arena.add(Object::new(None, ObjectKind::Ordinary));
-                    self.stack.write(dst, object.into());
+                    self.borrow(owner).stack.write(dst, object.into());
                 }
                 Instruction::Return { ret } => {
-                    let res = self.stack.read(ret);
+                    let res = self.borrow(owner).stack.read(ret);
                     return Ok(rebind_value!(arena, res));
                 }
                 Instruction::ReturnUndefined { _ignore } => {

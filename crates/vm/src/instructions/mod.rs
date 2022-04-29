@@ -113,7 +113,7 @@ unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a>) {
+    fn trace(&self, ctx: Tracer) {
         self.constants.iter().for_each(|x| x.trace(ctx));
     }
 }

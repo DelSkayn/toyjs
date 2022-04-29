@@ -123,9 +123,13 @@ pub unsafe trait Trace {
         Self: Sized;
 
     /// Traces the type for any gc pointers.
-    fn trace<'a>(&self, trace: Tracer<'a>);
+    fn trace(&self, trace: Tracer);
 }
 
+/// # Safety
+///
+/// Implementor must ensure that the output only changes the lifetime which signifies the gc
+/// lifetime.
 pub unsafe trait Rebind<'a>: Sized {
     type Output;
 }
