@@ -39,7 +39,6 @@ macro_rules! rebind {
 #[macro_export]
 macro_rules! rebind_value {
     ($arena:expr, $value:expr) => {
-        #[allow(unused_unsafe)]
         unsafe {
             let v: Value<'static, '_> = std::mem::transmute($value);
             // Ensure that the $arena is an arena.
