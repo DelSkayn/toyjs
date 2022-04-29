@@ -87,7 +87,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         self.frame.get().add(reg as usize).read()
     }
 
-    pub unsafe fn write<'a>(&self, reg: u8, v: Value<'a, 'cell>) {
+    pub unsafe fn write<'a>(&mut self, reg: u8, v: Value<'a, 'cell>) {
         debug_assert!((reg as u32) < self.cur_frame_size.get());
         self.frame.get().add(reg as usize).write(gc::_rebind(v))
     }

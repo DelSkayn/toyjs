@@ -48,6 +48,10 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
         }
     }
 
+    pub fn ptr_eq<'a>(self, other: Gc<'a, 'cell, T>) -> bool {
+        std::ptr::eq(self.ptr.as_ptr(), other.ptr.as_ptr())
+    }
+
     // Borrow the contained value
     #[inline(always)]
     pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
