@@ -26,7 +26,7 @@ unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         trace.mark(self.function);
         self.this.trace(trace);
         self.new_target.trace(trace);
@@ -38,6 +38,8 @@ pub struct Realm<'gc, 'cell> {
     stack: Stack<'gc, 'cell>,
 }
 
+type GcRealm<'gc, 'cell> = Gc<'gc, 'cell, Realm<'gc, 'cell>>;
+
 unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
     fn needs_trace() -> bool
     where
@@ -46,7 +48,7 @@ unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         trace.mark(self.global);
     }
 }
@@ -61,7 +63,9 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
         let stack = Stack::new();
         Realm { global, stack }
     }
+}
 
+impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     /// # Safety
     ///
     /// The bytecode must be valid

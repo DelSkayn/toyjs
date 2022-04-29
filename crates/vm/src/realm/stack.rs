@@ -25,7 +25,7 @@ unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         self.closed.trace(trace);
     }
 }
@@ -44,6 +44,27 @@ pub struct Stack<'gc, 'cell> {
     capacity: Cell<usize>,
     open_upvalues: UnsafeCell<Vec<GcUpvalueObject<'gc, 'cell>>>,
     frame_open_upvalues: Cell<u16>,
+}
+
+unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, trace: Tracer) {
+        // Upvalues dont need to be traced since all of them are open and contain no pointer
+        // values.
+        unsafe {
+            let mut cur = self.root.get().as_ptr();
+            while cur != self.stack.get() {
+                cur.read().trace(trace);
+                cur = cur.add(1);
+            }
+        }
+    }
 }
 
 impl<'gc, 'cell> Stack<'gc, 'cell> {

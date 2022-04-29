@@ -67,11 +67,13 @@ impl<'rt> CellOwner<'rt> {
     }
 
     /// Shared borrow the value in the cell.
+    #[inline(always)]
     pub fn borrow<'a, T: ?Sized>(&'a self, cell: &LCell<'rt, T>) -> &'a T {
         unsafe { &(*cell.value.get()) }
     }
 
     /// Mutable borrow the value in the cell.
+    #[inline(always)]
     pub fn borrow_mut<'a, T: ?Sized>(&'a mut self, cell: &LCell<'rt, T>) -> &'a mut T {
         unsafe { &mut (*cell.value.get()) }
     }

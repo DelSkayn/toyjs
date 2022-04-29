@@ -41,7 +41,7 @@ unsafe impl<'gc, 'cell> Trace for VmFunction<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a>) {
+    fn trace(&self, ctx: Tracer) {
         ctx.mark(self.bc);
         //self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }

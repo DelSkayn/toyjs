@@ -17,11 +17,9 @@ fn main() {
     let mut arena = vm::gc::Arena::new(&root);
 
     let realm = create_realm(&arena);
-    let _root = arena._root(realm);
-    let realm = unsafe { vm::gc::_rebind_to(&_root, realm) };
+    vm::root!(arena, realm);
 
     arena.collect_full(&owner);
 
-    let global = realm.global(&owner);
-    std::mem::drop(global);
+    realm.global(&owner);
 }

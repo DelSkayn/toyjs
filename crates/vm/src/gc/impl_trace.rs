@@ -30,7 +30,7 @@ unsafe impl<'cell, T: Trace> Trace for Option<T> {
         T::needs_trace()
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         if let Some(ref x) = *self {
             x.trace(trace);
         }
@@ -45,7 +45,7 @@ unsafe impl<'cell, T: Trace> Trace for Box<T> {
         T::needs_trace()
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         (**self).trace(trace);
     }
 }
@@ -58,7 +58,7 @@ unsafe impl<'cell, T: Trace> Trace for [T] {
         T::needs_trace()
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         for t in self {
             t.trace(trace);
         }
@@ -73,7 +73,7 @@ unsafe impl<'gc, 'cell, T: Trace> Trace for Gc<'gc, 'cell, T> {
         T::needs_trace()
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         trace.mark(*self);
     }
 }
@@ -86,7 +86,7 @@ unsafe impl<'gc, 'cell> Trace for Gc<'gc, 'cell, dyn Trace> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a>) {
+    fn trace(&self, trace: Tracer) {
         trace.mark_dynamic(*self);
     }
 }

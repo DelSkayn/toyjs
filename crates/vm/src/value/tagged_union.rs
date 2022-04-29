@@ -47,109 +47,73 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     /// Is this value a boolean.
     #[inline]
     pub fn is_empty(self) -> bool {
-        match self {
-            Value::Empty => true,
-            _ => false,
-        }
+        matches!(self, Value::Empty)
     }
 
     /// Is this value a boolean.
     #[inline]
     pub fn is_bool(self) -> bool {
-        match self {
-            Value::Boolean(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Boolean(_))
     }
 
     /// Is this value the value false.
     #[inline]
     pub fn is_false(self) -> bool {
-        match self {
-            Value::Boolean(false) => true,
-            _ => false,
-        }
+        matches!(self, Value::Boolean(false))
     }
 
     /// Is this value the value true.
     #[inline]
     pub fn is_true(self) -> bool {
-        match self {
-            Value::Boolean(true) => true,
-            _ => false,
-        }
+        matches!(self, Value::Boolean(true))
     }
 
     /// Is this value the value null.
     #[inline]
     pub fn is_null(self) -> bool {
-        match self {
-            Value::Null => true,
-            _ => false,
-        }
+        matches!(self, Value::Null)
     }
 
     /// Is this value the value null.
     #[inline]
     pub fn is_undefined(self) -> bool {
-        match self {
-            Value::Undefined => true,
-            _ => false,
-        }
+        matches!(self, Value::Undefined)
     }
 
     /// Is this value null like.
     #[inline]
     pub fn is_nullish(self) -> bool {
-        match self {
-            Value::Undefined | Value::Null => true,
-            _ => false,
-        }
+        matches!(self, Value::Undefined | Value::Null)
     }
 
     /// Is this value a number type.
     #[inline]
     pub fn is_number(self) -> bool {
-        match self {
-            Value::Integer(_) | Value::Float(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Integer(_) | Value::Float(_))
     }
 
     /// Is this value a number integer.
     #[inline]
     pub fn is_int(self) -> bool {
-        match self {
-            Value::Integer(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Integer(_))
     }
 
     /// Is this value a number float.
     #[inline]
     pub fn is_float(self) -> bool {
-        match self {
-            Value::Float(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Float(_))
     }
 
     /// Is this value a object.
     #[inline]
     pub fn is_object(self) -> bool {
-        match self {
-            Value::Object(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::Object(_))
     }
 
     /// Is this value a string.
     #[inline]
     pub fn is_string(self) -> bool {
-        match self {
-            Value::String(_) => true,
-            _ => false,
-        }
+        matches!(self, Value::String(_))
     }
 
     /*
@@ -298,7 +262,7 @@ unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a>) {
+    fn trace(&self, ctx: Tracer) {
         match *self {
             Value::Object(x) => ctx.mark(x),
             Value::String(x) => ctx.mark(x),
