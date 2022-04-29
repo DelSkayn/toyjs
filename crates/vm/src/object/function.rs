@@ -1,7 +1,8 @@
 use crate::{
     gc::{Trace, Tracer},
     instructions::GcByteCode,
-    realm::ExecutionContext, Realm, Value,
+    realm::ExecutionContext,
+    Realm, Value,
 };
 
 use super::{Object, ObjectKind};
@@ -14,14 +15,17 @@ pub type MutableFn = Box<
         &'a mut ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
-pub type SharedFn =
-    Box<dyn for<'a, 'gc, 'cell> Fn(
+pub type SharedFn = Box<
+    dyn for<'a, 'gc, 'cell> Fn(
         &'a Realm<'gc, 'cell>,
         &'a mut ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
 
-pub type StaticFn = for<'gc,'cell> unsafe fn (&Realm<'gc,'cell>, &mut ExecutionContext<'gc,'cell>) -> Result<Value<'gc,'cell>, Value<'gc,'cell>>;
+pub type StaticFn = for<'gc, 'cell> unsafe fn(
+    &Realm<'gc, 'cell>,
+    &mut ExecutionContext<'gc, 'cell>,
+) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>;
 
 pub struct VmFunction<'gc, 'cell> {
     pub bc: GcByteCode<'gc, 'cell>,
@@ -29,7 +33,7 @@ pub struct VmFunction<'gc, 'cell> {
     //pub upvalues: Box<[Gc<UpvalueObject>]>,
 }
 
-unsafe impl<'gc, 'cell> Trace<'cell> for VmFunction<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for VmFunction<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -37,7 +41,7 @@ unsafe impl<'gc, 'cell> Trace<'cell> for VmFunction<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, ctx: Tracer<'a>) {
         ctx.mark(self.bc);
         //self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }

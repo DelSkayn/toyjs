@@ -3,11 +3,11 @@ use std::cell::RefCell;
 use common::collections::HashMap;
 
 use crate::{
-    gc::{Gc, Trace, Tracer},
+    gc::{Gc, Rebind, Trace, Tracer},
     value::Value,
 };
 
-use self::function::{MutableFn, SharedFn, StaticFn, VmFunction};
+pub use self::function::{MutableFn, SharedFn, StaticFn, VmFunction};
 
 mod function;
 
@@ -40,7 +40,7 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace<'cell> for Object<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -48,10 +48,14 @@ unsafe impl<'gc, 'cell> Trace<'cell> for Object<'gc, 'cell> {
         false
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a>) {
         self.prototype.trace(trace);
         for v in self.values.values() {
             v.trace(trace);
         }
     }
+}
+
+unsafe impl<'a, 'gc, 'cell: 'a> Rebind<'a> for Object<'gc, 'cell> {
+    type Output = Object<'a, 'cell>;
 }

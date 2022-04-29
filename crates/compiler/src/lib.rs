@@ -1,4 +1,3 @@
-/*
 #![allow(dead_code, unused_imports)]
 #![feature(allocator_api)]
 
@@ -12,7 +11,7 @@ use common::{
 //use lexical_info::LexicalInfo;
 use vm::{
     atom::Atoms,
-    gc::GcArena,
+    gc,
     instructions::{ByteCode, ByteFunction, Instruction},
 };
 
@@ -32,19 +31,19 @@ use builder::ScriptBuilder;
 mod expr;
 mod stmt;
 
-pub struct Compiler<'a, A: Allocator + Clone> {
+pub struct Compiler<'a, 'rt, 'cell, A: Allocator + Clone> {
     alloc: A,
     symbol_table: &'a SymbolTable<A>,
-    constants: Constants<'a, Global>,
+    constants: Constants<'a, 'rt, 'cell, Global>,
     builder: ScriptBuilder<'a, A>,
 }
 
-impl<'a, A: Allocator + Clone> Compiler<'a, A> {
+impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn new(
         symbol_table: &'a SymbolTable<A>,
         interner: &'a mut Interner,
         atoms: &'a Atoms,
-        gc: &'a GcArena,
+        gc: &'a gc::Arena<'rt, 'cell>,
         root: ScopeId,
         alloc: A,
     ) -> Self {
@@ -61,9 +60,9 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         symbol_table: &'a SymbolTable<A>,
         interner: &'a mut Interner,
         atoms: &'a Atoms,
-        gc: &'a GcArena,
+        gc: &'a gc::Arena<'rt, 'cell>,
         alloc: A,
-    ) -> ByteCode {
+    ) -> ByteCode<'a, 'cell> {
         let mut this = Compiler::new(
             symbol_table,
             interner,
@@ -97,4 +96,3 @@ impl<'a, A: Allocator + Clone> Compiler<'a, A> {
         }
     }
 }
-*/

@@ -2,7 +2,7 @@ use super::*;
 use crate::new_cell_owner;
 
 fn alloc_mut<'gc, 'cell>(arena: &'gc mut Arena<'_, 'cell>) -> Gc<'gc, 'cell, u32> {
-    arena.add(0)
+    arena.add(0 as u32)
 }
 
 #[test]
@@ -40,12 +40,13 @@ fn root() {
 
     let a = arena.add(1i32);
     root!(arena, a);
+    let b = a;
 
-    *a.borrow_mut_untraced(&mut owner) += 1;
+    *b.borrow_mut_untraced(&mut owner) += 1;
 
     arena.collect_full(&owner);
 
-    assert_eq!(*a.borrow(&owner), 2);
+    assert_eq!(*b.borrow(&owner), 2);
 }
 
 #[test]
@@ -56,7 +57,7 @@ fn rebind() {
 
     let a = alloc_mut(&mut arena);
     let a = rebind!(&arena, a);
-    let b = arena.add(1);
+    let b = arena.add(1u32);
 
     *a.borrow_mut_untraced(&mut owner) += 1;
 
@@ -99,7 +100,7 @@ struct Container<'gc, 'cell> {
     inner: Gc<'gc, 'cell, i32>,
 }
 
-unsafe impl<'gc, 'cell> Trace<'cell> for Container<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for Container<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -107,13 +108,11 @@ unsafe impl<'gc, 'cell> Trace<'cell> for Container<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a>) {
         trace.mark(self.inner);
     }
 }
 
-impl<'gc, 'cell> Gc<'gc, 'cell, Container<'gc, 'cell>> {
-    pub unsafe fn rebind<'a, T>(self, _: &'a T) -> Gc<'a, 'cell, Container<'a, 'cell>> {
-        std::mem::transmute(self)
-    }
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Container<'gc, 'cell> {
+    type Output = Container<'a, 'cell>;
 }

@@ -2,7 +2,7 @@ use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
 
 use crate::cell::{CellOwner, LCell};
 
-use super::{Arena, Trace};
+use super::{Arena, Rebind, Trace};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Color {
@@ -18,7 +18,7 @@ pub struct GcBox<'cell, T: ?Sized> {
     pub value: LCell<'cell, T>,
 }
 
-pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace<'cell> + 'gc>>;
+pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace + 'gc>>;
 
 /// A pointer to a gc allocated value.
 pub struct Gc<'gc, 'cell, T: ?Sized> {
@@ -33,7 +33,7 @@ impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
     pub fn into_ptr(self) -> NonNull<GcBox<'cell, T>> {
         self.ptr
     }
@@ -52,7 +52,11 @@ impl<'gc, 'cell, T: ?Sized + Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: Trace<'cell> + 'gc> Gc<'gc, 'cell, T> {
+unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Gc<'gc, 'cell, T> {
+    type Output = Gc<'a, 'cell, <T as Rebind<'a>>::Output>;
+}
+
+impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     // Borrow the contained value mutably
     #[inline]
     pub fn borrow_mut<'a, 'rt>(

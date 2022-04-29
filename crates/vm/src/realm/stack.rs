@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     cell::CellOwner,
-    gc::{Gc, Trace, Tracer},
+    gc::{self, Gc, Trace, Tracer},
     Value,
 };
 
@@ -17,7 +17,7 @@ pub struct UpvalueObject<'gc, 'cell> {
     closed: Value<'gc, 'cell>,
 }
 
-unsafe impl<'gc, 'cell> Trace<'cell> for UpvalueObject<'gc, 'cell> {
+unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -25,7 +25,7 @@ unsafe impl<'gc, 'cell> Trace<'cell> for UpvalueObject<'gc, 'cell> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a, 'cell>) {
+    fn trace<'a>(&self, trace: Tracer<'a>) {
         self.closed.trace(trace);
     }
 }
@@ -59,6 +59,16 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
             open_upvalues: UnsafeCell::new(Vec::new()),
             frame_open_upvalues: Cell::new(0),
         }
+    }
+
+    pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'cell> {
+        debug_assert!((reg as u32) < self.cur_frame_size.get());
+        self.frame.get().add(reg as usize).read()
+    }
+
+    pub unsafe fn write<'a>(&self, reg: u8, v: Value<'a, 'cell>) {
+        debug_assert!((reg as u32) < self.cur_frame_size.get());
+        self.frame.get().add(reg as usize).write(gc::_rebind(v))
     }
 
     #[inline]

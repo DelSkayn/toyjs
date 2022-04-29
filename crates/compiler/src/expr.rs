@@ -45,8 +45,8 @@ pub enum AssignmentTarget {
 
 impl AssignmentTarget {
     /// Create the assignment target from an assignment expression.
-    pub fn from_expr<'a, A: Allocator + Clone>(
-        this: &mut Compiler<'a, A>,
+    pub fn from_expr<'a, 'rt, 'cell, A: Allocator + Clone>(
+        this: &mut Compiler<'a, 'rt, 'cell, A>,
         assign: &'a Expr<A>,
     ) -> Self {
         match assign {
@@ -190,7 +190,7 @@ macro_rules! match_binary_instruction{
     };
 }
 
-impl<'a, A: Allocator + Clone> Compiler<'a, A> {
+impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub(crate) fn compile_expressions(
         &mut self,
         placment: Option<Register>,
