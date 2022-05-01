@@ -2,7 +2,7 @@ use std::{fmt, mem};
 
 use crate::{
     atom::Atom,
-    gc::{Gc, Rebind, Trace, Tracer},
+    gc::{self, Gc, Rebind, Trace, Tracer},
     object::Object,
 };
 
@@ -34,8 +34,9 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
 
     /// Returns wether two values have the same data type.
     #[inline]
-    pub fn same_type(self, other: Self) -> bool {
-        mem::discriminant(&self) == mem::discriminant(&other)
+    pub fn same_type(self, other: Value<'_, 'cell>) -> bool {
+        let v = unsafe { gc::rebind(other) };
+        mem::discriminant(&self) == mem::discriminant(&v)
     }
 
     /// Is this value a gc allocated value.

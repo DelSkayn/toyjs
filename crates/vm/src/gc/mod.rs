@@ -18,7 +18,7 @@ macro_rules! root {
     ($arena:expr, $value:ident) => {
         let __guard = $arena._root($value);
         #[allow(unused_unsafe)]
-        let $value = unsafe { $crate::gc::_rebind_to(&__guard, $value) };
+        let $value = unsafe { $crate::gc::rebind_to(&__guard, $value) };
     };
 }
 
@@ -27,24 +27,11 @@ macro_rules! rebind {
     ($arena:expr, $value:expr) => {
         unsafe {
             // Detach from arena's lifetime.
-            let ptr = Gc::from_ptr($value.into_ptr());
+            let v = $crate::gc::rebind::<'static>($value);
             // Ensure that the $arena is an arena.
-            let a: &Arena = $arena;
+            let a: &crate::gc::Arena = $arena;
             // Bind to the lifetime of the arena.
-            $crate::gc::_rebind_to(a, ptr)
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! rebind_value {
-    ($arena:expr, $value:expr) => {
-        unsafe {
-            let v: Value<'static, '_> = std::mem::transmute($value);
-            // Ensure that the $arena is an arena.
-            let a: &$crate::gc::Arena = $arena;
-            // Bind to the lifetime of the arena.
-            $crate::gc::_rebind_to(a, v)
+            $crate::gc::rebind_to(a, v)
         }
     };
 }
@@ -108,15 +95,15 @@ impl<'a> Tracer<'a> {
 ///
 /// The implementation must uphold the following guarentees.
 ///
-/// - `needs_trace` returns true if the type to be implemented can contain `Gc` pointers.
+/// - `needs_trace` returns true if the type can contain `Gc` pointers.
 /// - `trace` marks all pointers contained in the type and calls `trace` all types contained in this type which implement `Trace`.
 /// - The type must not dereferences a `Gc` pointer in its drop implementation.
 ///
 pub unsafe trait Trace {
-    /// Returns whether the type can contain any Gc pointers and thus needs to be traced.
+    /// Returns whether the type can contain any `Gc` pointers and needs to be traced.
     ///
     /// The value returned is used as an optimization.
-    /// Returning true when the type can not contain any Gc pointers is completely safe.
+    /// Returning true when a type cannot contain any `Gc` pointers is completely safe.
     fn needs_trace() -> bool
     where
         Self: Sized;
@@ -125,6 +112,8 @@ pub unsafe trait Trace {
     fn trace(&self, trace: Tracer);
 }
 
+/// Gc values who's lifetimes can be rebind
+///
 /// # Safety
 ///
 /// Implementor must ensure that the output only changes the lifetime which signifies the gc
@@ -133,18 +122,39 @@ pub unsafe trait Rebind<'a>: Sized {
     type Output;
 }
 
-#[doc(hidden)]
+/// Rebind a value to the lifetime of a given borrow.
+///
+/// # Safety
+///
+/// See [`rebind()`]
 #[inline(always)] // this should compile down to nothing
-pub unsafe fn _rebind_to<'rt, R, T>(_: &'rt R, v: T) -> T::Output
+pub unsafe fn rebind_to<'rt, R, T>(_: &'rt R, v: T) -> T::Output
 where
     T: Rebind<'rt>,
 {
-    _rebind(v)
+    rebind(v)
 }
 
-#[doc(hidden)]
+/// Rebinds a value to a arbitray lifetime.
+///
+/// # Safety
+///
+/// This method is wildly unsafe if not used correctly.
+/// Rebinding is essentially a somewhat more restrictive [`std::mem::transmute`] and should be treated as
+/// such.
+///
+/// In the context of the garbage collections rebind can be used to change the lifetime of a gc value
+/// to some other gc value or to the lifetime of a borrowed arena.
+///
+/// Rebinding to a borrowed arena is always safe to do as holding onto an arena borrow prevents on
+/// from running garbage collection. While possible to do with this function prefer the [`rebind!`]
+/// macro as this one is guarteed to be safe.
+///
+/// The primary used for this macro is to change the lifetime of a gc'd value when inserting in a
+/// traced collection. TODO explain rebinding collections
+///
 #[inline(always)] // this should compile down to nothing
-pub unsafe fn _rebind<'rt, T>(v: T) -> T::Output
+pub unsafe fn rebind<'rt, T>(v: T) -> T::Output
 where
     T: Rebind<'rt>,
 {
@@ -338,7 +348,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
             ptr.as_ptr().write(GcBox {
                 color: Cell::new(Color::White),
                 next: Cell::new(self.roots.all.get()),
-                value: LCell::new(_rebind(v)),
+                value: LCell::new(rebind(v)),
             });
 
             self.roots
@@ -372,13 +382,13 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         }
     }
 
-    pub fn collect_full<'gc>(&'gc mut self, owner: &'gc CellOwner<'cell>) {
+    pub fn collect_full(&mut self, owner: &CellOwner<'cell>) {
         self.roots.allocation_debt.set(f64::INFINITY);
         self.roots.phase.set(Phase::Wake);
         self.collect(owner);
     }
 
-    pub fn collect<'gc>(&'gc mut self, owner: &'gc CellOwner<'cell>) {
+    pub fn collect(&mut self, owner: &CellOwner<'cell>) {
         let roots = self.roots;
 
         unsafe {
@@ -415,13 +425,13 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                             //assert!(tmp.insert(x.as_ptr()));
                             let size = mem::size_of_val(x.as_ref());
                             work_done += size;
-                            let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
+                            let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
                             ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
 
                             x.as_ref().color.set(Color::Black);
                         } else if let Some(x) = roots.grays_again.pop() {
                             //assert!(!tmp.insert(x.as_ptr()));
-                            let ptr: GcBoxPtr<'gc, 'cell> = mem::transmute(x);
+                            let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
 
                             ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
                             x.as_ref().color.set(Color::Black);
@@ -494,7 +504,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[inline]
-    pub fn write_barrier<'a, 'b, T: Trace + 'a>(&self, gc: Gc<'a, 'b, T>) {
+    pub fn write_barrier<'a, T: Trace + 'a>(&self, gc: Gc<'a, 'cell, T>) {
         self.roots.write_barrier(gc);
     }
 }

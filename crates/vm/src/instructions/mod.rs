@@ -1,31 +1,31 @@
-//! Module containing the instruction information
-//!
-//! Instructions come in two different formats.
-//! 1. The simple to use enum representation in [`Instruction`]
-//! 2. The dense format used in the runtime in the form of a series of bytes [`InstructionBuffer`]
-//!
-//! # Safety
-//!
-//! The vm makes a major assumption regarding the bytecode it is being handed to run, it assumes
-//! the bytecode is correct.
-//!
-//! Bytecode which is correct should make sure that the following statements hold.
-//!
-//! - No pointer to an instruction, be it a jump or a offset into the instructions from a
-//! bytefuction, should point to a value outside of the instruction buffer. - All constants and functions id's in the bytecode should be valid id's for the current
-//! bytecode.
-//! - No instructions references a register larger then the amount of registers the current
-//! function has defined.
-//! - All instructions should be valid opcodes.
-//! - All list of instructions belonging to a function should end in a return instruction.
-//!
+// Module containing the instruction information
+//
+// Instructions come in two different formats.
+// 1. The simple to use enum representation in [`Instruction`]
+// 2. The dense format used in the runtime in the form of a series of bytes [`InstructionBuffer`]
+//
+// # Safety
+//
+// The vm makes a major assumption regarding the bytecode it is being handed to run, it assumes
+// the bytecode is correct.
+//
+// Bytecode which is correct should make sure that the following statements hold.
+//
+// - No pointer to an instruction, be it a jump or a offset into the instructions from a
+// bytefuction, should point to a value outside of the instruction buffer. - All constants and functions id's in the bytecode should be valid id's for the current
+// bytecode.
+// - No instructions references a register larger then the amount of registers the current
+// function has defined.
+// - All instructions should be valid opcodes.
+// - All list of instructions belonging to a function should end in a return instruction.
+//
 
 #[macro_use]
 mod macros;
 use std::{error::Error, fmt};
 
 use crate::{
-    gc::{Gc, Trace, Tracer},
+    gc::{Gc, Rebind, Trace, Tracer},
     value::Value,
 };
 
@@ -118,6 +118,10 @@ unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
     }
 }
 
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ByteCode<'gc, 'cell> {
+    type Output = ByteCode<'a, 'cell>;
+}
+
 impl<'gc, 'cell> fmt::Display for ByteCode<'gc, 'cell> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "> CONSTANTS")?;
@@ -187,7 +191,7 @@ define_instructions! {
         CreateObject{ dst: u8},
         CreateArray{ dst: u8},
 
-        IndexAssign{obj: u8,key: u8, val:u8},
+        IndexAssign{obj: u8,key: u8, src:u8},
         Index{dst: u8,obj: u8, key:u8},
 
         GlobalAssign{key: u8, src:u8},

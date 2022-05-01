@@ -48,14 +48,18 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
         }
     }
 
-    pub fn ptr_eq<'a>(self, other: Gc<'a, 'cell, T>) -> bool {
+    pub fn ptr_eq(self, other: Gc<'_, 'cell, T>) -> bool {
         std::ptr::eq(self.ptr.as_ptr(), other.ptr.as_ptr())
     }
 
     // Borrow the contained value
     #[inline(always)]
-    pub fn borrow<'a>(&'a self, owner: &'a CellOwner<'cell>) -> &'a T {
+    pub fn borrow<'a>(self, owner: &'a CellOwner<'cell>) -> &'a T {
         unsafe { owner.borrow(&self.ptr.as_ref().value) }
+    }
+
+    pub fn get(self) -> *mut T {
+        unsafe { &(*self.ptr.as_ptr()) }.value.get()
     }
 }
 
@@ -67,12 +71,12 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     // Borrow the contained value mutably
     #[inline]
     pub fn borrow_mut<'a, 'rt>(
-        &'a self,
+        self,
         owner: &'a mut CellOwner<'cell>,
         arena: &Arena<'rt, 'cell>,
     ) -> &'a mut T {
         if T::needs_trace() {
-            arena.write_barrier(*self);
+            arena.write_barrier(self);
         }
         unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
     }
@@ -84,7 +88,7 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     ///
     /// Will panic if `T::needs_trace()` returns true.
     #[inline]
-    pub fn borrow_mut_untraced<'a>(&'a self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
+    pub fn borrow_mut_untraced<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
         if T::needs_trace() {
             panic!("called borrow_mut_untraced on pointer which requires tracing")
         }
@@ -98,10 +102,7 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     /// User should guarentee that no new gc pointers can be reached from this pointer after
     /// releasing the borrow.
     #[inline]
-    pub unsafe fn borrow_mut_untraced_unchecked<'a>(
-        &'a self,
-        owner: &'a mut CellOwner<'cell>,
-    ) -> &'a mut T {
+    pub unsafe fn unsafe_borrow_mut<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
         owner.borrow_mut(&self.ptr.as_ref().value)
     }
 }

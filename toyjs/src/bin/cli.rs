@@ -1,24 +1,53 @@
-use std::io;
+#![feature(allocator_api)]
+#![allow(unused_imports)]
 
-/*
+use std::alloc::Global;
+
 use std::{
     env,
     io::{self, Write},
 };
 
-use toyjs::{Context, ToyJs};
-*/
+use ast::SymbolTable;
+use common::interner;
+use common::source::Source;
+use lexer::Lexer;
+use vm::atom::Atoms;
+use vm::Realm;
 
 fn main() -> io::Result<()> {
-    /*
-    let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
+    vm::new_cell_owner!(owner);
+    let root = vm::gc::Roots::new();
+    let mut arena = vm::gc::Arena::new(&root);
+    let atoms = Atoms::new();
+    let mut interner = interner::Interner::new();
+    let realm = Realm::new(&arena);
+    let realm = arena.add(realm);
+    vm::root!(arena, realm);
+
     if let Some(x) = env::args().nth(1) {
         let source = std::fs::read_to_string(x)?;
-        ctx.with(|ctx| match ctx.eval::<toyjs::String, _>(source) {
-            Ok(x) => println!("{}", x.as_str()),
-            Err(e) => println!("\x1b[1:31m{}\x1b[0m", e),
-        });
+        let source = Source::from_string(source);
+
+        let mut symbol_table = SymbolTable::new();
+
+        let lexer = lexer::Lexer::new(&source, &mut interner);
+        let script =
+            parser::Parser::parse_script(lexer, &mut symbol_table, std::alloc::Global).unwrap();
+        let bc = compiler::Compiler::compile_script(
+            &script,
+            &symbol_table,
+            &mut interner,
+            &atoms,
+            &arena,
+            Global,
+        );
+        let bc = arena.add(bc);
+        vm::root!(arena, bc);
+
+        unsafe {
+            dbg!(realm.eval(&mut arena, &mut owner, &atoms, bc)).ok();
+        }
 
         return Ok(());
     }
@@ -83,14 +112,31 @@ fn main() -> io::Result<()> {
             continue 'main;
         }
         last_length = 0;
-        ctx.with(|ctx| match ctx.eval::<toyjs::String, _>(&buffer) {
-            Ok(x) => println!("\x1b[1m{}\x1b[0m", x.as_str()),
-            Err(e) => {
-                println!("\x1b[1;31m{}\x1b[0m", e);
-            }
-        });
+
+        let source = Source::from_string(buffer.clone());
+
+        let mut symbol_table = SymbolTable::new();
+
+        let lexer = lexer::Lexer::new(&source, &mut interner);
+        let script =
+            parser::Parser::parse_script(lexer, &mut symbol_table, std::alloc::Global).unwrap();
+        let bc = compiler::Compiler::compile_script(
+            &script,
+            &symbol_table,
+            &mut interner,
+            &atoms,
+            &arena,
+            Global,
+        );
+        let bc = arena.add(bc);
+        vm::root!(arena, bc);
+
+        arena.collect(&owner);
+
+        unsafe {
+            dbg!(realm.eval(&mut arena, &mut owner, &atoms, bc)).ok();
+        }
         buffer.clear();
     }
-        */
     Ok(())
 }

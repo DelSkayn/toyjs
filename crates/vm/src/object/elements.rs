@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    gc::{Trace, Tracer},
+    gc::{self, Trace, Tracer},
     Value,
 };
 
@@ -62,7 +62,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
         }
     }
 
-    pub fn set(&mut self, key: usize, v: Value<'gc, 'cell>) {
+    pub fn set(&mut self, key: usize, v: Value<'_, 'cell>) {
         unsafe {
             // Safe as we only hold the mutable reference within this scope and no references can
             // escape.
@@ -79,22 +79,22 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
                                 .enumerate()
                                 .collect();
 
-                            tree.insert(key, v);
+                            tree.insert(key, gc::rebind(v));
                             self.0 = ElementsInner::Tree { tree, len: key };
                             return;
                         }
                         array.resize(key, Value::empty());
-                        array.push(v);
+                        array.push(gc::rebind(v));
                     } else {
                         // Safe because key bound is checked above
-                        *array.get_unchecked_mut(key) = v
+                        *array.get_unchecked_mut(key) = gc::rebind(v)
                     }
                 }
                 ElementsInner::Tree {
                     ref mut tree,
                     ref mut len,
                 } => {
-                    tree.insert(key, v);
+                    tree.insert(key, gc::rebind(v));
                     *len = (*len).max(key);
                 }
             }

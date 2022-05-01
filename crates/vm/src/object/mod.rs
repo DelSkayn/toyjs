@@ -63,6 +63,10 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
             elements: Elements::new(),
         }
     }
+
+    pub fn kind(&self) -> &ObjectKind<'gc, 'cell> {
+        &self.kind
+    }
 }
 
 unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {

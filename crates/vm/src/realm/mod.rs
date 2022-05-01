@@ -1,10 +1,11 @@
 use crate::{
+    atom::Atoms,
     cell::CellOwner,
     gc::{self, Gc, Rebind, Trace, Tracer},
     instructions::GcByteCode,
     object::{ObjectKind, VmFunction},
     realm::exec::InstructionReader,
-    GcObject, Object, Value,
+    rebind, root, GcObject, Object, Value,
 };
 
 mod exec;
@@ -69,10 +70,12 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     /// # Safety
     ///
     /// The bytecode must be valid
+    #[allow(unused_unsafe)]
     pub unsafe fn eval<'l>(
-        &mut self,
+        self,
         arena: &'l mut gc::Arena<'_, 'cell>,
         owner: &mut CellOwner<'cell>,
+        atoms: &Atoms,
         bc: GcByteCode<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         let vm_function = VmFunction {
@@ -82,11 +85,10 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         };
         let function = Object::new(None, ObjectKind::VmFn(vm_function));
         let function = arena.add(function);
-        let __guard = arena._root(function);
-        #[allow(unused_unsafe)]
-        let function = unsafe { crate::gc::_rebind_to(&__guard, function) };
+        root!(arena, function);
 
-        let instr = InstructionReader::new_unsafe(owner, bc, 0);
+        let frame_size = bc.borrow(owner).functions[0].size;
+        let mut instr = InstructionReader::new_unsafe(owner, bc, 0);
 
         let ctx = ExecutionContext {
             function,
@@ -94,7 +96,11 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
             new_target: Value::undefined(),
         };
 
-        self.run(arena, owner, instr, ctx)
+        let guard = self.unsafe_borrow_mut(owner).stack.push_frame(frame_size);
+        let res = self.run(arena, owner, atoms, &mut instr, &ctx);
+        let res = rebind!(arena, res);
+        self.unsafe_borrow_mut(owner).stack.pop_frame(arena, guard);
+        res
     }
 }
 

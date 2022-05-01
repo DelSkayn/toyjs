@@ -1,12 +1,11 @@
 use std::{
     alloc::{self, Layout},
-    cell::{Cell, UnsafeCell},
-    ptr::{self, NonNull},
+    mem,
+    ptr::NonNull,
 };
 
 use crate::{
-    cell::CellOwner,
-    gc::{self, Gc, Trace, Tracer},
+    gc::{self, Arena, Gc, Rebind, Trace, Tracer},
     Value,
 };
 
@@ -15,6 +14,21 @@ pub type GcUpvalueObject<'gc, 'cell> = Gc<'gc, 'cell, UpvalueObject<'gc, 'cell>>
 pub struct UpvalueObject<'gc, 'cell> {
     location: *mut Value<'gc, 'cell>,
     closed: Value<'gc, 'cell>,
+}
+
+impl<'gc, 'cell> UpvalueObject<'gc, 'cell> {
+    pub unsafe fn close(&mut self) {
+        self.closed = self.location.read();
+        self.location = &mut self.closed;
+    }
+
+    pub unsafe fn read(&self) -> Value<'gc, 'cell> {
+        self.location.read()
+    }
+
+    pub unsafe fn write(&mut self, v: Value<'_, 'cell>) {
+        self.location.write(gc::rebind(v))
+    }
 }
 
 unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
@@ -30,20 +44,27 @@ unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
     }
 }
 
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for UpvalueObject<'gc, 'cell> {
+    type Output = UpvalueObject<'a, 'cell>;
+}
+
 /// The vm stack implementation.
 pub struct Stack<'gc, 'cell> {
     /// Start of the stack array.
-    root: Cell<NonNull<Value<'gc, 'cell>>>,
+    root: NonNull<Value<'gc, 'cell>>,
     /// points to the start of the current frame i.e. the first register in use.
-    frame: Cell<*mut Value<'gc, 'cell>>,
+    frame: *mut Value<'gc, 'cell>,
     /// points one past the last value in use.
-    stack: Cell<*mut Value<'gc, 'cell>>,
+    stack: *mut Value<'gc, 'cell>,
 
-    cur_frame_size: Cell<u32>,
+    capacity: usize,
+
+    frame_size: u32,
     /// Amount of values allocated for the stack
-    capacity: Cell<usize>,
-    open_upvalues: UnsafeCell<Vec<GcUpvalueObject<'gc, 'cell>>>,
-    frame_open_upvalues: Cell<u16>,
+    upvalues: Vec<GcUpvalueObject<'gc, 'cell>>,
+    frame_upvalues: u16,
+
+    depth: u32,
 }
 
 unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
@@ -58,8 +79,8 @@ unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
         // Upvalues dont need to be traced since all of them are open and contain no pointer
         // values.
         unsafe {
-            let mut cur = self.root.get().as_ptr();
-            while cur != self.stack.get() {
+            let mut cur = self.root.as_ptr();
+            while cur != self.stack {
                 cur.read().trace(trace);
                 cur = cur.add(1);
             }
@@ -67,29 +88,121 @@ unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
     }
 }
 
+pub struct FrameGuard {
+    size: u32,
+    upvalues: u16,
+    #[cfg(debug_assertions)]
+    depth: u32,
+}
+
+#[cfg(debug_assertions)]
+impl Drop for FrameGuard {
+    fn drop(&mut self) {
+        panic!("dropped frame guard instead of poping frame");
+    }
+}
+
 impl<'gc, 'cell> Stack<'gc, 'cell> {
+    const MIN_CAPACITY: usize = 8;
+    const MAX_DEPTH: u32 = 1 << 20;
+
     pub fn new() -> Self {
+        let root = NonNull::dangling();
         Stack {
-            root: Cell::new(NonNull::dangling()),
-            frame: Cell::new(ptr::null_mut()),
-            stack: Cell::new(ptr::null_mut()),
+            frame: root.as_ptr(),
+            stack: root.as_ptr(),
+            root,
+            capacity: 0,
 
-            cur_frame_size: Cell::new(0),
+            frame_size: 0,
 
-            capacity: Cell::new(0),
-            open_upvalues: UnsafeCell::new(Vec::new()),
-            frame_open_upvalues: Cell::new(0),
+            upvalues: Vec::new(),
+            frame_upvalues: 0,
+
+            depth: 0,
         }
     }
 
-    pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'cell> {
-        debug_assert!((reg as u32) < self.cur_frame_size.get());
-        self.frame.get().add(reg as usize).read()
+    pub unsafe fn push_frame(&mut self, size: u32) -> FrameGuard {
+        if self.depth >= Self::MAX_DEPTH {
+            panic!("stack exceeded max depth");
+        }
+
+        let res = FrameGuard {
+            size: self.frame_size,
+            upvalues: self.frame_upvalues,
+            #[cfg(debug_assertions)]
+            depth: self.depth,
+        };
+
+        let new_size = self.frame.offset_from(self.root.as_ptr()) as usize + size as usize;
+        if new_size > self.capacity {
+            self.grow(new_size);
+        }
+
+        self.frame = self.frame.add(self.frame_size as usize);
+        self.stack = self.frame.add(size as usize);
+
+        self.frame_upvalues = 0;
+        self.frame_size = size;
+        self.depth += 1;
+
+        res
     }
 
-    pub unsafe fn write<'a>(&mut self, reg: u8, v: Value<'a, 'cell>) {
-        debug_assert!((reg as u32) < self.cur_frame_size.get());
-        self.frame.get().add(reg as usize).write(gc::_rebind(v))
+    /// # Safety
+    ///
+    /// User must ensure that the guard is the same gaurd as the frame that was pushed at this
+    /// depth
+    pub unsafe fn pop_frame(&mut self, arena: &Arena<'_, 'cell>, guard: FrameGuard) {
+        self.depth -= 1;
+
+        #[cfg(debug_assertions)]
+        assert_eq!(guard.depth, self.depth);
+
+        self.stack = self.frame;
+        self.frame = self.frame.sub(guard.size as usize);
+
+        let old_len = self.upvalues.len() - self.frame_upvalues as usize;
+        self.upvalues.drain(old_len..).for_each(|x| {
+            arena.write_barrier(x);
+            (*x.get()).close()
+        });
+
+        self.frame_upvalues = guard.upvalues;
+        self.frame_size = guard.size;
+
+        mem::forget(guard);
+    }
+
+    #[inline(always)]
+    pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'cell> {
+        debug_assert!((reg as u32) < self.frame_size);
+        self.frame.add(reg as usize).read()
+    }
+
+    #[inline(always)]
+    pub unsafe fn write(&mut self, reg: u8, v: Value<'_, 'cell>) {
+        debug_assert!((reg as u32) < self.frame_size);
+        self.frame.add(reg as usize).write(gc::rebind(v))
+    }
+
+    pub unsafe fn push(&mut self, v: Value<'_, 'cell>) {
+        let new_size = self.frame.offset_from(self.root.as_ptr()) as usize + 1;
+        if new_size > self.capacity {
+            self.grow(new_size);
+        }
+
+        self.stack.write(gc::rebind(v));
+        self.stack = self.stack.add(1);
+    }
+
+    pub unsafe fn create_upvalue(&self, reg: u8) -> UpvalueObject<'gc, 'cell> {
+        let ptr = self.frame.add(reg as usize);
+        UpvalueObject {
+            location: ptr,
+            closed: Value::empty(),
+        }
     }
 
     #[inline]
@@ -99,41 +212,39 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
     }
 
     #[cold]
-    fn grow(&self, capacity: usize, owner: &mut CellOwner<'cell>) {
-        unsafe {
-            let capacity = capacity.next_power_of_two().max(8);
-            if self.capacity.get() == 0 {
-                let layout = Layout::array::<Value>(capacity).unwrap();
-                let ptr = alloc::alloc(layout);
-                if ptr.is_null() {
-                    alloc::handle_alloc_error(layout);
-                }
-                self.root.set(NonNull::new_unchecked(ptr.cast()));
-                self.frame.set(self.root.get().as_ptr());
-                self.stack.set(self.root.get().as_ptr());
-            } else {
-                let layout = Layout::array::<Value>(self.capacity.get()).unwrap();
-                let size = Layout::array::<Value>(capacity).unwrap().size();
-                let ptr: *mut Value =
-                    alloc::realloc(self.root.get().as_ptr().cast(), layout, size).cast();
-                if ptr.is_null() {
-                    alloc::handle_alloc_error(layout);
-                }
-                if ptr != self.root.get().as_ptr() {
-                    let original = self.root.get().as_ptr();
-                    self.stack
-                        .set(Self::rebase(original, ptr, self.stack.get()));
-                    self.frame
-                        .set(Self::rebase(original, ptr, self.frame.get()));
-                    for up in &(*self.open_upvalues.get()) {
-                        let loc = up.borrow(owner).location;
-                        let loc = Self::rebase(original, ptr, loc);
-                        up.borrow_mut_untraced_unchecked(owner).location = loc;
-                    }
-                    self.root.set(NonNull::new_unchecked(ptr));
-                }
+    unsafe fn grow(&mut self, capacity: usize) {
+        let capacity = capacity.next_power_of_two().max(Self::MIN_CAPACITY);
+        if self.capacity == 0 {
+            let layout = Layout::array::<Value>(capacity).unwrap();
+            let ptr = alloc::alloc(layout);
+            if ptr.is_null() {
+                alloc::handle_alloc_error(layout);
             }
-            self.capacity.set(capacity);
+            self.root = NonNull::new_unchecked(ptr.cast());
+            self.frame = self.root.as_ptr();
+            self.stack = self.root.as_ptr();
+        } else {
+            let layout = Layout::array::<Value>(self.capacity).unwrap();
+            let size = Layout::array::<Value>(capacity).unwrap().size();
+            let ptr: *mut Value = alloc::realloc(self.root.as_ptr().cast(), layout, size).cast();
+            if ptr.is_null() {
+                alloc::handle_alloc_error(layout);
+            }
+            if ptr != self.root.as_ptr() {
+                let original = self.root.as_ptr();
+                self.stack = Self::rebase(original, ptr, self.stack);
+                self.frame = Self::rebase(original, ptr, self.frame);
+                // Stack has unique accesso
+                for up in &self.upvalues {
+                    let up_ptr: *mut UpvalueObject = up.get();
+                    let loc = (*up_ptr).location;
+                    let loc = Self::rebase(original, ptr, loc);
+                    // Safe no new pointer is added to the upvalue
+                    (*up_ptr).location = loc;
+                }
+                self.root = NonNull::new_unchecked(ptr);
+            }
         }
+        self.capacity = capacity;
     }
 }
