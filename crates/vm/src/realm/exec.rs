@@ -269,7 +269,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     let left = self.r(owner).stack.read(left);
                     let right = self.r(owner).stack.read(righ);
 
-                    let res = rebind_try!(arena, self.instance_of(owner, arena, left, right));
+                    let res =
+                        rebind_try!(arena, self.instance_of(owner, arena, atoms, left, right));
                     self.w(owner).stack.write(dst, res.into());
                 }
 
@@ -579,6 +580,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     }
                 }
 
+                Instruction::Push { src } => {
+                    let src = self.r(owner).stack.read(src);
+                    self.w(owner).stack.push(src);
+                }
+
                 Instruction::Call { dst, func } => {
                     let func = self.r(owner).stack.read(func);
                     if let Some(obj) = func.into_object() {
@@ -593,10 +599,40 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         todo!("call not object")
                     }
                 }
+                Instruction::CallMethod { dst, key, obj } => {
+                    let key = self.r(owner).stack.read(key);
+                    let obj = self.r(owner).stack.read(obj);
 
-                Instruction::Push { src } => {
-                    let src = self.r(owner).stack.read(src);
-                    self.w(owner).stack.push(src);
+                    if let Some(obj) = obj.into_object() {
+                        let func =
+                            rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
+                        if let Some(function) = func.into_object() {
+                            root!(arena, function);
+                            let res = rebind_try!(
+                                arena,
+                                self.method_call(owner, arena, atoms, function, obj)
+                            );
+                            self.w(owner).stack.write(dst, res);
+                        }
+                    } else {
+                        todo!("method call on not object")
+                    }
+                }
+                Instruction::CallConstruct { dst, func, obj } => {
+                    let func = self.r(owner).stack.read(func);
+                    let obj = self.r(owner).stack.read(obj);
+
+                    if let Some(func) = func.into_object() {
+                        if let Some(obj) = obj.into_object() {
+                            let res = rebind_try!(
+                                arena,
+                                self.construct_call(owner, arena, atoms, func, obj)
+                            );
+                            self.w(owner).stack.write(dst, res);
+                        }
+                    } else {
+                        todo!("call not object")
+                    }
                 }
 
                 Instruction::Return { ret } => {
@@ -845,7 +881,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             let right = right.into_object().unwrap();
             let left = left.into_ptr();
             let right = right.into_ptr();
-            // Work around a weird lifetime conflict.
+            // Workaround for a weird lifetime conflict.
             return left.as_ptr() as usize == right.as_ptr() as usize;
         }
         if let (Some(left), Some(right)) = (left.into_float(), right.into_float()) {
@@ -1101,16 +1137,20 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     pub fn instance_of<'l>(
         self,
-        owner: &CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
-        left: Value<'gc, 'cell>,
-        right: Value<'gc, 'cell>,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
     ) -> Result<bool, Value<'l, 'cell>> {
-        let right = right
-            .into_object()
-            .ok_or_else(|| self.create_type_error(arena, "invalid `instanceof` operand"))?;
+        let right = rebind_try!(
+            arena,
+            right
+                .into_object()
+                .ok_or_else(|| self.create_type_error(arena, "invalid `instanceof` operand"))
+        );
 
-        let _left = if let Some(x) = left.into_object() {
+        let left = if let Some(x) = left.into_object() {
             x
         } else {
             return Ok(false);
@@ -1123,22 +1163,23 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             );
         }
 
-        todo!()
-        /*
-        let tgt_proto = right.index(self, atom::constant::prototype)?;
+        let tgt_proto = right.index(owner, arena, atoms, self, atom::constant::prototype);
+        let tgt_proto = rebind_try!(arena, tgt_proto);
+        let tgt_proto = rebind!(arena, tgt_proto);
         let tgt_proto = tgt_proto
             .into_object()
-            .ok_or_else(|| self.create_type_error(arena, "object prototype is not an object"))?;
+            .ok_or_else(|| self.create_type_error(arena, "object prototype is not an object"));
 
-        let mut cur = left;
-        while let Some(proto) = cur.prototype {
+        let tgt_proto = rebind_try!(arena, tgt_proto);
+
+        let mut cur = rebind!(arena, left);
+        while let Some(proto) = cur.borrow(owner).prototype() {
             if proto.ptr_eq(tgt_proto) {
                 return Ok(true);
             }
             cur = proto;
         }
         Ok(false)
-        */
     }
 
     #[inline]
@@ -1241,7 +1282,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             }
         };
 
-        unsafe { self.call(owner, arena, atoms, ctx) }
+        let res = rebind_try!(arena, unsafe { self.call(owner, arena, atoms, ctx) });
+        let res = rebind!(arena, res);
+        if let Some(obj) = res.into_object() {
+            Ok(obj.into())
+        } else {
+            Ok(res)
+        }
     }
 
     #[allow(unused_unsafe)]
