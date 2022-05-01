@@ -8,6 +8,7 @@ use crate::{
     rebind, root, GcObject, Object, Value,
 };
 
+mod builtin;
 mod exec;
 mod stack;
 use self::stack::Stack;
@@ -35,7 +36,7 @@ unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
 }
 
 pub struct Realm<'gc, 'cell> {
-    global: GcObject<'gc, 'cell>,
+    builtin: builtin::Builtin<'gc, 'cell>,
     stack: Stack<'gc, 'cell>,
 }
 
@@ -50,7 +51,7 @@ unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
     }
 
     fn trace(&self, trace: Tracer) {
-        trace.mark(self.global);
+        self.builtin.trace(trace);
     }
 }
 
@@ -59,10 +60,10 @@ unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Realm<'gc, 'cell> {
 }
 
 impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
-    pub fn new<'rt>(arena: &'gc gc::Arena<'rt, 'cell>) -> Self {
-        let global = arena.add(Object::new(None, ObjectKind::Ordinary));
+    pub fn new<'rt>(atoms: &Atoms, arena: &'gc gc::Arena<'rt, 'cell>) -> Self {
+        let builtin = builtin::Builtin::new(atoms, arena);
         let stack = Stack::new();
-        Realm { global, stack }
+        Realm { builtin, stack }
     }
 }
 
@@ -107,6 +108,6 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
 impl<'gc, 'cell> Gc<'gc, 'cell, Realm<'gc, 'cell>> {
     #[inline]
     pub fn global(&self, owner: &CellOwner<'cell>) -> GcObject<'gc, 'cell> {
-        self.borrow(owner).global
+        self.borrow(owner).builtin.global
     }
 }

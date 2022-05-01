@@ -22,12 +22,12 @@ impl<'gc, 'cell> UpvalueObject<'gc, 'cell> {
         self.location = &mut self.closed;
     }
 
-    pub unsafe fn read(&self) -> Value<'gc, 'cell> {
-        self.location.read()
+    pub fn read(&self) -> Value<'gc, 'cell> {
+        unsafe { self.location.read() }
     }
 
-    pub unsafe fn write(&mut self, v: Value<'_, 'cell>) {
-        self.location.write(gc::rebind(v))
+    pub fn write(&mut self, v: Value<'_, 'cell>) {
+        unsafe { self.location.write(gc::rebind(v)) }
     }
 }
 
