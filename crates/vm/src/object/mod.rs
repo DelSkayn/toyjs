@@ -1,6 +1,9 @@
 use std::cell::RefCell;
 
-use crate::gc::{Gc, Rebind, Trace, Tracer};
+use crate::{
+    gc::{Arena, Gc, Rebind, Trace, Tracer},
+    rebind,
+};
 
 mod elements;
 mod function;
@@ -47,6 +50,10 @@ unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
     }
 }
 
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ObjectKind<'gc, 'cell> {
+    type Output = ObjectKind<'a, 'cell>;
+}
+
 pub struct Object<'gc, 'cell> {
     prototype: Option<GcObject<'gc, 'cell>>,
     kind: ObjectKind<'gc, 'cell>,
@@ -56,6 +63,22 @@ pub struct Object<'gc, 'cell> {
 
 impl<'gc, 'cell> Object<'gc, 'cell> {
     pub fn new(prototype: Option<GcObject<'gc, 'cell>>, kind: ObjectKind<'gc, 'cell>) -> Self {
+        Object {
+            prototype,
+            kind,
+            properties: Properties::new(),
+            elements: Elements::new(),
+        }
+    }
+
+    pub fn new_alloc(
+        arena: &'gc Arena<'_, 'cell>,
+        prototype: Option<GcObject<'_, 'cell>>,
+        kind: ObjectKind<'_, 'cell>,
+    ) -> Self {
+        let prototype = rebind!(arena, prototype);
+        let kind = rebind!(arena, kind);
+
         Object {
             prototype,
             kind,

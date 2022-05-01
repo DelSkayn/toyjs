@@ -13,9 +13,28 @@ pub enum Color {
 
 /// A struct containing the Gc'd value.
 pub struct GcBox<'cell, T: ?Sized> {
-    pub next: Cell<Option<GcBoxPtr<'static, 'static>>>,
+    pub next: Cell<Option<GcBoxPtr<'static, 'cell>>>,
     pub color: Cell<Color>,
     pub value: LCell<'cell, T>,
+}
+
+unsafe impl<'cell, T: Trace> Trace for GcBox<'cell, T> {
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, trace: super::Tracer) {
+        if self.color.get() == Color::Gray {
+            return;
+        }
+        self.color.set(Color::Gray);
+        if T::needs_trace() {
+            unsafe { (*self.value.get()).trace(trace) }
+        }
+    }
 }
 
 pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace + 'gc>>;
@@ -38,9 +57,9 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
         self.ptr
     }
 
-    // # Safety
-    //
-    // The pointer given must be one obtained from `[Gc::into_ptr]`
+    /// # Safety
+    ///
+    /// The pointer given must be one obtained from `[Gc::into_ptr]`
     pub unsafe fn from_ptr(ptr: NonNull<GcBox<'cell, T>>) -> Self {
         Gc {
             ptr,

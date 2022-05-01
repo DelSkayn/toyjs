@@ -4,6 +4,7 @@ use std::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem,
+    pin::Pin,
     ptr::{drop_in_place, NonNull},
 };
 
@@ -23,13 +24,24 @@ macro_rules! root {
 }
 
 #[macro_export]
+macro_rules! pin_root {
+    ($arena:expr, $value:ident) => {
+        let $value = unsafe { std::pin::Pin::new_unchecked(&mut $value) };
+        let __guard = $arena._root($value);
+        #[allow(unused_unsafe)]
+        let $value = unsafe { $crate::gc::rebind_to(&__guard, $value) };
+        compile_error!("not yet implemented");
+    };
+}
+
+#[macro_export]
 macro_rules! rebind {
     ($arena:expr, $value:expr) => {
         unsafe {
             // Detach from arena's lifetime.
-            let v = $crate::gc::rebind::<'static>($value);
+            let v = $crate::gc::rebind($value);
             // Ensure that the $arena is an arena.
-            let a: &crate::gc::Arena = $arena;
+            let a: &$crate::gc::Arena = $arena;
             // Bind to the lifetime of the arena.
             $crate::gc::rebind_to(a, v)
         }
@@ -46,12 +58,12 @@ use self::ptr::GcBox;
 /// Context struct for marking life pointers.
 #[derive(Clone, Copy)]
 pub struct Tracer<'a> {
-    roots: &'a Roots,
+    roots: &'a Roots<'static>,
 }
 
 impl<'a> Tracer<'a> {
     /// Mark a pointer as alive.
-    pub fn mark<'cell, T: Trace + 'a>(self, gc: Gc<'a, 'cell, T>) {
+    pub fn mark<T: Trace>(self, gc: Gc<'_, '_, T>) {
         unsafe {
             // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
@@ -61,7 +73,7 @@ impl<'a> Tracer<'a> {
 
             r.color.set(Color::Gray);
             if T::needs_trace() {
-                let ptr: GcBoxPtr<'a, 'cell> = gc.ptr;
+                let ptr: GcBoxPtr<'_, '_> = gc.ptr;
                 // Change the lifetimes to static.
                 // Roots implementation ensures that the lifetime constraints are upheld.
                 self.roots.grays.push(mem::transmute(ptr));
@@ -70,7 +82,7 @@ impl<'a> Tracer<'a> {
     }
 
     /// Mark a pointer with a dynamic type as alive.
-    pub fn mark_dynamic<'cell>(self, gc: Gc<'a, 'cell, dyn Trace>) {
+    pub fn mark_dynamic(self, gc: Gc<'_, '_, dyn Trace>) {
         unsafe {
             // Pointer is valid as gc can only contain valid pointers.
             let r = gc.ptr.as_ref();
@@ -118,7 +130,7 @@ pub unsafe trait Trace {
 ///
 /// Implementor must ensure that the output only changes the lifetime which signifies the gc
 /// lifetime.
-pub unsafe trait Rebind<'a>: Sized {
+pub unsafe trait Rebind<'a> {
     type Output;
 }
 
@@ -192,27 +204,27 @@ enum Phase {
     Sweep,
 }
 
-pub struct Roots {
+pub struct Roots<'cell> {
     // All lifetimes are static as the implementation ensures that the values contained in the
     // pointer are never borrowed without a CellOwner and the values are valid as long as the
     // GcBoxPtr exists.
     /// The root values, point to alive values.
-    roots: CellVec<GcBoxPtr<'static, 'static>>,
+    roots: CellVec<*const dyn Trace>,
 
-    owned_roots: UnsafeCell<HashMap<usize, GcBoxPtr<'static, 'static>>>,
+    owned_roots: UnsafeCell<HashMap<usize, GcBoxPtr<'static, 'cell>>>,
     next_owned_id: Cell<usize>,
 
     /// Ptr's which have been marked as alive
-    grays: CellVec<GcBoxPtr<'static, 'static>>,
+    grays: CellVec<GcBoxPtr<'static, 'cell>>,
     /// Ptr's which might have new alive values as the value pointed to has been mutated.
-    grays_again: CellVec<GcBoxPtr<'static, 'static>>,
+    grays_again: CellVec<GcBoxPtr<'static, 'cell>>,
 
     /// Current pointer reached while cleaning up.
-    sweep: Cell<Option<GcBoxPtr<'static, 'static>>>,
-    sweep_prev: Cell<Option<GcBoxPtr<'static, 'static>>>,
+    sweep: Cell<Option<GcBoxPtr<'static, 'cell>>>,
+    sweep_prev: Cell<Option<GcBoxPtr<'static, 'cell>>>,
 
     /// The list of all gc allocated pointers.
-    all: Cell<Option<GcBoxPtr<'static, 'static>>>,
+    all: Cell<Option<GcBoxPtr<'static, 'cell>>>,
 
     total_allocated: Cell<usize>,
     remembered_size: Cell<usize>,
@@ -222,7 +234,7 @@ pub struct Roots {
     phase: Cell<Phase>,
 }
 
-impl Drop for Roots {
+impl<'cell> Drop for Roots<'cell> {
     fn drop(&mut self) {
         unsafe {
             while let Some(x) = self.all.get() {
@@ -235,12 +247,12 @@ impl Drop for Roots {
     }
 }
 
-impl Roots {
+impl<'cell> Roots<'cell> {
     const PAUSE_FACTOR: f64 = 0.5;
     const TIMING_FACTOR: f64 = 1.5;
     const MIN_SLEEP: usize = 4096;
 
-    pub fn new() -> Roots {
+    pub fn new() -> Roots<'cell> {
         Roots {
             roots: CellVec::new(),
 
@@ -279,9 +291,9 @@ impl Roots {
 }
 
 #[doc(hidden)]
-pub struct RootGuard<'rt>(pub &'rt Roots);
+pub struct RootGuard<'rt, 'cell>(pub &'rt Roots<'cell>);
 
-impl<'rt> Drop for RootGuard<'rt> {
+impl<'rt, 'cell> Drop for RootGuard<'rt, 'cell> {
     fn drop(&mut self) {
         self.0.roots.pop();
     }
@@ -292,7 +304,7 @@ thread_local! {
 }
 
 pub struct Arena<'rt, 'cell> {
-    roots: &'rt Roots,
+    roots: &'rt Roots<'cell>,
     marker: Id<'cell>,
 }
 
@@ -303,7 +315,7 @@ impl<'rt, 'cell> Drop for Arena<'rt, 'cell> {
 }
 
 impl<'rt, 'cell> Arena<'rt, 'cell> {
-    pub fn new(roots: &'rt Roots) -> Self {
+    pub fn new(roots: &'rt Roots<'cell>) -> Self {
         assert!(!ARENA_ACTIVE.with(|x| x.get()));
 
         ARENA_ACTIVE.with(|x| x.set(true));
@@ -315,26 +327,22 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[doc(hidden)]
-    pub fn _root<'gc, T: Trace + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt> {
-        let ptr: GcBoxPtr = t.ptr;
+    pub fn _root<'gc, T: Trace + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt, 'cell> {
         unsafe {
+            let ptr: &GcBox<T> = t.ptr.as_ref();
+            let ptr: &dyn Trace = ptr;
             self.roots.roots.push(mem::transmute(ptr));
         }
         RootGuard(self.roots)
     }
 
     #[doc(hidden)]
-    pub unsafe fn _root_owned<'gc, T: Trace + 'gc>(
-        &self,
-        gc: Gc<'gc, 'cell, T>,
-    ) -> (usize, &'rt Roots) {
-        let id = self.roots.next_owned_id.get();
-        self.roots.next_owned_id.set(id + 1);
-
-        let p: GcBoxPtr = gc.into_ptr();
-        (*self.roots.owned_roots.get()).insert(id, mem::transmute(p));
-
-        (id, self.roots)
+    pub fn _root_pin<'gc, T: Trace + 'gc>(&self, t: &Pin<&T>) -> RootGuard<'rt, 'cell> {
+        unsafe {
+            let ptr: *const dyn Trace = t.get_ref();
+            self.roots.roots.push(mem::transmute(ptr));
+        }
+        RootGuard(self.roots)
     }
 
     pub fn add<'gc, T>(&'gc self, v: T) -> Gc<'gc, 'cell, T::Output>
@@ -405,12 +413,12 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                 match roots.phase.get() {
                     Phase::Wake => {
                         roots.sweep_prev.set(None);
-                        // Trace the root, every value reachable by the root is live.
-                        // All gc pointers will be put on into the grays array.
+
                         roots.roots.unsafe_iter().copied().for_each(|x| {
-                            x.as_ref().color.set(Color::Gray);
-                            roots.grays.push(mem::transmute::<_, NonNull<_>>(x));
-                            work_done += mem::size_of_val(x.as_ref());
+                            (*x).trace(Tracer::<'rt> {
+                                roots: mem::transmute(roots),
+                            });
+                            work_done += mem::size_of_val(&(*x));
                         });
                         for x in (*roots.owned_roots.get()).values().copied() {
                             x.as_ref().color.set(Color::Gray);
@@ -426,20 +434,25 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                             let size = mem::size_of_val(x.as_ref());
                             work_done += size;
                             let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
-                            ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
+                            ptr.as_ref().value.borrow(owner).trace(Tracer::<'rt> {
+                                roots: mem::transmute(roots),
+                            });
 
                             x.as_ref().color.set(Color::Black);
                         } else if let Some(x) = roots.grays_again.pop() {
                             //assert!(!tmp.insert(x.as_ptr()));
                             let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
 
-                            ptr.as_ref().value.borrow(owner).trace(Tracer { roots });
+                            ptr.as_ref().value.borrow(owner).trace(Tracer::<'rt> {
+                                roots: mem::transmute(roots),
+                            });
                             x.as_ref().color.set(Color::Black);
                         } else {
-                            roots.roots.for_each(|x| {
-                                if x.as_ref().color.get() == Color::Gray {
-                                    roots.grays.push(mem::transmute(x));
-                                }
+                            let tracer = Tracer::<'rt> {
+                                roots: mem::transmute(roots),
+                            };
+                            roots.roots.unsafe_iter().copied().for_each(|x| {
+                                (*x).trace(tracer);
                             });
                             for x in (*roots.owned_roots.get()).values().copied() {
                                 if x.as_ref().color.get() == Color::Gray {

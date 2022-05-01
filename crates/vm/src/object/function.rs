@@ -1,6 +1,6 @@
 use crate::{
     cell::CellOwner,
-    gc::{Arena, Trace, Tracer},
+    gc::{Arena, Rebind, Trace, Tracer},
     instructions::GcByteCode,
     realm::{ExecutionContext, GcRealm, GcUpvalueObject},
     Value,
@@ -52,6 +52,10 @@ unsafe impl<'gc, 'cell> Trace for VmFunction<'gc, 'cell> {
         ctx.mark(self.bc);
         //self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }
+}
+
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for VmFunction<'gc, 'cell> {
+    type Output = VmFunction<'a, 'cell>;
 }
 
 impl<'gc, 'cell> Object<'gc, 'cell> {

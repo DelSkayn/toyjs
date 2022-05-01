@@ -96,6 +96,23 @@ fn double_arena() {
     }
 }
 
+/*
+fn root_pin() {
+    new_cell_owner!(owner);
+    let roots = Roots::new();
+    let mut arena = Arena::new(&roots);
+
+    let vec: Vec<Gc<i32>> = Vec::new();
+    root_pin!(arena, vec);
+
+    vec.push(unsafe { super::rebind(arena.add(1)) });
+
+    arena.collect(&owner);
+
+    assert_eq!(*vec.pop().unwrap().borrow(&owner), 1);
+}
+*/
+
 struct Container<'gc, 'cell> {
     inner: Gc<'gc, 'cell, i32>,
 }

@@ -3,22 +3,24 @@ use crate::{
     cell::CellOwner,
     gc::Arena,
     realm::GcRealm,
-    GcObject, Value,
+    rebind, GcObject, Value,
 };
 
 use super::properties::{Accessor, Property, PropertyEntry, PropertyFlag, PropertyValue};
 
 impl<'gc, 'cell> GcObject<'gc, 'cell> {
     #[inline]
-    pub fn index_value<V: Into<Value<'gc, 'cell>>>(
+    pub fn index_value<'l, V: Into<Value<'gc, 'cell>>>(
         self,
         owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
         realm: GcRealm<'gc, 'cell>,
         key: V,
-    ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>> {
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         let v = key.into();
         if let Some(atom) = v.into_atom() {
-            self.index(owner, realm, atom)
+            self.index(owner, arena, atoms, realm, atom)
         } else {
             todo!()
             /*
@@ -30,20 +32,22 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         }
     }
 
-    pub fn index(
+    pub fn index<'l>(
         self,
         owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
         realm: GcRealm<'gc, 'cell>,
         key: Atom,
-    ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>> {
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         let borrow = self.borrow_mut_untraced(owner);
         if let Some(idx) = key.into_idx() {
             if let Some(x) = borrow.elements.get(idx as usize) {
-                return Ok(x);
+                return Ok(rebind!(arena, x));
             } else {
                 return borrow
                     .prototype
-                    .map(|x| x.index(owner, realm, key))
+                    .map(|x| x.index(owner, arena, atoms, realm, key))
                     .unwrap_or(Ok(Value::undefined()));
             }
         }
@@ -52,12 +56,9 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         loop {
             if let Some(prop) = cur.borrow(owner).properties.get(key) {
                 match prop.as_value() {
-                    PropertyValue::Value(x) => return Ok(x),
-                    PropertyValue::Accessor(Accessor {
-                        get: Some(_get), ..
-                    }) => {
-                        todo!()
-                        //return realm.enter_method_call(get, self.into())
+                    PropertyValue::Value(x) => return Ok(rebind!(arena, x)),
+                    PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
+                        return unsafe { realm.method_call(owner, arena, atoms, get, self) }
                     }
                     PropertyValue::Accessor(Accessor { get: None, .. }) => {
                         return Ok(Value::undefined())

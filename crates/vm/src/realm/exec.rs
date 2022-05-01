@@ -4,7 +4,7 @@ use crate::{
     gc::{Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
     object::{ObjectKind, VmFunction},
-    rebind, root, GcObject, Object, Realm, Value,
+    rebind, GcObject, Object, Realm, Value,
 };
 
 use super::{ExecutionContext, GcRealm};
@@ -101,7 +101,7 @@ macro_rules! rebind_try {
     };
 }
 
-impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
+impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     // Shorthand for Gc::borrow
     fn r<'a>(self, owner: &'a CellOwner<'cell>) -> &'a Realm<'gc, 'cell> {
         self.borrow(owner)
@@ -135,15 +135,16 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                     self.w(owner).stack.write(dst, con);
                 }
                 Instruction::LoadGlobal { dst } => {
-                    let global = self.r(owner).global;
+                    let global = self.r(owner).builtin.global;
                     self.w(owner).stack.write(dst, global.into());
                 }
                 Instruction::LoadFunction { dst, func } => {
                     arena.write_barrier(self);
                     arena.collect(owner);
 
+                    let fp = self.r(owner).builtin.function_proto;
                     let func = self.construct_function(owner, arena, func, &instr, ctx.function);
-                    let func = Object::new(None, ObjectKind::VmFn(func));
+                    let func = Object::new_alloc(arena, Some(fp), ObjectKind::VmFn(func));
                     let func = arena.add(func);
                     self.w(owner).stack.write(dst, func.into());
                 }
@@ -163,7 +164,8 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                     // otherwise.
                     arena.write_barrier(self);
                     arena.collect(owner);
-                    let object = arena.add(Object::new(None, ObjectKind::Ordinary));
+                    let op = self.r(owner).builtin.object_proto;
+                    let object = arena.add(Object::new(Some(op), ObjectKind::Ordinary));
                     self.w(owner).stack.write(dst, object.into());
                 }
                 Instruction::CreateArray { dst } => {
@@ -178,7 +180,8 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                     let key = self.r(owner).stack.read(key);
                     let obj = self.r(owner).stack.read(obj);
                     if let Some(obj) = obj.into_object() {
-                        let res = rebind_try!(arena, obj.index_value(owner, self, key));
+                        let res =
+                            rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
                         self.w(owner).stack.write(dst, res);
                     } else {
                         todo!("index {:?}", obj);
@@ -199,15 +202,15 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                 }
                 Instruction::GlobalIndex { dst, key } => {
                     let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).global;
+                    let obj = self.r(owner).builtin.global;
 
-                    let res = rebind_try!(arena, obj.index_value(owner, self, key));
+                    let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
                     self.w(owner).stack.write(dst, res);
                 }
                 Instruction::GlobalAssign { key, src } => {
                     let src = self.r(owner).stack.read(src);
                     let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).global;
+                    let obj = self.r(owner).builtin.global;
                     rebind_try!(
                         arena,
                         obj.index_set_value(owner, arena, self, atoms, key, src)
@@ -507,7 +510,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                             this: obj.into(),
                             new_target: Value::null(),
                         };
-                        let res = rebind_try!(arena, self.call(owner, arena, atoms, obj, ctx));
+                        let res = rebind_try!(arena, self.call(owner, arena, atoms, ctx));
                         self.w(owner).stack.write(dst, res);
                     } else {
                         todo!("call not object")
@@ -549,7 +552,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         value.is_null() || value.is_undefined()
     }
 
-    pub fn to_string<'l, 'a: 'l>(
+    pub fn to_string<'l>(
         self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
@@ -614,7 +617,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     }
 
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
-    pub unsafe fn to_int32<'l>(
+    pub fn to_int32<'l>(
         &self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
@@ -640,7 +643,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     }
 
     /// Implements type conversion [`ToUint32`](https://tc39.es/ecma262/#sec-touint32)
-    pub unsafe fn to_uint32<'l>(
+    pub fn to_uint32<'l>(
         &self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
@@ -673,7 +676,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         return Ok(rebind!(arena, value));
     }
 
-    pub fn strict_equal<'l>(
+    pub fn strict_equal(
         self,
         owner: &CellOwner<'cell>,
         left: Value<'_, 'cell>,
@@ -859,7 +862,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         if left.is_string() || right.is_string() {
             let left = self.to_string(owner, arena, left)?;
             let right = self.to_string(owner, arena, right)?;
-            let v = arena.add(left.borrow(owner).to_string() + &right.borrow(owner).to_string());
+            let v = arena.add(left.borrow(owner).to_string() + right.borrow(owner));
             return Ok(v.into());
         }
         let left = self.to_number(owner, arena, left)?;
@@ -1038,20 +1041,35 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         }
     }
 
+    pub unsafe fn method_call<'l, 'a>(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        function: GcObject<'a, 'cell>,
+        obj: GcObject<'a, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        let ctx = ExecutionContext {
+            function,
+            this: obj.into(),
+            new_target: Value::undefined(),
+        };
+
+        self.call(owner, arena, atoms, ctx)
+    }
+
     #[allow(unused_unsafe)]
     pub unsafe fn call<'l>(
         self,
         owner: &mut CellOwner<'cell>,
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
-        obj: GcObject<'_, 'cell>,
         ctx: ExecutionContext<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        match obj.borrow(owner).kind() {
+        match ctx.function.borrow(owner).kind() {
             ObjectKind::VmFn(func) => {
                 let bc = func.bc;
                 let frame_size = bc.borrow(owner).functions[func.function as usize].size;
-                root!(arena, bc);
                 let mut instr = InstructionReader::new_unsafe(owner, bc, func.function);
 
                 let guard = self.w(owner).stack.push_frame(frame_size);
@@ -1077,7 +1095,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     }
 
     #[cold]
-    pub unsafe fn create_syntax_error<'l>(
+    pub fn create_syntax_error<'l>(
         self,
         _arena: &'l Arena<'_, 'cell>,
         _message: impl Into<String>,
