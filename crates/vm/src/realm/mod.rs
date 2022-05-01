@@ -60,8 +60,12 @@ unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Realm<'gc, 'cell> {
 }
 
 impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
-    pub fn new<'rt>(atoms: &Atoms, arena: &'gc gc::Arena<'rt, 'cell>) -> Self {
-        let builtin = builtin::Builtin::new(atoms, arena);
+    pub fn new<'rt>(
+        owner: &mut CellOwner<'cell>,
+        arena: &'gc gc::Arena<'rt, 'cell>,
+        atoms: &Atoms,
+    ) -> Self {
+        let builtin = builtin::Builtin::new(owner, arena, atoms);
         let stack = Stack::new();
         Realm { builtin, stack }
     }

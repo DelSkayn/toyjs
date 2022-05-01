@@ -1,8 +1,8 @@
 use crate::{
-    atom::Atoms,
+    atom::{self, Atoms},
     cell::CellOwner,
     gc::{Arena, Rebind, Trace},
-    object::{ObjectFlags, ObjectKind},
+    object::{ObjectFlags, ObjectKind, PropertyFlag},
     GcObject, Object, Value,
 };
 
@@ -42,7 +42,7 @@ fn function_proto<'l, 'cell>(
 }
 
 impl<'gc, 'cell> Builtin<'gc, 'cell> {
-    pub fn new(_atoms: &Atoms, arena: &'gc Arena<'_, 'cell>) -> Self {
+    pub fn new(owner: &mut CellOwner<'cell>, arena: &'gc Arena<'_, 'cell>, atoms: &Atoms) -> Self {
         let op = arena.add(Object::new(
             None,
             ObjectFlags::ORDINARY,
@@ -53,6 +53,14 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             ObjectFlags::ORDINARY,
             ObjectKind::Ordinary,
         ));
+        global.raw_index_set_flags(
+            owner,
+            arena,
+            atoms,
+            atom::constant::globalThis,
+            global,
+            PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE,
+        );
         let fp = arena.add(Object::new(
             Some(op),
             ObjectFlags::ORDINARY,

@@ -21,7 +21,7 @@ fn main() -> io::Result<()> {
     let mut arena = vm::gc::Arena::new(&root);
     let atoms = Atoms::new();
     let mut interner = interner::Interner::new();
-    let realm = Realm::new(&atoms, &arena);
+    let realm = Realm::new(&mut owner, &arena, &atoms);
     let realm = arena.add(realm);
     vm::root!(arena, realm);
 
