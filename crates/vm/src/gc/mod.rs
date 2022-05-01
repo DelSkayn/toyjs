@@ -4,7 +4,6 @@ use std::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem,
-    pin::Pin,
     ptr::{drop_in_place, NonNull},
 };
 
@@ -17,35 +16,37 @@ mod impl_trace;
 #[macro_export]
 macro_rules! root {
     ($arena:expr, $value:ident) => {
-        let __guard = $arena._root($value);
+        let $value = unsafe { $crate::gc::rebind($value) };
+        let __guard = $arena._root_gc($value);
         #[allow(unused_unsafe)]
         let $value = unsafe { $crate::gc::rebind_to(&__guard, $value) };
     };
 }
 
 #[macro_export]
-macro_rules! pin_root {
+macro_rules! root_clone {
     ($arena:expr, $value:ident) => {
-        let $value = unsafe { std::pin::Pin::new_unchecked(&mut $value) };
-        let __guard = $arena._root($value);
+        let $value = unsafe { $crate::gc::rebind($value) };
+
+        let __guard = $arena._root(&$value);
         #[allow(unused_unsafe)]
-        let $value = unsafe { $crate::gc::rebind_to(&__guard, $value) };
-        compile_error!("not yet implemented");
+        let $value = unsafe { $crate::gc::rebind_to(&__guard, $value.clone()) };
     };
 }
 
 #[macro_export]
 macro_rules! rebind {
-    ($arena:expr, $value:expr) => {
+    ($arena:expr, $value:expr) => {{
+        let v = $value;
         unsafe {
             // Detach from arena's lifetime.
-            let v = $crate::gc::rebind($value);
+            let v = $crate::gc::rebind(v);
             // Ensure that the $arena is an arena.
             let a: &$crate::gc::Arena = $arena;
             // Bind to the lifetime of the arena.
             $crate::gc::rebind_to(a, v)
         }
-    };
+    }};
 }
 
 #[cfg(test)]
@@ -293,6 +294,12 @@ impl<'cell> Roots<'cell> {
 #[doc(hidden)]
 pub struct RootGuard<'rt, 'cell>(pub &'rt Roots<'cell>);
 
+impl<'rt, 'cell> RootGuard<'rt, 'cell> {
+    pub unsafe fn bind<'a, R: Rebind<'a>>(&'a self, r: R) -> R::Output {
+        rebind(r)
+    }
+}
+
 impl<'rt, 'cell> Drop for RootGuard<'rt, 'cell> {
     fn drop(&mut self) {
         self.0.roots.pop();
@@ -327,7 +334,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[doc(hidden)]
-    pub fn _root<'gc, T: Trace + 'gc>(&self, t: Gc<'gc, 'cell, T>) -> RootGuard<'rt, 'cell> {
+    pub fn _root_gc<T: Trace>(&self, t: Gc<'_, 'cell, T>) -> RootGuard<'rt, 'cell> {
         unsafe {
             let ptr: &GcBox<T> = t.ptr.as_ref();
             let ptr: &dyn Trace = ptr;
@@ -337,11 +344,18 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     }
 
     #[doc(hidden)]
-    pub fn _root_pin<'gc, T: Trace + 'gc>(&self, t: &Pin<&T>) -> RootGuard<'rt, 'cell> {
+    pub fn _root<T: Trace>(&self, t: &T) -> RootGuard<'rt, 'cell> {
         unsafe {
-            let ptr: *const dyn Trace = t.get_ref();
+            let ptr: &dyn Trace = t;
             self.roots.roots.push(mem::transmute(ptr));
         }
+        RootGuard(self.roots)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn _root_ptr<T: Trace>(&self, t: &mut T) -> RootGuard<'rt, 'cell> {
+        let ptr: *const dyn Trace = t;
+        self.roots.roots.push(mem::transmute(ptr));
         RootGuard(self.roots)
     }
 
