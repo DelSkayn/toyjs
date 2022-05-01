@@ -118,6 +118,10 @@ impl<'rt, T: ?Sized> LCell<'rt, T> {
     pub fn borrow_mut<'a>(&'a self, owner: &'a mut CellOwner<'rt>) -> &'a mut T {
         owner.borrow_mut(self)
     }
+
+    pub fn get(&self) -> *mut T {
+        self.value.get()
+    }
 }
 
 #[cfg(test)]

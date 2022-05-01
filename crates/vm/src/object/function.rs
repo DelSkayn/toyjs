@@ -1,8 +1,9 @@
 use crate::{
-    gc::{Trace, Tracer},
+    cell::CellOwner,
+    gc::{Arena, Trace, Tracer},
     instructions::GcByteCode,
-    realm::{ExecutionContext, GcUpvalueObject},
-    Realm, Value,
+    realm::{ExecutionContext, GcRealm, GcUpvalueObject},
+    Value,
 };
 
 use super::{Object, ObjectKind};
@@ -10,22 +11,28 @@ use super::{Object, ObjectKind};
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
 pub type MutableFn = Box<
-    dyn for<'a, 'gc, 'cell> FnMut(
-        &'a Realm<'gc, 'cell>,
-        &'a mut ExecutionContext<'gc, 'cell>,
+    dyn for<'gc, 'cell> FnMut(
+        &mut Arena<'gc, 'cell>,
+        &mut CellOwner<'cell>,
+        GcRealm<'gc, 'cell>,
+        &ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
 pub type SharedFn = Box<
     dyn for<'a, 'gc, 'cell> Fn(
-        &'a Realm<'gc, 'cell>,
-        &'a mut ExecutionContext<'gc, 'cell>,
+        &mut Arena<'gc, 'cell>,
+        &mut CellOwner<'cell>,
+        GcRealm<'gc, 'cell>,
+        &ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
 
-pub type StaticFn = for<'gc, 'cell> unsafe fn(
-    &Realm<'gc, 'cell>,
-    &mut ExecutionContext<'gc, 'cell>,
-) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>;
+pub type StaticFn = for<'l, 'cell> unsafe fn(
+    &mut Arena<'_, 'cell>,
+    &'l mut CellOwner<'cell>,
+    GcRealm<'_, 'cell>,
+    &ExecutionContext<'_, 'cell>,
+) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>;
 
 pub struct VmFunction<'gc, 'cell> {
     pub bc: GcByteCode<'gc, 'cell>,

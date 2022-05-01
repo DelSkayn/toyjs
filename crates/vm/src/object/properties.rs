@@ -9,7 +9,7 @@ use common::collections::HashMap;
 
 use crate::{
     atom::Atom,
-    gc::{Trace, Tracer},
+    gc::{self, Rebind, Trace, Tracer},
     Value,
 };
 
@@ -100,6 +100,10 @@ pub struct Property<'gc, 'cell> {
     value: PropertyUnion<'gc, 'cell>,
 }
 
+unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Property<'gc, 'cell> {
+    type Output = Property<'a, 'cell>;
+}
+
 impl<'gc, 'cell> Property<'gc, 'cell> {
     pub fn accessor(accessor: Accessor<'gc, 'cell>, flags: PropertyFlag, atom: Atom) -> Self {
         Property {
@@ -183,17 +187,28 @@ pub struct Vacant<'a, 'gc, 'cell> {
 }
 
 impl<'a, 'gc, 'cell> Vacant<'a, 'gc, 'cell> {
-    pub fn insert(self, value: Value<'gc, 'cell>) {
+    pub fn insert(self, value: Value<'_, 'cell>) {
         let idx = self.props.len();
         let key = *self.entry.key();
+        // Rebound to the lifetime of props. which are traced so this is safe
+        let value = unsafe { gc::rebind(value) };
         self.entry.insert(idx);
         self.props
             .push(Property::value(value, PropertyFlag::ordinary(), key));
     }
 }
 
+pub struct Occupied<'a, 'gc, 'cell>(&'a mut Value<'gc, 'cell>);
+
+impl<'a, 'gc, 'cell> Occupied<'a, 'gc, 'cell> {
+    pub fn set(&mut self, value: Value<'_, 'cell>) {
+        // Safe as the value from the reference will be kept alive for 'gc
+        *self.0 = unsafe { gc::rebind(value) };
+    }
+}
+
 pub enum PropertyEntry<'a, 'gc, 'cell> {
-    Present(&'a mut Value<'gc, 'cell>),
+    Occupied(Occupied<'a, 'gc, 'cell>),
     Accessor(GcObject<'gc, 'cell>),
     Vacant(Vacant<'a, 'gc, 'cell>),
     Unwritable,
@@ -228,7 +243,9 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
         self.props[idx] = property;
     }
 
-    pub fn set(&mut self, property: Property<'gc, 'cell>) -> Option<Property<'gc, 'cell>> {
+    pub fn set(&mut self, property: Property<'_, 'cell>) -> Option<Property<'gc, 'cell>> {
+        // Safe because property will now be kept alive by properties.
+        let property = unsafe { gc::rebind(property) };
         match self.map.entry(property.atom) {
             Entry::Occupied(x) => Some(mem::replace(&mut self.props[*x.get()], property)),
             Entry::Vacant(x) => {
@@ -258,7 +275,7 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
                         PropertyEntry::Unwritable
                     }
                 } else {
-                    PropertyEntry::Present(&mut prop.value.value)
+                    PropertyEntry::Occupied(Occupied(&mut prop.value.value))
                 }
             },
         }

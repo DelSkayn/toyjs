@@ -73,7 +73,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn index_set_value<K, V>(
+    pub fn index_set_value<'k, 'v, K, V>(
         self,
         owner: &mut CellOwner<'cell>,
         arena: &Arena<'_, 'cell>,
@@ -83,8 +83,8 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         value: V,
     ) -> Result<(), Value<'gc, 'cell>>
     where
-        K: Into<Value<'gc, 'cell>>,
-        V: Into<Value<'gc, 'cell>>,
+        K: Into<Value<'k, 'cell>>,
+        V: Into<Value<'v, 'cell>>,
     {
         let v = key.into();
         if let Some(a) = v.into_atom() {
@@ -107,7 +107,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         _realm: GcRealm<'gc, 'cell>,
         _atoms: &Atoms,
         key: Atom,
-        value: Value<'gc, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<(), Value<'gc, 'cell>> {
         let borrow = self.borrow_mut(owner, arena);
         if let Some(idx) = key.into_idx() {
@@ -115,7 +115,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         }
 
         match borrow.properties.entry(key) {
-            PropertyEntry::Present(x) => *x = value,
+            PropertyEntry::Occupied(mut x) => x.set(value),
             PropertyEntry::Vacant(x) => x.insert(value),
             PropertyEntry::Accessor(_x) => todo!(),
             PropertyEntry::Unwritable => todo!(),

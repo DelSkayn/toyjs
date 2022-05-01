@@ -144,14 +144,14 @@ impl AssignmentTarget {
                 this.builder.free_temp(name);
                 this.builder.push(Instruction::IndexAssign {
                     obj: obj.0,
-                    val: src.0,
+                    src: src.0,
                     key: name.0,
                 });
             }
             Self::Index(obj, index) => {
                 this.builder.push(Instruction::IndexAssign {
                     obj: obj.0,
-                    val: src.0,
+                    src: src.0,
                     key: index.0,
                 });
             }
@@ -928,7 +928,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             self.builder.free_temp(key);
             self.builder.push(Instruction::IndexAssign {
                 obj: object.unwrap().0,
-                val: expr.0,
+                src: expr.0,
                 key: key.0,
             });
         }
@@ -958,7 +958,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             self.builder.free_temp(key);
             self.builder.push(Instruction::IndexAssign {
                 obj: array.unwrap().0,
-                val: expr.0,
+                src: expr.0,
                 key: key.0,
             });
         }

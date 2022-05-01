@@ -1,9 +1,10 @@
 use crate::{
+    atom::Atoms,
     cell::CellOwner,
     gc::{Arena, Gc},
-    instructions::{GcByteCode, Instruction},
-    object::ObjectKind,
-    rebind_value, GcObject, Object, Value,
+    instructions::{GcByteCode, Instruction, Upvalue},
+    object::{ObjectKind, VmFunction},
+    rebind, root, GcObject, Object, Realm, Value,
 };
 
 use super::{ExecutionContext, GcRealm};
@@ -16,6 +17,7 @@ pub enum NumericOperator {
     Pow,
 }
 
+#[derive(Clone, Copy)]
 pub struct InstructionReader<'gc, 'cell> {
     bc: GcByteCode<'gc, 'cell>,
     cur: *const Instruction,
@@ -72,6 +74,15 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
         res
     }
 
+    pub unsafe fn jump(&mut self, mut offset: i16) {
+        offset -= 1;
+        #[cfg(debug_assertions)]
+        assert!(self.cur.offset(offset.into()) < self.last);
+        #[cfg(debug_assertions)]
+        assert!(self.cur.offset(offset.into()) >= self.first);
+        self.cur = self.cur.offset(offset.into());
+    }
+
     /// # Safety
     ///
     /// `idx` must be smaller or equal to the amount of constants in the containted bytecode.
@@ -81,7 +92,29 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
     }
 }
 
+macro_rules! rebind_try {
+    ($arena:expr, $value:expr) => {
+        match $value {
+            Ok(x) => x,
+            Err(e) => return Err(rebind!($arena, e)),
+        }
+    };
+}
+
 impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
+    // Shorthand for Gc::borrow
+    fn r<'a>(self, owner: &'a CellOwner<'cell>) -> &'a Realm<'gc, 'cell> {
+        self.borrow(owner)
+    }
+
+    // Shorthand for Gc::unsafe_borrow_mut
+    //
+    // Should only be used as long as before each collection and return from the loop the a
+    // write_barrier is done for the realm
+    unsafe fn w<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut Realm<'gc, 'cell> {
+        self.unsafe_borrow_mut(owner)
+    }
+
     /// # Safety
     ///
     /// Instruction reader must read valid bytecode.
@@ -90,325 +123,409 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         self,
         arena: &'l mut Arena<'_, 'cell>,
         owner: &mut CellOwner<'cell>,
-        mut instr: InstructionReader<'_, 'cell>,
-        ctx: ExecutionContext<'_, 'cell>,
+        atoms: &Atoms,
+        upper_instr: &mut InstructionReader<'_, 'cell>,
+        ctx: &ExecutionContext<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        let mut instr = *upper_instr;
         loop {
             match instr.next(owner) {
                 Instruction::LoadConst { dst, cons } => {
                     let con = instr.constant(cons, owner);
-                    self.borrow_mut(owner, arena).stack.write(dst, con);
+                    self.w(owner).stack.write(dst, con);
                 }
                 Instruction::LoadGlobal { dst } => {
-                    let global = self.borrow(owner).global;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, global.into());
+                    let global = self.r(owner).global;
+                    self.w(owner).stack.write(dst, global.into());
                 }
+                Instruction::LoadFunction { dst, func } => {
+                    arena.write_barrier(self);
+                    arena.collect(owner);
+
+                    let func = self.construct_function(owner, arena, func, &instr, ctx.function);
+                    let func = Object::new(None, ObjectKind::VmFn(func));
+                    let func = arena.add(func);
+                    self.w(owner).stack.write(dst, func.into());
+                }
+
                 Instruction::LoadThis { dst } => {
-                    self.borrow_mut(owner, arena).stack.write(dst, ctx.this);
+                    self.w(owner).stack.write(dst, ctx.this);
                 }
                 Instruction::LoadTarget { dst } => {
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, ctx.new_target);
+                    self.w(owner).stack.write(dst, ctx.new_target);
                 }
                 Instruction::Move { dst, src } => {
-                    let src = self.borrow(owner).stack.read(src);
-                    self.borrow_mut(owner, arena).stack.write(dst, src);
+                    let src = self.r(owner).stack.read(src);
+                    self.w(owner).stack.write(dst, src);
                 }
                 Instruction::CreateObject { dst } => {
+                    // Always retrace the current realm to allow ring without a write barrier
+                    // otherwise.
+                    arena.write_barrier(self);
+                    arena.collect(owner);
                     let object = arena.add(Object::new(None, ObjectKind::Ordinary));
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, object.into());
+                    self.w(owner).stack.write(dst, object.into());
                 }
                 Instruction::CreateArray { dst } => {
+                    // Always retrace the current realm to allow ring without a write barrier
+                    // otherwise.
+                    arena.write_barrier(self);
+                    arena.collect(owner);
                     let object = arena.add(Object::new(None, ObjectKind::Ordinary));
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, object.into());
+                    self.w(owner).stack.write(dst, object.into());
                 }
+                Instruction::Index { dst, obj, key } => {
+                    let key = self.r(owner).stack.read(key);
+                    let obj = self.r(owner).stack.read(obj);
+                    if let Some(obj) = obj.into_object() {
+                        let res = rebind_try!(arena, obj.index_value(owner, self, key));
+                        self.w(owner).stack.write(dst, res);
+                    } else {
+                        todo!("index {:?}", obj);
+                    }
+                }
+                Instruction::IndexAssign { obj, key, src } => {
+                    let src = self.r(owner).stack.read(src);
+                    let key = self.r(owner).stack.read(key);
+                    let obj = self.r(owner).stack.read(obj);
+                    if let Some(obj) = obj.into_object() {
+                        rebind_try!(
+                            arena,
+                            obj.index_set_value(owner, arena, self, atoms, key, src)
+                        );
+                    } else {
+                        todo!("index {:?}", obj);
+                    }
+                }
+                Instruction::GlobalIndex { dst, key } => {
+                    let key = self.r(owner).stack.read(key);
+                    let obj = self.r(owner).global;
+
+                    let res = rebind_try!(arena, obj.index_value(owner, self, key));
+                    self.w(owner).stack.write(dst, res);
+                }
+                Instruction::GlobalAssign { key, src } => {
+                    let src = self.r(owner).stack.read(src);
+                    let key = self.r(owner).stack.read(key);
+                    let obj = self.r(owner).global;
+                    rebind_try!(
+                        arena,
+                        obj.index_set_value(owner, arena, self, atoms, key, src)
+                    );
+                }
+
+                Instruction::Upvalue { dst, slot } => {
+                    let upvalue =
+                        ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
+                    let res = upvalue.borrow(owner).read();
+                    self.w(owner).stack.write(dst, res);
+                }
+
+                Instruction::UpvalueAssign { src, slot } => {
+                    let src = self.r(owner).stack.read(src);
+                    let upvalue =
+                        ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
+                    upvalue.borrow_mut(owner, arena).write(src);
+                }
+
+                Instruction::TypeOf { dst, src } => {
+                    let src = self.r(owner).stack.read(src);
+                    let res = self.type_of(owner, src);
+                    let res = arena.add(String::from(res));
+                    self.w(owner).stack.write(dst, res.into());
+                }
+
+                Instruction::InstanceOf { dst, left, righ } => {
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+
+                    let res = rebind_try!(arena, self.instance_of(owner, arena, left, right));
+                    self.w(owner).stack.write(dst, res.into());
+                }
+
                 Instruction::Add { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+
                     if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
                         let res = Self::coerce_int(left as i64 + right as i64);
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        self.w(owner).stack.write(dst, res);
                     } else {
-                        let res = self.add(owner, arena, left, right)?;
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        let res = rebind_try!(arena, self.add(owner, arena, left, right));
+                        self.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::Sub { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
                     if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
                         let res = Self::coerce_int(left as i64 - right as i64);
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        self.w(owner).stack.write(dst, res);
                     } else {
-                        let res =
-                            self.numeric_operator(owner, left, right, NumericOperator::Sub)?;
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        let res = rebind_try!(
+                            arena,
+                            self.numeric_operator(owner, arena, left, right, NumericOperator::Sub)
+                        );
+                        self.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::Mul { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.numeric_operator(owner, left, right, NumericOperator::Mul)?;
-                    self.borrow_mut(owner, arena).stack.write(dst, res);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(
+                        arena,
+                        self.numeric_operator(owner, arena, left, right, NumericOperator::Mul)
+                    );
+                    self.w(owner).stack.write(dst, res);
                 }
                 Instruction::Div { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.numeric_operator(owner, left, right, NumericOperator::Div)?;
-                    self.borrow_mut(owner, arena).stack.write(dst, res);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(
+                        arena,
+                        self.numeric_operator(owner, arena, left, right, NumericOperator::Div)
+                    );
+                    self.w(owner).stack.write(dst, res);
                 }
                 Instruction::Mod { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.numeric_operator(owner, left, right, NumericOperator::Mod)?;
-                    self.borrow_mut(owner, arena).stack.write(dst, res);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(
+                        arena,
+                        self.numeric_operator(owner, arena, left, right, NumericOperator::Mod)
+                    );
+                    self.w(owner).stack.write(dst, res);
                 }
                 Instruction::Pow { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.numeric_operator(owner, left, right, NumericOperator::Pow)?;
-                    self.borrow_mut(owner, arena).stack.write(dst, res);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(
+                        arena,
+                        self.numeric_operator(owner, arena, left, right, NumericOperator::Pow)
+                    );
+                    self.w(owner).stack.write(dst, res);
                 }
                 Instruction::BitwiseAnd { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_int32(owner, left)?;
-                    let right = self.to_int32(owner, right)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_int32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right));
                     let res = left & right;
-                    self.borrow_mut(owner, arena).stack.write(dst, res.into());
+                    self.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseOr { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_int32(owner, left)?;
-                    let right = self.to_int32(owner, right)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_int32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right));
                     let res = left | right;
-                    self.borrow_mut(owner, arena).stack.write(dst, res.into());
+                    self.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseXor { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_int32(owner, left)?;
-                    let right = self.to_int32(owner, right)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_int32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right));
                     let res = left ^ right;
-                    self.borrow_mut(owner, arena).stack.write(dst, res.into());
+                    self.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseNot { dst, src } => {
-                    let src = self.borrow(owner).stack.read(src);
-                    let src = rebind_value!(arena, src);
-                    let src = self.to_int32(owner, src)?;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, (!src).into());
+                    let src = self.r(owner).stack.read(src);
+                    let src = rebind_try!(arena, self.to_int32(owner, arena, src));
+                    self.w(owner).stack.write(dst, (!src).into());
                 }
                 Instruction::ShiftLeft { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_int32(owner, left)?;
-                    let right = self.to_int32(owner, right)? as u32 % 32;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(left << right));
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_int32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right)) as u32 % 32;
+                    self.w(owner).stack.write(dst, Value::from(left << right));
                 }
                 Instruction::ShiftRight { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_int32(owner, left)?;
-                    let right = self.to_int32(owner, right)? as u32 % 32;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(left >> right));
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_int32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right)) as u32 % 32;
+                    self.w(owner).stack.write(dst, Value::from(left >> right));
                 }
                 Instruction::ShiftUnsigned { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let left = self.to_uint32(owner, left)?;
-                    let right = self.to_int32(owner, right)? as u32 % 32;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, self.to_uint32(owner, arena, left));
+                    let right = rebind_try!(arena, self.to_int32(owner, arena, right)) as u32 % 32;
                     let v = left >> right;
                     if v > i32::MAX as u32 {
-                        self.borrow_mut(owner, arena)
-                            .stack
-                            .write(dst, Value::from(v as f64));
+                        self.w(owner).stack.write(dst, Value::from(v as f64));
                     } else {
-                        self.borrow_mut(owner, arena)
-                            .stack
-                            .write(dst, Value::from(v as i32));
+                        self.w(owner).stack.write(dst, Value::from(v as i32));
                     }
                 }
                 Instruction::Equal { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.equal(owner, left, right)?;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(res));
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, self.equal(owner, arena, left, right));
+                    self.w(owner).stack.write(dst, Value::from(res));
                 }
                 Instruction::NotEqual { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = !self.equal(owner, left, right)?;
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(res));
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = !rebind_try!(arena, self.equal(owner, arena, left, right));
+                    self.w(owner).stack.write(dst, Value::from(res));
                 }
 
                 Instruction::SEqual { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
                     let res = self.strict_equal(owner, left, right);
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(res));
+                    self.w(owner).stack.write(dst, Value::from(res));
                 }
                 Instruction::SNotEqual { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
                     let res = !self.strict_equal(owner, left, right);
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(res));
+                    self.w(owner).stack.write(dst, Value::from(res));
                 }
 
                 Instruction::Greater { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.less_then(owner, arena, left, right, true)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, self.less_then(owner, arena, left, right, true));
                     if res.is_undefined() {
-                        self.borrow_mut(owner, arena).stack.write(dst, false.into());
+                        self.w(owner).stack.write(dst, false.into());
                     } else {
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        self.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::GreaterEq { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.less_then(owner, arena, left, right, false)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, self.less_then(owner, arena, left, right, false));
                     let res = res.is_false() && !res.is_undefined();
-                    self.borrow_mut(owner, arena).stack.write(dst, res.into());
+                    self.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::Less { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.less_then(owner, arena, left, right, false)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, self.less_then(owner, arena, left, right, false));
                     if res.is_undefined() {
-                        self.borrow_mut(owner, arena).stack.write(dst, false.into());
+                        self.w(owner).stack.write(dst, false.into());
                     } else {
-                        self.borrow_mut(owner, arena).stack.write(dst, res);
+                        self.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::LessEq { dst, left, righ } => {
-                    let left = self.borrow(owner).stack.read(left);
-                    let right = self.borrow(owner).stack.read(righ);
-                    let left = rebind_value!(arena, left);
-                    let right = rebind_value!(arena, right);
-                    let res = self.less_then(owner, arena, left, right, true)?;
+                    let left = self.r(owner).stack.read(left);
+                    let right = self.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, self.less_then(owner, arena, left, right, true));
                     let res = res.is_false() && !res.is_undefined();
-                    self.borrow_mut(owner, arena).stack.write(dst, res.into());
+                    self.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::IsNullish { dst, op } => {
-                    let src = self.borrow(owner).stack.read(op);
-                    let src = rebind_value!(arena, src);
+                    let src = self.r(owner).stack.read(op);
                     let nullish = self.is_nullish(src);
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(nullish));
+                    self.w(owner).stack.write(dst, Value::from(nullish));
                 }
                 Instruction::Not { dst, src } => {
-                    let src = self.borrow(owner).stack.read(src);
+                    let src = self.r(owner).stack.read(src);
                     let falsish = self.is_falsish(owner, src);
-                    self.borrow_mut(owner, arena)
-                        .stack
-                        .write(dst, Value::from(falsish));
+                    self.w(owner).stack.write(dst, Value::from(falsish));
                 }
                 Instruction::Negative { dst, op } => {
-                    let src = self.borrow(owner).stack.read(op);
-                    let src = rebind_value!(arena, src);
-                    let number = self.to_number(owner, src)?;
-                    if let Some(number) = number.into_int() {
-                        let number = -(number as i64);
-                        if number as i32 as i64 == number {
-                            self.borrow_mut(owner, arena)
-                                .stack
-                                .write(dst, Value::from(number as i32))
+                    let src = self.r(owner).stack.read(op);
+                    {
+                        let number = rebind_try!(arena, self.to_number(owner, arena, src));
+                        if let Some(number) = number.into_int() {
+                            let number = -(number as i64);
+                            if number as i32 as i64 == number {
+                                self.w(owner).stack.write(dst, Value::from(number as i32))
+                            } else {
+                                self.w(owner).stack.write(dst, Value::from(number as f64))
+                            }
+                        } else if let Some(number) = number.into_float() {
+                            let number = -number;
+                            if number as i32 as f64 == number {
+                                self.w(owner).stack.write(dst, Value::from(number as i32));
+                            } else {
+                                self.w(owner).stack.write(dst, Value::from(number));
+                            }
                         } else {
-                            self.borrow_mut(owner, arena)
-                                .stack
-                                .write(dst, Value::from(number as f64))
+                            unreachable!()
                         }
-                    } else if let Some(number) = number.into_float() {
-                        let number = -number;
-                        if number as i32 as f64 == number {
-                            self.borrow_mut(owner, arena)
-                                .stack
-                                .write(dst, Value::from(number as i32));
-                        } else {
-                            self.borrow_mut(owner, arena)
-                                .stack
-                                .write(dst, Value::from(number));
-                        }
-                    } else {
-                        unreachable!()
                     }
                 }
                 Instruction::Positive { dst, op } => {
-                    let src = self.borrow(owner).stack.read(op);
-                    let src = rebind_value!(arena, src);
-                    let number = self.to_number(owner, src)?;
-                    self.borrow_mut(owner, arena).stack.write(dst, number);
+                    let src = self.r(owner).stack.read(op);
+                    let number = rebind_try!(arena, self.to_number(owner, arena, src));
+                    self.w(owner).stack.write(dst, number);
+                }
+
+                Instruction::Jump { tgt } => instr.jump(tgt),
+                Instruction::JumpFalse { cond, tgt } => {
+                    let cond = self.r(owner).stack.read(cond);
+                    if self.is_falsish(owner, cond) {
+                        instr.jump(tgt)
+                    }
+                }
+                Instruction::JumpTrue { cond, tgt } => {
+                    let cond = self.r(owner).stack.read(cond);
+                    if !self.is_falsish(owner, cond) {
+                        instr.jump(tgt)
+                    }
+                }
+
+                Instruction::Try { dst, tgt } => {
+                    match self.run(arena, owner, atoms, &mut instr, ctx) {
+                        Ok(_) => {
+                            self.w(owner).stack.write(dst, Value::empty());
+                        }
+                        Err(e) => {
+                            self.w(owner).stack.write(dst, e);
+                            instr.jump(tgt);
+                        }
+                    }
+                }
+
+                Instruction::Untry { dst: _ } => {
+                    *upper_instr = instr;
+                    return Ok(Value::empty());
+                }
+
+                Instruction::Throw { src } => {
+                    let src = self.r(owner).stack.read(src);
+                    if !src.is_empty() {
+                        return Err(rebind!(arena, src));
+                    }
+                }
+
+                Instruction::Call { dst, func } => {
+                    let func = self.r(owner).stack.read(func);
+                    if let Some(obj) = func.into_object() {
+                        let ctx = ExecutionContext {
+                            function: obj,
+                            this: obj.into(),
+                            new_target: Value::null(),
+                        };
+                        let res = rebind_try!(arena, self.call(owner, arena, atoms, obj, ctx));
+                        self.w(owner).stack.write(dst, res);
+                    } else {
+                        todo!("call not object")
+                    }
+                }
+
+                Instruction::Push { src } => {
+                    let src = self.r(owner).stack.read(src);
+                    self.w(owner).stack.push(src);
                 }
 
                 Instruction::Return { ret } => {
-                    let res = self.borrow(owner).stack.read(ret);
-                    return Ok(rebind_value!(arena, res));
+                    let res = self.r(owner).stack.read(ret);
+                    arena.write_barrier(self);
+                    return Ok(rebind!(arena, res));
                 }
                 Instruction::ReturnUndefined { _ignore } => {
+                    arena.write_barrier(self);
                     return Ok(Value::undefined());
                 }
                 x => todo!("Instruction {}", x),
@@ -432,14 +549,14 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         value.is_null() || value.is_undefined()
     }
 
-    pub fn to_string<'l>(
+    pub fn to_string<'l, 'a: 'l>(
         self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
-        value: Value<'l, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<Gc<'l, 'cell, String>, Value<'l, 'cell>> {
         if let Some(value) = value.into_string() {
-            Ok(value)
+            Ok(rebind!(arena, value))
         } else if let Some(value) = value.into_int() {
             Ok(arena.add(value.to_string()))
         } else if let Some(value) = value.into_float() {
@@ -453,7 +570,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         } else if value.is_false() {
             Ok(arena.add("false".to_string()))
         } else if value.is_object() {
-            let primitive = self.to_primitive(owner, value, true)?;
+            let primitive = self.to_primitive(owner, arena, value, true)?;
             Ok(self.to_string(owner, arena, primitive)?)
         } else {
             todo!("toString: {:?}", value);
@@ -471,12 +588,13 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     }
 
     pub fn to_number<'l>(
-        &self,
+        self,
         owner: &CellOwner<'cell>,
-        value: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         if value.is_int() || value.is_float() {
-            Ok(value)
+            Ok(rebind!(arena, value))
         } else if value.is_undefined() {
             Ok(Value::nan())
         } else if value.is_null() || value.is_false() {
@@ -488,8 +606,8 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
                 Ok(Value::from(f64::NAN))
             }
         } else if value.is_object() {
-            let prim = self.to_primitive(owner, value, false)?;
-            Ok(self.to_number(owner, prim)?)
+            let prim = self.to_primitive(owner, arena, value, false)?;
+            Ok(self.to_number(owner, arena, prim)?)
         } else {
             todo!("toNumber {:?}", value)
         }
@@ -499,9 +617,10 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     pub unsafe fn to_int32<'l>(
         &self,
         owner: &CellOwner<'cell>,
-        value: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<i32, Value<'l, 'cell>> {
-        let number = self.to_number(owner, value)?;
+        let number = self.to_number(owner, arena, value)?;
         Ok(if let Some(number) = number.into_int() {
             number
         } else if let Some(f) = number.into_float() {
@@ -524,9 +643,10 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     pub unsafe fn to_uint32<'l>(
         &self,
         owner: &CellOwner<'cell>,
-        value: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<u32, Value<'l, 'cell>> {
-        let number = self.to_number(owner, value)?;
+        let number = self.to_number(owner, arena, value)?;
         Ok(if let Some(number) = number.into_int() {
             number as u32
         } else if let Some(f) = number.into_float() {
@@ -543,17 +663,21 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     pub fn to_primitive<'l>(
         self,
         _owner: &CellOwner<'cell>,
-        _value: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        value: Value<'_, 'cell>,
         _prefer_string: bool,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        todo!("to primitive")
+        if let Some(_obj) = value.into_object() {
+            todo!("to primitive")
+        }
+        return Ok(rebind!(arena, value));
     }
 
     pub fn strict_equal<'l>(
         self,
         owner: &CellOwner<'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
     ) -> bool {
         if !left.same_type(right) {
             #[cfg(debug_assertions)]
@@ -585,7 +709,11 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
             return left.borrow(owner) == right.into_string().unwrap().borrow(owner);
         }
         if let Some(left) = left.into_object() {
-            return left.ptr_eq(right.into_object().unwrap());
+            let right = right.into_object().unwrap();
+            let left = left.into_ptr();
+            let right = right.into_ptr();
+            // Work around a weird lifetime conflict.
+            return left.as_ptr() as usize == right.as_ptr() as usize;
         }
         if let (Some(left), Some(right)) = (left.into_float(), right.into_float()) {
             return left == right;
@@ -596,8 +724,9 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     pub fn equal<'l>(
         self,
         owner: &CellOwner<'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
     ) -> Result<bool, Value<'l, 'cell>> {
         if left.same_type(right) {
             return Ok(self.strict_equal(owner, left, right));
@@ -611,31 +740,31 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         }
         if left.is_number() && right.is_string() {
             // Should not return error
-            let right = self.to_number(owner, right).unwrap();
-            return self.equal(owner, left, right);
+            let right = self.to_number(owner, arena, right).unwrap();
+            return self.equal(owner, arena, left, right);
         }
         if right.is_number() && left.is_string() {
             // Should not return error
-            let left = self.to_number(owner, left).unwrap();
-            return self.equal(owner, left, right);
+            let left = self.to_number(owner, arena, left).unwrap();
+            return self.equal(owner, arena, left, right);
         }
         if left.is_bool() {
             // Should not return error
-            let left = self.to_number(owner, left).unwrap();
-            return self.equal(owner, left, right);
+            let left = self.to_number(owner, arena, left).unwrap();
+            return self.equal(owner, arena, left, right);
         }
         if right.is_bool() {
             // Should not return error
-            let right = self.to_number(owner, right).unwrap();
-            return self.equal(owner, left, right);
+            let right = self.to_number(owner, arena, right).unwrap();
+            return self.equal(owner, arena, left, right);
         }
         if !left.is_object() && right.is_object() {
-            let right = self.to_primitive(owner, right, true)?;
-            return self.equal(owner, left, right);
+            let right = self.to_primitive(owner, arena, right, true)?;
+            return self.equal(owner, arena, left, right);
         }
         if !right.is_object() && left.is_object() {
-            let left = self.to_primitive(owner, left, true)?;
-            return self.equal(owner, left, right);
+            let left = self.to_primitive(owner, arena, left, true)?;
+            return self.equal(owner, arena, left, right);
         }
         Ok(false)
     }
@@ -644,18 +773,18 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
         swap: bool,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         let (left, right) = if swap {
-            let r = self.to_primitive(owner, left, false)?;
-            let l = self.to_primitive(owner, right, false)?;
+            let r = self.to_primitive(owner, arena, left, false)?;
+            let l = self.to_primitive(owner, arena, right, false)?;
             (l, r)
         } else {
             (
-                self.to_primitive(owner, left, false)?,
-                self.to_primitive(owner, right, false)?,
+                self.to_primitive(owner, arena, left, false)?,
+                self.to_primitive(owner, arena, right, false)?,
             )
         };
         if left.is_string() || right.is_string() {
@@ -687,8 +816,8 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         }
 
         // Left and right are already primitives so they cannot return an error
-        let left = self.to_number(owner, left).unwrap();
-        let right = self.to_number(owner, right).unwrap();
+        let left = self.to_number(owner, arena, left).unwrap();
+        let right = self.to_number(owner, arena, right).unwrap();
         let left = if let Some(left) = left.into_float() {
             left
         } else {
@@ -722,19 +851,19 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let left = self.to_primitive(owner, left, true)?;
-        let right = self.to_primitive(owner, right, true)?;
+        let left = self.to_primitive(owner, arena, left, true)?;
+        let right = self.to_primitive(owner, arena, right, true)?;
         if left.is_string() || right.is_string() {
             let left = self.to_string(owner, arena, left)?;
             let right = self.to_string(owner, arena, right)?;
             let v = arena.add(left.borrow(owner).to_string() + &right.borrow(owner).to_string());
             return Ok(v.into());
         }
-        let left = self.to_number(owner, left)?;
-        let right = self.to_number(owner, right)?;
+        let left = self.to_number(owner, arena, left)?;
+        let right = self.to_number(owner, arena, right)?;
         let left = if let Some(left) = left.into_int() {
             left as f64
         } else if let Some(left) = left.into_float() {
@@ -761,12 +890,13 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
     pub fn numeric_operator<'l>(
         self,
         owner: &CellOwner<'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        left: Value<'_, 'cell>,
+        right: Value<'_, 'cell>,
         op: NumericOperator,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let left = self.to_number(owner, left)?;
-        let right = self.to_number(owner, right)?;
+        let left = self.to_number(owner, arena, left)?;
+        let right = self.to_number(owner, arena, right)?;
         let left = if let Some(left) = left.into_int() {
             left as f64
         } else if let Some(left) = left.into_float() {
@@ -821,8 +951,8 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
         self,
         owner: &CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
-        left: Value<'l, 'cell>,
-        right: Value<'l, 'cell>,
+        left: Value<'gc, 'cell>,
+        right: Value<'gc, 'cell>,
     ) -> Result<bool, Value<'l, 'cell>> {
         let right = right
             .into_object()
@@ -870,6 +1000,70 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
             Value::from(int as i32)
         } else {
             Value::from(int as f64)
+        }
+    }
+
+    #[allow(unused_unsafe)]
+    pub unsafe fn construct_function<'l>(
+        self,
+        owner: &CellOwner<'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        function_id: u16,
+        read: &InstructionReader<'_, 'cell>,
+        function: GcObject<'_, 'cell>,
+    ) -> VmFunction<'l, 'cell> {
+        let bc = &read.bc.borrow(owner).functions[function_id as usize];
+        let up_func = function.borrow(owner).as_vm_function();
+        let upvalues = bc
+            .upvalues
+            .iter()
+            .copied()
+            .map(|x| match x {
+                Upvalue::Local(register) => {
+                    let up = self.borrow(owner).stack.create_upvalue(register);
+                    arena.add(up)
+                }
+                Upvalue::Parent(slot) => {
+                    rebind!(arena, up_func.upvalues[slot as usize])
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let bc = rebind!(arena, read.bc);
+
+        VmFunction {
+            bc,
+            function: function_id,
+            upvalues,
+        }
+    }
+
+    #[allow(unused_unsafe)]
+    pub unsafe fn call<'l>(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        obj: GcObject<'_, 'cell>,
+        ctx: ExecutionContext<'_, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        match obj.borrow(owner).kind() {
+            ObjectKind::VmFn(func) => {
+                let bc = func.bc;
+                let frame_size = bc.borrow(owner).functions[func.function as usize].size;
+                root!(arena, bc);
+                let mut instr = InstructionReader::new_unsafe(owner, bc, func.function);
+
+                let guard = self.w(owner).stack.push_frame(frame_size);
+                let res = self.run(arena, owner, atoms, &mut instr, &ctx);
+                let res = rebind!(arena, res);
+                self.w(owner).stack.pop_frame(arena, guard);
+                res
+            }
+            ObjectKind::StaticFn(x) => {
+                rebind!(arena, x(arena, owner, self, &ctx))
+            }
+            _ => todo!(),
         }
     }
 
