@@ -37,7 +37,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
-        realm: GcRealm<'gc, 'cell>,
+        realm: GcRealm<'_, 'cell>,
         key: Atom,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         let borrow = self.borrow_mut_untraced(owner);
@@ -58,7 +58,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
                 match prop.as_value() {
                     PropertyValue::Value(x) => return Ok(rebind!(arena, x)),
                     PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
-                        return unsafe { realm.method_call(owner, arena, atoms, get, self) }
+                        return realm.method_call(owner, arena, atoms, get, self)
                     }
                     PropertyValue::Accessor(Accessor { get: None, .. }) => {
                         return Ok(Value::undefined())
@@ -74,22 +74,22 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn index_set_value<'k, 'v, K, V>(
+    pub fn index_set_value<'k, 'v, 'l, K, V>(
         self,
         owner: &mut CellOwner<'cell>,
-        arena: &Arena<'_, 'cell>,
-        realm: GcRealm<'gc, 'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
+        realm: GcRealm<'_, 'cell>,
         key: K,
         value: V,
-    ) -> Result<(), Value<'gc, 'cell>>
+    ) -> Result<(), Value<'l, 'cell>>
     where
         K: Into<Value<'k, 'cell>>,
         V: Into<Value<'v, 'cell>>,
     {
         let v = key.into();
         if let Some(a) = v.into_atom() {
-            self.index_set(owner, arena, realm, atoms, a, value.into())?;
+            self.index_set(owner, arena, atoms, realm, a, value.into())?;
         } else {
             /*
             let a = realm.to_atom(v)?;
@@ -101,15 +101,15 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         Ok(())
     }
 
-    pub fn index_set(
+    pub fn index_set<'l>(
         self,
         owner: &mut CellOwner<'cell>,
-        arena: &Arena<'_, 'cell>,
-        _realm: GcRealm<'gc, 'cell>,
-        _atoms: &Atoms,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        realm: GcRealm<'_, 'cell>,
         key: Atom,
         value: Value<'_, 'cell>,
-    ) -> Result<(), Value<'gc, 'cell>> {
+    ) -> Result<(), Value<'l, 'cell>> {
         let borrow = self.borrow_mut(owner, arena);
         if let Some(idx) = key.into_idx() {
             borrow.elements.set(idx as usize, value);
@@ -118,8 +118,15 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         match borrow.properties.entry(key) {
             PropertyEntry::Occupied(mut x) => x.set(value),
             PropertyEntry::Vacant(x) => x.insert(value),
-            PropertyEntry::Accessor(_x) => todo!(),
-            PropertyEntry::Unwritable => todo!(),
+            PropertyEntry::Accessor(set) => {
+                unsafe {
+                    realm.borrow_mut(owner, arena).stack.push(value);
+                }
+                if let Err(e) = realm.method_call(owner, arena, atoms, set, self) {
+                    return Err(rebind!(arena, e));
+                }
+            }
+            PropertyEntry::Unwritable => {}
         }
         Ok(())
     }

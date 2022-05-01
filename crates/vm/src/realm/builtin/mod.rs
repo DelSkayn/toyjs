@@ -2,7 +2,7 @@ use crate::{
     atom::Atoms,
     cell::CellOwner,
     gc::{Arena, Rebind, Trace},
-    object::ObjectKind,
+    object::{ObjectFlags, ObjectKind},
     GcObject, Object, Value,
 };
 
@@ -43,9 +43,21 @@ fn function_proto<'l, 'cell>(
 
 impl<'gc, 'cell> Builtin<'gc, 'cell> {
     pub fn new(_atoms: &Atoms, arena: &'gc Arena<'_, 'cell>) -> Self {
-        let op = arena.add(Object::new(None, ObjectKind::Ordinary));
-        let global = arena.add(Object::new(Some(op), ObjectKind::Ordinary));
-        let fp = arena.add(Object::new(Some(op), ObjectKind::StaticFn(function_proto)));
+        let op = arena.add(Object::new(
+            None,
+            ObjectFlags::ORDINARY,
+            ObjectKind::Ordinary,
+        ));
+        let global = arena.add(Object::new(
+            Some(op),
+            ObjectFlags::ORDINARY,
+            ObjectKind::Ordinary,
+        ));
+        let fp = arena.add(Object::new(
+            Some(op),
+            ObjectFlags::ORDINARY,
+            ObjectKind::StaticFn(function_proto),
+        ));
 
         Builtin {
             global,

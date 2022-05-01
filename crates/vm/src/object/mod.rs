@@ -1,9 +1,6 @@
 use std::cell::RefCell;
 
-use crate::{
-    gc::{Arena, Gc, Rebind, Trace, Tracer},
-    rebind,
-};
+use crate::gc::{self, Arena, Gc, Rebind, Trace, Tracer};
 
 mod elements;
 mod function;
@@ -13,6 +10,15 @@ mod properties;
 use elements::Elements;
 pub use function::{MutableFn, SharedFn, StaticFn, VmFunction};
 use properties::Properties;
+
+bitflags::bitflags! {
+    pub struct ObjectFlags: u8{
+        const EXTENDABLE = 0b1;
+        const CONSTRUCTOR = 0b10;
+
+        const ORDINARY = Self::EXTENDABLE.bits;
+    }
+}
 
 pub type GcObject<'gc, 'cell> = Gc<'gc, 'cell, Object<'gc, 'cell>>;
 
@@ -55,6 +61,7 @@ unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ObjectKind<'gc, 'cell> {
 }
 
 pub struct Object<'gc, 'cell> {
+    flags: ObjectFlags,
     prototype: Option<GcObject<'gc, 'cell>>,
     kind: ObjectKind<'gc, 'cell>,
     properties: Properties<'gc, 'cell>,
@@ -62,8 +69,13 @@ pub struct Object<'gc, 'cell> {
 }
 
 impl<'gc, 'cell> Object<'gc, 'cell> {
-    pub fn new(prototype: Option<GcObject<'gc, 'cell>>, kind: ObjectKind<'gc, 'cell>) -> Self {
+    pub fn new(
+        prototype: Option<GcObject<'gc, 'cell>>,
+        flags: ObjectFlags,
+        kind: ObjectKind<'gc, 'cell>,
+    ) -> Self {
         Object {
+            flags,
             prototype,
             kind,
             properties: Properties::new(),
@@ -71,19 +83,20 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
         }
     }
 
-    pub fn new_alloc(
-        arena: &'gc Arena<'_, 'cell>,
+    pub fn new_gc<'l>(
+        arena: &'l Arena<'_, 'cell>,
         prototype: Option<GcObject<'_, 'cell>>,
+        flags: ObjectFlags,
         kind: ObjectKind<'_, 'cell>,
-    ) -> Self {
-        let prototype = rebind!(arena, prototype);
-        let kind = rebind!(arena, kind);
-
-        Object {
-            prototype,
-            kind,
-            properties: Properties::new(),
-            elements: Elements::new(),
+    ) -> GcObject<'l, 'cell> {
+        unsafe {
+            arena.add(Object {
+                flags,
+                prototype: gc::rebind(prototype),
+                kind: gc::rebind(kind),
+                properties: Properties::new(),
+                elements: Elements::new(),
+            })
         }
     }
 

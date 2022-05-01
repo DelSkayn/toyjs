@@ -3,7 +3,7 @@ use crate::{
     cell::CellOwner,
     gc::{self, Gc, Rebind, Trace, Tracer},
     instructions::GcByteCode,
-    object::{ObjectKind, VmFunction},
+    object::{ObjectFlags, ObjectKind, VmFunction},
     realm::exec::InstructionReader,
     rebind, root, GcObject, Object, Value,
 };
@@ -37,7 +37,7 @@ unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
 
 pub struct Realm<'gc, 'cell> {
     builtin: builtin::Builtin<'gc, 'cell>,
-    stack: Stack<'gc, 'cell>,
+    pub(crate) stack: Stack<'gc, 'cell>,
 }
 
 pub type GcRealm<'gc, 'cell> = Gc<'gc, 'cell, Realm<'gc, 'cell>>;
@@ -68,6 +68,18 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
 }
 
 impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
+    pub fn push(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &gc::Arena<'_, 'cell>,
+        v: &[Value<'_, 'cell>],
+    ) {
+        let b = self.borrow_mut(owner, arena);
+        for &v in v {
+            unsafe { b.stack.push(v) };
+        }
+    }
+
     /// # Safety
     ///
     /// The bytecode must be valid
@@ -84,7 +96,7 @@ impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
             function: 0,
             upvalues: Box::new([]),
         };
-        let function = Object::new(None, ObjectKind::VmFn(vm_function));
+        let function = Object::new(None, ObjectFlags::ORDINARY, ObjectKind::VmFn(vm_function));
         let function = arena.add(function);
         root!(arena, function);
 

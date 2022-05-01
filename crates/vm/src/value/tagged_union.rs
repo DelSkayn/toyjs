@@ -4,6 +4,7 @@ use crate::{
     atom::Atom,
     gc::{self, Gc, Rebind, Trace, Tracer},
     object::Object,
+    GcObject,
 };
 
 #[derive(Clone, Copy)]
@@ -20,7 +21,7 @@ pub enum Value<'gc, 'cell> {
 }
 
 impl<'gc, 'cell> Value<'gc, 'cell> {
-    pub fn to_static(self) -> Option<Value<'static, 'static>> {
+    pub fn to_static(self) -> Option<Value<'static, 'cell>> {
         match self {
             Value::Float(x) => Some(Value::Float(x)),
             Value::Integer(x) => Some(Value::Integer(x)),
@@ -28,6 +29,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
             Value::Undefined => Some(Value::Undefined),
             Value::Null => Some(Value::Null),
             Value::Empty => Some(Value::Empty),
+            Value::Atom(x) => Some(Value::Atom(x)),
             _ => None,
         }
     }
@@ -161,6 +163,11 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
+    pub const fn ensure_float(v: f64) -> Self {
+        Value::Float(v)
+    }
+
+    #[inline]
     pub fn into_int(self) -> Option<i32> {
         match self {
             Value::Integer(x) => Some(x),
@@ -193,7 +200,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<Gc<'gc, 'cell, Object<'gc, 'cell>>> {
+    pub fn into_object(self) -> Option<GcObject<'gc, 'cell>> {
         match self {
             Value::Object(x) => Some(x),
             _ => None,
