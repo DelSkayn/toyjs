@@ -5,7 +5,7 @@ use std::{
 
 use common::collections::HashMap;
 
-use crate::{Realm, Value};
+use crate::{cell::CellOwner, Value};
 
 pub mod constant;
 
@@ -127,21 +127,23 @@ impl Atoms {
     }
 
     #[inline]
-    pub unsafe fn atomize(&self, value: Value, _realm: &Realm) -> Result<Atom, Value> {
+    pub fn atomize_primitive<'cell>(
+        &self,
+        owner: &CellOwner<'cell>,
+        value: Value<'_, 'cell>,
+    ) -> Option<Atom> {
         if let Some(a) = value.into_atom() {
-            return Ok(a);
+            return Some(a);
         }
 
         if let Some(i) = value.into_int().and_then(Self::atomize_int) {
-            return Ok(i);
+            return Some(i);
         }
 
-        todo!()
-        /*
-        let str = realm.to_string(value)?;
-
-        Ok(self.atomize_string(str.as_str()))
-            */
+        if let Some(a) = value.into_string() {
+            Some(self.atomize_string(a.borrow(owner).as_str()));
+        }
+        None
     }
 
     pub fn atomize_string(&self, text: &str) -> Atom {
