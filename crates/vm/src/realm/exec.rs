@@ -200,7 +200,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     if let Some(obj) = obj.into_object() {
                         let res =
                             rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
-                        self.w(owner).stack.write(dst, res);
+                        self.w(owner).stack.write(dst, res.empty_to_undefined());
                     } else {
                         todo!("index {:?}", obj);
                     }
@@ -223,7 +223,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     let obj = self.r(owner).builtin.global;
 
                     let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
-                    self.w(owner).stack.write(dst, res);
+                    self.w(owner).stack.write(dst, res.empty_to_undefined());
                 }
                 Instruction::GlobalAssign { key, src } => {
                     let src = self.r(owner).stack.read(src);
@@ -648,7 +648,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         } else if let Some(v) = value.into_string() {
             v.borrow(owner).is_empty()
         } else {
-            value.is_null() || value.is_undefined() || value.is_false()
+            value.is_null() || value.is_undefined() || value.is_false() || value.is_empty()
         }
     }
 
@@ -813,7 +813,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 [atom::constant::valueOf, atom::constant::toString]
             };
             for k in keys {
-                let func = rebind_try!(arena, obj.index(owner, arena, atoms, self, k));
+                let func = rebind_try!(arena, obj.index(owner, arena, atoms, self, k))
+                    .empty_to_undefined();
                 root_clone!(arena, func);
 
                 #[allow(unused_unsafe)]
@@ -1155,7 +1156,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
 
         let tgt_proto = right.index(owner, arena, atoms, self, atom::constant::prototype);
-        let tgt_proto = rebind_try!(arena, tgt_proto);
+        let tgt_proto = rebind_try!(arena, tgt_proto).empty_to_undefined();
         let tgt_proto = rebind!(arena, tgt_proto);
         let tgt_proto = tgt_proto
             .into_object()

@@ -34,6 +34,13 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
         }
     }
 
+    pub fn empty_to_undefined(self) -> Self {
+        match self {
+            Value::Empty => Value::Undefined,
+            x => x,
+        }
+    }
+
     /// Returns wether two values have the same data type.
     #[inline]
     pub fn same_type(self, other: Value<'_, 'cell>) -> bool {

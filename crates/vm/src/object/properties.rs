@@ -8,9 +8,11 @@ use std::{
 use common::collections::HashMap;
 
 use crate::{
-    atom::Atom,
-    gc::{self, Rebind, Trace, Tracer},
-    Value,
+    atom::{self, Atom, Atoms},
+    cell::CellOwner,
+    gc::{self, Arena, Rebind, Trace, Tracer},
+    realm::GcRealm,
+    rebind, rebind_try, root_clone, Value,
 };
 
 use super::GcObject;
@@ -37,6 +39,11 @@ impl PropertyFlag {
     #[inline]
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
+    }
+
+    #[inline]
+    pub const fn clear(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
     }
 }
 
@@ -143,6 +150,130 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
 
     pub fn atom(&self) -> Atom {
         self.atom
+    }
+
+    pub fn from_value(
+        owner: &mut CellOwner<'cell>,
+        arena: &'gc mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        realm: GcRealm<'_, 'cell>,
+        value: Value<'_, 'cell>,
+        atom: Atom,
+    ) -> Result<Self, Value<'gc, 'cell>> {
+        let obj = value.into_object().ok_or_else(|| {
+            realm.create_type_error(arena, "Cannot build property from non-object value")
+        });
+        let obj = rebind_try!(arena, obj);
+        Self::from_object(owner, arena, atoms, realm, obj, atom)
+    }
+
+    pub fn from_object(
+        owner: &mut CellOwner<'cell>,
+        arena: &'gc mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        realm: GcRealm<'_, 'cell>,
+        obj: GcObject<'_, 'cell>,
+        atom: Atom,
+    ) -> Result<Self, Value<'gc, 'cell>> {
+        let mut flags = PropertyFlag::empty();
+        let f = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::enumerable)
+        );
+        if !realm.is_falsish(owner, f) {
+            flags |= PropertyFlag::ENUMERABLE
+        }
+        let f = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::configurable)
+        );
+        if !realm.is_falsish(owner, f) {
+            flags |= PropertyFlag::CONFIGURABLE
+        }
+
+        let value = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::value)
+        );
+
+        let value = if value.is_empty() { None } else { Some(value) };
+        root_clone!(arena, value);
+
+        let f = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::writable)
+        );
+        if !realm.is_falsish(owner, f) {
+            flags |= PropertyFlag::WRITABLE
+        }
+
+        let get = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::get)
+        );
+        root_clone!(arena, get);
+        let get = if get.is_empty() {
+            None
+        } else {
+            let get = get
+                .into_object()
+                .and_then(|x| {
+                    if x.borrow(owner).is_function() {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| realm.create_type_error(arena, "getter is not a function"));
+
+            Some(rebind_try!(arena, get))
+        };
+
+        let set = rebind_try!(
+            arena,
+            obj.index(owner, arena, atoms, realm, atom::constant::set)
+        );
+        let set = rebind!(arena, set);
+        let set = if set.is_empty() {
+            None
+        } else {
+            let set = set
+                .into_object()
+                .and_then(|x| {
+                    if x.borrow(owner).is_function() {
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| realm.create_type_error(arena, "setter is not a function"));
+            Some(rebind_try!(arena, set))
+        };
+
+        if get.is_some() || set.is_some() {
+            if value.is_some() {
+                return Err(realm.create_type_error(
+                    arena,
+                    "Object property cannot have both a value and an accessor",
+                ));
+            }
+            if flags.contains(PropertyFlag::WRITABLE) {
+                return Err(realm.create_type_error(
+                    arena,
+                    "Object property cannot have both be writeable and have an accessor",
+                ));
+            }
+            let get = rebind!(arena, get);
+            let set = rebind!(arena, set);
+            Ok(Property::accessor(Accessor { get, set }, flags, atom))
+        } else {
+            let value = rebind!(arena, value);
+            Ok(Property::value(
+                value.unwrap_or_else(Value::undefined),
+                flags,
+                atom,
+            ))
+        }
     }
 }
 
@@ -260,6 +391,33 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
                 None
             }
         }
+    }
+
+    pub fn freeze(&mut self) {
+        self.props.iter_mut().for_each(|x| {
+            x.flags = x
+                .flags
+                .clear(PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE)
+        })
+    }
+
+    pub fn is_frozen(&self) -> bool {
+        self.props.iter().all(|x| {
+            !x.flags
+                .contains(PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE)
+        })
+    }
+
+    pub fn seal(&mut self) {
+        self.props
+            .iter_mut()
+            .for_each(|x| x.flags = x.flags.clear(PropertyFlag::CONFIGURABLE))
+    }
+
+    pub fn is_sealed(&self) -> bool {
+        self.props
+            .iter()
+            .all(|x| !x.flags.contains(PropertyFlag::CONFIGURABLE))
     }
 
     pub fn entry<'a>(&'a mut self, atom: Atom) -> PropertyEntry<'a, 'gc, 'cell> {

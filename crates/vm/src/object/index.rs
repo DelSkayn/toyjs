@@ -48,7 +48,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
                 root!(arena, prototype);
                 return prototype.index(owner, arena, atoms, realm, key);
             } else {
-                return Ok(Value::undefined());
+                return Ok(Value::empty());
             }
         }
 
@@ -68,7 +68,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
             if let Some(x) = cur.borrow(owner).prototype {
                 cur = x
             } else {
-                return Ok(Value::undefined());
+                return Ok(Value::empty());
             }
         }
     }

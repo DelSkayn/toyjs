@@ -54,7 +54,7 @@ macro_rules! rebind_try {
     ($arena:expr, $value:expr) => {
         match $value {
             Ok(x) => x,
-            Err(e) => return Err(rebind!($arena, e)),
+            Err(e) => return Err($crate::rebind!($arena, e)),
         }
     };
 }
