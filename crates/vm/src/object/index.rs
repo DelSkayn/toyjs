@@ -44,13 +44,11 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         if let Some(idx) = key.into_idx() {
             if let Some(x) = borrow.elements.get(idx as usize) {
                 return Ok(rebind!(arena, x));
+            } else if let Some(prototype) = borrow.prototype {
+                root!(arena, prototype);
+                return prototype.index(owner, arena, atoms, realm, key);
             } else {
-                if let Some(prototype) = borrow.prototype {
-                    root!(arena, prototype);
-                    return prototype.index(owner, arena, atoms, realm, key);
-                } else {
-                    return Ok(Value::undefined());
-                }
+                return Ok(Value::undefined());
             }
         }
 
@@ -135,7 +133,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn raw_index_set<V>(
+    pub fn raw_index_set<'a, V>(
         self,
         owner: &mut CellOwner<'cell>,
         arena: &Arena<'_, 'cell>,
@@ -143,7 +141,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         key: Atom,
         value: V,
     ) where
-        V: Into<Value<'gc, 'cell>>,
+        V: Into<Value<'a, 'cell>>,
     {
         self.raw_index_set_prop(
             owner,
@@ -154,7 +152,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn raw_index_set_flags<V>(
+    pub fn raw_index_set_flags<'a, V>(
         self,
         owner: &mut CellOwner<'cell>,
         arena: &Arena<'_, 'cell>,
@@ -163,7 +161,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         value: V,
         flags: PropertyFlag,
     ) where
-        V: Into<Value<'gc, 'cell>>,
+        V: Into<Value<'a, 'cell>>,
     {
         self.raw_index_set_prop(
             owner,
@@ -178,7 +176,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         arena: &Arena<'_, 'cell>,
         atoms: &Atoms,
-        value: Property<'gc, 'cell>,
+        value: Property<'_, 'cell>,
     ) {
         let borrow = self.borrow_mut(owner, arena);
         if let Some(x) = borrow.properties.set(value) {

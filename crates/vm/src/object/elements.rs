@@ -115,7 +115,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
         }
     }
 
-    pub fn for_each<F: FnMut(usize, Value)>(&self, mut f: F) {
+    pub fn for_each<F: FnMut(usize, Value<'gc, 'cell>)>(&self, mut f: F) {
         match self.0 {
             ElementsInner::Array(ref array) => array
                 .iter()

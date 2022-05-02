@@ -59,7 +59,7 @@ pub struct Stack<'gc, 'cell> {
 
     capacity: usize,
 
-    frame_size: u32,
+    pub frame_size: u32,
     /// Amount of values allocated for the stack
     upvalues: Vec<GcUpvalueObject<'gc, 'cell>>,
     frame_upvalues: u16,
@@ -173,6 +173,15 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         self.frame_size = guard.size;
 
         mem::forget(guard);
+    }
+
+    #[inline(always)]
+    pub unsafe fn read_arg(&self, reg: u32) -> Option<Value<'gc, 'cell>> {
+        if reg < self.frame_size {
+            Some(self.frame.add(reg as usize).read())
+        } else {
+            None
+        }
     }
 
     #[inline(always)]

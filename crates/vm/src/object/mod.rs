@@ -10,7 +10,7 @@ mod properties;
 use elements::Elements;
 pub use function::{MutableFn, SharedFn, StaticFn, VmFunction};
 use properties::Properties;
-pub use properties::{Property, PropertyFlag};
+pub use properties::{Property, PropertyFlag, PropertyValue};
 
 bitflags::bitflags! {
     pub struct ObjectFlags: u8{
@@ -65,8 +65,8 @@ pub struct Object<'gc, 'cell> {
     flags: ObjectFlags,
     prototype: Option<GcObject<'gc, 'cell>>,
     kind: ObjectKind<'gc, 'cell>,
-    properties: Properties<'gc, 'cell>,
-    elements: Elements<'gc, 'cell>,
+    pub(crate) properties: Properties<'gc, 'cell>,
+    pub(crate) elements: Elements<'gc, 'cell>,
 }
 
 impl<'gc, 'cell> Object<'gc, 'cell> {
@@ -99,6 +99,10 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
                 elements: Elements::new(),
             })
         }
+    }
+
+    pub fn flags(&self) -> ObjectFlags {
+        self.flags
     }
 
     pub fn kind(&self) -> &ObjectKind<'gc, 'cell> {
