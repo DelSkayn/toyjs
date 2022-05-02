@@ -97,7 +97,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
             Stmt::Function(scope, symbol, params, stmts) => {
                 let id = self.compile_function_decl(*scope, params, stmts);
-                //TODO local functions stmts
+                //TODO: local functions stmts
                 let fnc = self.builder.alloc_temp();
                 self.builder.push(Instruction::LoadConstructor {
                     dst: fnc.0,
