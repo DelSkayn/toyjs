@@ -29,7 +29,7 @@ fn collect() {
     *a.borrow_mut_untraced(&mut owner) += 1;
 
     assert_eq!(*a.borrow(&owner), 2);
-    arena.collect_full(&owner);
+    arena.collect_full(&mut owner);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn root() {
 
     *b.borrow_mut_untraced(&mut owner) += 1;
 
-    arena.collect_full(&owner);
+    arena.collect_full(&mut owner);
 
     assert_eq!(*b.borrow(&owner), 2);
 }

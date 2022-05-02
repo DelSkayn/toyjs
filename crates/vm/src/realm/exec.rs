@@ -103,8 +103,8 @@ macro_rules! rebind_try {
 
 impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     // Shorthand for Gc::borrow
-    fn r<'a>(self, owner: &'a CellOwner<'cell>) -> &'a Realm<'gc, 'cell> {
-        self.borrow(owner)
+    unsafe fn r<'a>(self, owner: &'a CellOwner<'cell>) -> &'a Realm<'gc, 'cell> {
+        gc::rebind(self.borrow(owner))
     }
 
     // Shorthand for Gc::unsafe_borrow_mut
@@ -112,7 +112,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     // Should only be used as long as before each collection and return from the loop the a
     // write_barrier is done for the realm
     unsafe fn w<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut Realm<'gc, 'cell> {
-        self.unsafe_borrow_mut(owner)
+        gc::rebind(self.unsafe_borrow_mut(owner))
     }
 
     /// # Safety
@@ -1262,7 +1262,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         function: GcObject<'_, 'cell>,
         target_obj: GcObject<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let op = self.r(owner).builtin.object_proto;
+        let op = unsafe { self.r(owner).builtin.object_proto };
         let this = Object::new(Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
         let this = arena.add(this);
         root!(arena, this);

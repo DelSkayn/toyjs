@@ -131,7 +131,7 @@ fn main() -> io::Result<()> {
         let bc = arena.add(bc);
         vm::root!(arena, bc);
 
-        arena.collect(&owner);
+        arena.collect(&mut owner);
 
         unsafe {
             dbg!(realm.eval(&mut arena, &mut owner, &atoms, bc)).ok();
