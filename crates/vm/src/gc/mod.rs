@@ -4,6 +4,7 @@ use std::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
     mem,
+    ops::Deref,
     ptr::{drop_in_place, NonNull},
 };
 
@@ -174,7 +175,8 @@ where
 /// macro as this one is guarteed to be safe.
 ///
 /// The primary used for this macro is to change the lifetime of a gc'd value when inserting in a
-/// traced collection. TODO explain rebinding collections
+/// traced collection.
+/// DOCME: explain rebinding collections
 ///
 #[inline(always)] // this should compile down to nothing
 pub unsafe fn rebind<'rt, T>(v: T) -> T::Output
@@ -258,6 +260,41 @@ impl<'cell> Drop for Roots<'cell> {
     }
 }
 
+pub struct OwnedGc<'rt, 'cell, T: Trace> {
+    roots: &'rt Roots<'cell>,
+    ptr: Gc<'rt, 'cell, T>,
+    id: usize,
+}
+
+impl<'rt, 'cell, T: Trace> Drop for OwnedGc<'rt, 'cell, T> {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.roots.owned_roots.get()).remove(&self.id);
+        }
+    }
+}
+
+impl<'rt, 'cell, T: Trace> Deref for OwnedGc<'rt, 'cell, T> {
+    type Target = Gc<'rt, 'cell, T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ptr
+    }
+}
+
+pub struct RootFrame<'rt, 'cell> {
+    roots: &'rt Roots<'cell>,
+    len: usize,
+}
+
+impl<'rt, 'cell> Drop for RootFrame<'rt, 'cell> {
+    fn drop(&mut self) {
+        while self.roots.roots.len() > self.len {
+            self.roots.roots.pop();
+        }
+    }
+}
+
 impl<'cell> Roots<'cell> {
     const PAUSE_FACTOR: f64 = 0.5;
     const TIMING_FACTOR: f64 = 1.5;
@@ -298,6 +335,36 @@ impl<'cell> Roots<'cell> {
                 self.grays_again.push(mem::transmute(ptr));
             }
         }
+    }
+
+    pub fn add_owned<'a, T>(&'a self, ptr: Gc<'_, 'cell, T>) -> OwnedGc<'a, 'cell, T::Output>
+    where
+        T: Rebind<'a> + Trace + 'a,
+        T::Output: Trace + 'a,
+    {
+        let id = self.next_owned_id.get();
+        self.next_owned_id.set(id + 1);
+        unsafe {
+            let dyn_ptr: GcBoxPtr = ptr.ptr;
+            (*self.owned_roots.get()).insert(id, mem::transmute(dyn_ptr));
+            OwnedGc {
+                roots: self,
+                ptr: rebind(ptr),
+                id,
+            }
+        }
+    }
+
+    pub unsafe fn frame<'rt>(&'rt self) -> RootFrame<'rt, 'cell> {
+        RootFrame {
+            roots: self,
+            len: self.roots.len(),
+        }
+    }
+
+    pub unsafe fn push<T: Trace>(&self, ptr: Gc<'_, '_, T>) {
+        let dyn_ptr: GcBoxPtr = ptr.ptr;
+        self.roots.push(mem::transmute(dyn_ptr))
     }
 }
 
@@ -340,6 +407,13 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         Arena {
             roots,
             marker: unsafe { Id::new() },
+        }
+    }
+
+    pub unsafe fn new_unchecked(roots: &'rt Roots<'cell>) -> Self {
+        Arena {
+            roots,
+            marker: Id::new(),
         }
     }
 

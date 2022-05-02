@@ -12,42 +12,24 @@ use ast::SymbolTable;
 use common::interner;
 use common::source::Source;
 use lexer::Lexer;
+use toyjs::ToyJs;
 use vm::atom::Atoms;
-use vm::Realm;
 
 fn main() -> io::Result<()> {
-    vm::new_cell_owner!(owner);
-    let root = vm::gc::Roots::new();
-    let mut arena = vm::gc::Arena::new(&root);
-    let atoms = Atoms::new();
-    let mut interner = interner::Interner::new();
-    let realm = Realm::new(&mut owner, &arena, &atoms);
-    let realm = arena.add(realm);
-    vm::root!(arena, realm);
+    let toyjs = ToyJs::new();
+    let realm = toyjs::Realm::new(&toyjs);
 
     if let Some(x) = env::args().nth(1) {
         let source = std::fs::read_to_string(x)?;
-        let source = Source::from_string(source);
 
-        let mut symbol_table = SymbolTable::new();
-
-        let lexer = lexer::Lexer::new(&source, &mut interner);
-        let script =
-            parser::Parser::parse_script(lexer, &mut symbol_table, std::alloc::Global).unwrap();
-        let bc = compiler::Compiler::compile_script(
-            &script,
-            &symbol_table,
-            &mut interner,
-            &atoms,
-            &arena,
-            Global,
+        realm.with(
+            |ctx| match ctx.eval(source).and_then(|v| ctx.to_string(v)) {
+                Ok(x) => println!("\x1b[1m{}\x1b[0m", x.as_str()),
+                Err(e) => {
+                    println!("\x1b[1;31m{}\x1b[0m", e);
+                }
+            },
         );
-        let bc = arena.add(bc);
-        vm::root!(arena, bc);
-
-        unsafe {
-            dbg!(realm.eval(&mut arena, &mut owner, &atoms, bc)).ok();
-        }
 
         return Ok(());
     }
@@ -113,29 +95,14 @@ fn main() -> io::Result<()> {
         }
         last_length = 0;
 
-        let source = Source::from_string(buffer.clone());
-
-        let mut symbol_table = SymbolTable::new();
-
-        let lexer = lexer::Lexer::new(&source, &mut interner);
-        let script =
-            parser::Parser::parse_script(lexer, &mut symbol_table, std::alloc::Global).unwrap();
-        let bc = compiler::Compiler::compile_script(
-            &script,
-            &symbol_table,
-            &mut interner,
-            &atoms,
-            &arena,
-            Global,
+        realm.with(
+            |ctx| match ctx.eval(&buffer).and_then(|v| ctx.to_string(v)) {
+                Ok(x) => println!("\x1b[1m{}\x1b[0m", x.as_str()),
+                Err(e) => {
+                    println!("\x1b[1;31m{}\x1b[0m", e);
+                }
+            },
         );
-        let bc = arena.add(bc);
-        vm::root!(arena, bc);
-
-        arena.collect(&mut owner);
-
-        unsafe {
-            dbg!(realm.eval(&mut arena, &mut owner, &atoms, bc)).ok();
-        }
         buffer.clear();
     }
     Ok(())

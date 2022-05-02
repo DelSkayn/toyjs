@@ -1,30 +1,46 @@
-use vm::Gc;
+use std::{fmt, string::String as StdString};
+
+use vm::{cell::CellOwner, gc::Gc};
 
 use crate::Ctx;
-use std::{fmt, string::String as StdString};
 
 #[derive(Clone, Copy)]
 pub struct String<'js> {
+    pub(crate) ptr: Gc<'js, 'js, StdString>,
     pub(crate) ctx: Ctx<'js>,
-    pub(crate) ptr: Gc<StdString>,
 }
 
 impl<'js> fmt::Display for String<'js> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.ptr.as_str().fmt(f)
+        let owner = unsafe { CellOwner::new(self.ctx.id) };
+        self.ptr.borrow(&owner).as_str().fmt(f)
     }
 }
 
 impl<'js> String<'js> {
-    pub(crate) unsafe fn wrap(ctx: Ctx<'js>, ptr: Gc<StdString>) -> Self {
-        String { ctx, ptr }
+    pub(crate) fn from_vm(ctx: Ctx<'js>, ptr: Gc<'_, 'js, StdString>) -> Self {
+        unsafe {
+            ctx.context.root.push(ptr);
+            String {
+                ctx,
+                ptr: vm::gc::rebind(ptr),
+            }
+        }
     }
 
-    pub fn as_str(&self) -> &str {
-        self.ptr.as_str()
+    pub(crate) fn into_vm(self) -> Gc<'js, 'js, StdString> {
+        self.ptr
+    }
+
+    pub fn as_str(&self) -> &'js str {
+        unsafe {
+            let owner = CellOwner::new(self.ctx.id);
+            self.ptr.borrow(std::mem::transmute(&owner)).as_str()
+        }
     }
 
     pub fn into_string(self) -> StdString {
-        (*self.ptr).clone()
+        let owner = unsafe { CellOwner::new(self.ctx.id) };
+        self.ptr.borrow(&owner).clone()
     }
 }

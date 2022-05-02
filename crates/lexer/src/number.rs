@@ -150,7 +150,7 @@ impl<'a> Lexer<'a> {
             let s = self.interner.intern(s);
             Ok(self.token_num(Number::Big(s)))
         } else {
-            //TODO dont think this is correct way of parsing.
+            //FIXME: dont think this is correct way of parsing.
             //TODO Not sure what past me thought was incorrect here, figure that out.
             let num = u64::from_str_radix(s, radix as u32).map_err(|_| ErrorKind::InvalidNumber)?;
             if num as i32 as u64 == num {
