@@ -137,6 +137,20 @@ unsafe impl<'gc, 'cell> Trace for Gc<'gc, 'cell, dyn Trace> {
     }
 }
 
+unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for &'b T
+where
+    T::Output: 'b,
+{
+    type Output = &'b T::Output;
+}
+
+unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for &'b mut T
+where
+    T::Output: 'b,
+{
+    type Output = &'b mut T::Output;
+}
+
 unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for std::pin::Pin<&'b T>
 where
     T::Output: 'b,

@@ -3,7 +3,7 @@ use crate::{
     cell::CellOwner,
     gc::Arena,
     realm::GcRealm,
-    rebind, GcObject, Value,
+    rebind, root, GcObject, Value,
 };
 
 use super::properties::{Accessor, Property, PropertyEntry, PropertyFlag, PropertyValue};
@@ -45,10 +45,12 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
             if let Some(x) = borrow.elements.get(idx as usize) {
                 return Ok(rebind!(arena, x));
             } else {
-                return borrow
-                    .prototype
-                    .map(|x| x.index(owner, arena, atoms, realm, key))
-                    .unwrap_or(Ok(Value::undefined()));
+                if let Some(prototype) = borrow.prototype {
+                    root!(arena, prototype);
+                    return prototype.index(owner, arena, atoms, realm, key);
+                } else {
+                    return Ok(Value::undefined());
+                }
             }
         }
 
@@ -119,6 +121,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
             PropertyEntry::Occupied(mut x) => x.set(value),
             PropertyEntry::Vacant(x) => x.insert(value),
             PropertyEntry::Accessor(set) => {
+                root!(arena, set);
                 unsafe {
                     realm.borrow_mut(owner, arena).stack.push(value);
                 }

@@ -86,18 +86,21 @@ unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Gc<'gc, 'cell, T> {
     type Output = Gc<'a, 'cell, <T as Rebind<'a>>::Output>;
 }
 
-impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
+impl<'a, 'gc, 'cell, T> Gc<'gc, 'cell, T>
+where
+    T: Rebind<'a> + Trace + 'gc + 'a,
+{
     // Borrow the contained value mutably
     #[inline]
-    pub fn borrow_mut<'a, 'rt>(
+    pub fn borrow_mut<'rt>(
         self,
         owner: &'a mut CellOwner<'cell>,
         arena: &Arena<'rt, 'cell>,
-    ) -> &'a mut T {
+    ) -> &'a mut T::Output {
         if T::needs_trace() {
             arena.write_barrier(self);
         }
-        unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
+        unsafe { super::rebind(owner.borrow_mut(&self.ptr.as_ref().value)) }
     }
 
     /// Borrow the contained value mutably without requiring access to the arena,
@@ -107,11 +110,11 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     ///
     /// Will panic if `T::needs_trace()` returns true.
     #[inline]
-    pub fn borrow_mut_untraced<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
+    pub fn borrow_mut_untraced(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T::Output {
         if T::needs_trace() {
             panic!("called borrow_mut_untraced on pointer which requires tracing")
         }
-        unsafe { owner.borrow_mut(&self.ptr.as_ref().value) }
+        unsafe { super::rebind(owner.borrow_mut(&self.ptr.as_ref().value)) }
     }
 
     /// Borrow the contained value mutably without requiring access to the arena,
@@ -121,7 +124,7 @@ impl<'gc, 'cell, T: Trace + 'gc> Gc<'gc, 'cell, T> {
     /// User should guarentee that no new gc pointers can be reached from this pointer after
     /// releasing the borrow.
     #[inline]
-    pub unsafe fn unsafe_borrow_mut<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T {
-        owner.borrow_mut(&self.ptr.as_ref().value)
+    pub unsafe fn unsafe_borrow_mut(self, owner: &'a mut CellOwner<'cell>) -> &'a mut T::Output {
+        super::rebind(owner.borrow_mut(&self.ptr.as_ref().value))
     }
 }

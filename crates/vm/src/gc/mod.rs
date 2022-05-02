@@ -404,13 +404,13 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         }
     }
 
-    pub fn collect_full(&mut self, owner: &CellOwner<'cell>) {
+    pub fn collect_full(&mut self, owner: &mut CellOwner<'cell>) {
         self.roots.allocation_debt.set(f64::INFINITY);
         self.roots.phase.set(Phase::Wake);
         self.collect(owner);
     }
 
-    pub fn collect(&mut self, owner: &CellOwner<'cell>) {
+    pub fn collect(&mut self, owner: &mut CellOwner<'cell>) {
         let roots = self.roots;
 
         unsafe {
