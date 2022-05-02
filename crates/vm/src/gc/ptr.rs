@@ -86,6 +86,36 @@ unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Gc<'gc, 'cell, T> {
     type Output = Gc<'a, 'cell, <T as Rebind<'a>>::Output>;
 }
 
+impl<'a, 'gc, 'cell, A> Gc<'gc, 'cell, A>
+where
+    A: Rebind<'a> + Trace + 'a,
+{
+    // Borrow the contained value mutably
+    #[inline]
+    pub fn borrow_mut_2<'rt, B>(
+        _owner: &'a mut CellOwner<'cell>,
+        arena: &Arena<'_, 'cell>,
+        a: Gc<'gc, 'cell, A>,
+        b: Gc<'gc, 'cell, B>,
+    ) -> (&'a mut A::Output, &'a mut B::Output)
+    where
+        B: Rebind<'a> + Trace + 'a,
+    {
+        assert_ne!(a.ptr.as_ptr() as usize, b.ptr.as_ptr() as usize);
+
+        if A::needs_trace() {
+            arena.write_barrier(a);
+        }
+        if B::needs_trace() {
+            arena.write_barrier(b);
+        }
+
+        let a = unsafe { super::rebind(&mut (*a.get())) };
+        let b = unsafe { super::rebind(&mut (*b.get())) };
+        (a, b)
+    }
+}
+
 impl<'a, 'gc, 'cell, T> Gc<'gc, 'cell, T>
 where
     T: Rebind<'a> + Trace + 'gc + 'a,

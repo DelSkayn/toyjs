@@ -36,7 +36,7 @@ unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
 }
 
 pub struct Realm<'gc, 'cell> {
-    builtin: builtin::Builtin<'gc, 'cell>,
+    pub builtin: builtin::Builtin<'gc, 'cell>,
     pub(crate) stack: Stack<'gc, 'cell>,
 }
 
@@ -71,7 +71,15 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell: 'gc> GcRealm<'gc, 'cell> {
+impl<'gc, 'cell> GcRealm<'gc, 'cell> {
+    pub fn argc(self, owner: &CellOwner<'cell>) -> u32 {
+        self.borrow(owner).stack.frame_size
+    }
+
+    pub fn arg(self, owner: &CellOwner<'cell>, idx: u32) -> Option<Value<'gc, 'cell>> {
+        unsafe { gc::rebind(self.borrow(owner).stack.read_arg(idx)) }
+    }
+
     pub fn push(
         self,
         owner: &mut CellOwner<'cell>,

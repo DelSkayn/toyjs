@@ -24,6 +24,8 @@ impl PropertyFlag {
     pub const CONFIGURABLE: PropertyFlag = PropertyFlag(0b100);
     const ACCESSOR: PropertyFlag = PropertyFlag(0b1000);
 
+    pub const BUILTIN: PropertyFlag = PropertyFlag(Self::WRITABLE.0 | Self::CONFIGURABLE.0);
+
     pub const fn empty() -> Self {
         PropertyFlag(0)
     }
@@ -123,6 +125,10 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
 
     pub fn is_accessor(&self) -> bool {
         self.flags.contains(PropertyFlag::ACCESSOR)
+    }
+
+    pub fn is_enumerable(&self) -> bool {
+        self.flags.contains(PropertyFlag::ENUMERABLE)
     }
 
     pub fn as_value(&self) -> PropertyValue<'gc, 'cell> {

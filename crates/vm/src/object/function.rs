@@ -1,4 +1,5 @@
 use crate::{
+    atom::Atoms,
     cell::CellOwner,
     gc::{Arena, Rebind, Trace, Tracer},
     instructions::GcByteCode,
@@ -14,6 +15,7 @@ pub type MutableFn = Box<
     dyn for<'gc, 'cell> FnMut(
         &mut Arena<'gc, 'cell>,
         &mut CellOwner<'cell>,
+        &Atoms,
         GcRealm<'gc, 'cell>,
         &ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
@@ -22,14 +24,16 @@ pub type SharedFn = Box<
     dyn for<'a, 'gc, 'cell> Fn(
         &mut Arena<'gc, 'cell>,
         &mut CellOwner<'cell>,
+        &Atoms,
         GcRealm<'gc, 'cell>,
         &ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
 
 pub type StaticFn = for<'l, 'cell> unsafe fn(
-    &mut Arena<'_, 'cell>,
-    &'l mut CellOwner<'cell>,
+    &'l mut Arena<'_, 'cell>,
+    &mut CellOwner<'cell>,
+    &Atoms,
     GcRealm<'_, 'cell>,
     &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>;

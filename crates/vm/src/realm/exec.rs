@@ -4,7 +4,7 @@ use crate::{
     gc::{self, Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
     object::{ObjectFlags, ObjectKind, VmFunction},
-    rebind, root, root_clone, GcObject, Object, Realm, Value,
+    rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
 };
 
 use super::{ExecutionContext, GcRealm};
@@ -90,15 +90,6 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
         debug_assert!(self.bc.borrow(owner).constants.len() > idx as usize);
         *self.bc.borrow(owner).constants.get_unchecked(idx as usize)
     }
-}
-
-macro_rules! rebind_try {
-    ($arena:expr, $value:expr) => {
-        match $value {
-            Ok(x) => x,
-            Err(e) => return Err(rebind!($arena, e)),
-        }
-    };
 }
 
 impl<'gc, 'cell> GcRealm<'gc, 'cell> {
@@ -732,7 +723,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok(rebind!(arena, res))
     }
 
-    pub fn to_number_primitive<'l>(
+    pub fn to_number_primitive(
         self,
         owner: &CellOwner<'cell>,
         value: Value<'_, 'cell>,
@@ -1312,7 +1303,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 res
             }
             ObjectKind::StaticFn(x) => {
-                rebind!(arena, x(arena, owner, self, &ctx))
+                rebind!(arena, x(arena, owner, atoms, self, &ctx))
             }
             _ => todo!(),
         }
