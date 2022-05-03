@@ -80,7 +80,7 @@ fn get_prototype_of<'l, 'cell>(
         .borrow(owner)
         .prototype()
         .map(Value::from)
-        .unwrap_or_else(Value::undefined);
+        .unwrap_or_else(Value::null);
     Ok(rebind!(arena, res))
 }
 
@@ -224,11 +224,21 @@ fn create<'l, 'cell>(
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
     let arg = realm.arg(owner, 0).ok_or_else(|| {
-        realm.create_type_error(arena, "Object.create requires atleast a single argument")
+        realm.create_type_error(
+            owner,
+            arena,
+            atoms,
+            "Object.create requires atleast a single argument",
+        )
     });
     let arg = rebind_try!(arena, arg);
     if !arg.is_object() && !arg.is_null() {
-        return Err(realm.create_type_error(arena, "argument is not a object or null"));
+        return Err(realm.create_type_error(
+            owner,
+            arena,
+            atoms,
+            "argument is not a object or null",
+        ));
     }
 
     let obj = Object::new_gc(
@@ -259,9 +269,11 @@ fn define_properties<'l, 'cell>(
     realm: GcRealm<'_, 'cell>,
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-    if realm.argc(&owner) < 2 {
+    if realm.argc(owner) < 2 {
         return Err(realm.create_type_error(
+            owner,
             arena,
+            atoms,
             "Object.defineProperties requires atleast a two arguments",
         ));
     }
@@ -285,9 +297,14 @@ fn define_property<'l, 'cell>(
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
     let obj = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
-    let obj = obj
-        .into_object()
-        .ok_or_else(|| realm.create_type_error(arena, "can't define property on non object value"));
+    let obj = obj.into_object().ok_or_else(|| {
+        realm.create_type_error(
+            owner,
+            arena,
+            atoms,
+            "cannot define property on non object value",
+        )
+    });
     let obj = rebind_try!(arena, obj);
     root!(arena, obj);
 
@@ -301,7 +318,7 @@ fn define_property<'l, 'cell>(
         Property::from_value(owner, arena, atoms, realm, prop, p)
     );
     let prop = rebind!(arena, prop);
-    if let Some(prop) = obj.borrow_mut(owner, &arena).properties.set(prop) {
+    if let Some(prop) = obj.borrow_mut(owner, arena).properties.set(prop) {
         atoms.increment(prop.atom())
     }
     Ok(rebind!(arena, obj).into())
@@ -310,7 +327,7 @@ fn define_property<'l, 'cell>(
 fn freeze<'l, 'cell>(
     arena: &'l mut Arena<'_, 'cell>,
     owner: &mut CellOwner<'cell>,
-    _atoms: &Atoms,
+    atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
@@ -319,7 +336,12 @@ fn freeze<'l, 'cell>(
         if obj.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
             unsafe { obj.unsafe_borrow_mut(owner).properties.freeze() }
         } else {
-            return Ok(realm.create_type_error(arena, "Cannot freeze unextendable object"));
+            return Ok(realm.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "Cannot freeze unextendable object",
+            ));
         }
     }
     Ok(rebind!(arena, v))
@@ -328,7 +350,7 @@ fn freeze<'l, 'cell>(
 fn seal<'l, 'cell>(
     arena: &'l mut Arena<'_, 'cell>,
     owner: &mut CellOwner<'cell>,
-    _atoms: &Atoms,
+    atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
@@ -337,7 +359,12 @@ fn seal<'l, 'cell>(
         if obj.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
             unsafe { obj.unsafe_borrow_mut(owner).properties.seal() }
         } else {
-            return Ok(realm.create_type_error(arena, "Cannot seal unextendable object"));
+            return Ok(realm.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "Cannot seal unextendable object",
+            ));
         }
     }
     Ok(rebind!(arena, v))
@@ -377,6 +404,16 @@ fn is_sealed<'l, 'cell>(
     Ok(true.into())
 }
 
+fn to_string<'l, 'cell>(
+    arena: &'l mut Arena<'_, 'cell>,
+    _owner: &mut CellOwner<'cell>,
+    _atoms: &Atoms,
+    _realm: GcRealm<'_, 'cell>,
+    _ctx: &ExecutionContext<'_, 'cell>,
+) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    Ok(arena.add("[Object object]".to_string()).into())
+}
+
 pub fn init<'l, 'cell>(
     owner: &mut CellOwner<'cell>,
     arena: &'l Arena<'_, 'cell>,
@@ -385,6 +422,15 @@ pub fn init<'l, 'cell>(
     fp: GcObject<'_, 'cell>,
     global: GcObject<'_, 'cell>,
 ) {
+    let to_string = new_func(arena, owner, atoms, fp, to_string, 0);
+    op.raw_index_set_flags(
+        owner,
+        arena,
+        atoms,
+        atom::constant::toString,
+        to_string,
+        PropertyFlag::BUILTIN,
+    );
     let construct = Object::new_gc(
         arena,
         Some(fp),
@@ -405,6 +451,15 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::length,
         1,
+        PropertyFlag::BUILTIN,
+    );
+
+    op.raw_index_set_flags(
+        owner,
+        arena,
+        atoms,
+        atom::constant::constructor,
+        construct,
         PropertyFlag::BUILTIN,
     );
 
@@ -517,15 +572,6 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::isFrozen,
         is_frozen,
-        PropertyFlag::BUILTIN,
-    );
-
-    op.raw_index_set_flags(
-        owner,
-        arena,
-        atoms,
-        atom::constant::constructor,
-        construct,
         PropertyFlag::BUILTIN,
     );
 }

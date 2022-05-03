@@ -1,3 +1,4 @@
+use core::fmt;
 use std::cell::RefCell;
 
 use crate::gc::{self, Arena, Gc, Rebind, Trace, Tracer};
@@ -32,6 +33,25 @@ pub enum ObjectKind<'gc, 'cell> {
     SharedFn(SharedFn),
     StaticFn(StaticFn),
     //ForInIterator(ForInIterator),
+}
+
+impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "ObjectKind::{}",
+            match self {
+                Self::Ordinary => "Ordinary",
+                Self::Array => "Array",
+                Self::Error => "Error",
+                Self::VmFn(_) => "VmFn",
+                Self::MutableFn(_) => "MutableFn",
+                Self::SharedFn(_) => "SharedFn",
+                Self::StaticFn(_) => "StaticFn",
+                //Self::ForInIterator(_) => "ForInIterator",
+            }
+        )
+    }
 }
 
 unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
@@ -119,13 +139,14 @@ unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
     where
         Self: Sized,
     {
-        false
+        true
     }
 
     fn trace(&self, trace: Tracer) {
         self.prototype.trace(trace);
         self.kind.trace(trace);
         self.properties.trace(trace);
+        self.elements.trace(trace);
     }
 }
 

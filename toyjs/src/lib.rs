@@ -131,7 +131,7 @@ impl<'js> Ctx<'js> {
 
     pub fn eval<S: Into<StdString>>(self, source: S) -> Result<'js, Value<'js>> {
         let mut owner = unsafe { CellOwner::new(self.id) };
-        let mut arena = Arena::new(&self.context.root);
+        let mut arena = Arena::new(self.context.root);
 
         let source = common::source::Source::from_string(source.into());
         let mut interner = self.context.interner.borrow_mut();
@@ -165,7 +165,7 @@ impl<'js> Ctx<'js> {
 
     pub fn to_string(self, v: Value<'js>) -> Result<'js, String<'js>> {
         let mut owner = unsafe { CellOwner::new(self.id) };
-        let mut arena = Arena::new(&self.context.root);
+        let mut arena = Arena::new(self.context.root);
 
         let r =
             self.context

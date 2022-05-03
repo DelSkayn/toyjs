@@ -85,7 +85,7 @@ impl BitOrAssign for PropertyFlag {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Accessor<'gc, 'cell> {
     pub get: Option<GcObject<'gc, 'cell>>,
     pub set: Option<GcObject<'gc, 'cell>>,
@@ -107,6 +107,26 @@ pub struct Property<'gc, 'cell> {
     flags: PropertyFlag,
     atom: Atom,
     value: PropertyUnion<'gc, 'cell>,
+}
+
+impl<'gc, 'cell> fmt::Debug for Property<'gc, 'cell> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe {
+            if self.flags.contains(PropertyFlag::ACCESSOR) {
+                f.debug_struct("Property::Accessor")
+                    .field("value", &self.value.accessor)
+                    .field("flags", &self.flags)
+                    .field("atom", &self.atom)
+                    .finish()
+            } else {
+                f.debug_struct("Property::Ordinary")
+                    .field("value", &self.value.value)
+                    .field("flags", &self.flags)
+                    .field("atom", &self.atom)
+                    .finish()
+            }
+        }
+    }
 }
 
 unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Property<'gc, 'cell> {
@@ -161,7 +181,12 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
         atom: Atom,
     ) -> Result<Self, Value<'gc, 'cell>> {
         let obj = value.into_object().ok_or_else(|| {
-            realm.create_type_error(arena, "Cannot build property from non-object value")
+            realm.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "Cannot build property from non-object value",
+            )
         });
         let obj = rebind_try!(arena, obj);
         Self::from_object(owner, arena, atoms, realm, obj, atom)
@@ -224,7 +249,9 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                         None
                     }
                 })
-                .ok_or_else(|| realm.create_type_error(arena, "getter is not a function"));
+                .ok_or_else(|| {
+                    realm.create_type_error(owner, arena, atoms, "getter is not a function")
+                });
 
             Some(rebind_try!(arena, get))
         };
@@ -246,20 +273,26 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                         None
                     }
                 })
-                .ok_or_else(|| realm.create_type_error(arena, "setter is not a function"));
+                .ok_or_else(|| {
+                    realm.create_type_error(owner, arena, atoms, "setter is not a function")
+                });
             Some(rebind_try!(arena, set))
         };
 
         if get.is_some() || set.is_some() {
             if value.is_some() {
                 return Err(realm.create_type_error(
+                    owner,
                     arena,
+                    atoms,
                     "Object property cannot have both a value and an accessor",
                 ));
             }
             if flags.contains(PropertyFlag::WRITABLE) {
                 return Err(realm.create_type_error(
+                    owner,
                     arena,
+                    atoms,
                     "Object property cannot have both be writeable and have an accessor",
                 ));
             }
