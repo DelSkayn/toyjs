@@ -1,6 +1,6 @@
 use std::fmt;
 
-use vm::gc::Arena;
+use vm::{cell::CellOwner, gc::Arena};
 
 use crate::{Ctx, Value};
 
@@ -20,16 +20,23 @@ impl<'js> Error<'js> {
 
     #[doc(hidden)]
     pub fn into_vm(self, ctx: Ctx<'js>) -> vm::Value<'js, 'js> {
-        let arena = unsafe { Arena::new_unchecked(&ctx.context.root) };
+        let arena = unsafe { Arena::new_unchecked(ctx.context.root) };
+        let mut owner = unsafe { CellOwner::new(ctx.id) };
         match self {
             Error::Value(x) => x.into_vm(),
             Error::Syntax(x) => {
-                let v = ctx.context.realm.create_syntax_error(&arena, x);
-                return ctx.root_value(v);
+                let v =
+                    ctx.context
+                        .realm
+                        .create_syntax_error(&mut owner, &arena, ctx.context.atoms, x);
+                ctx.root_value(v)
             }
             Error::Type(x) => {
-                let v = ctx.context.realm.create_type_error(&arena, x);
-                return ctx.root_value(v);
+                let v =
+                    ctx.context
+                        .realm
+                        .create_syntax_error(&mut owner, &arena, ctx.context.atoms, x);
+                ctx.root_value(v)
             }
         }
     }

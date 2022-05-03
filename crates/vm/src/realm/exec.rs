@@ -7,7 +7,7 @@ use crate::{
     rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
 };
 
-use super::{ExecutionContext, GcRealm};
+use super::{builtin, ExecutionContext, GcRealm};
 
 pub enum NumericOperator {
     Sub,
@@ -829,7 +829,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 }
             }
 
-            return Err(self.create_type_error(arena, "Could not create a primitive from object"));
+            return Err(self.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "Could not create a primitive from object",
+            ));
         }
         return Ok(rebind!(arena, value));
     }
@@ -1137,9 +1142,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     ) -> Result<bool, Value<'l, 'cell>> {
         let right = rebind_try!(
             arena,
-            right
-                .into_object()
-                .ok_or_else(|| self.create_type_error(arena, "invalid `instanceof` operand"))
+            right.into_object().ok_or_else(|| self.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "invalid `instanceof` operand"
+            ))
         );
 
         let left = if let Some(x) = left.into_object() {
@@ -1150,17 +1158,20 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
         // TODO implement @@hasInstance method
         if right.borrow(owner).is_function() {
-            return Err(
-                self.create_type_error(arena, "right hand instanceof operand is not a function")
-            );
+            return Err(self.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "right hand instanceof operand is not a function",
+            ));
         }
 
         let tgt_proto = right.index(owner, arena, atoms, self, atom::constant::prototype);
         let tgt_proto = rebind_try!(arena, tgt_proto).empty_to_undefined();
         let tgt_proto = rebind!(arena, tgt_proto);
-        let tgt_proto = tgt_proto
-            .into_object()
-            .ok_or_else(|| self.create_type_error(arena, "object prototype is not an object"));
+        let tgt_proto = tgt_proto.into_object().ok_or_else(|| {
+            self.create_type_error(owner, arena, atoms, "object prototype is not an object")
+        });
 
         let tgt_proto = rebind_try!(arena, tgt_proto);
 
@@ -1191,7 +1202,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     #[allow(unused_unsafe)]
     pub unsafe fn construct_function<'l>(
         self,
-        owner: &CellOwner<'cell>,
+        owner: &mut CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
         function_id: u16,
         read: &InstructionReader<'_, 'cell>,
@@ -1204,10 +1215,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             .iter()
             .copied()
             .map(|x| match x {
-                Upvalue::Local(register) => {
-                    let up = self.borrow(owner).stack.create_upvalue(register);
-                    arena.add(up)
-                }
+                Upvalue::Local(register) => (*self.get()).stack.create_upvalue(arena, register),
                 Upvalue::Parent(slot) => {
                     rebind!(arena, up_func.upvalues[slot as usize])
                 }
@@ -1294,7 +1302,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         match ctx.function.borrow(owner).kind() {
             ObjectKind::VmFn(func) => {
                 let bc = func.bc;
-                let frame_size = bc.borrow(owner).functions[func.function as usize].size;
+                let frame_size =
+                    bc.borrow(owner).functions[func.function as usize].registers as u32;
                 let mut instr = InstructionReader::new_unsafe(owner, bc, func.function);
 
                 let guard = self.w(owner).stack.push_frame(frame_size);
@@ -1304,7 +1313,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 res
             }
             ObjectKind::StaticFn(x) => {
-                rebind!(arena, x(arena, owner, atoms, self, &ctx))
+                let x = *x;
+                let guard = self.w(owner).stack.push_frame(0);
+                let res = rebind!(arena, x(arena, owner, atoms, self, &ctx));
+                self.w(owner).stack.pop_frame(arena, guard);
+                res
             }
             _ => todo!(),
         }
@@ -1313,18 +1326,40 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     #[cold]
     pub fn create_type_error<'l>(
         self,
-        _arena: &'l Arena<'_, 'cell>,
-        _message: impl Into<String>,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        atoms: &Atoms,
+        message: impl Into<String>,
     ) -> Value<'l, 'cell> {
-        todo!("create type error")
+        let message = arena.add(message.into());
+        builtin::error::create(
+            arena,
+            owner,
+            atoms,
+            self.borrow(owner).builtin.type_error_proto,
+            Some(message),
+            None,
+        )
+        .into()
     }
 
     #[cold]
     pub fn create_syntax_error<'l>(
         self,
-        _arena: &'l Arena<'_, 'cell>,
-        _message: impl Into<String>,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        atoms: &Atoms,
+        message: impl Into<String>,
     ) -> Value<'l, 'cell> {
-        todo!("create syntax error")
+        let message = arena.add(message.into());
+        builtin::error::create(
+            arena,
+            owner,
+            atoms,
+            self.borrow(owner).builtin.syntax_error_proto,
+            Some(message),
+            None,
+        )
+        .into()
     }
 }

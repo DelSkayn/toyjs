@@ -83,6 +83,19 @@ impl fmt::Debug for Atoms {
     }
 }
 
+impl fmt::Display for Atoms {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entries = unsafe { &(*self.entries.get()) };
+        writeln!(f, "> ATOMS")?;
+        for (idx, e) in entries.iter().enumerate() {
+            if let AtomEntry::Filled { ref text, .. } = e {
+                writeln!(f, "{:>5}: {}", idx, text)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl Atoms {
     pub fn new() -> Self {
         let mut res = Atoms {
@@ -141,7 +154,7 @@ impl Atoms {
         }
 
         if let Some(a) = value.into_string() {
-            Some(self.atomize_string(a.borrow(owner).as_str()));
+            return Some(self.atomize_string(a.borrow(owner).as_str()));
         }
         None
     }

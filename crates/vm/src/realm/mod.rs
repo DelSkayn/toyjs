@@ -52,6 +52,7 @@ unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
 
     fn trace(&self, trace: Tracer) {
         self.builtin.trace(trace);
+        self.stack.trace(trace);
     }
 }
 
@@ -73,7 +74,7 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
 
 impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     pub fn argc(self, owner: &CellOwner<'cell>) -> u32 {
-        self.borrow(owner).stack.frame_size
+        unsafe { self.borrow(owner).stack.frame_size() as u32 }
     }
 
     pub fn arg(self, owner: &CellOwner<'cell>, idx: u32) -> Option<Value<'gc, 'cell>> {
@@ -112,7 +113,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         let function = arena.add(function);
         root!(arena, function);
 
-        let frame_size = bc.borrow(owner).functions[0].size;
+        let frame_size = bc.borrow(owner).functions[0].registers as u32;
         let mut instr = InstructionReader::new_unsafe(owner, bc, 0);
 
         let ctx = ExecutionContext {

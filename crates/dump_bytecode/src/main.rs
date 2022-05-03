@@ -38,7 +38,7 @@ fn main() -> Result<(), io::Error> {
 
     let bytecode =
         Compiler::compile_script(&script, &variables, &mut interner, &atoms, &gc, Global);
-    println!("atoms: {:#?}", atoms);
+    println!("{}", atoms);
     println!("{}", bytecode);
     Ok(())
 }

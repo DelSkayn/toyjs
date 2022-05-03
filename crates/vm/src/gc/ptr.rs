@@ -1,10 +1,10 @@
-use std::{cell::Cell, marker::PhantomData, ptr::NonNull};
+use std::{cell::Cell, fmt, marker::PhantomData, ptr::NonNull};
 
 use crate::cell::{CellOwner, LCell};
 
 use super::{Arena, Rebind, Trace};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Color {
     White,
     Gray,
@@ -43,6 +43,15 @@ pub type GcBoxPtr<'gc, 'cell> = NonNull<GcBox<'cell, dyn Trace + 'gc>>;
 pub struct Gc<'gc, 'cell, T: ?Sized> {
     pub(super) ptr: NonNull<GcBox<'cell, T>>,
     pub(super) marker: PhantomData<&'gc ()>,
+}
+
+impl<'gc, 'cell, T> fmt::Debug for Gc<'gc, 'cell, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Gc")
+            .field("ptr", &self.ptr)
+            .field("marker", &self.marker)
+            .finish()
+    }
 }
 
 impl<'gc, 'cell, T: ?Sized> Copy for Gc<'gc, 'cell, T> {}
@@ -113,6 +122,39 @@ where
         let a = unsafe { super::rebind(&mut (*a.get())) };
         let b = unsafe { super::rebind(&mut (*b.get())) };
         (a, b)
+    }
+
+    // Borrow the contained value mutably
+    #[inline]
+    pub fn borrow_mut_3<'rt, B, C>(
+        _owner: &'a mut CellOwner<'cell>,
+        arena: &Arena<'_, 'cell>,
+        a: Gc<'gc, 'cell, A>,
+        b: Gc<'gc, 'cell, B>,
+        c: Gc<'gc, 'cell, C>,
+    ) -> (&'a mut A::Output, &'a mut B::Output, &'a mut C::Output)
+    where
+        B: Rebind<'a> + Trace + 'a,
+        C: Rebind<'a> + Trace + 'a,
+    {
+        assert_ne!(a.ptr.as_ptr() as usize, b.ptr.as_ptr() as usize);
+        assert_ne!(a.ptr.as_ptr() as usize, c.ptr.as_ptr() as usize);
+        assert_ne!(b.ptr.as_ptr() as usize, c.ptr.as_ptr() as usize);
+
+        if A::needs_trace() {
+            arena.write_barrier(a);
+        }
+        if B::needs_trace() {
+            arena.write_barrier(b);
+        }
+        if C::needs_trace() {
+            arena.write_barrier(c);
+        }
+
+        let a = unsafe { super::rebind(&mut (*a.get())) };
+        let b = unsafe { super::rebind(&mut (*b.get())) };
+        let c = unsafe { super::rebind(&mut (*c.get())) };
+        (a, b, c)
     }
 }
 

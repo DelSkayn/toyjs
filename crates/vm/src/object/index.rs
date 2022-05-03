@@ -40,7 +40,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         realm: GcRealm<'_, 'cell>,
         key: Atom,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let borrow = self.borrow_mut_untraced(owner);
+        let borrow = self.borrow_mut(owner, arena);
         if let Some(idx) = key.into_idx() {
             if let Some(x) = borrow.elements.get(idx as usize) {
                 return Ok(rebind!(arena, x));

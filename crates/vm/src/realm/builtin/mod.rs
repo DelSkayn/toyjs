@@ -6,8 +6,11 @@ use crate::{
     GcObject, Object, Value,
 };
 
+use self::error::ErrorType;
+
 use super::{ExecutionContext, GcRealm};
 
+pub mod error;
 mod object;
 
 pub struct Builtin<'gc, 'cell> {
@@ -15,6 +18,10 @@ pub struct Builtin<'gc, 'cell> {
     pub global: GcObject<'gc, 'cell>,
     pub object_proto: GcObject<'gc, 'cell>,
     pub function_proto: GcObject<'gc, 'cell>,
+
+    pub error_proto: GcObject<'gc, 'cell>,
+    pub syntax_error_proto: GcObject<'gc, 'cell>,
+    pub type_error_proto: GcObject<'gc, 'cell>,
 }
 
 unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
@@ -27,6 +34,11 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
 
     fn trace(&self, trace: crate::gc::Tracer) {
         trace.mark(self.global);
+        trace.mark(self.object_proto);
+        trace.mark(self.function_proto);
+        trace.mark(self.error_proto);
+        trace.mark(self.syntax_error_proto);
+        trace.mark(self.type_error_proto);
     }
 }
 
@@ -97,10 +109,62 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
 
         object::init(owner, arena, atoms, op, fp, global);
 
+        let name = arena.add("Error".to_string());
+        let error_to_string = new_func(arena, owner, atoms, fp, error::to_string, 0);
+        let (error_construct, error_proto) =
+            error::init::<{ ErrorType::Base as u8 }>(owner, arena, atoms, name, fp, op);
+        error_proto.raw_index_set_flags(
+            owner,
+            arena,
+            atoms,
+            atom::constant::toString,
+            error_to_string,
+            PropertyFlag::BUILTIN,
+        );
+
+        let name = arena.add("SyntaxError".to_string());
+        let (c, syntax_error_proto) = error::init::<{ ErrorType::Syntax as u8 }>(
+            owner,
+            arena,
+            atoms,
+            name,
+            error_construct,
+            error_proto,
+        );
+        global.raw_index_set_flags(
+            owner,
+            arena,
+            atoms,
+            atom::constant::SyntaxError,
+            c,
+            PropertyFlag::BUILTIN,
+        );
+
+        let name = arena.add("TypeError".to_string());
+        let (c, type_error_proto) = error::init::<{ ErrorType::Type as u8 }>(
+            owner,
+            arena,
+            atoms,
+            name,
+            error_construct,
+            error_proto,
+        );
+        global.raw_index_set_flags(
+            owner,
+            arena,
+            atoms,
+            atom::constant::TypeError,
+            c,
+            PropertyFlag::BUILTIN,
+        );
+
         Builtin {
             global,
             object_proto: op,
             function_proto: fp,
+            error_proto,
+            syntax_error_proto,
+            type_error_proto,
         }
     }
 }

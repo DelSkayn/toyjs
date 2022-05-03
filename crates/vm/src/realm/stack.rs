@@ -2,6 +2,7 @@ use std::{
     alloc::{self, Layout},
     mem,
     ptr::NonNull,
+    thread,
 };
 
 use crate::{
@@ -59,12 +60,23 @@ pub struct Stack<'gc, 'cell> {
 
     capacity: usize,
 
-    pub frame_size: u32,
+    pub registers: u32,
     /// Amount of values allocated for the stack
     upvalues: Vec<GcUpvalueObject<'gc, 'cell>>,
     frame_upvalues: u16,
 
     depth: u32,
+}
+
+impl<'gc, 'cell> Drop for Stack<'gc, 'cell> {
+    fn drop(&mut self) {
+        if self.capacity != 0 {
+            let layout = Layout::array::<Value>(self.capacity).unwrap();
+            unsafe {
+                alloc::dealloc(self.root.as_ptr().cast(), layout);
+            }
+        }
+    }
 }
 
 unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
@@ -80,7 +92,7 @@ unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
         // values.
         unsafe {
             let mut cur = self.root.as_ptr();
-            while cur != self.stack {
+            while cur < self.stack {
                 cur.read().trace(trace);
                 cur = cur.add(1);
             }
@@ -98,7 +110,9 @@ pub struct FrameGuard {
 #[cfg(debug_assertions)]
 impl Drop for FrameGuard {
     fn drop(&mut self) {
-        panic!("dropped frame guard instead of poping frame");
+        if !thread::panicking() {
+            panic!("dropped frame guard instead of poping frame");
+        }
     }
 }
 
@@ -114,7 +128,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
             root,
             capacity: 0,
 
-            frame_size: 0,
+            registers: 0,
 
             upvalues: Vec::new(),
             frame_upvalues: 0,
@@ -129,22 +143,26 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         }
 
         let res = FrameGuard {
-            size: self.frame_size,
+            size: self.registers,
             upvalues: self.frame_upvalues,
             #[cfg(debug_assertions)]
             depth: self.depth,
         };
+        self.frame = self.frame.add(self.registers as usize);
 
-        let new_size = self.frame.offset_from(self.root.as_ptr()) as usize + size as usize;
+        let new_size = self.frame.offset_from(self.root.as_ptr()) as usize + size as usize + 1;
         if new_size > self.capacity {
             self.grow(new_size);
         }
 
-        self.frame = self.frame.add(self.frame_size as usize);
-        self.stack = self.frame.add(size as usize);
+        let new_stack = self.frame.add(size as usize);
+        while self.stack < new_stack {
+            self.stack.write(Value::undefined());
+            self.stack = self.stack.add(1);
+        }
 
         self.frame_upvalues = 0;
-        self.frame_size = size;
+        self.registers = size;
         self.depth += 1;
 
         res
@@ -170,15 +188,21 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         });
 
         self.frame_upvalues = guard.upvalues;
-        self.frame_size = guard.size;
+        self.registers = guard.size;
 
         mem::forget(guard);
     }
 
     #[inline(always)]
+    pub unsafe fn frame_size(&self) -> usize {
+        self.stack.offset_from(self.frame) as usize
+    }
+
+    #[inline(always)]
     pub unsafe fn read_arg(&self, reg: u32) -> Option<Value<'gc, 'cell>> {
-        if reg < self.frame_size {
-            Some(self.frame.add(reg as usize).read())
+        let ptr = self.frame.add(reg as usize);
+        if ptr < self.stack {
+            Some(ptr.read())
         } else {
             None
         }
@@ -186,18 +210,18 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
 
     #[inline(always)]
     pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'cell> {
-        debug_assert!((reg as u32) < self.frame_size);
+        debug_assert!((reg as u32) < self.registers);
         self.frame.add(reg as usize).read()
     }
 
     #[inline(always)]
     pub unsafe fn write(&mut self, reg: u8, v: Value<'_, 'cell>) {
-        debug_assert!((reg as u32) < self.frame_size);
+        debug_assert!((reg as u32) < self.registers);
         self.frame.add(reg as usize).write(gc::rebind(v))
     }
 
     pub unsafe fn push(&mut self, v: Value<'_, 'cell>) {
-        let new_size = self.frame.offset_from(self.root.as_ptr()) as usize + 1;
+        let new_size = self.stack.offset_from(self.root.as_ptr()) as usize + 1;
         if new_size > self.capacity {
             self.grow(new_size);
         }
@@ -206,12 +230,19 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         self.stack = self.stack.add(1);
     }
 
-    pub unsafe fn create_upvalue(&self, reg: u8) -> UpvalueObject<'gc, 'cell> {
+    pub unsafe fn create_upvalue<'l>(
+        &mut self,
+        arena: &'l Arena<'_, 'cell>,
+        reg: u8,
+    ) -> GcUpvalueObject<'l, 'cell> {
         let ptr = self.frame.add(reg as usize);
-        UpvalueObject {
+        let res = UpvalueObject {
             location: ptr,
             closed: Value::empty(),
-        }
+        };
+        let res = arena.add(res);
+        self.upvalues.push(gc::rebind(res));
+        res
     }
 
     #[inline]
@@ -222,9 +253,9 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
 
     #[cold]
     unsafe fn grow(&mut self, capacity: usize) {
-        let capacity = capacity.next_power_of_two().max(Self::MIN_CAPACITY);
         if self.capacity == 0 {
-            let layout = Layout::array::<Value>(capacity).unwrap();
+            self.capacity = capacity.max(Self::MIN_CAPACITY);
+            let layout = Layout::array::<Value>(self.capacity).unwrap();
             let ptr = alloc::alloc(layout);
             if ptr.is_null() {
                 alloc::handle_alloc_error(layout);
@@ -233,8 +264,10 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
             self.frame = self.root.as_ptr();
             self.stack = self.root.as_ptr();
         } else {
-            let layout = Layout::array::<Value>(self.capacity).unwrap();
-            let size = Layout::array::<Value>(capacity).unwrap().size();
+            let old_capacity = self.capacity;
+            self.capacity = capacity.next_power_of_two();
+            let layout = Layout::array::<Value>(old_capacity).unwrap();
+            let size = Layout::array::<Value>(self.capacity).unwrap().size();
             let ptr: *mut Value = alloc::realloc(self.root.as_ptr().cast(), layout, size).cast();
             if ptr.is_null() {
                 alloc::handle_alloc_error(layout);
@@ -254,6 +287,5 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
                 self.root = NonNull::new_unchecked(ptr);
             }
         }
-        self.capacity = capacity;
     }
 }

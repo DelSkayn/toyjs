@@ -96,6 +96,20 @@ fn double_arena() {
     }
 }
 
+#[test]
+fn owned_root() {
+    new_cell_owner!(owner);
+    let roots = Roots::new();
+    let mut arena = Arena::new(&roots);
+
+    let v = arena.add(1);
+    let v = roots.add_owned(v);
+
+    arena.collect_full(&mut owner);
+
+    assert_eq!(*v.borrow(&owner), 1);
+}
+
 /*
 fn root_pin() {
     new_cell_owner!(owner);

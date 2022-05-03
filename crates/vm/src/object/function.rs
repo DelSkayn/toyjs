@@ -38,6 +38,7 @@ pub type StaticFn = for<'l, 'cell> unsafe fn(
     &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>;
 
+#[derive(Debug)]
 pub struct VmFunction<'gc, 'cell> {
     pub bc: GcByteCode<'gc, 'cell>,
     pub function: u16,
@@ -54,7 +55,7 @@ unsafe impl<'gc, 'cell> Trace for VmFunction<'gc, 'cell> {
 
     fn trace(&self, ctx: Tracer) {
         ctx.mark(self.bc);
-        //self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
+        self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }
 }
 
