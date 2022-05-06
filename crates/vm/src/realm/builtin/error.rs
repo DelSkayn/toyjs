@@ -1,5 +1,6 @@
+use common::atom::{self, Atoms};
+
 use crate::{
-    atom::{self, Atoms},
     cell::CellOwner,
     gc::{Arena, Gc},
     object::{ObjectFlags, ObjectKind},

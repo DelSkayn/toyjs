@@ -3,14 +3,13 @@
 
 use ast::{Params, ScopeId, Script, Stmt, SymbolId, SymbolTable};
 use common::{
-    interner::Interner,
+    atom::Atoms,
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
 //use constants::Constants;
 //use lexical_info::LexicalInfo;
 use vm::{
-    atom::Atoms,
     gc,
     instructions::{ByteCode, ByteFunction, Instruction},
 };
@@ -41,7 +40,6 @@ pub struct Compiler<'a, 'rt, 'cell, A: Allocator + Clone> {
 impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn new(
         symbol_table: &'a SymbolTable<A>,
-        interner: &'a mut Interner,
         atoms: &'a Atoms,
         gc: &'a gc::Arena<'rt, 'cell>,
         root: ScopeId,
@@ -49,7 +47,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     ) -> Self {
         Compiler {
             symbol_table,
-            constants: Constants::new_in(interner, atoms, gc, Global),
+            constants: Constants::new_in(atoms, gc, Global),
             builder: ScriptBuilder::new_in(alloc.clone(), symbol_table, root),
             alloc,
         }
@@ -58,19 +56,11 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub fn compile_script(
         script: &'a Script<A>,
         symbol_table: &'a SymbolTable<A>,
-        interner: &'a mut Interner,
         atoms: &'a Atoms,
         gc: &'a gc::Arena<'rt, 'cell>,
         alloc: A,
     ) -> ByteCode<'a, 'cell> {
-        let mut this = Compiler::new(
-            symbol_table,
-            interner,
-            atoms,
-            gc,
-            symbol_table.global(),
-            alloc,
-        );
+        let mut this = Compiler::new(symbol_table, atoms, gc, symbol_table.global(), alloc);
 
         let res = script
             .0

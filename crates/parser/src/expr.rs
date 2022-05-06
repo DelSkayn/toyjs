@@ -89,7 +89,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("new") => {
                     if self.eat(t!("."))? {
                         let peek = self.peek_kind()?;
-                        let tgt = self.lexer.interner.intern("target");
+                        let tgt = self.lexer.atoms.atomize_string("target");
                         if peek == Some(TokenKind::Ident(tgt)) {
                             if !self.state.r#return {
                                 unexpected!(self => "new.target expression is not allowed here");

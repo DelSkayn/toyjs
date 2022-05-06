@@ -1,11 +1,11 @@
 use crate::{
-    atom::Atoms,
     cell::CellOwner,
     gc::{Arena, Rebind, Trace, Tracer},
     instructions::GcByteCode,
     realm::{ExecutionContext, GcRealm, GcUpvalueObject},
     Value,
 };
+use common::atom::Atoms;
 
 use super::{Object, ObjectKind};
 

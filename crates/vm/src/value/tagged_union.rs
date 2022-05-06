@@ -1,7 +1,8 @@
 use std::{fmt, mem};
 
+use common::atom::Atom;
+
 use crate::{
-    atom::Atom,
     gc::{self, Gc, Rebind, Trace, Tracer},
     object::Object,
     GcObject,

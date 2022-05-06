@@ -3,9 +3,7 @@ use std::{
     fmt, mem,
 };
 
-use common::collections::HashMap;
-
-use crate::{cell::CellOwner, Value};
+use crate::collections::HashMap;
 
 pub mod constant;
 
@@ -139,26 +137,6 @@ impl Atoms {
         }
     }
 
-    #[inline]
-    pub fn atomize_primitive<'cell>(
-        &self,
-        owner: &CellOwner<'cell>,
-        value: Value<'_, 'cell>,
-    ) -> Option<Atom> {
-        if let Some(a) = value.into_atom() {
-            return Some(a);
-        }
-
-        if let Some(i) = value.into_int().and_then(Self::atomize_int) {
-            return Some(i);
-        }
-
-        if let Some(a) = value.into_string() {
-            return Some(self.atomize_string(a.borrow(owner).as_str()));
-        }
-        None
-    }
-
     pub fn atomize_string(&self, text: &str) -> Atom {
         unsafe {
             if let Some(x) = Self::into_integer_string(text) {
@@ -207,7 +185,7 @@ impl Atoms {
         }
     }
 
-    pub fn atomize_int(int: i32) -> Option<Atom> {
+    pub fn try_atomize_int(int: i32) -> Option<Atom> {
         if int > 0 && (int as u32) < ATOM_MAX {
             return Some(Atom::from_int(int as u32));
         }

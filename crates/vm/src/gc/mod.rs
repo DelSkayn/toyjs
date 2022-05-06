@@ -417,6 +417,10 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         }
     }
 
+    pub fn roots(&self) -> &'rt Roots<'cell> {
+        self.roots
+    }
+
     #[doc(hidden)]
     pub fn _root_gc<T: Trace>(&self, t: Gc<'_, 'cell, T>) -> RootGuard<'rt, 'cell> {
         unsafe {
@@ -527,6 +531,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                         roots.phase.set(Phase::Mark);
                     }
                     Phase::Mark => {
+                        println!("mark");
                         if let Some(x) = roots.grays.pop() {
                             //assert!(tmp.insert(x.as_ptr()));
                             let size = mem::size_of_val(x.as_ref());
@@ -584,6 +589,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                                     .total_allocated
                                     .set(roots.total_allocated.get() - layout.size());
                                 drop_in_place(x.as_ptr());
+                                println!("free: {:?}", x.as_ptr());
                                 alloc::dealloc(x.as_ptr().cast(), layout);
                             } else {
                                 roots

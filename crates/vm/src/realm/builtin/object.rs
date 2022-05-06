@@ -1,10 +1,11 @@
+use common::atom::{self, Atoms};
+
 use crate::{
-    atom::{self, Atoms},
     cell::CellOwner,
     gc::{Arena, Gc},
     object::{GcObject, Object, ObjectFlags, ObjectKind, Property, PropertyFlag, PropertyValue},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, root, Value,
+    rebind, rebind_try, root, Realm, Value,
 };
 
 use super::new_func;
@@ -310,7 +311,7 @@ fn define_property<'l, 'cell>(
 
     let p = realm.arg(owner, 1).unwrap_or_else(Value::undefined);
     let p = rebind_try!(arena, realm.to_primitive(owner, arena, atoms, p, true));
-    let p = atoms.atomize_primitive(owner, p).unwrap();
+    let p = Realm::atomize_primitive(owner, atoms, p);
 
     let prop = realm.arg(owner, 2).unwrap_or_else(Value::undefined);
     let prop = rebind_try!(

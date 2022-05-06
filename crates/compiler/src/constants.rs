@@ -2,12 +2,12 @@ use std::alloc::Allocator;
 
 use ast::Literal;
 use common::{
+    atom::{Atom, Atoms},
     collections::HashMap,
-    interner::{Interner, StringId},
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
-use vm::{atom::Atoms, gc, Value};
+use vm::{gc, Value};
 
 newtype_key! {
     pub struct ConstantId(pub(crate) u32);
@@ -16,47 +16,36 @@ newtype_key! {
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub enum LiteralOrAtom {
     Literal(Literal),
-    Atom(StringId),
+    Atom(Atom),
 }
 
 pub struct Constants<'a, 'rt, 'cell, A: Allocator> {
     constants: SlotStack<Value<'a, 'cell>, ConstantId, A>,
     map: HashMap<LiteralOrAtom, ConstantId>,
     gc: &'a gc::Arena<'rt, 'cell>,
-    interner: &'a mut Interner,
     atoms: &'a Atoms,
 }
 
 impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
-    pub fn new_in(
-        interner: &'a mut Interner,
-        atoms: &'a Atoms,
-        gc: &'a gc::Arena<'rt, 'cell>,
-        alloc: A,
-    ) -> Self {
+    pub fn new_in(atoms: &'a Atoms, gc: &'a gc::Arena<'rt, 'cell>, alloc: A) -> Self {
         Constants {
             constants: SlotStack::new_in(alloc),
             map: HashMap::default(),
             gc,
-            interner,
             atoms,
         }
     }
 
     pub fn push_string(&mut self, s: impl AsRef<str>) -> ConstantId {
-        let id = self.interner.intern(s.as_ref());
+        let id = self.atoms.atomize_string(s.as_ref());
         self.push_constant(Literal::String(id))
     }
 
-    pub fn push_atom(&mut self, s: StringId) -> ConstantId {
-        *self.map.entry(LiteralOrAtom::Atom(s)).or_insert_with(|| {
-            let atom = self.atoms.atomize_string(
-                self.interner
-                    .lookup(s)
-                    .expect("symbol name string no longer exists"),
-            );
-            self.constants.push(Value::from(atom))
-        })
+    pub fn push_atom(&mut self, s: Atom) -> ConstantId {
+        *self
+            .map
+            .entry(LiteralOrAtom::Atom(s))
+            .or_insert_with(|| self.constants.push(Value::from(s)))
     }
 
     pub fn push_constant(&mut self, literal: Literal) -> ConstantId {
@@ -70,7 +59,7 @@ impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
                 Literal::Boolean(x) => self.constants.push(Value::from(x)),
                 Literal::Integer(x) => self.constants.push(Value::from(x)),
                 Literal::String(x) => {
-                    let s = self.gc.add(self.interner.lookup(x).unwrap().to_string());
+                    let s = self.gc.add(self.atoms.lookup(x).unwrap());
                     self.constants.push(s.into())
                 }
             })

@@ -1,5 +1,6 @@
+use common::atom::{self, Atoms};
+
 use crate::{
-    atom::{self, Atoms},
     cell::CellOwner,
     gc::{self, Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
@@ -31,6 +32,7 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
     /// # Safety
     ///
     /// `func` must be a smaller the amount of function present in the bytecode.
+    /// `bc` must contain valid bytecode.
     ///
     pub unsafe fn new_unsafe(
         owner: &CellOwner<'cell>,

@@ -19,7 +19,7 @@ impl<'a> Lexer<'a> {
                 // Number is a big int, Very much TODO.
                 Some(b'n') => {
                     self.eat_byte();
-                    let s = self.interner.intern("0");
+                    let s = self.atoms.atomize_string("0");
                     return Ok(self.token_num(Number::Big(s)));
                 }
                 Some(b'b' | b'B') => {
@@ -70,7 +70,7 @@ impl<'a> Lexer<'a> {
             // We have no good way to lex big numbers yet so for now we just handle them with
             // strings.
             let s = &self.source.source()[str_start..self.offset];
-            let s = self.interner.intern(s);
+            let s = self.atoms.atomize_string(s);
             Ok(self.token_num(Number::Big(s)))
         } else {
             self.lex_number_string(str_start)
@@ -147,7 +147,7 @@ impl<'a> Lexer<'a> {
         }
         let s = &self.source.source()[str_start + 2..self.offset];
         if big {
-            let s = self.interner.intern(s);
+            let s = self.atoms.atomize_string(s);
             Ok(self.token_num(Number::Big(s)))
         } else {
             //FIXME: dont think this is correct way of parsing.

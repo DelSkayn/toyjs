@@ -1,5 +1,6 @@
+use common::atom::{self, Atom, Atoms};
+
 use crate::{
-    atom::Atoms,
     cell::CellOwner,
     gc::{self, Gc, Rebind, Trace, Tracer},
     instructions::GcByteCode,
@@ -69,6 +70,33 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
         let builtin = builtin::Builtin::new(owner, arena, atoms);
         let stack = Stack::new();
         Realm { builtin, stack }
+    }
+
+    pub fn atomize_primitive(
+        owner: &CellOwner<'cell>,
+        atoms: &Atoms,
+        value: Value<'gc, 'cell>,
+    ) -> Atom {
+        if let Some(x) = value.into_atom() {
+            return x;
+        }
+        if let Some(x) = value.into_bool() {
+            if x {
+                return atom::constant::r#true;
+            } else {
+                return atom::constant::r#false;
+            }
+        }
+        if let Some(x) = value.into_int() {
+            return Atoms::try_atomize_int(x)
+                .unwrap_or_else(|| atoms.atomize_string(&x.to_string()));
+        }
+
+        if let Some(x) = value.into_float() {
+            return atoms.atomize_string(&x.to_string());
+        }
+
+        atoms.atomize_string(value.into_string().unwrap().borrow(owner))
     }
 }
 

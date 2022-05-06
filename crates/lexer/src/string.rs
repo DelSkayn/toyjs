@@ -24,7 +24,7 @@ impl<'a> Lexer<'a> {
                 b'\\' => self.lex_escape_code()?,
                 chars::LF | chars::CR => return Err(ErrorKind::UnClosedString),
                 s if s == start => {
-                    let s = self.interner.intern(&self.buffer);
+                    let s = self.atoms.atomize_string(&self.buffer);
                     return Ok(self.token(TokenKind::Literal(Literal::String(s))));
                 }
                 x if !x.is_ascii() => match self.next_char(x)? {

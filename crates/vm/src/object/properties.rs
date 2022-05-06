@@ -5,10 +5,12 @@ use std::{
     ops::{BitOr, BitOrAssign},
 };
 
-use common::collections::HashMap;
+use common::{
+    atom::{self, Atom, Atoms},
+    collections::HashMap,
+};
 
 use crate::{
-    atom::{self, Atom, Atoms},
     cell::CellOwner,
     gc::{self, Arena, Rebind, Trace, Tracer},
     realm::GcRealm,

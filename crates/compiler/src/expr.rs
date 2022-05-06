@@ -3,7 +3,7 @@ use ast::{
     ArrowBody, AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator,
     PrimeExpr, SymbolId,
 };
-use common::interner::StringId;
+use common::atom::Atom;
 use vm::instructions::Instruction;
 
 use crate::{register::Register, Compiler, InstructionId};
@@ -39,7 +39,7 @@ impl<A: Allocator + Clone> ExprValue<A> {
 
 pub enum AssignmentTarget {
     Variable(SymbolId),
-    Dot(Register, StringId),
+    Dot(Register, Atom),
     Index(Register, Register),
 }
 
@@ -876,11 +876,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     /// Compile the use of a literal expression
     /// Will put result of expression in given placement register if there is one.
-    pub(crate) fn compile_atom(
-        &mut self,
-        placement: Option<Register>,
-        ident: StringId,
-    ) -> Register {
+    pub(crate) fn compile_atom(&mut self, placement: Option<Register>, ident: Atom) -> Register {
         let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
         let constant = self.constants.push_atom(ident);
         if constant.0 < u16::MAX as u32 {
@@ -913,7 +909,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_object_literal(
         &mut self,
         placement: Option<Register>,
-        bindings: &'a Vec<(StringId, Expr<A>), A>,
+        bindings: &'a Vec<(Atom, Expr<A>), A>,
     ) -> Register {
         let mut object = None;
         for (name, value) in bindings {
