@@ -4,10 +4,15 @@ use super::{Atom, Atoms};
 macro_rules! define_atom{
     ($($name:ident),*) => {
         pub(super) fn init_constants(atoms: &mut Atoms){
+            atoms.atomize_string("false");
+            atoms.atomize_string("true");
             define_atom!(@init atoms => ($($name),*));
         }
 
-        define_atom!(@cons 0 => ($($name),*));
+        pub const r#false: Atom = Atom::from_string_idx(0);
+        pub const r#true: Atom = Atom::from_string_idx(1);
+
+        define_atom!(@cons 2 => ($($name),*));
 
         #[cfg(test)]
         mod test {
@@ -66,5 +71,6 @@ define_atom!(
     seal,
     isFrozen,
     isSealed,
-    Array
+    Array,
+    eval
 );

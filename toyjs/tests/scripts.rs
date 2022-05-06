@@ -1,6 +1,4 @@
-use toyjs::{
-    convert::FromJs, create_static_fn, Arguments, Context, Ctx, Error, Result, ToyJs, Value,
-};
+use toyjs::{create_static_fn, Arguments, Ctx, Error, FromJs, Realm, Result, ToyJs, Value};
 
 const THROW_SOURCE: &str = include_str!("./throw.js");
 const UPVALUE_SOURCE: &str = include_str!("./upvalue.js");
@@ -14,7 +12,7 @@ const OBJECT_SOURCE: &str = include_str!("./object.js");
 
 pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     if let Some(x) = args.get(0) {
-        if x.is_falseish() {
+        if x.is_falsish() {
             if let Some(x) = args
                 .get(1)
                 .and_then(|x| toyjs::String::from_js(ctx, x).ok())
@@ -30,12 +28,12 @@ pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js
 
 fn eval_script(s: &str) {
     let toyjs = ToyJs::new();
-    let ctx = Context::new(&toyjs);
+    let ctx = Realm::new(&toyjs);
     ctx.with(|ctx| {
         ctx.global()
             .set("assert", create_static_fn!(ctx, assert))
             .unwrap();
-        match ctx.eval::<(), _>(s) {
+        match ctx.eval::<_, ()>(s) {
             Ok(_) => {}
             Err(e) => panic!("error: {}", e),
         }

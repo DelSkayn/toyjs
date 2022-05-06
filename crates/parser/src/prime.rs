@@ -58,7 +58,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
             TokenKind::Ident(x) => {
                 self.next()?;
 
-                if x == self.special_ident.eval {
+                if x == common::atom::constant::eval {
                     if let Some(x) = self.try_parse_eval()? {
                         return Ok(x);
                     }

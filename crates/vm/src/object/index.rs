@@ -1,10 +1,6 @@
-use crate::{
-    atom::{Atom, Atoms},
-    cell::CellOwner,
-    gc::Arena,
-    realm::GcRealm,
-    rebind, root, GcObject, Value,
-};
+use common::atom::{Atom, Atoms};
+
+use crate::{cell::CellOwner, gc::Arena, realm::GcRealm, rebind, root, GcObject, Value};
 
 use super::properties::{Accessor, Property, PropertyEntry, PropertyFlag, PropertyValue};
 

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use common::{
-    interner::Interner,
+    atom::Atoms,
     source::{Source, Span},
 };
 use std::{convert::TryFrom, result::Result as StdResult};
@@ -44,7 +44,7 @@ pub type Result<T> = StdResult<T, Error>;
 
 pub struct Lexer<'a> {
     source: &'a Source,
-    pub interner: &'a mut Interner,
+    pub atoms: &'a Atoms,
     offset: usize,
     span_start: usize,
     // A buffer for rewriting escaped utf-8 secuences as the right bytes
@@ -64,10 +64,10 @@ fn is_radix(byte: u8, radix: u8) -> bool {
 
 impl<'a> Lexer<'a> {
     /// Create a new lexer from source
-    pub fn new(source: &'a Source, interner: &'a mut Interner) -> Self {
+    pub fn new(source: &'a Source, interner: &'a Atoms) -> Self {
         Lexer {
             source,
-            interner,
+            atoms: interner,
             offset: 0,
             span_start: 0,
             buffer: String::new(),
@@ -219,8 +219,8 @@ impl<'a> Lexer<'a> {
             Ok(self.token(TokenKind::Keyword(x)))
         } else {
             let string_id = self
-                .interner
-                .intern(&self.source.source()[start..self.offset]);
+                .atoms
+                .atomize_string(&self.source.source()[start..self.offset]);
             Ok(self.token(TokenKind::Ident(string_id)))
         }
     }

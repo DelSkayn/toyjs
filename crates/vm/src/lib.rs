@@ -2,7 +2,6 @@
 #![allow(clippy::new_without_default)]
 #![allow(clippy::missing_safety_doc)]
 
-pub mod atom;
 pub mod cell;
 pub mod gc;
 pub mod instructions;

@@ -9,11 +9,9 @@ use std::{
 };
 
 use ast::SymbolTable;
-use common::interner;
-use common::source::Source;
+use common::{atom::Atoms, source::Source};
 use lexer::Lexer;
 use toyjs::ToyJs;
-use vm::atom::Atoms;
 
 fn main() -> io::Result<()> {
     let toyjs = ToyJs::new();

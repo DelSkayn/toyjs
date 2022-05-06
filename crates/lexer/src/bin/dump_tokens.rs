@@ -1,4 +1,4 @@
-use common::{interner::Interner, source::Source};
+use common::{atom::Atoms, source::Source};
 use std::{
     env,
     fs::File,
@@ -19,11 +19,11 @@ fn main() -> Result<(), io::Error> {
     let mut buffer = String::new();
     read.read_to_string(&mut buffer)?;
     let source = Source::from_string(buffer);
-    let mut interner = Interner::new();
+    let atoms = Atoms::new();
     let mut tokens = Vec::new();
     let mut error = None;
     {
-        let mut lexer = Lexer::new(&source, &mut interner);
+        let mut lexer = Lexer::new(&source, &atoms);
         loop {
             match lexer.next() {
                 Ok(Some(x)) => {
@@ -40,7 +40,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
     for t in &tokens {
-        println!("{}\t{:?}", t.kind.format(&interner), t);
+        println!("{}\t{:?}", t.kind.format(&atoms), t);
     }
 
     if let Some(e) = error {

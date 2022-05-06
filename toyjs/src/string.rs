@@ -2,7 +2,7 @@ use std::{fmt, string::String as StdString};
 
 use vm::{cell::CellOwner, gc::Gc};
 
-use crate::Ctx;
+use crate::{Ctx, Value};
 
 #[derive(Clone, Copy)]
 pub struct String<'js> {
@@ -42,5 +42,12 @@ impl<'js> String<'js> {
     pub fn into_string(self) -> StdString {
         let owner = unsafe { CellOwner::new(self.ctx.id) };
         self.ptr.borrow(&owner).clone()
+    }
+
+    pub fn into_value(self) -> Value<'js> {
+        Value {
+            value: self.ptr.into(),
+            ctx: self.ctx,
+        }
     }
 }

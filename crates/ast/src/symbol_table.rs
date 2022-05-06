@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 use common::{
+    atom::Atom,
     collections::{HashMap, HashSet},
-    interner::StringId,
     newtype_key,
     slotmap::{SlotKey, SlotVec},
 };
@@ -43,7 +43,7 @@ pub struct Symbol {
     /// The id of the scope this symbol was declared in.
     pub decl_scope: ScopeId,
     /// The identifier with which this identifier was declared.
-    pub ident: StringId,
+    pub ident: Atom,
 }
 
 newtype_key! {
@@ -127,7 +127,7 @@ pub struct SymbolTable<A: Allocator> {
     scopes: Scopes<A>,
     symbols: Symbols<A>,
     /// Used for symbol lookup.
-    symbols_by_ident: HashMap<(ScopeId, StringId), SymbolId>,
+    symbols_by_ident: HashMap<(ScopeId, Atom), SymbolId>,
     global: ScopeId,
     alloc: A,
 }
@@ -235,7 +235,7 @@ impl<A: Allocator> SymbolTable<A> {
         }
     }
 
-    pub fn define_global(&mut self, str: StringId) -> SymbolId {
+    pub fn define_global(&mut self, str: Atom) -> SymbolId {
         let symbol = self.symbols.insert(Symbol {
             decl_type: DeclType::Var,
             decl_scope: self.global,
@@ -282,7 +282,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     }
     /// Looks up a symbol in current and parent scopes by the symbol's name.
     /// Returns None if no symbol with the given name was found in the current and parent scopes.
-    fn lookup_symbol(&self, name: StringId) -> Option<SymbolId> {
+    fn lookup_symbol(&self, name: Atom) -> Option<SymbolId> {
         let mut cur_scope = self.current_scope;
         loop {
             if let Some(x) = self.table.symbols_by_ident.get(&(cur_scope, name)) {
@@ -296,7 +296,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         }
     }
 
-    pub fn define(&mut self, name: StringId, kind: DeclType) -> Option<SymbolId> {
+    pub fn define(&mut self, name: Atom, kind: DeclType) -> Option<SymbolId> {
         match kind {
             DeclType::Let | DeclType::Const | DeclType::Argument => {
                 if self
@@ -376,7 +376,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
 
     /// Use a symbol,
     /// Implicitly declares a variable if it was not yet declared.
-    pub fn use_symbol(&mut self, name: StringId) -> SymbolId {
+    pub fn use_symbol(&mut self, name: Atom) -> SymbolId {
         if let Some(x) = self.lookup_symbol(name) {
             if self.table.function_scope(self.table.symbols[x].decl_scope) != self.current_function
             {

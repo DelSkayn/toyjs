@@ -1,6 +1,6 @@
+use common::atom::Atoms;
 use toyjs_vm as vm;
 use vm::{
-    atom::Atoms,
     cell::CellOwner,
     gc::{Arena, Gc},
     Realm,
