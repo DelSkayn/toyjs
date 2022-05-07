@@ -20,12 +20,6 @@ pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js
     Ok(Value::undefined(ctx))
 }
 
-pub fn dbg<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
-    let a = args.get(0).unwrap_or_else(|| Value::undefined(ctx));
-    println!("dbg: {:?}", a);
-    Ok(a)
-}
-
 #[test]
 fn collect_all() {
     let toyjs = ToyJs::new();
@@ -34,9 +28,6 @@ fn collect_all() {
     ctx.with(|ctx| {
         ctx.global()
             .set("assert", create_static_fn!(ctx, assert))
-            .unwrap();
-        ctx.global()
-            .set("dbg", create_static_fn!(ctx, dbg))
             .unwrap();
         ctx.eval::<_, ()>(UPVALUE_SOURCE).unwrap();
     });
