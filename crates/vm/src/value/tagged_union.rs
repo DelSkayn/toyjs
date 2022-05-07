@@ -298,7 +298,10 @@ impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
             Value::Null => f.debug_tuple("JSValue::Null").finish(),
             Value::Undefined => f.debug_tuple("JSValue::Undefined").finish(),
             Value::Empty => f.debug_tuple("JSValue::Empty").finish(),
-            Value::String(_) => f.debug_tuple("JSValue::String").finish(),
+            Value::String(x) => f
+                .debug_tuple("JSValue::String")
+                .field(unsafe { &*x.into_ptr().as_ref().value.get() })
+                .finish(),
             Value::Object(_) => f.debug_tuple("JSValue::Object").finish(),
             Value::Atom(x) => f.debug_tuple("JSValue::Atom").field(&x).finish(),
             Value::Integer(x) => f.debug_tuple("JSValue::Int").field(&x).finish(),

@@ -4,33 +4,35 @@
 
     let outer = function (){
         let inner = function (){
-            assert(x === 1);
+            assert(x === 1,"1");
             x += 1;
         }
         inner();
-        assert(x === 2);
+        assert(x === 2,"2");
     }
     let another = function(){
         x += 1;
     }
     outer();
-    assert(x === 2);
-    assert(b === 1);
+    assert(x === 2,"3");
+    assert(b === 1,"4");
     another();
-    assert(x === 3);
+    assert(x === 3,"5");
 
     let iterator = function (){
+        dbg("aaaaa");
         let x = 0;
         return function (){
+            dbg("bbbb");
             return x++;
         }
     }
 
     let iter = iterator();
-    assert(iter() === 0);
-    assert(iter() === 1);
-    assert(iter() === 2);
-    assert(iter() === 3);
+    assert(iter() === 0, "6");
+    assert(iter() === 1, "7");
+    assert(iter() === 2, "8");
+    assert(iter() === 3, "9");
 
 
 
@@ -46,9 +48,9 @@
         }
     }
     let obj = deep()()()();
-    assert(obj);
-    assert(obj.a === "Too deep");
-    assert(obj.b === "Less deep");
+    assert(obj,"10");
+    assert(obj.a === "Too deep","11");
+    assert(obj.b === "Less deep","12");
 
     let wrap = function(){
         let x = 1;
@@ -66,7 +68,7 @@
         }
     }
     let unwrap = wrap();
-    assert(unwrap.inner1() === 2);
-    assert(unwrap.inner2() === 3);
-    assert(unwrap.inner1() === 4);
+    assert(unwrap.inner1() === 2,"13");
+    assert(unwrap.inner2() === 3,"14");
+    assert(unwrap.inner1() === 4,"15");
 })()

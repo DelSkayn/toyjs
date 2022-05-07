@@ -10,7 +10,7 @@ use lexer::Lexer;
 use parser::Parser;
 use vm::{
     cell::{CellOwner, Id},
-    gc::{self, Arena, OwnedGc, Roots},
+    gc::{Arena, OwnedGc, Roots},
     object::{ObjectFlags, ObjectKind, StaticFn},
     realm::GcRealm,
 };
@@ -91,11 +91,7 @@ impl Realm {
         let borrow = self.vm.lock();
         unsafe {
             let _frame = borrow.roots.frame();
-            let context = Context {
-                atoms: &borrow.atoms,
-                realm: gc::rebind(*self.realm),
-                root: &borrow.roots,
-            };
+            let context = Context::construct(*self.realm, &borrow.roots, &borrow.atoms);
 
             f(Ctx {
                 context: &context,
@@ -108,8 +104,23 @@ impl Realm {
 #[doc(hidden)]
 pub struct Context<'js> {
     pub realm: GcRealm<'js, 'js>,
-    pub root: &'js Roots<'static>,
+    pub root: &'js Roots<'js>,
     pub atoms: &'js Atoms,
+}
+
+impl<'js> Context<'js> {
+    #[doc(hidden)]
+    pub unsafe fn construct(
+        realm: GcRealm<'_, '_>,
+        root: &'js Roots<'_>,
+        atoms: &'js Atoms,
+    ) -> Self {
+        // It is safe to rebind realm to a new cell as long as only a single cell is propageted.
+        // It is also safe to bind a realm to a lower lifetime.
+        let realm = mem::transmute(realm);
+        let root = mem::transmute(root);
+        Context { root, realm, atoms }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -185,8 +196,10 @@ impl<'js> Ctx<'js> {
             }
         };
 
+        println!("{}", self.context.atoms);
         let bc =
             Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
+        println!("{}", bc);
         let bc = arena.add(bc);
         vm::root!(arena, bc);
 
@@ -205,7 +218,7 @@ impl<'js> Ctx<'js> {
 
     pub fn to_string(self, v: Value<'js>) -> Result<'js, String<'js>> {
         let mut owner = unsafe { CellOwner::new(self.id) };
-        let mut arena = Arena::new(self.context.root);
+        let mut arena = unsafe { Arena::new_unchecked(self.context.root) };
 
         let r =
             self.context

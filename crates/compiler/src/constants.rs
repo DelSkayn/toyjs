@@ -38,7 +38,7 @@ impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
 
     pub fn push_string(&mut self, s: impl AsRef<str>) -> ConstantId {
         let id = self.atoms.atomize_string(s.as_ref());
-        self.push_constant(Literal::String(id))
+        self.push_literal(Literal::String(id))
     }
 
     pub fn push_atom(&mut self, s: Atom) -> ConstantId {
@@ -48,7 +48,7 @@ impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
             .or_insert_with(|| self.constants.push(Value::from(s)))
     }
 
-    pub fn push_constant(&mut self, literal: Literal) -> ConstantId {
+    pub fn push_literal(&mut self, literal: Literal) -> ConstantId {
         *self
             .map
             .entry(LiteralOrAtom::Literal(literal))
@@ -59,8 +59,13 @@ impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
                 Literal::Boolean(x) => self.constants.push(Value::from(x)),
                 Literal::Integer(x) => self.constants.push(Value::from(x)),
                 Literal::String(x) => {
-                    let s = self.gc.add(self.atoms.lookup(x).unwrap());
-                    self.constants.push(s.into())
+                    if let Some(int) = x.into_idx() {
+                        let s = self.gc.add(int.to_string());
+                        self.constants.push(s.into())
+                    } else {
+                        let s = self.gc.add(self.atoms.lookup(x).unwrap());
+                        self.constants.push(s.into())
+                    }
                 }
             })
     }

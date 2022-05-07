@@ -1,13 +1,13 @@
 use std::{
     alloc::{self, Layout},
     mem,
-    ptr::NonNull,
+    ptr::{self, NonNull},
     thread,
 };
 
 use crate::{
     gc::{self, Arena, Gc, Rebind, Trace, Tracer},
-    Value,
+    rebind, Value,
 };
 
 pub type GcUpvalueObject<'gc, 'cell> = Gc<'gc, 'cell, UpvalueObject<'gc, 'cell>>;
@@ -230,18 +230,28 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         self.stack = self.stack.add(1);
     }
 
+    #[allow(unused_unsafe)]
     pub unsafe fn create_upvalue<'l>(
         &mut self,
         arena: &'l Arena<'_, 'cell>,
         reg: u8,
     ) -> GcUpvalueObject<'l, 'cell> {
-        let ptr = self.frame.add(reg as usize);
+        let location = self.frame.add(reg as usize);
+
+        let start = self.upvalues.len() - self.frame_upvalues as usize;
+        for u in &self.upvalues[start..] {
+            if ptr::eq((*u.get()).location, location) {
+                return rebind!(arena, *u);
+            }
+        }
+
         let res = UpvalueObject {
-            location: ptr,
+            location,
             closed: Value::empty(),
         };
         let res = arena.add(res);
         self.upvalues.push(gc::rebind(res));
+        self.frame_upvalues += 1;
         res
     }
 

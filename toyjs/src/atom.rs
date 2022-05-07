@@ -2,6 +2,7 @@ use common::atom::Atoms;
 
 use crate::{Ctx, Result};
 
+#[derive(Debug)]
 pub struct Atom<'js> {
     pub(crate) atom: common::atom::Atom,
     pub(crate) ctx: Ctx<'js>,

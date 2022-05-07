@@ -589,7 +589,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         let res = rebind_try!(arena, self.call(owner, arena, atoms, ctx));
                         self.w(owner).stack.write(dst, res);
                     } else {
-                        todo!("call not object")
+                        todo!("call not object {:?}", func)
                     }
                 }
                 Instruction::CallMethod { dst, key, obj } => {
