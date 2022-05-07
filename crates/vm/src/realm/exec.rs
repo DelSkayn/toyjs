@@ -1289,7 +1289,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         if let Some(obj) = res.into_object() {
             Ok(obj.into())
         } else {
-            Ok(res)
+            Ok(rebind!(arena, this).into())
         }
     }
 

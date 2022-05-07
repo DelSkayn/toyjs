@@ -1,4 +1,4 @@
-let a = Object.create(Object.prototype,{a: { 
+var a = Object.create(Object.prototype,{a: { 
     get(){ 
         return 1;
     }

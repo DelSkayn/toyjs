@@ -1,4 +1,3 @@
-
 function Foo(bar){
     this.faz = bar
 }

@@ -20,10 +20,8 @@
     assert(x === 3,"5");
 
     let iterator = function (){
-        dbg("aaaaa");
         let x = 0;
         return function (){
-            dbg("bbbb");
             return x++;
         }
     }
