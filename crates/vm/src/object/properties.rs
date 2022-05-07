@@ -348,7 +348,7 @@ unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
 
     fn trace(&self, trace: Tracer) {
         self.props.iter().for_each(|x| {
-            x.trace(trace);
+            (&x).trace(trace);
         })
     }
 }

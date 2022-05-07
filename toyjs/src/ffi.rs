@@ -18,11 +18,8 @@ macro_rules! create_static_fn {
                     let roots = arena.roots();
                     let guard = roots.frame();
 
-                    let context = $crate::Context {
-                        realm: std::mem::transmute(realm),
-                        root: std::mem::transmute(arena.roots()),
-                        atoms: std::mem::transmute(atoms),
-                    };
+                    let context =
+                        unsafe { $crate::Context::construct(realm, arena.roots(), atoms) };
 
                     let ctx = crate::Ctx::wrap(&context);
 

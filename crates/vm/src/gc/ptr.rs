@@ -1,4 +1,4 @@
-use std::{cell::Cell, fmt, marker::PhantomData, ptr::NonNull};
+use std::{cell::Cell, fmt, marker::PhantomData, mem, ptr::NonNull};
 
 use crate::cell::{CellOwner, LCell};
 
@@ -61,7 +61,7 @@ impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
     pub fn into_ptr(self) -> NonNull<GcBox<'cell, T>> {
         self.ptr
     }
@@ -88,6 +88,12 @@ impl<'gc, 'cell, T: ?Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
 
     pub fn get(self) -> *mut T {
         unsafe { &(*self.ptr.as_ptr()) }.value.get()
+    }
+
+    pub(crate) unsafe fn as_trace_ptr(self) -> *const dyn Trace {
+        let ptr: &GcBox<'cell, T> = self.ptr.as_ref();
+        let res = ptr as &dyn Trace;
+        mem::transmute::<*const dyn Trace, _>(res)
     }
 }
 

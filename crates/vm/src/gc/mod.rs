@@ -88,7 +88,9 @@ impl<'a> Tracer<'a> {
                 let ptr: GcBoxPtr<'_, '_> = gc.ptr;
                 // Change the lifetimes to static.
                 // Roots implementation ensures that the lifetime constraints are upheld.
-                self.roots.grays.push(mem::transmute(ptr));
+                self.roots
+                    .grays
+                    .push(mem::transmute::<GcBoxPtr, GcBoxPtr>(ptr));
             }
         }
     }
@@ -105,7 +107,9 @@ impl<'a> Tracer<'a> {
             r.color.set(Color::Gray);
             // Change the lifetimes to static.
             // Roots implementation ensures that the lifetime constraints are upheld.
-            self.roots.grays.push(mem::transmute(gc.ptr));
+            self.roots
+                .grays
+                .push(mem::transmute::<GcBoxPtr, GcBoxPtr>(gc.ptr));
         }
     }
 }
@@ -345,8 +349,8 @@ impl<'cell> Roots<'cell> {
         let id = self.next_owned_id.get();
         self.next_owned_id.set(id + 1);
         unsafe {
-            let dyn_ptr: GcBoxPtr = ptr.ptr;
-            (*self.owned_roots.get()).insert(id, mem::transmute(dyn_ptr));
+            let dyn_ptr: GcBoxPtr = ptr.into_ptr() as GcBoxPtr;
+            (*self.owned_roots.get()).insert(id, mem::transmute::<GcBoxPtr, GcBoxPtr>(dyn_ptr));
             OwnedGc {
                 roots: self,
                 ptr: rebind(ptr),
@@ -363,8 +367,7 @@ impl<'cell> Roots<'cell> {
     }
 
     pub unsafe fn push<T: Trace>(&self, ptr: Gc<'_, '_, T>) {
-        let dyn_ptr: GcBoxPtr = ptr.ptr;
-        self.roots.push(mem::transmute(dyn_ptr))
+        self.roots.push(ptr.as_trace_ptr())
     }
 }
 
@@ -424,9 +427,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     #[doc(hidden)]
     pub fn _root_gc<T: Trace>(&self, t: Gc<'_, 'cell, T>) -> RootGuard<'rt, 'cell> {
         unsafe {
-            let ptr: &GcBox<T> = t.ptr.as_ref();
-            let ptr: &dyn Trace = ptr;
-            self.roots.roots.push(mem::transmute(ptr));
+            self.roots.roots.push(t.as_trace_ptr());
         }
         RootGuard(self.roots)
     }
@@ -435,6 +436,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
     pub fn _root<T: Trace>(&self, t: &T) -> RootGuard<'rt, 'cell> {
         unsafe {
             let ptr: &dyn Trace = t;
+            let ptr: *const dyn Trace = ptr;
             self.roots.roots.push(mem::transmute(ptr));
         }
         RootGuard(self.roots)
@@ -514,6 +516,7 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
             while work > work_done as f64 {
                 match roots.phase.get() {
                     Phase::Wake => {
+                        debug_assert!(roots.grays.is_empty());
                         roots.sweep_prev.set(None);
 
                         roots.roots.unsafe_iter().copied().for_each(|x| {
@@ -531,25 +534,21 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                         roots.phase.set(Phase::Mark);
                     }
                     Phase::Mark => {
-                        println!("mark");
-                        if let Some(x) = roots.grays.pop() {
+                        if let Some(ptr) = roots.grays.pop() {
                             //assert!(tmp.insert(x.as_ptr()));
-                            let size = mem::size_of_val(x.as_ref());
+                            let size = mem::size_of_val(ptr.as_ref());
                             work_done += size;
-                            let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
                             ptr.as_ref().value.borrow(owner).trace(Tracer::<'rt> {
                                 roots: mem::transmute(roots),
                             });
 
-                            x.as_ref().color.set(Color::Black);
-                        } else if let Some(x) = roots.grays_again.pop() {
+                            ptr.as_ref().color.set(Color::Black);
+                        } else if let Some(ptr) = roots.grays_again.pop() {
                             //assert!(!tmp.insert(x.as_ptr()));
-                            let ptr: GcBoxPtr<'static, 'cell> = mem::transmute(x);
-
                             ptr.as_ref().value.borrow(owner).trace(Tracer::<'rt> {
                                 roots: mem::transmute(roots),
                             });
-                            x.as_ref().color.set(Color::Black);
+                            ptr.as_ref().color.set(Color::Black);
                         } else {
                             let tracer = Tracer::<'rt> {
                                 roots: mem::transmute(roots),
@@ -589,7 +588,6 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                                     .total_allocated
                                     .set(roots.total_allocated.get() - layout.size());
                                 drop_in_place(x.as_ptr());
-                                println!("free: {:?}", x.as_ptr());
                                 alloc::dealloc(x.as_ptr().cast(), layout);
                             } else {
                                 roots

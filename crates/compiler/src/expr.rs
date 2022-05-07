@@ -862,7 +862,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         literal: Literal,
     ) -> Register {
         let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
-        let constant = self.constants.push_constant(literal);
+        let constant = self.constants.push_literal(literal);
         if constant.0 < u16::MAX as u32 {
             self.builder.push(Instruction::LoadConst {
                 dst: register.0,

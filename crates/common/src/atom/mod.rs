@@ -202,6 +202,8 @@ impl Atoms {
                 (*self.entries.get())[(atom.0 & !STRING_FLAG) as usize]
             {
                 *count = count.checked_add(1).unwrap();
+            } else {
+                panic!("tried to increment deallocated atom")
             }
         }
     }
@@ -227,6 +229,8 @@ impl Atoms {
                 } else {
                     *count -= 1;
                 }
+            } else {
+                panic!("tried to decrement deallocated atom")
             }
         }
     }

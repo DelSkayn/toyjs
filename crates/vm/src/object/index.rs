@@ -113,7 +113,10 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
 
         match borrow.properties.entry(key) {
             PropertyEntry::Occupied(mut x) => x.set(value),
-            PropertyEntry::Vacant(x) => x.insert(value),
+            PropertyEntry::Vacant(x) => {
+                atoms.increment(key);
+                x.insert(value)
+            }
             PropertyEntry::Accessor(set) => {
                 root!(arena, set);
                 unsafe {
