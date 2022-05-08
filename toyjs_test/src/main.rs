@@ -9,6 +9,7 @@ use clap::Parser;
 mod args;
 mod commands;
 mod harness;
+mod report;
 mod test;
 
 fn main() -> Result<()> {
@@ -23,6 +24,7 @@ fn main() -> Result<()> {
         Sub::Single { path: single_path } => {
             commands::single::run(Path::new(path).join(single_path), &harness)
         }
+        Sub::Delta { from, to } => commands::delta::run(from, to),
     }?;
     Ok(())
 }

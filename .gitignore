@@ -2,3 +2,4 @@
 pref.dat*
 flamegraph.svg
 report*
+!*report.rs

@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 pub enum Sub {
     All,
     Single { path: String },
+    Delta { from: String, to: String },
 }
 
 impl Default for Sub {
