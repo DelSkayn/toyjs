@@ -6,15 +6,16 @@ use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 use crate::test::{FailureCause, TestResult};
 
 pub mod all;
+pub mod delta;
 pub mod single;
 
 pub struct Colors {
-    error: ColorSpec,
-    panic: ColorSpec,
-    failure: ColorSpec,
-    passed: ColorSpec,
-    base: ColorSpec,
-    header: ColorSpec,
+    pub error: ColorSpec,
+    pub panic: ColorSpec,
+    pub failure: ColorSpec,
+    pub passed: ColorSpec,
+    pub base: ColorSpec,
+    pub header: ColorSpec,
 }
 
 impl Colors {
