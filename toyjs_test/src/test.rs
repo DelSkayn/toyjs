@@ -2,7 +2,7 @@ use std::{fs, panic::catch_unwind, path::Path};
 
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use serde::{Deserialize, Serialize};
-use toyjs::{Context, ToyJs, Value};
+use toyjs::{Realm, ToyJs, Value};
 
 use crate::harness::Harness;
 
@@ -101,13 +101,13 @@ impl Test {
     pub fn run(&self, harness: &Harness) -> TestResult {
         let res = match catch_unwind(|| {
             let toyjs = ToyJs::new();
-            let context = Context::new(&toyjs);
+            let context = Realm::new(&toyjs);
             context.with(|ctx| {
                 match harness.prepare(ctx, &self.metadata.includes) {
                     Ok(()) => {}
                     Err(e) => return TestResult::Error(format!("{:?}", e)),
                 }
-                match ctx.eval::<Value, _>(&self.source) {
+                match ctx.eval::<_, Value>(&self.source) {
                     Ok(_) => {
                         if self.metadata.negative.is_some() {
                             TestResult::Failed(FailureCause::NoError)
