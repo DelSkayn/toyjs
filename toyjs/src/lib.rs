@@ -196,10 +196,8 @@ impl<'js> Ctx<'js> {
             }
         };
 
-        println!("{}", self.context.atoms);
         let bc =
             Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
-        println!("{}", bc);
         let bc = arena.add(bc);
         vm::root!(arena, bc);
 

@@ -6,5 +6,8 @@ members = [
     "toyjs_web",
 ]
 
-[profile.release]
-debug = true
+#[profile.release]
+#debug = true
+
+[profile.test]
+opt-level=3

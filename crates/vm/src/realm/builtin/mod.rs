@@ -23,6 +23,7 @@ pub struct Builtin<'gc, 'cell> {
     pub error_proto: GcObject<'gc, 'cell>,
     pub syntax_error_proto: GcObject<'gc, 'cell>,
     pub type_error_proto: GcObject<'gc, 'cell>,
+    pub runtime_error_proto: GcObject<'gc, 'cell>,
 }
 
 unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
@@ -40,6 +41,7 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
         trace.mark(self.error_proto);
         trace.mark(self.syntax_error_proto);
         trace.mark(self.type_error_proto);
+        trace.mark(self.runtime_error_proto);
     }
 }
 
@@ -159,6 +161,16 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             PropertyFlag::BUILTIN,
         );
 
+        let name = arena.add("RuntimeError".to_string());
+        let (_, runtime_error_proto) = error::init::<{ ErrorType::Type as u8 }>(
+            owner,
+            arena,
+            atoms,
+            name,
+            error_construct,
+            error_proto,
+        );
+
         Builtin {
             global,
             object_proto: op,
@@ -166,6 +178,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             error_proto,
             syntax_error_proto,
             type_error_proto,
+            runtime_error_proto,
         }
     }
 }

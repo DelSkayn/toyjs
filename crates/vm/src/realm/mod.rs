@@ -6,7 +6,7 @@ use crate::{
     instructions::GcByteCode,
     object::{ObjectFlags, ObjectKind, VmFunction},
     realm::exec::InstructionReader,
-    rebind, root, GcObject, Object, Value,
+    rebind, rebind_try, root, GcObject, Object, Value,
 };
 
 mod builtin;
@@ -150,7 +150,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             new_target: Value::undefined(),
         };
 
-        let guard = self.unsafe_borrow_mut(owner).stack.push_frame(frame_size);
+        let guard = rebind_try!(
+            arena,
+            self.unsafe_borrow_mut(owner)
+                .stack
+                .push_frame(frame_size)
+                .ok_or_else(|| {
+                    self.create_runtime_error(owner, arena, atoms, Stack::DEPTH_EXCEEDED_MSG, None)
+                })
+        );
         let res = self.run(arena, owner, atoms, &mut instr, &ctx);
         let res = rebind!(arena, res);
         self.unsafe_borrow_mut(owner).stack.pop_frame(arena, guard);

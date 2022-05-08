@@ -353,6 +353,7 @@ unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
     }
 }
 
+#[derive(Debug)]
 pub struct Vacant<'a, 'gc, 'cell> {
     entry: VacantEntry<'a, Atom, usize>,
     props: &'a mut Vec<Property<'gc, 'cell>>,
@@ -370,6 +371,7 @@ impl<'a, 'gc, 'cell> Vacant<'a, 'gc, 'cell> {
     }
 }
 
+#[derive(Debug)]
 pub struct Occupied<'a, 'gc, 'cell>(&'a mut Value<'gc, 'cell>);
 
 impl<'a, 'gc, 'cell> Occupied<'a, 'gc, 'cell> {
@@ -379,6 +381,7 @@ impl<'a, 'gc, 'cell> Occupied<'a, 'gc, 'cell> {
     }
 }
 
+#[derive(Debug)]
 pub enum PropertyEntry<'a, 'gc, 'cell> {
     Occupied(Occupied<'a, 'gc, 'cell>),
     Accessor(GcObject<'gc, 'cell>),
@@ -438,8 +441,8 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
 
     pub fn is_frozen(&self) -> bool {
         self.props.iter().all(|x| {
-            !x.flags
-                .contains(PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE)
+            !(x.flags.contains(PropertyFlag::WRITABLE)
+                || x.flags.contains(PropertyFlag::CONFIGURABLE))
         })
     }
 
@@ -463,17 +466,16 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
             }),
             Entry::Occupied(occ) => unsafe {
                 let prop = &mut self.props[*occ.get()];
-                if prop.flags.contains(PropertyFlag::WRITABLE) {
-                    return PropertyEntry::Unwritable;
-                }
-
                 if prop.flags.contains(PropertyFlag::ACCESSOR) {
-                    if let Some(getter) = prop.value.accessor.get {
-                        PropertyEntry::Accessor(getter)
+                    if let Some(setter) = prop.value.accessor.set {
+                        PropertyEntry::Accessor(setter)
                     } else {
                         PropertyEntry::Unwritable
                     }
                 } else {
+                    if !prop.flags.contains(PropertyFlag::WRITABLE) {
+                        return PropertyEntry::Unwritable;
+                    }
                     PropertyEntry::Occupied(Occupied(&mut prop.value.value))
                 }
             },

@@ -9,8 +9,8 @@ use std::{
 };
 
 use common::{cell_vec::CellVec, collections::HashMap};
-pub use ptr::Gc;
 use ptr::{Color, GcBoxPtr};
+pub use ptr::{Gc, GcBox};
 
 mod impl_trace;
 
@@ -64,8 +64,6 @@ macro_rules! rebind_try {
 mod test;
 
 use crate::cell::{CellOwner, Id, LCell};
-
-use self::ptr::GcBox;
 
 /// Context struct for marking life pointers.
 #[derive(Clone, Copy)]
