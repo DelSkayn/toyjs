@@ -106,6 +106,9 @@ impl Atoms {
     }
 
     fn into_integer_string(s: &str) -> Option<u32> {
+        if s.is_empty() {
+            return None;
+        }
         let mut res = 0u32;
         for b in s.bytes() {
             if !(b'0'..=b'9').contains(&b) {

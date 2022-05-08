@@ -8,7 +8,7 @@ use crate::{
     rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
 };
 
-use super::{builtin, ExecutionContext, GcRealm};
+use super::{builtin, stack::Stack, ExecutionContext, GcRealm};
 
 pub enum NumericOperator {
     Sub,
@@ -158,6 +158,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
                         ObjectKind::VmFn(func),
                     );
+                    let op = self.r(owner).builtin.object_proto;
+                    let proto = Object::new_gc(
+                        arena,
+                        Some(op),
+                        ObjectFlags::ORDINARY,
+                        ObjectKind::Ordinary,
+                    );
+                    func.raw_index_set(owner, arena, atoms, atom::constant::prototype, proto);
+                    proto.raw_index_set(owner, arena, atoms, atom::constant::constructor, func);
                     self.w(owner).stack.write(dst, func.into());
                 }
 
@@ -204,7 +213,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
                         self.w(owner).stack.write(dst, res.empty_to_undefined());
                     } else {
-                        todo!("index {:?}", obj);
+                        return Err(self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "todo index: ",
+                            Some(obj),
+                        ));
                     }
                 }
                 Instruction::IndexAssign { obj, key, src } => {
@@ -217,7 +232,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             obj.index_set_value(owner, arena, atoms, self, key, src)
                         );
                     } else {
-                        todo!("index {:?}", obj);
+                        return Err(self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "todo index assign: ",
+                            Some(obj),
+                        ));
                     }
                 }
                 Instruction::GlobalIndex { dst, key } => {
@@ -589,7 +610,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         let res = rebind_try!(arena, self.call(owner, arena, atoms, ctx));
                         self.w(owner).stack.write(dst, res);
                     } else {
-                        todo!("call not object {:?}", func)
+                        return Err(self.create_type_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "tried to call non function value",
+                        ));
                     }
                 }
                 Instruction::CallMethod { dst, key, obj } => {
@@ -608,7 +634,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             self.w(owner).stack.write(dst, res);
                         }
                     } else {
-                        todo!("method call on not object")
+                        return Err(self.create_type_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "tried to index non object value",
+                        ));
                     }
                 }
                 Instruction::CallConstruct { dst, func, obj } => {
@@ -624,7 +655,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             self.w(owner).stack.write(dst, res);
                         }
                     } else {
-                        todo!("call not object")
+                        return Err(self.create_type_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "tried to call non function value",
+                        ));
                     }
                 }
 
@@ -637,7 +673,14 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     arena.write_barrier(self);
                     return Ok(Value::undefined());
                 }
-                x => todo!("Instruction {}", x),
+                _ => {
+                    return Err(self.create_type_error(
+                        owner,
+                        arena,
+                        atoms,
+                        "runtime error: invalid instruction",
+                    ))
+                }
             }
         }
     }
@@ -806,15 +849,20 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         value: Value<'_, 'cell>,
         prefer_string: bool,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        const PREFER_STRING: &'static [atom::Atom] =
+            &[atom::constant::toString, atom::constant::valueOf];
+        const PREFER_VALUE: &'static [atom::Atom] =
+            &[atom::constant::valueOf, atom::constant::toString];
+
         if let Some(obj) = value.into_object() {
             // Again not sure why this needs to be rooted but it doesn not work otherwise.
             root!(arena, obj);
             let keys = if prefer_string {
-                [atom::constant::toString, atom::constant::valueOf]
+                PREFER_STRING
             } else {
-                [atom::constant::valueOf, atom::constant::toString]
+                PREFER_VALUE
             };
-            for k in keys {
+            for &k in keys {
                 let func = rebind_try!(arena, obj.index(owner, arena, atoms, self, k))
                     .empty_to_undefined();
                 root_clone!(arena, func);
@@ -1264,8 +1312,16 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         function: GcObject<'_, 'cell>,
         target_obj: GcObject<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let op = unsafe { self.r(owner).builtin.object_proto };
-        let this = Object::new(Some(op), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
+        let proto = rebind!(
+            arena,
+            rebind_try!(
+                arena,
+                function.index(owner, arena, atoms, self, atom::constant::prototype)
+            )
+        )
+        .into_object()
+        .unwrap_or_else(|| rebind!(arena, unsafe { self.r(owner).builtin.object_proto }));
+        let this = Object::new(Some(proto), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
         let this = arena.add(this);
         root!(arena, this);
 
@@ -1299,7 +1355,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
-        ctx: ExecutionContext<'_, 'cell>,
+        mut ctx: ExecutionContext<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         match ctx.function.borrow(owner).kind() {
             ObjectKind::VmFn(func) => {
@@ -1308,15 +1364,37 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     bc.borrow(owner).functions[func.function as usize].registers as u32;
                 let mut instr = InstructionReader::new_unsafe(owner, bc, func.function);
 
-                let guard = self.w(owner).stack.push_frame(frame_size);
-                let res = self.run(arena, owner, atoms, &mut instr, &ctx);
+                let guard = rebind_try!(
+                    arena,
+                    self.w(owner).stack.push_frame(frame_size).ok_or_else(|| {
+                        self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            Stack::DEPTH_EXCEEDED_MSG,
+                            None,
+                        )
+                    })
+                );
+                let res = self.run(arena, owner, atoms, &mut instr, &mut ctx);
                 let res = rebind!(arena, res);
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
             }
             ObjectKind::StaticFn(x) => {
                 let x = *x;
-                let guard = self.w(owner).stack.push_frame(0);
+                let guard = rebind_try!(
+                    arena,
+                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
+                        self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            Stack::DEPTH_EXCEEDED_MSG,
+                            None,
+                        )
+                    })
+                );
                 let res = rebind!(arena, x(arena, owner, atoms, self, &ctx));
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
@@ -1359,6 +1437,32 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             owner,
             atoms,
             self.borrow(owner).builtin.syntax_error_proto,
+            Some(message),
+            None,
+        )
+        .into()
+    }
+
+    #[cold]
+    pub fn create_runtime_error<'l>(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        atoms: &Atoms,
+        message: impl Into<String>,
+        context: Option<Value<'_, 'cell>>,
+    ) -> Value<'l, 'cell> {
+        let ctx = if let Some(x) = context {
+            format!("{:?}", x)
+        } else {
+            String::new()
+        };
+        let message = arena.add(message.into() + &ctx);
+        builtin::error::create(
+            arena,
+            owner,
+            atoms,
+            self.borrow(owner).builtin.runtime_error_proto,
             Some(message),
             None,
         )

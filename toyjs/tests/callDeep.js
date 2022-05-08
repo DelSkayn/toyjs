@@ -1,6 +1,7 @@
 // Test from test262, caused segfault.
 
-var $MAX_ITERATIONS = 100000;
+var $MAX_ITERATIONS = 100;
+//var $MAX_ITERATIONS = 100;
 var callCount = 0;
 (function f(n) {
   if (n === 0) {

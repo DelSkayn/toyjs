@@ -13,9 +13,9 @@ pub enum Color {
 
 /// A struct containing the Gc'd value.
 pub struct GcBox<'cell, T: ?Sized> {
-    pub next: Cell<Option<GcBoxPtr<'static, 'cell>>>,
-    pub color: Cell<Color>,
-    pub value: LCell<'cell, T>,
+    pub(crate) next: Cell<Option<GcBoxPtr<'static, 'cell>>>,
+    pub(crate) color: Cell<Color>,
+    pub(crate) value: LCell<'cell, T>,
 }
 
 unsafe impl<'cell, T: Trace> Trace for GcBox<'cell, T> {
@@ -61,7 +61,7 @@ impl<'gc, 'cell, T: ?Sized> Clone for Gc<'gc, 'cell, T> {
     }
 }
 
-impl<'gc, 'cell, T: Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
+impl<'gc, 'cell, T: Sized + Trace> Gc<'gc, 'cell, T> {
     pub fn into_ptr(self) -> NonNull<GcBox<'cell, T>> {
         self.ptr
     }
@@ -72,6 +72,17 @@ impl<'gc, 'cell, T: Sized + Trace + 'gc> Gc<'gc, 'cell, T> {
     pub unsafe fn from_ptr(ptr: NonNull<GcBox<'cell, T>>) -> Self {
         Gc {
             ptr,
+            marker: PhantomData,
+        }
+    }
+
+    pub fn into_raw(this: Self) -> *mut GcBox<'cell, T> {
+        this.ptr.as_ptr()
+    }
+
+    pub unsafe fn from_raw(ptr: *mut GcBox<'cell, T>) -> Self {
+        Gc {
+            ptr: NonNull::new_unchecked(ptr),
             marker: PhantomData,
         }
     }

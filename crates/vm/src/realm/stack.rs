@@ -65,7 +65,7 @@ pub struct Stack<'gc, 'cell> {
     upvalues: Vec<GcUpvalueObject<'gc, 'cell>>,
     frame_upvalues: u16,
 
-    depth: u32,
+    depth: u16,
 }
 
 impl<'gc, 'cell> Drop for Stack<'gc, 'cell> {
@@ -104,7 +104,7 @@ pub struct FrameGuard {
     size: u32,
     upvalues: u16,
     #[cfg(debug_assertions)]
-    depth: u32,
+    depth: u16,
 }
 
 #[cfg(debug_assertions)]
@@ -118,7 +118,12 @@ impl Drop for FrameGuard {
 
 impl<'gc, 'cell> Stack<'gc, 'cell> {
     const MIN_CAPACITY: usize = 8;
-    const MAX_DEPTH: u32 = 1 << 20;
+    #[cfg(debug_assertions)]
+    const MAX_DEPTH: u16 = 1_000;
+    #[cfg(not(debug_assertions))]
+    const MAX_DEPTH: u16 = 10_000;
+
+    pub const DEPTH_EXCEEDED_MSG: &'static str = "exceeded max stack depth";
 
     pub fn new() -> Self {
         let root = NonNull::dangling();
@@ -137,9 +142,9 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         }
     }
 
-    pub unsafe fn push_frame(&mut self, size: u32) -> FrameGuard {
+    pub unsafe fn push_frame(&mut self, size: u32) -> Option<FrameGuard> {
         if self.depth >= Self::MAX_DEPTH {
-            panic!("stack exceeded max depth");
+            return None;
         }
 
         let res = FrameGuard {
@@ -165,7 +170,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
         self.registers = size;
         self.depth += 1;
 
-        res
+        Some(res)
     }
 
     /// # Safety

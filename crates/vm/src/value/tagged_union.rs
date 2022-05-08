@@ -127,25 +127,6 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
         matches!(self, Value::String(_))
     }
 
-    /*
-    /// Is this value a string.
-    #[inline]
-    pub fn is_atom(self) -> bool {
-        match self {
-            Value::Atom(_) => true,
-            _ => false,
-        }
-    }
-    */
-
-    /*
-    /// Is this value a function.
-    #[inline]
-    pub unsafe fn is_function(self) -> bool {
-        self.is_object() && self.unsafe_cast_object().is_function()
-    }
-    */
-
     /// Create a new value containing the undefined javascript value.
     #[inline]
     pub const fn undefined() -> Self {

@@ -1,10 +1,10 @@
 try{
     (function(){
         throw "b";
-        assert(false);
+        assert(false, "throw did not throw");
     })()
 }catch(e){
-    assert(e === "b");
+    assert(e === "b","retrieved wrong value in catch");
 }
 
 function nested(){
@@ -15,7 +15,7 @@ function nested(){
                 (function(){
                     assert(a);
                     throw "d";
-                    assert(false);
+                    assert(false, "throw did not throw");
                 })()
             })()
         })()
@@ -24,18 +24,20 @@ function nested(){
     }finally{
         return
     }
-    assert(false);
+    assert(false, "finally did not execute");
 }
 nested();
 
 let acc = "";
 
 try{
+    assert(acc === "",1)
     acc += "a"
 }catch(e){
     acc += "b"
 }finally{
+    assert(acc === "a",2)
     acc += "c"
 }
-assert(acc === "ac")
+assert(acc === "ac", "wrong flow, is: `" + acc + "` should be `ac`")
 true
