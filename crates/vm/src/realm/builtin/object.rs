@@ -137,8 +137,9 @@ fn assign<'l, 'cell>(
         return Ok(rebind!(arena, to).into());
     }
 
-    let i = 1;
+    let mut i = 1;
     while let Some(from) = realm.arg(owner, i) {
+        i += 1;
         let from = rebind_try!(arena, realm.to_object(from));
 
         let (b_from, b_to) = Gc::borrow_mut_2(owner, arena, from, to);

@@ -118,8 +118,11 @@ impl Drop for FrameGuard {
 
 impl<'gc, 'cell> Stack<'gc, 'cell> {
     const MIN_CAPACITY: usize = 8;
+    // Rust has a long standing but where match blocks stack usages grows linearly with the amount
+    // of matches
+    // This means that with the debug profile the depth the vm can goto is really limited.
     #[cfg(debug_assertions)]
-    const MAX_DEPTH: u16 = 1_000;
+    const MAX_DEPTH: u16 = 20;
     #[cfg(not(debug_assertions))]
     const MAX_DEPTH: u16 = 10_000;
 
