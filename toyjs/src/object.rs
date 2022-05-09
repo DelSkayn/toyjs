@@ -1,4 +1,4 @@
-use vm::{cell::CellOwner, gc::Arena, GcObject};
+use vm::{cell::CellOwner, gc::Arena, object::PropertyFlag, GcObject};
 
 use crate::{atom::IntoAtom, convert::IntoJs, Ctx, Error, FromJs, Result, Value};
 
@@ -77,5 +77,29 @@ impl<'js> Object<'js> {
             Ok(()) => Ok(()),
             Err(e) => Err(Error::from_vm(self.ctx, e)),
         }
+    }
+
+    pub fn raw_set_flags<K, V>(self, key: K, value: V, flags: PropertyFlag) -> Result<'js, ()>
+    where
+        K: IntoAtom<'js>,
+        V: IntoJs<'js>,
+    {
+        let mut owner = unsafe { CellOwner::new(self.ctx.id) };
+        let mut arena = unsafe { Arena::new_unchecked(self.ctx.context.root) };
+
+        let key = key.into_atom(self.ctx)?;
+        let value = value.into_js(self.ctx)?.into_vm();
+
+        self.ptr.raw_index_set_flags(
+            &mut owner,
+            &mut arena,
+            self.ctx.context.atoms,
+            key.atom,
+            value,
+            flags,
+        );
+        std::mem::forget(key);
+
+        Ok(())
     }
 }

@@ -18,6 +18,8 @@ use vm::{
 mod lock;
 use lock::Lock;
 
+mod runtime;
+
 mod ffi;
 pub use ffi::Arguments;
 
@@ -70,17 +72,21 @@ pub struct Realm {
 impl Realm {
     pub fn new(toyjs: &ToyJs) -> Self {
         let vm = toyjs.0.clone();
-        let borrow = vm.lock();
-        let mut owner = unsafe { CellOwner::new(Id::new()) };
-        let arena = vm::gc::Arena::new(&borrow.roots);
-        let realm = vm::Realm::new(&mut owner, &arena, &borrow.atoms);
-        let realm = arena.add(realm);
-        let realm = unsafe { mem::transmute(borrow.roots.add_owned(realm)) };
+        let res = {
+            let borrow = vm.lock();
+            let mut owner = unsafe { CellOwner::new(Id::new()) };
+            let arena = vm::gc::Arena::new(&borrow.roots);
+            let realm = vm::Realm::new(&mut owner, &arena, &borrow.atoms);
+            let realm = arena.add(realm);
+            let realm = unsafe { mem::transmute(borrow.roots.add_owned(realm)) };
+            Realm {
+                vm: toyjs.0.clone(),
+                realm,
+            }
+        };
 
-        Realm {
-            vm: toyjs.0.clone(),
-            realm,
-        }
+        res.with(runtime::init);
+        res
     }
 
     pub fn with<F, R>(&self, f: F) -> R
@@ -227,6 +233,47 @@ impl<'js> Ctx<'js> {
             Ok(x) => Ok(String::from_vm(self, x)),
             Err(e) => Err(Error::from_vm(self, e)),
         }
+    }
+
+    pub fn to_int32(self, v: Value<'js>) -> Result<'js, i32> {
+        let mut owner = unsafe { CellOwner::new(self.id) };
+        let mut arena = unsafe { Arena::new_unchecked(self.context.root) };
+
+        self.context
+            .realm
+            .to_int32(&mut owner, &mut arena, self.context.atoms, v.into_vm())
+            .map_err(|e| Error::from_vm(self, e))
+    }
+
+    pub fn to_number(self, v: Value<'js>) -> Result<'js, Value<'js>> {
+        let mut owner = unsafe { CellOwner::new(self.id) };
+        let mut arena = unsafe { Arena::new_unchecked(self.context.root) };
+
+        self.context
+            .realm
+            .to_number(&mut owner, &mut arena, self.context.atoms, v.into_vm())
+            .map(|value| Value { ctx: self, value })
+            .map_err(|e| Error::from_vm(self, e))
+    }
+
+    pub fn create_string<S: Into<StdString>>(self, s: S) -> String<'js> {
+        let arena = unsafe { Arena::new_unchecked(self.context.root) };
+
+        String::from_vm(self, arena.add(s.into()))
+    }
+
+    pub fn create_object(self) -> Object<'js> {
+        let arena = unsafe { Arena::new_unchecked(self.context.root) };
+        let owner = unsafe { CellOwner::new(self.id) };
+
+        let object = vm::Object::new_gc(
+            &arena,
+            Some(self.context.realm.borrow(&owner).builtin.object_proto),
+            ObjectFlags::ORDINARY,
+            ObjectKind::Ordinary,
+        );
+
+        Object::from_vm(self, object)
     }
 
     #[doc(hidden)]

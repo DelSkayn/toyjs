@@ -20,6 +20,7 @@ pub type MutableFn = Box<
         &ExecutionContext<'gc, 'cell>,
     ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
 >;
+
 pub type SharedFn = Box<
     dyn for<'a, 'gc, 'cell> Fn(
         &mut Arena<'gc, 'cell>,

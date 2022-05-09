@@ -9,17 +9,16 @@ macro_rules! create_static_fn {
             #[inline]
             pub fn $func<'l, 'cell>(
                 arena: &'l mut ::vm::gc::Arena<'_, 'cell>,
-                owner: &mut ::vm::cell::CellOwner<'cell>,
+                _owner: &mut ::vm::cell::CellOwner<'cell>,
                 atoms: &::common::atom::Atoms,
                 realm: ::vm::realm::GcRealm<'_, 'cell>,
-                ctx: &::vm::realm::ExecutionContext<'_, 'cell>,
+                _ctx: &::vm::realm::ExecutionContext<'_, 'cell>,
             ) -> Result<::vm::Value<'l, 'cell>, ::vm::Value<'l, 'cell>> {
                 unsafe {
                     let roots = arena.roots();
-                    let guard = roots.frame();
+                    let _guard = roots.frame();
 
-                    let context =
-                        unsafe { $crate::Context::construct(realm, arena.roots(), atoms) };
+                    let context = $crate::Context::construct(realm, arena.roots(), atoms);
 
                     let ctx = crate::Ctx::wrap(&context);
 
@@ -33,7 +32,7 @@ macro_rules! create_static_fn {
             }
         }
 
-        unsafe { $ctx.create_static_function(wrap::$func) }
+        $ctx.create_static_function(wrap::$func)
     }};
 }
 

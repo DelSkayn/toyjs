@@ -1,4 +1,4 @@
-use vm::object::PropertyFlags;
+use vm::object::PropertyFlag;
 
 use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Result};
 
@@ -8,7 +8,7 @@ pub fn console_log<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Valu
         if idx != 0 {
             print!(" ");
         }
-        print!("{}", ctx.coerce_string(x)?);
+        print!("{}", ctx.to_string(x)?);
         idx += 1;
     }
     println!();
@@ -25,7 +25,7 @@ pub fn console_in<'js>(ctx: Ctx<'js>, _args: Arguments<'js>) -> Result<'js, Valu
 
 pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     if let Some(x) = args.get(0) {
-        return ctx.eval(ctx.coerce_string(x)?.into_string());
+        return ctx.eval(ctx.to_string(x)?.into_string());
     }
     return Ok(Value::undefined(ctx));
 }
@@ -33,9 +33,9 @@ pub fn eval<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>>
 pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     let num = args.get(0);
     let radix = args.get(1);
-    let str = ctx.coerce_string(num.unwrap_or_else(|| Value::undefined(ctx)))?;
+    let str = ctx.to_string(num.unwrap_or_else(|| Value::undefined(ctx)))?;
     let mut radix = if let Some(radix) = radix {
-        ctx.coerce_integer(radix)?
+        ctx.to_int32(radix)?
     } else {
         0
     };
@@ -85,25 +85,21 @@ pub fn parse_int<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<
     }
 
     if neg {
-        return Ok((-result).into_js(ctx));
+        return (-result).into_js(ctx);
     }
-    Ok(result.into_js(ctx))
+    result.into_js(ctx)
 }
 
 pub fn is_nan<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
-    Ok(ctx
-        .coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?
-        .is_nan()
-        .into_js(ctx))
+    ctx.to_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?
+        .into_float()
+        .map_or(false, |x| x.is_nan())
+        .into_js(ctx)
 }
 
 pub fn is_finite<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
-    let num = ctx.coerce_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?;
-    if let Some(f) = num.into_f64() {
-        Ok(f.is_finite().into_js(ctx))
-    } else {
-        Ok(true.into_js(ctx))
-    }
+    let num = ctx.to_number(args.get(0).unwrap_or_else(|| Value::undefined(ctx)))?;
+    num.into_float().map_or(true, f64::is_finite).into_js(ctx)
 }
 
 pub fn init(ctx: Ctx) {
@@ -120,13 +116,13 @@ pub fn init(ctx: Ctx) {
     global.set("console", console).unwrap();
     global.set("eval", create_static_fn!(ctx, eval)).unwrap();
     global
-        .raw_set_flags("undefined", Value::undefined(ctx), PropertyFlags::empty())
+        .raw_set_flags("undefined", Value::undefined(ctx), PropertyFlag::empty())
         .unwrap();
     global
-        .raw_set_flags("NaN", f64::NAN, PropertyFlags::empty())
+        .raw_set_flags("NaN", f64::NAN, PropertyFlag::empty())
         .unwrap();
     global
-        .raw_set_flags("Infinity", f64::INFINITY, PropertyFlags::empty())
+        .raw_set_flags("Infinity", f64::INFINITY, PropertyFlag::empty())
         .unwrap();
     global
         .set("parseInt", create_static_fn!(ctx, parse_int))
