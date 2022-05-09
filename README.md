@@ -6,12 +6,13 @@ Built for experimentation with building dynamic languages.
 This interpreter is very much under development and lacks support for a large part of the
 javascript language.
 
-You can play around with
+You can play around with the interpreter in your browser [here](https://delskayn.github.io/toyjs/)
 
 ## Features
  - Register based bytecode VM
  - Handwritten parser.
  - Traditional Lexer to Parser to ast to compiler to bytecode design.
+ - Almost safe sweep and trace GC 
  - Minimal dependencies.
 
 ## Running

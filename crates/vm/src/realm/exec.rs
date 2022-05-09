@@ -760,12 +760,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
         value: Value<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    ) -> Result<Value<'static, 'cell>, Value<'l, 'cell>> {
         let prim = rebind_try!(arena, self.to_primitive(owner, arena, atoms, value, false));
         let res = self
             .to_number_primitive(owner, prim)
             .expect("to primitive returned an object");
-        Ok(rebind!(arena, res))
+        Ok(res)
     }
 
     pub fn to_number_primitive(

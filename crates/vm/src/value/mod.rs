@@ -14,36 +14,41 @@ pub use tagged_union::Value;
 mod test {
     use super::Value;
 
+    macro_rules! test_int {
+        ($v:expr) => {
+            let a = Some($v as i32);
+            let b = Value::from($v).into_int();
+            assert_eq!(a, b, stringify!($v));
+        };
+    }
+
     #[test]
     fn convert_i32() {
-        fn test_value(v: i32) {
-            assert_eq!(Some(v), Value::from(v).into_int());
-        }
+        test_int!(-1);
+        test_int!(1);
+        test_int!(0);
+        test_int!(i32::MAX);
+        test_int!(i32::MIN);
+    }
 
-        test_value(-1);
-        test_value(1);
-        test_value(0);
-        test_value(i32::MAX);
-        test_value(i32::MIN);
+    macro_rules! test_float {
+        ($v:expr) => {
+            let a = Some(($v as f64).to_bits());
+            let b = Value::ensure_float($v).into_float().map(f64::to_bits);
+            assert_eq!(a, b, stringify!($v));
+        };
     }
 
     #[test]
     fn convert_f64() {
-        fn test_value(v: f64) {
-            assert_eq!(
-                Some(v.to_bits()),
-                Value::from(v).into_float().map(f64::to_bits)
-            );
-        }
-
-        test_value(-1.0);
-        test_value(1.0);
-        test_value(0.0);
-        test_value(f64::MAX);
-        test_value(f64::MIN);
-        test_value(f64::INFINITY);
-        test_value(f64::NEG_INFINITY);
-        test_value(f64::NAN);
-        test_value(f64::MIN_POSITIVE);
+        test_float!(-1.0);
+        test_float!(1.0);
+        test_float!(0.0);
+        test_float!(f64::MAX);
+        test_float!(f64::MIN);
+        test_float!(f64::INFINITY);
+        test_float!(f64::NEG_INFINITY);
+        test_float!(f64::NAN);
+        test_float!(f64::MIN_POSITIVE);
     }
 }

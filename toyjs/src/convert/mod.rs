@@ -48,3 +48,36 @@ impl<'js> IntoJs<'js> for Object<'js> {
         })
     }
 }
+
+impl<'js> IntoJs<'js> for Value<'js> {
+    fn into_js(self, _ctx: Ctx<'js>) -> Result<'js, Value<'js>> {
+        Ok(self)
+    }
+}
+
+impl<'js> IntoJs<'js> for i32 {
+    fn into_js(self, ctx: Ctx<'js>) -> Result<'js, Value<'js>> {
+        Ok(Value {
+            ctx,
+            value: self.into(),
+        })
+    }
+}
+
+impl<'js> IntoJs<'js> for bool {
+    fn into_js(self, ctx: Ctx<'js>) -> Result<'js, Value<'js>> {
+        Ok(Value {
+            ctx,
+            value: self.into(),
+        })
+    }
+}
+
+impl<'js> IntoJs<'js> for f64 {
+    fn into_js(self, ctx: Ctx<'js>) -> Result<'js, Value<'js>> {
+        Ok(Value {
+            ctx,
+            value: self.into(),
+        })
+    }
+}
