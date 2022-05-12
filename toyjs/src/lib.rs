@@ -255,7 +255,11 @@ impl<'js> Ctx<'js> {
         self.context
             .realm
             .to_number(&mut owner, &mut arena, self.context.atoms, v.into_vm())
-            .map(|value| Value { ctx: self, value })
+            .map(|value| Value {
+                ctx: self,
+                // Value here is a Value<'static,'_> rebinding this to any other lifetime is safe.
+                value: unsafe { vm::gc::rebind(value) },
+            })
             .map_err(|e| Error::from_vm(self, e))
     }
 
