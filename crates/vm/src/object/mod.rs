@@ -148,6 +148,12 @@ unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
         self.properties.trace(trace);
         self.elements.trace(trace);
     }
+
+    fn finalize(&self, atoms: &common::atom::Atoms) {
+        for p in self.properties.iter() {
+            atoms.decrement(p.atom());
+        }
+    }
 }
 
 unsafe impl<'a, 'gc, 'cell: 'a> Rebind<'a> for Object<'gc, 'cell> {

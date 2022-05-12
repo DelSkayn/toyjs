@@ -8,7 +8,7 @@ use std::{
     ptr::{drop_in_place, NonNull},
 };
 
-use common::{cell_vec::CellVec, collections::HashMap};
+use common::{atom::Atoms, cell_vec::CellVec, collections::HashMap};
 use ptr::{Color, GcBoxPtr};
 pub use ptr::{Gc, GcBox};
 
@@ -136,6 +136,8 @@ pub unsafe trait Trace {
 
     /// Traces the type for any gc pointers.
     fn trace(&self, trace: Tracer);
+
+    fn finalize(&self, _atoms: &Atoms) {}
 }
 
 /// Gc values who's lifetimes can be rebind
@@ -492,13 +494,13 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
         }
     }
 
-    pub fn collect_full(&mut self, owner: &mut CellOwner<'cell>) {
+    pub fn collect_full(&mut self, owner: &mut CellOwner<'cell>, atoms: &Atoms) {
         self.roots.allocation_debt.set(f64::INFINITY);
         self.roots.phase.set(Phase::Wake);
-        self.collect(owner);
+        self.collect(owner, atoms);
     }
 
-    pub fn collect(&mut self, owner: &mut CellOwner<'cell>) {
+    pub fn collect(&mut self, owner: &mut CellOwner<'cell>, atoms: &Atoms) {
         let roots = self.roots;
 
         unsafe {
@@ -514,7 +516,6 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
             while work > work_done as f64 {
                 match roots.phase.get() {
                     Phase::Wake => {
-                        debug_assert!(roots.grays.is_empty());
                         roots.sweep_prev.set(None);
 
                         roots.roots.unsafe_iter().copied().for_each(|x| {
@@ -585,6 +586,8 @@ impl<'rt, 'cell> Arena<'rt, 'cell> {
                                 roots
                                     .total_allocated
                                     .set(roots.total_allocated.get() - layout.size());
+                                x.as_ref().value.borrow(owner).finalize(atoms);
+
                                 drop_in_place(x.as_ptr());
                                 alloc::dealloc(x.as_ptr().cast(), layout);
                             } else {

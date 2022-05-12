@@ -1,7 +1,10 @@
 #![feature(allocator_api)]
 
 use ast::SymbolTable;
-use common::{atom::Atoms, source::Source};
+use common::{
+    atom::{Atoms, Interner},
+    source::Source,
+};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
@@ -27,7 +30,8 @@ fn main() -> Result<(), io::Error> {
     read.read_to_string(&mut buffer)?;
     let source = Source::from_string(buffer);
     let atoms = Atoms::new();
-    let lexer = Lexer::new(&source, &atoms);
+    let mut interner = Interner::new(&atoms);
+    let lexer = Lexer::new(&source, &mut interner);
     let mut variables = SymbolTable::new();
     let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
 
@@ -35,6 +39,8 @@ fn main() -> Result<(), io::Error> {
     let gc = gc::Arena::new(&roots);
 
     let bytecode = Compiler::compile_script(&script, &variables, &atoms, &gc, Global);
+    std::mem::drop(interner);
+
     println!("{}", atoms);
     println!("{}", bytecode);
     Ok(())

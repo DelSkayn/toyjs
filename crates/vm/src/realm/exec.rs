@@ -133,7 +133,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 }
                 Instruction::LoadFunction { dst, func } => {
                     arena.write_barrier(self);
-                    arena.collect(owner);
+                    arena.collect(owner, atoms);
 
                     let fp = self.r(owner).builtin.function_proto;
                     let func = self.construct_function(owner, arena, func, &instr, ctx.function);
@@ -148,7 +148,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
                 Instruction::LoadConstructor { dst, func } => {
                     arena.write_barrier(self);
-                    arena.collect(owner);
+                    arena.collect(owner, atoms);
 
                     let fp = self.r(owner).builtin.function_proto;
                     let func = self.construct_function(owner, arena, func, &instr, ctx.function);
@@ -184,7 +184,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     // Always retrace the current realm to allow ring without a write barrier
                     // otherwise.
                     arena.write_barrier(self);
-                    arena.collect(owner);
+                    arena.collect(owner, atoms);
                     let op = self.r(owner).builtin.object_proto;
                     let object = arena.add(Object::new(
                         Some(op),
@@ -197,7 +197,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     // Always retrace the current realm to allow ring without a write barrier
                     // otherwise.
                     arena.write_barrier(self);
-                    arena.collect(owner);
+                    arena.collect(owner, atoms);
                     let object = arena.add(Object::new(
                         None,
                         ObjectFlags::ORDINARY,

@@ -23,13 +23,14 @@ fn collect() {
     new_cell_owner!(owner);
     let roots = Roots::new();
     let mut arena = Arena::new(&roots);
+    let atoms = Atoms::new();
 
     let a = arena.add(1i32);
 
     *a.borrow_mut_untraced(&mut owner) += 1;
 
     assert_eq!(*a.borrow(&owner), 2);
-    arena.collect_full(&mut owner);
+    arena.collect_full(&mut owner, &atoms);
 }
 
 #[test]
@@ -37,6 +38,7 @@ fn root() {
     new_cell_owner!(owner);
     let roots = Roots::new();
     let mut arena = Arena::new(&roots);
+    let atoms = Atoms::new();
 
     let a = arena.add(1i32);
     root!(arena, a);
@@ -44,7 +46,7 @@ fn root() {
 
     *b.borrow_mut_untraced(&mut owner) += 1;
 
-    arena.collect_full(&mut owner);
+    arena.collect_full(&mut owner, &atoms);
 
     assert_eq!(*b.borrow(&owner), 2);
 }
@@ -101,11 +103,12 @@ fn owned_root() {
     new_cell_owner!(owner);
     let roots = Roots::new();
     let mut arena = Arena::new(&roots);
+    let atoms = Atoms::new();
 
     let v = arena.add(1);
     let v = roots.add_owned(v);
 
-    arena.collect_full(&mut owner);
+    arena.collect_full(&mut owner, &atoms);
 
     assert_eq!(*v.borrow(&owner), 1);
 }

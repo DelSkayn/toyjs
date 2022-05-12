@@ -3,6 +3,7 @@ use std::{
     collections::hash_map::{Entry, VacantEntry},
     mem,
     ops::{BitOr, BitOrAssign},
+    slice::Iter,
 };
 
 use common::{
@@ -480,5 +481,9 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
                 }
             },
         }
+    }
+
+    pub fn iter(&self) -> Iter<Property<'gc, 'cell>> {
+        self.props.iter()
     }
 }

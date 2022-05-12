@@ -24,6 +24,8 @@
 mod macros;
 use std::{error::Error, fmt};
 
+use common::atom::Atoms;
+
 use crate::{
     gc::{Gc, Rebind, Trace, Tracer},
     value::Value,
@@ -115,6 +117,14 @@ unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
 
     fn trace(&self, ctx: Tracer) {
         self.constants.iter().for_each(|x| x.trace(ctx));
+    }
+
+    fn finalize(&self, atoms: &Atoms) {
+        for c in self.constants.iter() {
+            if let Some(x) = c.into_atom() {
+                atoms.decrement(x)
+            }
+        }
     }
 }
 

@@ -86,8 +86,8 @@ impl fmt::Display for Atoms {
         let entries = unsafe { &(*self.entries.get()) };
         writeln!(f, "> ATOMS")?;
         for (idx, e) in entries.iter().enumerate() {
-            if let AtomEntry::Filled { ref text, .. } = e {
-                writeln!(f, "{:>5}: {}", idx, text)?;
+            if let AtomEntry::Filled { ref text, count } = e {
+                writeln!(f, "{:>5}:[{:<5}] {}", idx, count, text)?;
             }
         }
         Ok(())
@@ -236,5 +236,35 @@ impl Atoms {
                 panic!("tried to decrement deallocated atom")
             }
         }
+    }
+}
+
+pub struct Interner<'a> {
+    pub atoms: &'a Atoms,
+    used: HashMap<String, Atom>,
+}
+
+impl<'a> Interner<'a> {
+    pub fn new(atoms: &'a Atoms) -> Self {
+        Interner {
+            atoms,
+            used: HashMap::default(),
+        }
+    }
+
+    pub fn intern(&mut self, string: &str) -> Atom {
+        if let Some(&x) = self.used.get(string) {
+            return x;
+        }
+
+        let atom = self.atoms.atomize_string(string);
+        self.used.insert(string.to_owned(), atom);
+        atom
+    }
+}
+
+impl<'a> Drop for Interner<'a> {
+    fn drop(&mut self) {
+        self.used.values().for_each(|&x| self.atoms.decrement(x));
     }
 }

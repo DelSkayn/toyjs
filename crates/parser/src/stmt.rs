@@ -2,7 +2,7 @@ use super::{Allocator, Error, ErrorKind, Parser, Result};
 use ast::symbol_table::{DeclType, ScopeKind};
 use token::t;
 
-impl<'a, A: Allocator + Clone> Parser<'a, A> {
+impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
     pub(crate) fn parse_stmt(&mut self) -> Result<ast::Stmt<A>> {
         let peek = match self.peek_kind()? {
             Some(x) => x,
