@@ -4,7 +4,7 @@
 use std::{alloc::Global, fmt, mem, string::String as StdString};
 
 use ast::SymbolTable;
-use common::atom::Atoms;
+use common::atom::{Atoms, Interner};
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
@@ -60,7 +60,13 @@ impl ToyJs {
         let mut owner = unsafe { CellOwner::new(Id::new()) };
         let borrow = self.0.lock();
         let mut arena = unsafe { Arena::new_unchecked(&borrow.roots) };
-        arena.collect_full(&mut owner)
+        arena.collect_full(&mut owner, &borrow.atoms)
+    }
+}
+
+impl Drop for ToyJs {
+    fn drop(&mut self) {
+        self.collect_full();
     }
 }
 
@@ -190,7 +196,8 @@ impl<'js> Ctx<'js> {
         let mut arena = unsafe { Arena::new_unchecked(self.context.root) };
 
         let source = common::source::Source::from_string(source.into());
-        let lexer = Lexer::new(&source, self.context.atoms);
+        let mut interner = Interner::new(self.context.atoms);
+        let lexer = Lexer::new(&source, &mut interner);
         let mut symbol_table = SymbolTable::new();
         let script = match Parser::parse_script(lexer, &mut symbol_table, Global) {
             Ok(x) => x,
@@ -204,6 +211,8 @@ impl<'js> Ctx<'js> {
 
         let bc =
             Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
+        mem::drop(interner);
+
         let bc = arena.add(bc);
         vm::root!(arena, bc);
 

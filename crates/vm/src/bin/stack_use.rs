@@ -24,7 +24,7 @@ fn main() {
     let realm = create_realm(&mut owner, &arena, &atoms);
     vm::root!(arena, realm);
 
-    arena.collect_full(&mut owner);
+    arena.collect_full(&mut owner, &atoms);
 
     realm.global(&owner);
 }

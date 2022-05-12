@@ -127,7 +127,7 @@ pub struct SymbolTable<A: Allocator> {
     scopes: Scopes<A>,
     symbols: Symbols<A>,
     /// Used for symbol lookup.
-    symbols_by_ident: HashMap<(ScopeId, Atom), SymbolId>,
+    symbols_by_ident: HashMap<Atom, Vec<(ScopeId, SymbolId)>>,
     global: ScopeId,
     alloc: A,
 }
@@ -285,8 +285,11 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     fn lookup_symbol(&self, name: Atom) -> Option<SymbolId> {
         let mut cur_scope = self.current_scope;
         loop {
-            if let Some(x) = self.table.symbols_by_ident.get(&(cur_scope, name)) {
-                return Some(*x);
+            if let Some(x) = self.table.symbols_by_ident.get(&name) {
+                return x
+                    .iter()
+                    .find(|x| x.0 == cur_scope || self.table.child_of(cur_scope, x.0))
+                    .map(|x| x.1);
             }
             if let Some(x) = self.table.scopes[cur_scope].parent {
                 cur_scope = x;
@@ -299,28 +302,22 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     pub fn define(&mut self, name: Atom, kind: DeclType) -> Option<SymbolId> {
         match kind {
             DeclType::Let | DeclType::Const | DeclType::Argument => {
-                if self
-                    .table
-                    .symbols_by_ident
-                    .get(&(self.current_scope, name))
-                    .is_some()
-                {
+                if self.table.symbols_by_ident.get(&name).map_or(false, |x| {
+                    x.iter().any(|x| {
+                        x.0 == self.current_scope()
+                            || self.table.child_of(self.current_scope(), x.0)
+                    })
+                }) {
                     // Redeclared in same scope
                     return None;
                 }
             }
             DeclType::Var => {
-                let existing = self
-                    .table
-                    .symbols_by_ident
-                    .get(&(self.current_scope, name))
-                    .copied()
-                    .or_else(|| {
-                        self.table
-                            .symbols_by_ident
-                            .get(&(self.current_function, name))
-                            .copied()
-                    });
+                let existing = self.table.symbols_by_ident.get(&name).and_then(|x| {
+                    x.iter()
+                        .find(|x| x.0 == self.current_scope || x.0 == self.current_function)
+                        .map(|x| x.1)
+                });
                 if let Some(existing) = existing {
                     match self.table.symbols[existing].decl_type {
                         // Global may be redeclared without issue
@@ -352,7 +349,9 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                     .push(new_symbol);
                 self.table
                     .symbols_by_ident
-                    .insert((self.current_scope, name), new_symbol);
+                    .entry(name)
+                    .or_insert_with(Vec::new)
+                    .push((self.current_scope, new_symbol));
                 Some(new_symbol)
             }
             // Arguments and globals are always declared at function scope
@@ -367,7 +366,9 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                     .push(new_symbol);
                 self.table
                     .symbols_by_ident
-                    .insert((self.current_function, name), new_symbol);
+                    .entry(name)
+                    .or_insert_with(Vec::new)
+                    .push((self.current_function, new_symbol));
                 Some(new_symbol)
             }
             DeclType::Implicit => panic!("can't define variables explicitly implicit."),
@@ -400,6 +401,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         new_symbol
     }
 
+    /// Redefines a symbol used in a an arrow function argument as a arguments.
     pub fn reparse_function_param(&mut self, id: SymbolId) -> SymbolId {
         let symbol = &mut self.table.symbols[id];
         if let DeclType::Implicit = symbol.decl_type {
@@ -415,10 +417,13 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                 .0;
             self.table.scopes[old_scope].symbols.remove(idx);
             self.table.scopes[self.current_function].symbols.push(id);
-            self.table.symbols_by_ident.remove(&(old_scope, ident));
-            self.table
-                .symbols_by_ident
-                .insert((self.current_function, ident), id);
+            let scopes = self.table.symbols_by_ident.get_mut(&ident).unwrap();
+            for (ref mut scope, _) in scopes.iter_mut() {
+                if *scope == old_scope {
+                    *scope = self.current_function;
+                    break;
+                }
+            }
             id
         } else {
             let ident = symbol.ident;

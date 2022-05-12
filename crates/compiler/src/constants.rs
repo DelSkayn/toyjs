@@ -1,4 +1,4 @@
-use std::alloc::Allocator;
+use std::{alloc::Allocator, collections::hash_map::Entry};
 
 use ast::Literal;
 use common::{
@@ -23,7 +23,7 @@ pub struct Constants<'a, 'rt, 'cell, A: Allocator> {
     constants: SlotStack<Value<'a, 'cell>, ConstantId, A>,
     map: HashMap<LiteralOrAtom, ConstantId>,
     gc: &'a gc::Arena<'rt, 'cell>,
-    atoms: &'a Atoms,
+    pub atoms: &'a Atoms,
 }
 
 impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
@@ -42,10 +42,13 @@ impl<'a, 'rt, 'cell, A: Allocator> Constants<'a, 'rt, 'cell, A> {
     }
 
     pub fn push_atom(&mut self, s: Atom) -> ConstantId {
-        *self
-            .map
-            .entry(LiteralOrAtom::Atom(s))
-            .or_insert_with(|| self.constants.push(Value::from(s)))
+        match self.map.entry(LiteralOrAtom::Atom(s)) {
+            Entry::Occupied(x) => *x.get(),
+            Entry::Vacant(x) => {
+                self.atoms.increment(s);
+                *x.insert(self.constants.push(Value::from(s)))
+            }
+        }
     }
 
     pub fn push_literal(&mut self, literal: Literal) -> ConstantId {

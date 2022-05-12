@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use common::{
-    atom::Atoms,
+    atom::Interner,
     source::{Source, Span},
 };
 use std::{convert::TryFrom, result::Result as StdResult};
@@ -42,9 +42,9 @@ type LexResult<T> = StdResult<T, ErrorKind>;
 /// A short hand of a result with a lexer error.
 pub type Result<T> = StdResult<T, Error>;
 
-pub struct Lexer<'a> {
+pub struct Lexer<'a, 'b> {
     source: &'a Source,
-    pub atoms: &'a Atoms,
+    pub interner: &'a mut Interner<'b>,
     offset: usize,
     span_start: usize,
     // A buffer for rewriting escaped utf-8 secuences as the right bytes
@@ -62,12 +62,12 @@ fn is_radix(byte: u8, radix: u8) -> bool {
     }
 }
 
-impl<'a> Lexer<'a> {
+impl<'a, 'b> Lexer<'a, 'b> {
     /// Create a new lexer from source
-    pub fn new(source: &'a Source, interner: &'a Atoms) -> Self {
+    pub fn new(source: &'a Source, interner: &'a mut Interner<'b>) -> Self {
         Lexer {
             source,
-            atoms: interner,
+            interner,
             offset: 0,
             span_start: 0,
             buffer: String::new(),
@@ -219,8 +219,8 @@ impl<'a> Lexer<'a> {
             Ok(self.token(TokenKind::Keyword(x)))
         } else {
             let string_id = self
-                .atoms
-                .atomize_string(&self.source.source()[start..self.offset]);
+                .interner
+                .intern(&self.source.source()[start..self.offset]);
             Ok(self.token(TokenKind::Ident(string_id)))
         }
     }

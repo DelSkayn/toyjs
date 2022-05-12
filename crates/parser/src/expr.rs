@@ -60,7 +60,7 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
     }
 }
 
-impl<'a, A: Allocator + Clone> Parser<'a, A> {
+impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
     pub(crate) fn parse_expr(&mut self) -> Result<Vec<Expr<A>, A>> {
         let mut res = Vec::new_in(self.alloc.clone());
         loop {
@@ -89,7 +89,7 @@ impl<'a, A: Allocator + Clone> Parser<'a, A> {
                 t!("new") => {
                     if self.eat(t!("."))? {
                         let peek = self.peek_kind()?;
-                        let tgt = self.lexer.atoms.atomize_string("target");
+                        let tgt = self.lexer.interner.intern("target");
                         if peek == Some(TokenKind::Ident(tgt)) {
                             if !self.state.r#return {
                                 unexpected!(self => "new.target expression is not allowed here");

@@ -66,6 +66,7 @@ fn script_parse_int() {
 }
 
 #[test]
+#[should_panic]
 fn script_call_deep() {
     eval_script(CALL_DEEP_SOURCE);
 }

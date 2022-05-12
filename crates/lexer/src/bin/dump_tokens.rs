@@ -1,4 +1,7 @@
-use common::{atom::Atoms, source::Source};
+use common::{
+    atom::{Atoms, Interner},
+    source::Source,
+};
 use std::{
     env,
     fs::File,
@@ -20,10 +23,11 @@ fn main() -> Result<(), io::Error> {
     read.read_to_string(&mut buffer)?;
     let source = Source::from_string(buffer);
     let atoms = Atoms::new();
+    let mut interner = Interner::new(&atoms);
     let mut tokens = Vec::new();
     let mut error = None;
     {
-        let mut lexer = Lexer::new(&source, &atoms);
+        let mut lexer = Lexer::new(&source, &mut interner);
         loop {
             match lexer.next() {
                 Ok(Some(x)) => {

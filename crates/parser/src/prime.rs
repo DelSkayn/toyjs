@@ -5,7 +5,7 @@ use ast::{
 };
 use token::t;
 
-impl<'a, A: Allocator + Clone> Parser<'a, A> {
+impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
     pub(crate) fn parse_prime_expr(&mut self) -> Result<PrimeExpr<A>> {
         let peek = match self.peek_kind()? {
             Some(x) => x,
