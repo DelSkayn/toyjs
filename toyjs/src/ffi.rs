@@ -20,7 +20,7 @@ macro_rules! create_static_fn {
 
                     let context = $crate::Context::construct(realm, arena.roots(), atoms);
 
-                    let ctx = crate::Ctx::wrap(&context);
+                    let ctx = $crate::Ctx::wrap(&context);
 
                     let args = $crate::Arguments::from_ctx(ctx);
                     let res: Result<vm::Value, vm::Value> = super::$func(ctx, args)
@@ -50,13 +50,9 @@ impl<'js> Arguments<'js> {
     pub fn get(self, idx: u32) -> Option<Value<'js>> {
         let owner = unsafe { CellOwner::new(self.ctx.id) };
 
-        if let Some(value) = self.ctx.context.realm.arg(&owner, idx) {
-            Some(Value {
-                value,
-                ctx: self.ctx,
-            })
-        } else {
-            None
-        }
+        self.ctx.context.realm.arg(&owner, idx).map(|value| Value {
+            value,
+            ctx: self.ctx,
+        })
     }
 }

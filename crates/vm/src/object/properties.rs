@@ -21,22 +21,22 @@ use crate::{
 use super::GcObject;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct PropertyFlag(u8);
+pub struct PropertyFlags(u8);
 
-impl PropertyFlag {
-    pub const WRITABLE: PropertyFlag = PropertyFlag(0b1);
-    pub const ENUMERABLE: PropertyFlag = PropertyFlag(0b10);
-    pub const CONFIGURABLE: PropertyFlag = PropertyFlag(0b100);
-    const ACCESSOR: PropertyFlag = PropertyFlag(0b1000);
+impl PropertyFlags {
+    pub const WRITABLE: PropertyFlags = PropertyFlags(0b1);
+    pub const ENUMERABLE: PropertyFlags = PropertyFlags(0b10);
+    pub const CONFIGURABLE: PropertyFlags = PropertyFlags(0b100);
+    const ACCESSOR: PropertyFlags = PropertyFlags(0b1000);
 
-    pub const BUILTIN: PropertyFlag = PropertyFlag(Self::WRITABLE.0 | Self::CONFIGURABLE.0);
+    pub const BUILTIN: PropertyFlags = PropertyFlags(Self::WRITABLE.0 | Self::CONFIGURABLE.0);
 
     pub const fn empty() -> Self {
-        PropertyFlag(0)
+        PropertyFlags(0)
     }
 
     pub const fn ordinary() -> Self {
-        PropertyFlag(0b111)
+        PropertyFlags(0b111)
     }
 
     #[inline]
@@ -50,21 +50,21 @@ impl PropertyFlag {
     }
 }
 
-impl fmt::Debug for PropertyFlag {
+impl fmt::Debug for PropertyFlags {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut start = true;
-        if self.contains(PropertyFlag::WRITABLE) {
+        if self.contains(PropertyFlags::WRITABLE) {
             write!(f, "WRITABLE")?;
             start = false;
         }
-        if self.contains(PropertyFlag::ENUMERABLE) {
+        if self.contains(PropertyFlags::ENUMERABLE) {
             if !start {
                 write!(f, " | ")?;
             }
             write!(f, "ENUMERABLE")?;
             start = false;
         }
-        if self.contains(PropertyFlag::CONFIGURABLE) {
+        if self.contains(PropertyFlags::CONFIGURABLE) {
             if !start {
                 write!(f, " | ")?;
             }
@@ -74,15 +74,15 @@ impl fmt::Debug for PropertyFlag {
     }
 }
 
-impl BitOr for PropertyFlag {
-    type Output = PropertyFlag;
+impl BitOr for PropertyFlags {
+    type Output = PropertyFlags;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        PropertyFlag(self.0 | rhs.0)
+        PropertyFlags(self.0 | rhs.0)
     }
 }
 
-impl BitOrAssign for PropertyFlag {
+impl BitOrAssign for PropertyFlags {
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 |= rhs.0;
     }
@@ -107,7 +107,7 @@ pub enum PropertyValue<'gc, 'cell> {
 
 #[derive(Clone)]
 pub struct Property<'gc, 'cell> {
-    flags: PropertyFlag,
+    flags: PropertyFlags,
     atom: Atom,
     value: PropertyUnion<'gc, 'cell>,
 }
@@ -115,7 +115,7 @@ pub struct Property<'gc, 'cell> {
 impl<'gc, 'cell> fmt::Debug for Property<'gc, 'cell> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
-            if self.flags.contains(PropertyFlag::ACCESSOR) {
+            if self.flags.contains(PropertyFlags::ACCESSOR) {
                 f.debug_struct("Property::Accessor")
                     .field("value", &self.value.accessor)
                     .field("flags", &self.flags)
@@ -137,15 +137,15 @@ unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Property<'gc, 'cell> {
 }
 
 impl<'gc, 'cell> Property<'gc, 'cell> {
-    pub fn accessor(accessor: Accessor<'gc, 'cell>, flags: PropertyFlag, atom: Atom) -> Self {
+    pub fn accessor(accessor: Accessor<'gc, 'cell>, flags: PropertyFlags, atom: Atom) -> Self {
         Property {
-            flags: flags | PropertyFlag::ACCESSOR,
+            flags: flags | PropertyFlags::ACCESSOR,
             atom,
             value: PropertyUnion { accessor },
         }
     }
 
-    pub fn value(value: Value<'gc, 'cell>, flags: PropertyFlag, atom: Atom) -> Self {
+    pub fn value(value: Value<'gc, 'cell>, flags: PropertyFlags, atom: Atom) -> Self {
         Property {
             flags,
             atom,
@@ -154,16 +154,16 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
     }
 
     pub fn is_accessor(&self) -> bool {
-        self.flags.contains(PropertyFlag::ACCESSOR)
+        self.flags.contains(PropertyFlags::ACCESSOR)
     }
 
     pub fn is_enumerable(&self) -> bool {
-        self.flags.contains(PropertyFlag::ENUMERABLE)
+        self.flags.contains(PropertyFlags::ENUMERABLE)
     }
 
     pub fn as_value(&self) -> PropertyValue<'gc, 'cell> {
         unsafe {
-            if self.flags.contains(PropertyFlag::ACCESSOR) {
+            if self.flags.contains(PropertyFlags::ACCESSOR) {
                 PropertyValue::Accessor(self.value.accessor)
             } else {
                 PropertyValue::Value(self.value.value)
@@ -203,20 +203,20 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
         obj: GcObject<'_, 'cell>,
         atom: Atom,
     ) -> Result<Self, Value<'gc, 'cell>> {
-        let mut flags = PropertyFlag::empty();
+        let mut flags = PropertyFlags::empty();
         let f = rebind_try!(
             arena,
             obj.index(owner, arena, atoms, realm, atom::constant::enumerable)
         );
         if !realm.is_falsish(owner, f) {
-            flags |= PropertyFlag::ENUMERABLE
+            flags |= PropertyFlags::ENUMERABLE
         }
         let f = rebind_try!(
             arena,
             obj.index(owner, arena, atoms, realm, atom::constant::configurable)
         );
         if !realm.is_falsish(owner, f) {
-            flags |= PropertyFlag::CONFIGURABLE
+            flags |= PropertyFlags::CONFIGURABLE
         }
 
         let value = rebind_try!(
@@ -232,7 +232,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
             obj.index(owner, arena, atoms, realm, atom::constant::writable)
         );
         if !realm.is_falsish(owner, f) {
-            flags |= PropertyFlag::WRITABLE
+            flags |= PropertyFlags::WRITABLE
         }
 
         let get = rebind_try!(
@@ -291,7 +291,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                     "Object property cannot have both a value and an accessor",
                 ));
             }
-            if flags.contains(PropertyFlag::WRITABLE) {
+            if flags.contains(PropertyFlags::WRITABLE) {
                 return Err(realm.create_type_error(
                     owner,
                     arena,
@@ -323,7 +323,7 @@ unsafe impl<'gc, 'cell> Trace for Property<'gc, 'cell> {
 
     fn trace(&self, trace: Tracer) {
         unsafe {
-            if self.flags.contains(PropertyFlag::ACCESSOR) {
+            if self.flags.contains(PropertyFlags::ACCESSOR) {
                 self.value.accessor.get.trace(trace);
                 self.value.accessor.set.trace(trace);
             } else {
@@ -349,7 +349,7 @@ unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
 
     fn trace(&self, trace: Tracer) {
         self.props.iter().for_each(|x| {
-            (&x).trace(trace);
+            x.trace(trace);
         })
     }
 }
@@ -368,7 +368,7 @@ impl<'a, 'gc, 'cell> Vacant<'a, 'gc, 'cell> {
         let value = unsafe { gc::rebind(value) };
         self.entry.insert(idx);
         self.props
-            .push(Property::value(value, PropertyFlag::ordinary(), key));
+            .push(Property::value(value, PropertyFlags::ordinary(), key));
     }
 }
 
@@ -436,27 +436,27 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
         self.props.iter_mut().for_each(|x| {
             x.flags = x
                 .flags
-                .clear(PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE)
+                .clear(PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE)
         })
     }
 
     pub fn is_frozen(&self) -> bool {
         self.props.iter().all(|x| {
-            !(x.flags.contains(PropertyFlag::WRITABLE)
-                || x.flags.contains(PropertyFlag::CONFIGURABLE))
+            !(x.flags.contains(PropertyFlags::WRITABLE)
+                || x.flags.contains(PropertyFlags::CONFIGURABLE))
         })
     }
 
     pub fn seal(&mut self) {
         self.props
             .iter_mut()
-            .for_each(|x| x.flags = x.flags.clear(PropertyFlag::CONFIGURABLE))
+            .for_each(|x| x.flags = x.flags.clear(PropertyFlags::CONFIGURABLE))
     }
 
     pub fn is_sealed(&self) -> bool {
         self.props
             .iter()
-            .all(|x| !x.flags.contains(PropertyFlag::CONFIGURABLE))
+            .all(|x| !x.flags.contains(PropertyFlags::CONFIGURABLE))
     }
 
     pub fn entry<'a>(&'a mut self, atom: Atom) -> PropertyEntry<'a, 'gc, 'cell> {
@@ -467,14 +467,14 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
             }),
             Entry::Occupied(occ) => unsafe {
                 let prop = &mut self.props[*occ.get()];
-                if prop.flags.contains(PropertyFlag::ACCESSOR) {
+                if prop.flags.contains(PropertyFlags::ACCESSOR) {
                     if let Some(setter) = prop.value.accessor.set {
                         PropertyEntry::Accessor(setter)
                     } else {
                         PropertyEntry::Unwritable
                     }
                 } else {
-                    if !prop.flags.contains(PropertyFlag::WRITABLE) {
+                    if !prop.flags.contains(PropertyFlags::WRITABLE) {
                         return PropertyEntry::Unwritable;
                     }
                     PropertyEntry::Occupied(Occupied(&mut prop.value.value))

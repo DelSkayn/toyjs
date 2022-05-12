@@ -3,7 +3,7 @@ use common::atom::{self, Atoms};
 use crate::{
     cell::CellOwner,
     gc::{Arena, Rebind, Trace},
-    object::{ObjectFlags, ObjectKind, PropertyFlag, StaticFn},
+    object::{ObjectFlags, ObjectKind, PropertyFlags, StaticFn},
     GcObject, Object, Value,
 };
 
@@ -11,6 +11,7 @@ use self::error::ErrorType;
 
 use super::{ExecutionContext, GcRealm};
 
+pub mod array;
 pub mod error;
 mod object;
 
@@ -19,6 +20,8 @@ pub struct Builtin<'gc, 'cell> {
     pub global: GcObject<'gc, 'cell>,
     pub object_proto: GcObject<'gc, 'cell>,
     pub function_proto: GcObject<'gc, 'cell>,
+
+    pub array_proto: GcObject<'gc, 'cell>,
 
     pub error_proto: GcObject<'gc, 'cell>,
     pub syntax_error_proto: GcObject<'gc, 'cell>,
@@ -38,6 +41,7 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
         trace.mark(self.global);
         trace.mark(self.object_proto);
         trace.mark(self.function_proto);
+        trace.mark(self.array_proto);
         trace.mark(self.error_proto);
         trace.mark(self.syntax_error_proto);
         trace.mark(self.type_error_proto);
@@ -79,7 +83,7 @@ fn new_func<'l, 'cell>(
         atoms,
         atom::constant::length,
         len,
-        PropertyFlag::CONFIGURABLE,
+        PropertyFlags::CONFIGURABLE,
     );
     object
 }
@@ -102,7 +106,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             atoms,
             atom::constant::globalThis,
             global,
-            PropertyFlag::WRITABLE | PropertyFlag::CONFIGURABLE,
+            PropertyFlags::WRITABLE | PropertyFlags::CONFIGURABLE,
         );
         let fp = arena.add(Object::new(
             Some(op),
@@ -111,6 +115,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
         ));
 
         object::init(owner, arena, atoms, op, fp, global);
+        let array_proto = array::init(owner, arena, atoms, op, fp, global);
 
         let name = arena.add("Error".to_string());
         let error_to_string = new_func(arena, owner, atoms, fp, error::to_string, 0);
@@ -122,7 +127,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             atoms,
             atom::constant::toString,
             error_to_string,
-            PropertyFlag::BUILTIN,
+            PropertyFlags::BUILTIN,
         );
 
         let name = arena.add("SyntaxError".to_string());
@@ -140,7 +145,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             atoms,
             atom::constant::SyntaxError,
             c,
-            PropertyFlag::BUILTIN,
+            PropertyFlags::BUILTIN,
         );
 
         let name = arena.add("TypeError".to_string());
@@ -158,7 +163,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             atoms,
             atom::constant::TypeError,
             c,
-            PropertyFlag::BUILTIN,
+            PropertyFlags::BUILTIN,
         );
 
         let name = arena.add("RuntimeError".to_string());
@@ -175,6 +180,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             global,
             object_proto: op,
             function_proto: fp,
+            array_proto,
             error_proto,
             syntax_error_proto,
             type_error_proto,

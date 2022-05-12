@@ -45,7 +45,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
             }
             ElementsInner::Array(ref mut array) => {
                 if new_len > Self::BACKDOWN_MINIMUM
-                    && new_len > (array.len() as f64 * Self::BACKDOWN_RATIO).floor() as usize
+                    && new_len > (array.capacity() as f64 * Self::BACKDOWN_RATIO).floor() as usize
                 {
                     let tree: BTreeMap<usize, Value> = array
                         .iter()
@@ -63,40 +63,41 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
     }
 
     pub fn set(&mut self, key: usize, v: Value<'_, 'cell>) {
-        unsafe {
-            // Safe as we only hold the mutable reference within this scope and no references can
-            // escape.
-            match self.0 {
-                ElementsInner::Array(ref mut array) => {
-                    if key >= array.len() {
-                        if key > Self::BACKDOWN_MINIMUM
-                            && key > (array.len() as f64 * Self::BACKDOWN_RATIO).floor() as usize
-                        {
-                            let mut tree: BTreeMap<usize, Value> = array
-                                .iter()
-                                .copied()
-                                .filter(|x| !x.is_empty())
-                                .enumerate()
-                                .collect();
+        // Safe to rebind as v will be kept alive inside elements
+        let v = unsafe { gc::rebind(v) };
 
-                            tree.insert(key, gc::rebind(v));
-                            self.0 = ElementsInner::Tree { tree, len: key };
-                            return;
-                        }
-                        array.resize(key, Value::empty());
-                        array.push(gc::rebind(v));
-                    } else {
+        match self.0 {
+            ElementsInner::Array(ref mut array) => {
+                if key >= array.len() {
+                    if key > Self::BACKDOWN_MINIMUM
+                        && key > (array.capacity() as f64 * Self::BACKDOWN_RATIO).floor() as usize
+                    {
+                        let mut tree: BTreeMap<usize, Value> = array
+                            .iter()
+                            .copied()
+                            .filter(|x| !x.is_empty())
+                            .enumerate()
+                            .collect();
+
+                        tree.insert(key, v);
+                        self.0 = ElementsInner::Tree { tree, len: key };
+                        return;
+                    }
+                    array.resize(key, Value::empty());
+                    array.push(v);
+                } else {
+                    unsafe {
                         // Safe because key bound is checked above
-                        *array.get_unchecked_mut(key) = gc::rebind(v)
+                        *array.get_unchecked_mut(key) = v
                     }
                 }
-                ElementsInner::Tree {
-                    ref mut tree,
-                    ref mut len,
-                } => {
-                    tree.insert(key, gc::rebind(v));
-                    *len = (*len).max(key);
-                }
+            }
+            ElementsInner::Tree {
+                ref mut tree,
+                ref mut len,
+            } => {
+                tree.insert(key, v);
+                *len = (*len).max(key);
             }
         }
     }

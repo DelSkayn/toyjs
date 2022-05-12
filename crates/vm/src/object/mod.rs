@@ -11,7 +11,7 @@ mod properties;
 use elements::Elements;
 pub use function::{MutableFn, SharedFn, StaticFn, VmFunction};
 use properties::Properties;
-pub use properties::{Property, PropertyFlag, PropertyValue};
+pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
 
 bitflags::bitflags! {
     pub struct ObjectFlags: u8{

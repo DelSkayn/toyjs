@@ -1,4 +1,4 @@
-use vm::object::PropertyFlag;
+use vm::object::PropertyFlags;
 
 use crate::{convert::IntoJs, create_static_fn, ffi::Arguments, value::Value, Ctx, Result};
 
@@ -116,13 +116,13 @@ pub fn init(ctx: Ctx) {
     global.set("console", console).unwrap();
     global.set("eval", create_static_fn!(ctx, eval)).unwrap();
     global
-        .raw_set_flags("undefined", Value::undefined(ctx), PropertyFlag::empty())
+        .raw_set_flags("undefined", Value::undefined(ctx), PropertyFlags::empty())
         .unwrap();
     global
-        .raw_set_flags("NaN", f64::NAN, PropertyFlag::empty())
+        .raw_set_flags("NaN", f64::NAN, PropertyFlags::empty())
         .unwrap();
     global
-        .raw_set_flags("Infinity", f64::INFINITY, PropertyFlag::empty())
+        .raw_set_flags("Infinity", f64::INFINITY, PropertyFlags::empty())
         .unwrap();
     global
         .set("parseInt", create_static_fn!(ctx, parse_int))

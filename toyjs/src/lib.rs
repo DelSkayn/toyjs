@@ -64,12 +64,6 @@ impl ToyJs {
     }
 }
 
-impl Drop for ToyJs {
-    fn drop(&mut self) {
-        self.collect_full();
-    }
-}
-
 pub struct Realm {
     vm: Lock<ToyJsInner>,
     realm: OwnedGc<'static, 'static, vm::Realm<'static, 'static>>,
@@ -298,6 +292,6 @@ impl<'js> Ctx<'js> {
             ObjectKind::StaticFn(f),
         );
 
-        return Object::from_vm(self, object);
+        Object::from_vm(self, object)
     }
 }
