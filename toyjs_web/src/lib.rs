@@ -1,6 +1,3 @@
-/*
-#![recursion_limit = "512"]
-
 use std::panic::{self, UnwindSafe};
 
 use wasm_bindgen::prelude::*;
@@ -14,7 +11,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 // This is the entry point for the web app
 #[wasm_bindgen]
 pub struct ToyJs {
-    ctx: toyjs::Context,
+    ctx: toyjs::Realm,
 }
 
 impl Default for ToyJs {
@@ -23,15 +20,15 @@ impl Default for ToyJs {
     }
 }
 
-pub struct UnwindContext<'a>(&'a toyjs::Context);
+pub struct UnwindContext<'a>(&'a toyjs::Realm);
 
 impl UnwindSafe for UnwindContext<'_> {}
 
 #[wasm_bindgen]
 impl ToyJs {
     pub fn new() -> Self {
-        let realm = toyjs::ToyJs::new();
-        let ctx = toyjs::Context::new(&realm);
+        let toyjs = toyjs::ToyJs::new();
+        let ctx = toyjs::Realm::new(&toyjs);
         ToyJs { ctx }
     }
 
@@ -39,7 +36,7 @@ impl ToyJs {
         let ctx = UnwindContext(&self.ctx);
         let p = panic::catch_unwind(move || {
             ctx.0
-                .with(|ctx| match ctx.eval::<toyjs::String, _>(source) {
+                .with(|ctx| match ctx.eval::<_, toyjs::String>(source) {
                     Ok(x) => format!("\x1b[1m{}\x1b[0m", x.as_str()),
                     Err(e) => format!("\x1b[1;31m{}\x1b[0m", e),
                 })
@@ -47,9 +44,9 @@ impl ToyJs {
         match p {
             Ok(x) => x,
             Err(e) => {
-                let realm = toyjs::ToyJs::new();
-                let ctx = toyjs::Context::new(&realm);
-                self.ctx = ctx;
+                let toyjs = toyjs::ToyJs::new();
+                let realm = toyjs::Realm::new(&toyjs);
+                self.ctx = realm;
                 if let Some(e) = e.downcast_ref::<String>() {
                     format!("engine panicked, restarted engine {}", e)
                 } else if let Some(e) = e.downcast_ref::<&str>() {
@@ -61,4 +58,3 @@ impl ToyJs {
         }
     }
 }
-*/
