@@ -1,8 +1,10 @@
 use common::atom::{Atom, Atoms};
 
-use crate::{cell::CellOwner, gc::Arena, realm::GcRealm, rebind, root, GcObject, Value};
+use crate::{
+    cell::CellOwner, gc::Arena, realm::GcRealm, rebind, rebind_try, root, GcObject, Realm, Value,
+};
 
-use super::properties::{Accessor, Property, PropertyEntry, PropertyFlag, PropertyValue};
+use super::properties::{Accessor, Property, PropertyEntry, PropertyFlags, PropertyValue};
 
 impl<'gc, 'cell> GcObject<'gc, 'cell> {
     #[inline]
@@ -18,13 +20,11 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         if let Some(atom) = v.into_atom() {
             self.index(owner, arena, atoms, realm, atom)
         } else {
-            todo!()
-            /*
-            let atom = realm.to_atom(v)?;
-            let res = self.index(realm, atom);
-            realm.vm().decrement(atom);
+            let v = rebind_try!(arena, realm.to_primitive(owner, arena, atoms, v, true));
+            let atom = Realm::atomize_primitive(owner, atoms, v);
+            let res = self.index(owner, arena, atoms, realm, atom);
+            atoms.decrement(atom);
             res
-            */
         }
     }
 
@@ -87,12 +87,10 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         if let Some(a) = v.into_atom() {
             self.index_set(owner, arena, atoms, realm, a, value.into())?;
         } else {
-            /*
-            let a = realm.to_atom(v)?;
-            self.index_set(realm, a, value.into())?;
-            atoms.decrement(a);
-            */
-            todo!()
+            let v = rebind_try!(arena, realm.to_primitive(owner, arena, atoms, v, true));
+            let atom = Realm::atomize_primitive(owner, atoms, v);
+            self.index_set(owner, arena, atoms, realm, atom, value.into())?;
+            atoms.decrement(atom);
         }
         Ok(())
     }
@@ -146,7 +144,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
             owner,
             arena,
             atoms,
-            Property::value(value.into(), PropertyFlag::ordinary(), key),
+            Property::value(value.into(), PropertyFlags::ordinary(), key),
         );
     }
 
@@ -158,7 +156,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         atoms: &Atoms,
         key: Atom,
         value: V,
-        flags: PropertyFlag,
+        flags: PropertyFlags,
     ) where
         V: Into<Value<'a, 'cell>>,
     {
@@ -178,8 +176,9 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
         value: Property<'_, 'cell>,
     ) {
         let borrow = self.borrow_mut(owner, arena);
-        if let Some(x) = borrow.properties.set(value) {
-            atoms.decrement(x.atom());
+        let atom = value.atom();
+        if borrow.properties.set(value).is_none() {
+            atoms.increment(atom);
         }
     }
 }

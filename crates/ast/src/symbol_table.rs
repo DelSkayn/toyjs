@@ -288,6 +288,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             if let Some(x) = self.table.symbols_by_ident.get(&name) {
                 return x
                     .iter()
+                    .rev()
                     .find(|x| x.0 == cur_scope || self.table.child_of(cur_scope, x.0))
                     .map(|x| x.1);
             }
@@ -302,12 +303,12 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     pub fn define(&mut self, name: Atom, kind: DeclType) -> Option<SymbolId> {
         match kind {
             DeclType::Let | DeclType::Const | DeclType::Argument => {
-                if self.table.symbols_by_ident.get(&name).map_or(false, |x| {
-                    x.iter().any(|x| {
-                        x.0 == self.current_scope()
-                            || self.table.child_of(self.current_scope(), x.0)
-                    })
-                }) {
+                if self
+                    .table
+                    .symbols_by_ident
+                    .get(&name)
+                    .map_or(false, |x| x.iter().any(|x| x.0 == self.current_scope))
+                {
                     // Redeclared in same scope
                     return None;
                 }

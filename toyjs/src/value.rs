@@ -18,25 +18,15 @@ impl<'js> Value<'js> {
     }
 
     pub fn into_object(self) -> Option<Object<'js>> {
-        if let Some(obj) = self.value.into_object() {
-            Some(Object {
-                ptr: obj,
-                ctx: self.ctx,
-            })
-        } else {
-            None
-        }
+        self.value
+            .into_object()
+            .map(|ptr| Object { ptr, ctx: self.ctx })
     }
 
     pub fn into_string(self) -> Option<String<'js>> {
-        if let Some(obj) = self.value.into_string() {
-            Some(String {
-                ptr: obj,
-                ctx: self.ctx,
-            })
-        } else {
-            None
-        }
+        self.value
+            .into_string()
+            .map(|ptr| String { ptr, ctx: self.ctx })
     }
 
     pub fn into_float(self) -> Option<f64> {

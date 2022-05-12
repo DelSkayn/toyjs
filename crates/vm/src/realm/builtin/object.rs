@@ -3,7 +3,7 @@ use common::atom::{self, Atoms};
 use crate::{
     cell::CellOwner,
     gc::{Arena, Gc},
-    object::{GcObject, Object, ObjectFlags, ObjectKind, Property, PropertyFlag, PropertyValue},
+    object::{GcObject, Object, ObjectFlags, ObjectKind, Property, PropertyFlags, PropertyValue},
     realm::{ExecutionContext, GcRealm},
     rebind, rebind_try, root, Realm, Value,
 };
@@ -174,13 +174,12 @@ fn assign<'l, 'cell>(
                 }
             };
 
-            if let Some(p) = to.borrow_mut(owner, arena).properties.set(Property::value(
-                value,
-                PropertyFlag::ordinary(),
-                p.atom(),
-            )) {
-                atoms.increment(p.atom());
-            }
+            to.raw_index_set_prop(
+                owner,
+                arena,
+                atoms,
+                Property::value(value, PropertyFlags::ordinary(), p.atom()),
+            )
         }
     }
     Ok(rebind!(arena, to).into())
@@ -320,9 +319,7 @@ fn define_property<'l, 'cell>(
         Property::from_value(owner, arena, atoms, realm, prop, p)
     );
     let prop = rebind!(arena, prop);
-    if let Some(prop) = obj.borrow_mut(owner, arena).properties.set(prop) {
-        atoms.increment(prop.atom())
-    }
+    obj.raw_index_set_prop(owner, arena, atoms, prop);
     Ok(rebind!(arena, obj).into())
 }
 
@@ -431,7 +428,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::toString,
         to_string,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
     let construct = Object::new_gc(
         arena,
@@ -445,7 +442,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::prototype,
         op,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
     construct.raw_index_set_flags(
         owner,
@@ -453,7 +450,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::length,
         1,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     op.raw_index_set_flags(
@@ -462,7 +459,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::constructor,
         construct,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     global.raw_index_set(owner, arena, atoms, atom::constant::Object, construct);
@@ -474,7 +471,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::getPrototypeOf,
         get_prototype_of,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let is = new_func(arena, owner, atoms, fp, is, 2);
@@ -484,7 +481,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::is,
         is,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let is_extensible = new_func(arena, owner, atoms, fp, is_extensible, 1);
@@ -494,7 +491,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::isExtensible,
         is_extensible,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let assign = new_func(arena, owner, atoms, fp, assign, 2);
@@ -504,7 +501,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::assign,
         assign,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let create = new_func(arena, owner, atoms, fp, create, 2);
@@ -514,7 +511,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::create,
         create,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let define_properties = new_func(arena, owner, atoms, fp, define_properties, 2);
@@ -524,7 +521,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::defineProperties,
         define_properties,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let define_property = new_func(arena, owner, atoms, fp, define_property, 3);
@@ -534,7 +531,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::defineProperty,
         define_property,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let freeze = new_func(arena, owner, atoms, fp, freeze, 1);
@@ -544,7 +541,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::freeze,
         freeze,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let seal = new_func(arena, owner, atoms, fp, seal, 1);
@@ -554,7 +551,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::seal,
         seal,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let is_sealed = new_func(arena, owner, atoms, fp, is_sealed, 1);
@@ -564,7 +561,7 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::isSealed,
         is_sealed,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 
     let is_frozen = new_func(arena, owner, atoms, fp, is_frozen, 1);
@@ -574,6 +571,6 @@ pub fn init<'l, 'cell>(
         atoms,
         atom::constant::isFrozen,
         is_frozen,
-        PropertyFlag::BUILTIN,
+        PropertyFlags::BUILTIN,
     );
 }

@@ -198,12 +198,18 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     // otherwise.
                     arena.write_barrier(self);
                     arena.collect(owner, atoms);
-                    let object = arena.add(Object::new(
-                        None,
+
+                    let proto = self.borrow(owner).builtin.array_proto;
+                    let res = Object::new_gc(
+                        arena,
+                        Some(proto),
                         ObjectFlags::ORDINARY,
-                        ObjectKind::Ordinary,
-                    ));
-                    self.w(owner).stack.write(dst, object.into());
+                        ObjectKind::Array,
+                    );
+                    let fp = self.borrow(owner).builtin.function_proto;
+                    builtin::array::define_length(owner, arena, atoms, fp, res);
+
+                    self.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::Index { dst, obj, key } => {
                     let key = self.r(owner).stack.read(key);
@@ -849,10 +855,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         value: Value<'_, 'cell>,
         prefer_string: bool,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        const PREFER_STRING: &'static [atom::Atom] =
-            &[atom::constant::toString, atom::constant::valueOf];
-        const PREFER_VALUE: &'static [atom::Atom] =
-            &[atom::constant::valueOf, atom::constant::toString];
+        const PREFER_STRING: &[atom::Atom] = &[atom::constant::toString, atom::constant::valueOf];
+        const PREFER_VALUE: &[atom::Atom] = &[atom::constant::valueOf, atom::constant::toString];
 
         if let Some(obj) = value.into_object() {
             // Again not sure why this needs to be rooted but it doesn not work otherwise.
@@ -1355,7 +1359,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
-        mut ctx: ExecutionContext<'_, 'cell>,
+        ctx: ExecutionContext<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         match ctx.function.borrow(owner).kind() {
             ObjectKind::VmFn(func) => {
@@ -1376,7 +1380,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         )
                     })
                 );
-                let res = self.run(arena, owner, atoms, &mut instr, &mut ctx);
+                let res = self.run(arena, owner, atoms, &mut instr, &ctx);
                 let res = rebind!(arena, res);
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
