@@ -83,11 +83,4 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
                 | ObjectKind::MutableFn(_)
         )
     }
-
-    /*
-    #[inline]
-    pub fn is_constructor(&self) -> bool {
-        self.flags.contains(ObjectFlags::CONSTRUCTOR)
-    }
-    */
 }
