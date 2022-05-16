@@ -72,5 +72,6 @@ define_atom!(
     isFrozen,
     isSealed,
     Array,
-    eval
+    eval,
+    String
 );

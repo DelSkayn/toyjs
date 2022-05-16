@@ -30,6 +30,9 @@ pub enum ObjectKind<'gc, 'cell> {
     VmFn(VmFunction<'gc, 'cell>),
     SharedFn(SharedFn),
     StaticFn(StaticFn),
+    Boolean(bool),
+    Number(f64),
+    String(Gc<'gc, 'cell, String>),
     //ForInIterator(ForInIterator),
 }
 
@@ -45,6 +48,9 @@ impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
                 Self::VmFn(_) => "VmFn",
                 Self::SharedFn(_) => "SharedFn",
                 Self::StaticFn(_) => "StaticFn",
+                Self::Boolean(_) => "Boolean",
+                Self::Number(_) => "Number",
+                Self::String(_) => "String",
                 //Self::ForInIterator(_) => "ForInIterator",
             }
         )
@@ -66,6 +72,11 @@ unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
             | ObjectKind::Error
             | ObjectKind::SharedFn(_)
             | ObjectKind::StaticFn(_) => {}
+            ObjectKind::Boolean(_) => {}
+            ObjectKind::Number(_) => {}
+            ObjectKind::String(ref x) => {
+                x.trace(trace);
+            }
             ObjectKind::VmFn(ref x) => {
                 x.trace(trace);
             }

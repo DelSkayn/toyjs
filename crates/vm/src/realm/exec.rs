@@ -611,7 +611,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         let ctx = ExecutionContext {
                             function: obj,
                             this: obj.into(),
-                            new_target: Value::null(),
+                            new_target: Value::undefined(),
                         };
                         let res = rebind_try!(arena, self.vm_call(owner, arena, atoms, ctx));
                         self.w(owner).stack.write(dst, res);
