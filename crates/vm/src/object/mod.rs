@@ -1,5 +1,4 @@
 use core::fmt;
-use std::cell::RefCell;
 
 use crate::gc::{self, Arena, Gc, Rebind, Trace, Tracer};
 
@@ -9,7 +8,7 @@ mod index;
 mod properties;
 
 use elements::Elements;
-pub use function::{FunctionKind, MutableFn, SharedFn, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC};
+pub use function::{FunctionKind, SharedFn, StaticFn, VmFunction};
 use properties::Properties;
 pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
 
@@ -29,7 +28,6 @@ pub enum ObjectKind<'gc, 'cell> {
     Array,
     Error,
     VmFn(VmFunction<'gc, 'cell>),
-    MutableFn(RefCell<MutableFn>),
     SharedFn(SharedFn),
     StaticFn(StaticFn),
     //ForInIterator(ForInIterator),
@@ -45,7 +43,6 @@ impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
                 Self::Array => "Array",
                 Self::Error => "Error",
                 Self::VmFn(_) => "VmFn",
-                Self::MutableFn(_) => "MutableFn",
                 Self::SharedFn(_) => "SharedFn",
                 Self::StaticFn(_) => "StaticFn",
                 //Self::ForInIterator(_) => "ForInIterator",
@@ -67,7 +64,6 @@ unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
             ObjectKind::Ordinary
             | ObjectKind::Array
             | ObjectKind::Error
-            | ObjectKind::MutableFn(_)
             | ObjectKind::SharedFn(_)
             | ObjectKind::StaticFn(_) => {}
             ObjectKind::VmFn(ref x) => {

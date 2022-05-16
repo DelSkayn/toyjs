@@ -4,7 +4,7 @@ use crate::{
     cell::CellOwner,
     gc::{self, Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
-    object::{FunctionKind, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
+    object::{FunctionKind, ObjectFlags, ObjectKind, VmFunction},
     rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
 };
 
@@ -1416,24 +1416,6 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     })
                 );
                 let res = rebind!(arena, (*x)(arena, owner, atoms, self, &ctx));
-                self.w(owner).stack.pop_frame(arena, guard);
-                res
-            }
-            FunctionKind::MutableFn(x) => {
-                let guard = rebind_try!(
-                    arena,
-                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
-                        self.create_runtime_error(
-                            owner,
-                            arena,
-                            atoms,
-                            Stack::DEPTH_EXCEEDED_MSG,
-                            None,
-                        )
-                    })
-                );
-                let mut borrow = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC);
-                let res = rebind!(arena, (*borrow)(arena, owner, atoms, self, &ctx));
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
             }

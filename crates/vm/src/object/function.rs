@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-
 use crate::{
     cell::CellOwner,
     gc::{Arena, Rebind, Trace, Tracer},
@@ -11,25 +9,12 @@ use common::atom::Atoms;
 
 use super::{Object, ObjectKind};
 
-pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
-
 pub enum FunctionKind<'gc, 'cell, 'a> {
     None,
     VmFn(&'a VmFunction<'gc, 'cell>),
-    MutableFn(&'a RefCell<MutableFn>),
     SharedFn(&'a SharedFn),
     StaticFn(StaticFn),
 }
-
-pub type MutableFn = Box<
-    dyn for<'l, 'cell> FnMut(
-        &'l mut Arena<'_, 'cell>,
-        &mut CellOwner<'cell>,
-        &Atoms,
-        GcRealm<'_, 'cell>,
-        &ExecutionContext<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>,
->;
 
 pub type SharedFn = Box<
     dyn for<'l, 'cell> Fn(
@@ -87,10 +72,7 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
     pub fn is_function(&self) -> bool {
         matches!(
             self.kind,
-            ObjectKind::VmFn(_)
-                | ObjectKind::SharedFn(_)
-                | ObjectKind::StaticFn(_)
-                | ObjectKind::MutableFn(_)
+            ObjectKind::VmFn(_) | ObjectKind::SharedFn(_) | ObjectKind::StaticFn(_)
         )
     }
 }
@@ -105,7 +87,6 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
             ObjectKind::VmFn(ref x) => FunctionKind::VmFn(x),
             ObjectKind::SharedFn(ref x) => FunctionKind::SharedFn(x),
             ObjectKind::StaticFn(ref x) => FunctionKind::StaticFn(*x),
-            ObjectKind::MutableFn(ref x) => FunctionKind::MutableFn(x),
             _ => FunctionKind::None,
         }
     }
