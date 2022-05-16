@@ -1,6 +1,7 @@
 use common::atom::Atom;
 
 use crate::{
+    cell::Id,
     gc::{Gc, GcBox, Rebind, Trace, Tracer},
     GcObject, Object,
 };
@@ -53,14 +54,16 @@ impl cmp::PartialEq<ValueUnion> for ValueUnion {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Value<'gc, 'cell> {
     value: ValueUnion,
-    marker: PhantomData<(&'gc (), &'cell ())>,
+    marker: PhantomData<&'gc ()>,
+    id: Id<'cell>,
 }
 
 impl<'gc, 'cell> Value<'gc, 'cell> {
-    const fn from_value(v: ValueUnion) -> Self {
+    unsafe fn from_value(v: ValueUnion) -> Self {
         Value {
             value: v,
             marker: PhantomData,
+            id: Id::new(),
         }
     }
 
@@ -86,6 +89,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
             Some(Value {
                 value: self.value,
                 marker: PhantomData,
+                id: Id::new(),
             })
         }
     }
@@ -190,27 +194,29 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
 
     /// Create a new value containing the undefined javascript value.
     #[inline]
-    pub const fn undefined() -> Self {
-        Value::from_value(ValueUnion {
-            bits: VALUE_UNDEFINED,
-        })
+    pub fn undefined() -> Self {
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: VALUE_UNDEFINED,
+            })
+        }
     }
 
     /// Create a new value containing the null javascript value.
     #[inline]
-    pub const fn null() -> Self {
-        Value::from_value(ValueUnion { bits: VALUE_NULL })
+    pub fn null() -> Self {
+        unsafe { Value::from_value(ValueUnion { bits: VALUE_NULL }) }
     }
 
     /// Create a new value which is empty.
     /// This value is vm internal only and should not be exposed outside of the vm.
     #[inline]
-    pub const fn empty() -> Self {
-        Value::from_value(ValueUnion { bits: VALUE_EMPTY })
+    pub fn empty() -> Self {
+        unsafe { Value::from_value(ValueUnion { bits: VALUE_EMPTY }) }
     }
 
     #[inline]
-    pub const fn nan() -> Self {
+    pub fn nan() -> Self {
         unsafe {
             Value::from_value(ValueUnion {
                 bits: std::mem::transmute::<f64, u64>(f64::NAN) + MIN_FLOAT,
@@ -219,93 +225,17 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub const fn ensure_float(v: f64) -> Self {
+    pub fn ensure_float(v: f64) -> Self {
         unsafe {
             Value {
                 value: ValueUnion {
                     bits: std::mem::transmute::<f64, u64>(v) + MIN_FLOAT,
                 },
                 marker: PhantomData,
+                id: Id::new(),
             }
         }
     }
-
-    /*
-    /// Convert the value to `bool`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_bool` returns false
-    #[inline]
-    pub fn cast_bool(self) -> bool {
-        unsafe {
-            debug_assert!(self.is_bool());
-            self.0.bits == VALUE_TRUE
-        }
-    }
-
-    /// Convert the value to `i32`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_int` returns false
-    #[inline]
-    pub fn cast_int(self) -> i32 {
-        unsafe {
-            debug_assert!(self.is_int());
-            self.0.int
-        }
-    }
-
-    /// Convert the value to `f64`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_float` returns false
-    #[inline]
-    pub fn cast_float(mut self) -> f64 {
-        unsafe {
-            debug_assert!(self.is_float());
-            self.0.bits -= MIN_FLOAT;
-            self.0.float
-        }
-    }
-
-    /// Convert the value to `Atom`
-    ///
-    /// # Safety
-    ///
-    /// Will return arbitrary values if `is_float` returns false
-    #[inline]
-    pub fn cast_atom(self) -> Atom {
-        unsafe {
-            debug_assert!(self.is_atom());
-            Atom::from_raw(self.0.int as u32)
-        }
-    }
-
-    /// Convert the value to [`Object`]
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an object
-    #[inline]
-    pub unsafe fn unsafe_cast_object(self) -> Gc<Object> {
-        debug_assert!(self.is_object());
-        Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
-    }
-
-    /// Convert the value to `String`
-    ///
-    /// # Safety
-    ///
-    /// Caller must guarentee that the value is an string
-    #[inline]
-    pub unsafe fn unsafe_cast_string(self) -> Gc<String> {
-        debug_assert!(self.is_string());
-        Gc::from_raw((self.0.bits & PTR_MASK) as *mut ())
-    }
-    */
 
     #[inline]
     pub fn into_int(self) -> Option<i32> {
@@ -374,18 +304,22 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
 impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: bool) -> Self {
-        Value::from_value(ValueUnion {
-            bits: if v { VALUE_TRUE } else { VALUE_FALSE },
-        })
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: if v { VALUE_TRUE } else { VALUE_FALSE },
+            })
+        }
     }
 }
 
 impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: i32) -> Self {
-        Value::from_value(ValueUnion {
-            bits: TAG_INT | v as u32 as u64,
-        })
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: TAG_INT | v as u32 as u64,
+            })
+        }
     }
 }
 
@@ -403,27 +337,33 @@ impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
 impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: Gc<String>) -> Self {
-        Value::from_value(ValueUnion {
-            bits: TAG_STRING | Gc::into_raw(v) as u64,
-        })
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: TAG_STRING | Gc::into_raw(v) as u64,
+            })
+        }
     }
 }
 
 impl<'gc, 'cell> From<GcObject<'gc, 'cell>> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: Gc<Object>) -> Self {
-        Value::from_value(ValueUnion {
-            bits: TAG_OBJECT | Gc::into_raw(v) as u64,
-        })
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: TAG_OBJECT | Gc::into_raw(v) as u64,
+            })
+        }
     }
 }
 
 impl<'gc, 'cell> From<Atom> for Value<'gc, 'cell> {
     #[inline]
     fn from(v: Atom) -> Self {
-        Value::from_value(ValueUnion {
-            bits: TAG_ATOM | v.into_raw() as u32 as u64,
-        })
+        unsafe {
+            Value::from_value(ValueUnion {
+                bits: TAG_ATOM | v.into_raw() as u32 as u64,
+            })
+        }
     }
 }
 

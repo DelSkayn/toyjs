@@ -11,7 +11,7 @@ use parser::Parser;
 use vm::{
     cell::{CellOwner, Id},
     gc::{Arena, OwnedGc, Roots},
-    object::{ObjectFlags, ObjectKind, StaticFn},
+    object::{ObjectFlags, ObjectKind, StaticFn, VmFunction},
     realm::GcRealm,
 };
 
@@ -27,7 +27,7 @@ mod convert;
 pub use convert::FromJs;
 
 mod object;
-pub use object::Object;
+pub use object::{Function, Object};
 
 mod value;
 pub use value::Value;
@@ -221,6 +221,45 @@ impl<'js> Ctx<'js> {
             }
             Err(e) => Err(Error::Value(Value::from_vm(self, e))),
         }
+    }
+
+    pub fn compile<S: Into<StdString>>(self, source: S) -> Result<'js, Function<'js>> {
+        let owner = unsafe { CellOwner::new(self.id) };
+        let arena = unsafe { Arena::new_unchecked(self.context.root) };
+
+        let source = common::source::Source::from_string(source.into());
+        let mut interner = Interner::new(self.context.atoms);
+        let lexer = Lexer::new(&source, &mut interner);
+        let mut symbol_table = SymbolTable::new();
+        let script = match Parser::parse_script(lexer, &mut symbol_table, Global) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(Error::Syntax(format!(
+                    "{}",
+                    e.format(&source, self.context.atoms)
+                )))
+            }
+        };
+
+        let bc =
+            Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
+        mem::drop(interner);
+
+        let bc = arena.add(bc);
+
+        let proto = self.context.realm.borrow(&owner).builtin.function_proto;
+        let object = vm::Object::new_gc(
+            &arena,
+            Some(proto),
+            ObjectFlags::ORDINARY,
+            ObjectKind::VmFn(VmFunction {
+                bc,
+                function: 0,
+                upvalues: Box::new([]),
+            }),
+        );
+
+        Ok(Function::from_vm(self, object))
     }
 
     pub fn to_string(self, v: Value<'js>) -> Result<'js, String<'js>> {

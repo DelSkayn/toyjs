@@ -1,3 +1,5 @@
+use vm::cell::CellOwner;
+
 use crate::{Ctx, Object, String};
 
 #[derive(Debug, Clone, Copy)]
@@ -10,6 +12,31 @@ impl<'js> Value<'js> {
     pub(crate) fn from_vm(ctx: Ctx<'js>, v: vm::Value<'_, 'js>) -> Self {
         let value = ctx.root_value(v);
         Value { value, ctx }
+    }
+
+    pub fn type_name(self) -> &'static str {
+        if self.value.is_int() {
+            "number(int)"
+        } else if self.value.is_float() {
+            "number(float)"
+        } else if self.value.is_null() {
+            "null"
+        } else if self.value.is_undefined() {
+            "undefined"
+        } else if self.value.is_bool() {
+            "boolean"
+        } else if self.value.is_string() {
+            "string"
+        } else if let Some(obj) = self.value.into_object() {
+            let owner = unsafe { CellOwner::new(self.ctx.id) };
+            if obj.borrow(&owner).is_function() {
+                "function"
+            } else {
+                "object"
+            }
+        } else {
+            "invalid"
+        }
     }
 
     #[doc(hidden)]
@@ -39,6 +66,13 @@ impl<'js> Value<'js> {
 
     pub fn is_nan(self) -> bool {
         self.value.into_float().map_or(false, |x| x.is_nan())
+    }
+
+    pub fn is_function(self) -> bool {
+        let owner = unsafe { CellOwner::new(self.ctx.id) };
+        self.value
+            .into_object()
+            .map_or(false, |x| x.borrow(&owner).is_function())
     }
 
     pub fn undefined(ctx: Ctx<'js>) -> Self {

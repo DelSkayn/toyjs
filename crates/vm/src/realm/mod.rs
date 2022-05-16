@@ -121,6 +121,22 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
     }
 
+    pub fn call<'l>(
+        self,
+        arena: &'l mut gc::Arena<'_, 'cell>,
+        owner: &mut CellOwner<'cell>,
+        atoms: &Atoms,
+        function: GcObject<'_, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        let ctx = ExecutionContext {
+            function,
+            this: Value::undefined(),
+            new_target: Value::undefined(),
+        };
+
+        unsafe { self.vm_call(owner, arena, atoms, ctx) }
+    }
+
     /// # Safety
     ///
     /// The bytecode must be valid

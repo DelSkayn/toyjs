@@ -4,7 +4,7 @@ use std::{cell::UnsafeCell, marker::PhantomData};
 // -- The Guard from generativity crate
 
 #[doc(hidden)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id<'id>(PhantomData<&'id mut &'id fn(&'id ()) -> &'id ()>);
 
 impl<'id> Id<'id> {
