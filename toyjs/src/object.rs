@@ -3,6 +3,50 @@ use vm::{cell::CellOwner, gc::Arena, object::PropertyFlags, GcObject};
 use crate::{atom::IntoAtom, convert::IntoJs, Ctx, Error, FromJs, Result, Value};
 
 #[derive(Clone, Copy)]
+pub struct Function<'js> {
+    pub(crate) ptr: GcObject<'js, 'js>,
+    pub(crate) ctx: Ctx<'js>,
+}
+
+impl<'js> Function<'js> {
+    pub(crate) fn from_vm(ctx: Ctx<'js>, ptr: GcObject<'_, 'js>) -> Self {
+        unsafe {
+            ctx.context.root.push(ptr);
+            Function {
+                ctx,
+                ptr: vm::gc::rebind(ptr),
+            }
+        }
+    }
+
+    pub fn into_object(self) -> Object<'js> {
+        Object {
+            ptr: self.ptr,
+            ctx: self.ctx,
+        }
+    }
+
+    pub fn call<R: FromJs<'js>>(self) -> Result<'js, R> {
+        let mut owner = unsafe { CellOwner::new(self.ctx.id) };
+        let mut arena = unsafe { Arena::new_unchecked(self.ctx.context.root) };
+
+        let res =
+            self.ctx
+                .context
+                .realm
+                .call(&mut arena, &mut owner, self.ctx.context.atoms, self.ptr);
+
+        match res {
+            Ok(x) => {
+                let v = Value::from_vm(self.ctx, x);
+                R::from_js(self.ctx, v)
+            }
+            Err(e) => Err(Error::Value(Value::from_vm(self.ctx, e))),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub struct Object<'js> {
     pub(crate) ptr: GcObject<'js, 'js>,
     pub(crate) ctx: Ctx<'js>,
@@ -19,8 +63,24 @@ impl<'js> Object<'js> {
         }
     }
 
+    pub fn is_function(self) -> bool {
+        let owner = unsafe { CellOwner::new(self.ctx.id) };
+        self.ptr.borrow(&owner).is_function()
+    }
+
     pub(crate) fn into_vm(self) -> GcObject<'js, 'js> {
         self.ptr
+    }
+
+    pub fn into_function(self) -> Option<Function<'js>> {
+        if self.is_function() {
+            Some(Function {
+                ctx: self.ctx,
+                ptr: self.ptr,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn into_value(self) -> Value<'js> {

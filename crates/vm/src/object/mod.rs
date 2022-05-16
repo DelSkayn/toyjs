@@ -9,7 +9,7 @@ mod index;
 mod properties;
 
 use elements::Elements;
-pub use function::{MutableFn, SharedFn, StaticFn, VmFunction};
+pub use function::{FunctionKind, MutableFn, SharedFn, StaticFn, VmFunction, RECURSIVE_FUNC_PANIC};
 use properties::Properties;
 pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
 
@@ -125,7 +125,9 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
         self.flags
     }
 
-    pub fn kind(&self) -> &ObjectKind<'gc, 'cell> {
+    /// # Safety
+    /// Accessing function kinds as mutable is unsafe
+    pub unsafe fn kind(&self) -> &ObjectKind<'gc, 'cell> {
         &self.kind
     }
 

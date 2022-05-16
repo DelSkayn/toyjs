@@ -1,9 +1,11 @@
+use std::cell::RefCell;
+
 use crate::{
     cell::CellOwner,
     gc::{Arena, Rebind, Trace, Tracer},
     instructions::GcByteCode,
     realm::{ExecutionContext, GcRealm, GcUpvalueObject},
-    Value,
+    GcObject, Value,
 };
 use common::atom::Atoms;
 
@@ -11,24 +13,32 @@ use super::{Object, ObjectKind};
 
 pub const RECURSIVE_FUNC_PANIC: &str = "tried to call mutable function recursively";
 
+pub enum FunctionKind<'gc, 'cell, 'a> {
+    None,
+    VmFn(&'a VmFunction<'gc, 'cell>),
+    MutableFn(&'a RefCell<MutableFn>),
+    SharedFn(&'a SharedFn),
+    StaticFn(StaticFn),
+}
+
 pub type MutableFn = Box<
-    dyn for<'gc, 'cell> FnMut(
-        &mut Arena<'gc, 'cell>,
+    dyn for<'l, 'cell> FnMut(
+        &'l mut Arena<'_, 'cell>,
         &mut CellOwner<'cell>,
         &Atoms,
-        GcRealm<'gc, 'cell>,
-        &ExecutionContext<'gc, 'cell>,
-    ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
+        GcRealm<'_, 'cell>,
+        &ExecutionContext<'_, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>,
 >;
 
 pub type SharedFn = Box<
-    dyn for<'a, 'gc, 'cell> Fn(
-        &mut Arena<'gc, 'cell>,
+    dyn for<'l, 'cell> Fn(
+        &'l mut Arena<'_, 'cell>,
         &mut CellOwner<'cell>,
         &Atoms,
-        GcRealm<'gc, 'cell>,
-        &ExecutionContext<'gc, 'cell>,
-    ) -> Result<Value<'gc, 'cell>, Value<'gc, 'cell>>,
+        GcRealm<'_, 'cell>,
+        &ExecutionContext<'_, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>>,
 >;
 
 pub type StaticFn = for<'l, 'cell> unsafe fn(
@@ -82,5 +92,21 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
                 | ObjectKind::StaticFn(_)
                 | ObjectKind::MutableFn(_)
         )
+    }
+}
+
+impl<'gc, 'cell> GcObject<'gc, 'cell> {
+    /// TODO: Safety is still kinda unsure.
+    pub fn as_function_kind<'l>(
+        &'l self,
+        _owner: &CellOwner<'cell>,
+    ) -> FunctionKind<'gc, 'cell, 'l> {
+        match &unsafe { &(*self.get()) }.kind {
+            ObjectKind::VmFn(ref x) => FunctionKind::VmFn(x),
+            ObjectKind::SharedFn(ref x) => FunctionKind::SharedFn(x),
+            ObjectKind::StaticFn(ref x) => FunctionKind::StaticFn(*x),
+            ObjectKind::MutableFn(ref x) => FunctionKind::MutableFn(x),
+            _ => FunctionKind::None,
+        }
     }
 }

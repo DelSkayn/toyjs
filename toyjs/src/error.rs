@@ -10,6 +10,10 @@ pub enum Error<'js> {
     Syntax(String),
     Type(String),
     Value(Value<'js>),
+    Conversion {
+        found: &'static str,
+        expected: &'static str,
+    },
 }
 
 impl<'js> Error<'js> {
@@ -37,6 +41,15 @@ impl<'js> Error<'js> {
                         .create_syntax_error(&mut owner, &arena, ctx.context.atoms, x);
                 ctx.root_value(v)
             }
+            Error::Conversion { found, expected } => {
+                let v = ctx.context.realm.create_syntax_error(
+                    &mut owner,
+                    &arena,
+                    ctx.context.atoms,
+                    format!("Could not convert from `{}` to `{}`", found, expected),
+                );
+                ctx.root_value(v)
+            }
         }
     }
 }
@@ -60,6 +73,13 @@ impl<'js> fmt::Debug for Error<'js> {
             Error::Type(x) => {
                 write!(f, "Uncaught TypeError: {}", x)?;
             }
+            Error::Conversion { found, expected } => {
+                write!(
+                    f,
+                    "Uncaught TypeError: Could not convert from `{}` to `{}`",
+                    found, expected
+                )?;
+            }
         }
         Ok(())
     }
@@ -81,6 +101,13 @@ impl<'js> fmt::Display for Error<'js> {
             }
             Error::Type(x) => {
                 write!(f, "Uncaught TypeError: {}", x)?;
+            }
+            Error::Conversion { found, expected } => {
+                write!(
+                    f,
+                    "Uncaught TypeError: Could not convert from `{}` to `{}`",
+                    found, expected
+                )?;
             }
         }
         Ok(())

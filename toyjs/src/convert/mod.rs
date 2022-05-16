@@ -10,6 +10,31 @@ pub trait IntoJs<'js> {
     fn into_js(self, ctx: Ctx<'js>) -> Result<'js, Value<'js>>;
 }
 
+impl<'js> FromJs<'js> for f64 {
+    fn from_js(_: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        if let Some(x) = value.value.into_int() {
+            return Ok(x.into());
+        }
+
+        value.into_float().ok_or_else(|| crate::Error::Conversion {
+            found: value.type_name(),
+            expected: "number",
+        })
+    }
+}
+
+impl<'js> FromJs<'js> for i32 {
+    fn from_js(_: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
+        value
+            .value
+            .into_int()
+            .ok_or_else(|| crate::Error::Conversion {
+                found: value.type_name(),
+                expected: "number(int)",
+            })
+    }
+}
+
 impl<'js> FromJs<'js> for Value<'js> {
     fn from_js(_: Ctx<'js>, value: Value<'js>) -> Result<'js, Self> {
         Ok(value)

@@ -4,7 +4,7 @@ use crate::{
     cell::CellOwner,
     gc::{self, Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
-    object::{ObjectFlags, ObjectKind, VmFunction},
+    object::{FunctionKind, ObjectFlags, ObjectKind, VmFunction, RECURSIVE_FUNC_PANIC},
     rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
 };
 
@@ -613,7 +613,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             this: obj.into(),
                             new_target: Value::null(),
                         };
-                        let res = rebind_try!(arena, self.call(owner, arena, atoms, ctx));
+                        let res = rebind_try!(arena, self.vm_call(owner, arena, atoms, ctx));
                         self.w(owner).stack.write(dst, res);
                     } else {
                         return Err(self.create_type_error(
@@ -1305,7 +1305,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             }
         };
 
-        unsafe { self.call(owner, arena, atoms, ctx) }
+        unsafe { self.vm_call(owner, arena, atoms, ctx) }
     }
 
     pub fn construct_call<'l>(
@@ -1344,7 +1344,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             }
         };
 
-        let res = rebind_try!(arena, unsafe { self.call(owner, arena, atoms, ctx) });
+        let res = rebind_try!(arena, unsafe { self.vm_call(owner, arena, atoms, ctx) });
         let res = rebind!(arena, res);
         if let Some(obj) = res.into_object() {
             Ok(obj.into())
@@ -1354,15 +1354,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     #[allow(unused_unsafe)]
-    pub unsafe fn call<'l>(
+    pub unsafe fn vm_call<'l>(
         self,
         owner: &mut CellOwner<'cell>,
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
         ctx: ExecutionContext<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        match ctx.function.borrow(owner).kind() {
-            ObjectKind::VmFn(func) => {
+        match ctx.function.as_function_kind(owner) {
+            FunctionKind::VmFn(func) => {
                 let bc = func.bc;
                 let frame_size =
                     bc.borrow(owner).functions[func.function as usize].registers as u32;
@@ -1385,8 +1385,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
             }
-            ObjectKind::StaticFn(x) => {
-                let x = *x;
+            FunctionKind::StaticFn(x) => {
                 let guard = rebind_try!(
                     arena,
                     self.w(owner).stack.push_frame(0).ok_or_else(|| {
@@ -1400,6 +1399,41 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     })
                 );
                 let res = rebind!(arena, x(arena, owner, atoms, self, &ctx));
+                self.w(owner).stack.pop_frame(arena, guard);
+                res
+            }
+            FunctionKind::SharedFn(x) => {
+                let guard = rebind_try!(
+                    arena,
+                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
+                        self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            Stack::DEPTH_EXCEEDED_MSG,
+                            None,
+                        )
+                    })
+                );
+                let res = rebind!(arena, (*x)(arena, owner, atoms, self, &ctx));
+                self.w(owner).stack.pop_frame(arena, guard);
+                res
+            }
+            FunctionKind::MutableFn(x) => {
+                let guard = rebind_try!(
+                    arena,
+                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
+                        self.create_runtime_error(
+                            owner,
+                            arena,
+                            atoms,
+                            Stack::DEPTH_EXCEEDED_MSG,
+                            None,
+                        )
+                    })
+                );
+                let mut borrow = x.try_borrow_mut().expect(RECURSIVE_FUNC_PANIC);
+                let res = rebind!(arena, (*borrow)(arena, owner, atoms, self, &ctx));
                 self.w(owner).stack.pop_frame(arena, guard);
                 res
             }
