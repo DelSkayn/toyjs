@@ -14,6 +14,7 @@ use super::{ExecutionContext, GcRealm};
 pub mod array;
 pub mod error;
 mod object;
+mod string;
 
 pub struct Builtin<'gc, 'cell> {
     /// The global object.
@@ -22,6 +23,7 @@ pub struct Builtin<'gc, 'cell> {
     pub function_proto: GcObject<'gc, 'cell>,
 
     pub array_proto: GcObject<'gc, 'cell>,
+    pub string_proto: GcObject<'gc, 'cell>,
 
     pub error_proto: GcObject<'gc, 'cell>,
     pub syntax_error_proto: GcObject<'gc, 'cell>,
@@ -42,6 +44,7 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
         trace.mark(self.object_proto);
         trace.mark(self.function_proto);
         trace.mark(self.array_proto);
+        trace.mark(self.string_proto);
         trace.mark(self.error_proto);
         trace.mark(self.syntax_error_proto);
         trace.mark(self.type_error_proto);
@@ -116,6 +119,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
 
         object::init(owner, arena, atoms, op, fp, global);
         let array_proto = array::init(owner, arena, atoms, op, fp, global);
+        let string_proto = string::init(owner, arena, atoms, op, fp, global);
 
         let name = arena.add("Error".to_string());
         let error_to_string = new_func(arena, owner, atoms, fp, error::to_string, 0);
@@ -181,6 +185,7 @@ impl<'gc, 'cell> Builtin<'gc, 'cell> {
             object_proto: op,
             function_proto: fp,
             array_proto,
+            string_proto,
             error_proto,
             syntax_error_proto,
             type_error_proto,
