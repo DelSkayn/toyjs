@@ -8,6 +8,8 @@ use crate::{
     rebind, rebind_try, root, GcObject, Object, Value,
 };
 
+use super::new_func;
+
 fn construct<'l, 'cell>(
     arena: &'l mut Arena<'_, 'cell>,
     owner: &mut CellOwner<'cell>,
@@ -54,6 +56,30 @@ fn construct<'l, 'cell>(
     }
 }
 
+fn to_string<'l, 'cell>(
+    arena: &'l mut Arena<'_, 'cell>,
+    owner: &mut CellOwner<'cell>,
+    atoms: &Atoms,
+    realm: GcRealm<'_, 'cell>,
+    ctx: &ExecutionContext<'_, 'cell>,
+) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    if ctx.this.is_string() {
+        return Ok(rebind!(arena, ctx.this));
+    }
+    if let Some(obj) = ctx.this.into_object() {
+        if let ObjectKind::String(x) = unsafe { obj.borrow(owner).kind() } {
+            return Ok(rebind!(arena, *x).into());
+        }
+    }
+
+    return Err(realm.create_type_error(
+        owner,
+        arena,
+        atoms,
+        "String.prototype.toString called on non string object",
+    ));
+}
+
 pub fn init<'l, 'cell>(
     owner: &mut CellOwner<'cell>,
     arena: &'l Arena<'_, 'cell>,
@@ -77,6 +103,10 @@ pub fn init<'l, 'cell>(
     );
     construct.raw_index_set(owner, arena, atoms, atom::constant::prototype, prototype);
     global.raw_index_set(owner, arena, atoms, atom::constant::String, construct);
+
+    let to_string = new_func(arena, owner, atoms, fp, to_string, 0);
+    prototype.raw_index_set(owner, arena, atoms, atom::constant::toString, to_string);
+    prototype.raw_index_set(owner, arena, atoms, atom::constant::valueOf, to_string);
 
     prototype
 }
