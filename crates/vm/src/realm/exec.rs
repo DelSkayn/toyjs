@@ -219,13 +219,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
                         self.w(owner).stack.write(dst, res.empty_to_undefined());
                     } else {
-                        return Err(self.create_runtime_error(
-                            owner,
+                        let res = rebind_try!(
                             arena,
-                            atoms,
-                            "todo index: ",
-                            Some(obj),
-                        ));
+                            self.index_non_object(owner, arena, atoms, obj, key)
+                        );
+                        self.w(owner).stack.write(dst, res.empty_to_undefined());
                     }
                 }
                 Instruction::IndexAssign { obj, key, src } => {
@@ -237,14 +235,21 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             arena,
                             obj.index_set_value(owner, arena, atoms, self, key, src)
                         );
-                    } else {
-                        return Err(self.create_runtime_error(
+                    } else if obj.is_undefined() {
+                        return Err(self.create_type_error(
                             owner,
                             arena,
                             atoms,
-                            "todo index assign: ",
-                            Some(obj),
+                            "undefined has no properties",
                         ));
+                    } else if obj.is_null() {
+                        return Err(self.create_type_error(
+                            owner,
+                            arena,
+                            atoms,
+                            "null has no properties",
+                        ));
+                    } else {
                     }
                 }
                 Instruction::GlobalIndex { dst, key } => {
@@ -263,7 +268,6 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         obj.index_set_value(owner, arena, atoms, self, key, src)
                     );
                 }
-
                 Instruction::Upvalue { dst, slot } => {
                     let upvalue =
                         ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
@@ -635,17 +639,37 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             root!(arena, function);
                             let res = rebind_try!(
                                 arena,
+                                self.method_call(owner, arena, atoms, function, obj.into())
+                            );
+                            self.w(owner).stack.write(dst, res);
+                        } else {
+                            return Err(self.create_type_error(
+                                owner,
+                                arena,
+                                atoms,
+                                "tried to call non function value",
+                            ));
+                        }
+                    } else {
+                        let func = rebind_try!(
+                            arena,
+                            self.index_non_object(owner, arena, atoms, obj, key)
+                        );
+                        if let Some(function) = func.into_object() {
+                            root!(arena, function);
+                            let res = rebind_try!(
+                                arena,
                                 self.method_call(owner, arena, atoms, function, obj)
                             );
                             self.w(owner).stack.write(dst, res);
+                        } else {
+                            return Err(self.create_type_error(
+                                owner,
+                                arena,
+                                atoms,
+                                "tried to call non function value",
+                            ));
                         }
-                    } else {
-                        return Err(self.create_type_error(
-                            owner,
-                            arena,
-                            atoms,
-                            "tried to index non object value",
-                        ));
                     }
                 }
                 Instruction::CallConstruct { dst, func, obj } => {
@@ -882,8 +906,10 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 #[allow(unused_unsafe)]
                 if let Some(func) = func.into_object() {
                     if func.borrow(owner).is_function() {
-                        let res =
-                            rebind_try!(arena, self.method_call(owner, arena, atoms, func, obj));
+                        let res = rebind_try!(
+                            arena,
+                            self.method_call(owner, arena, atoms, func, obj.into())
+                        );
                         if !res.is_object() {
                             return Ok(rebind!(arena, res));
                         }
@@ -1305,7 +1331,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         arena: &'l mut Arena<'_, 'cell>,
         atoms: &Atoms,
         function: GcObject<'_, 'cell>,
-        obj: GcObject<'_, 'cell>,
+        obj: Value<'_, 'cell>,
     ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
         // Life times function and object are independent of arena,
         // as such they have to be rooted so they are valid for the entire function and can be
@@ -1435,6 +1461,35 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             }
             _ => todo!(),
         }
+    }
+
+    pub fn index_non_object<'l>(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        value: Value<'_, 'cell>,
+        key: Value<'gc, 'cell>,
+    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        assert!(!value.is_object());
+
+        let object = if value.is_string() {
+            self.borrow(owner).builtin.string_proto
+        } else if value.is_number() {
+            todo!()
+        } else if value.is_bool() {
+            todo!()
+        } else if value.is_undefined() {
+            return Err(self.create_type_error(owner, arena, atoms, "undefined has no properties"));
+        } else if value.is_nullish() {
+            return Err(self.create_type_error(owner, arena, atoms, "null has no properties"));
+        } else {
+            panic!("invalid value")
+        };
+
+        let res = rebind_try!(arena, object.index_value(owner, arena, atoms, self, key));
+
+        Ok(rebind!(arena, res))
     }
 
     #[cold]

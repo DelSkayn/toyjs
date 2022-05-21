@@ -162,8 +162,10 @@ fn assign<'l, 'cell>(
             let value = match prop.as_value() {
                 PropertyValue::Accessor(accessor) => {
                     if let Some(get) = accessor.get {
-                        let v =
-                            rebind_try!(arena, realm.method_call(owner, arena, atoms, get, from));
+                        let v = rebind_try!(
+                            arena,
+                            realm.method_call(owner, arena, atoms, get, from.into())
+                        );
                         rebind!(arena, v)
                     } else {
                         continue;

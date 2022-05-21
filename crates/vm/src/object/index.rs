@@ -54,7 +54,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
                 match prop.as_value() {
                     PropertyValue::Value(x) => return Ok(rebind!(arena, x)),
                     PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
-                        return realm.method_call(owner, arena, atoms, get, self)
+                        return realm.method_call(owner, arena, atoms, get, self.into())
                     }
                     PropertyValue::Accessor(Accessor { get: None, .. }) => {
                         return Ok(Value::undefined())
@@ -120,7 +120,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
                 unsafe {
                     realm.borrow_mut(owner, arena).stack.push(value);
                 }
-                if let Err(e) = realm.method_call(owner, arena, atoms, set, self) {
+                if let Err(e) = realm.method_call(owner, arena, atoms, set, self.into()) {
                     return Err(rebind!(arena, e));
                 }
             }
