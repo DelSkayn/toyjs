@@ -691,6 +691,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
     }
 
+    /// Returns wether a value is falsish.
     pub fn is_falsish<'l>(self, owner: &CellOwner<'cell>, value: Value<'l, 'cell>) -> bool {
         if let Some(v) = value.into_int() {
             v == 0
@@ -703,10 +704,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
     }
 
+    /// Returns wether a values is like null, i.e. null or undefined
     pub fn is_nullish<'l>(self, value: Value<'l, 'cell>) -> bool {
         value.is_null() || value.is_undefined()
     }
 
+    /// Coerces a value to a string.
     pub fn to_string<'l>(
         self,
         owner: &mut CellOwner<'cell>,
@@ -723,6 +726,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok(rebind!(arena, res))
     }
 
+    /// Coerces a value which is already a primitive to a string.
     pub fn to_string_primitive<'l>(
         self,
         arena: &'l Arena<'_, 'cell>,
@@ -750,6 +754,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
     }
 
+    /// Coerces a value to a object.
     pub fn to_object<'l>(
         self,
         value: Value<'l, 'cell>,
@@ -760,6 +765,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         todo!("toObject: {:?}", value);
     }
 
+    /// Coerces a value to a number.
     pub fn to_number<'l>(
         self,
         owner: &mut CellOwner<'cell>,
@@ -774,6 +780,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok(res)
     }
 
+    /// Coerces a value which is already a primitive to a number.
     pub fn to_number_primitive(
         self,
         owner: &CellOwner<'cell>,
@@ -847,6 +854,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         })
     }
 
+    /// Coerces a value to a primitive.
     pub fn to_primitive<'l>(
         self,
         owner: &mut CellOwner<'cell>,
@@ -893,6 +901,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         return Ok(rebind!(arena, value));
     }
 
+    /// Returns wether to values are strictly equal.
     pub fn strict_equal(
         self,
         owner: &CellOwner<'cell>,
@@ -941,6 +950,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         todo!("strict_equal left: {:?}, right: {:?}", left, right);
     }
 
+    /// Returns wether to values are considered equal.
     pub fn equal<'l>(
         self,
         owner: &mut CellOwner<'cell>,
@@ -996,6 +1006,9 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok(false)
     }
 
+    /// Returns wether a value is considered less then an other value.
+    ///
+    /// Swap changes the order of evaluation.
     pub fn less_then<'l>(
         self,
         owner: &mut CellOwner<'cell>,
@@ -1078,6 +1091,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok((left < right).into())
     }
 
+    /// Add to values together
     pub fn add<'l>(
         self,
         owner: &mut CellOwner<'cell>,
