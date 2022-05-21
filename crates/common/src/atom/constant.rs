@@ -73,5 +73,12 @@ define_atom!(
     isSealed,
     Array,
     eval,
-    String
+    String,
+    Number,
+    EPSILON,
+    MAX_VALUE,
+    MIN_VALUE,
+    NaN,
+    POSITIVE_INFINITY,
+    NEGATIVE_INFINITY
 );
