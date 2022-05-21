@@ -114,8 +114,8 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     let val: char = val.try_into().map_err(|_| ErrorKind::InvalidEscapeCode)?;
                     self.buffer.push(val);
                 } else {
-                    let mut val = 0u32;
-                    for _ in 0..4 {
+                    let mut val = Self::digit_from_byte(next)? as u32;
+                    for _ in 0..3 {
                         match self.next_byte() {
                             Some(e) => {
                                 let digit = Self::digit_from_byte(e)?;
