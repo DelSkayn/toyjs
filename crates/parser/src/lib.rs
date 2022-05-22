@@ -174,10 +174,17 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
     }
 
     fn do_parse_script(mut self) -> Result<ast::Script<A>> {
+        #[cfg(debug_assertions)]
+        let start_scope = self.symbol_table.current_scope();
+
         let mut stmts = Vec::new_in(self.alloc.clone());
         while self.peek()?.is_some() {
             stmts.push(self.parse_stmt()?);
         }
+
+        #[cfg(debug_assertions)]
+        assert_eq!(start_scope, self.symbol_table.current_scope());
+
         Ok(ast::Script(stmts))
     }
 

@@ -207,6 +207,8 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             },
             Self::parse_stmt,
         )?;
+
+        debug_assert_eq!(_scope, self.symbol_table.current_scope());
         self.symbol_table.pop_scope();
 
         Ok(ast::Stmt::For(ast::For::CStyle(
@@ -253,6 +255,8 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             },
             Self::parse_stmt,
         )?;
+
+        self.symbol_table.pop_scope();
 
         if is_of {
             Ok(ast::Stmt::For(ast::For::ForOf(
@@ -325,6 +329,7 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
         while !self.eat(t!("}"))? {
             stmts.push(self.parse_stmt()?);
         }
+        debug_assert_eq!(scope, self.symbol_table.current_scope());
         self.symbol_table.pop_scope();
         Ok(ast::Stmt::Block(scope, stmts))
     }
@@ -353,6 +358,7 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
                 Ok(stmts)
             },
         )?;
+        debug_assert_eq!(scope, self.symbol_table.current_scope());
         self.symbol_table.pop_scope();
         Ok(ast::Stmt::Function(scope, var, params, stmts))
     }
@@ -433,6 +439,7 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             while !self.eat(t!("}"))? {
                 stmts.push(self.parse_stmt()?);
             }
+            debug_assert_eq!(scope, self.symbol_table.current_scope());
             self.symbol_table.pop_scope();
             let stmt = Box::new_in(ast::Stmt::Block(scope, stmts), self.alloc.clone());
             Some(ast::Catch { binding, stmt })

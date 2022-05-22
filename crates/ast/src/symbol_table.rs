@@ -325,9 +325,14 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                         DeclType::Var => return Some(existing),
                         DeclType::Let | DeclType::Const | DeclType::Argument => return None,
                         DeclType::Implicit => {
-                            // Value previously implicitly declared is now declared as a global.
-                            self.table.symbols[existing].decl_type = DeclType::Var;
-                            return Some(existing);
+                            if self.table.symbols[existing].decl_scope == self.current_function {
+                                // Value previously implicitly declared is now declared as a global.
+                                self.table.symbols[existing].decl_type = DeclType::Var;
+                                self.table.scopes[self.current_function]
+                                    .symbols
+                                    .push(existing);
+                                return Some(existing);
+                            }
                         }
                     }
                 }
@@ -391,13 +396,12 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             decl_scope: self.current_function,
             ident: name,
         });
-        self.table.scopes[self.current_function]
-            .symbols
-            .push(new_symbol);
 
-        self.table.scopes[self.current_scope]
-            .used
-            .insert(new_symbol);
+        self.table
+            .symbols_by_ident
+            .entry(name)
+            .or_insert(Vec::new)
+            .push((self.current_function, new_symbol));
 
         new_symbol
     }
