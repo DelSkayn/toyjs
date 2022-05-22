@@ -704,11 +704,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     return Ok(Value::undefined());
                 }
                 _ => {
-                    return Err(self.create_type_error(
+                    return Err(self.create_runtime_error(
                         owner,
                         arena,
                         atoms,
-                        "runtime error: invalid instruction",
+                        "invalid instruction",
+                        None,
                     ))
                 }
             }

@@ -419,6 +419,35 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
+                PrefixOperator::Delete => {
+                    let ass = AssignmentTarget::from_expr(self, expr);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    match ass {
+                        AssignmentTarget::Dot(reg, atom) => {
+                            let atom = self.compile_atom(None, atom);
+                            self.builder.push(Instruction::Delete {
+                                dst: dst.0,
+                                obj: reg.0,
+                                key: atom.0,
+                            });
+                            self.builder.free_temp(atom);
+                        }
+                        AssignmentTarget::Index(obj, key) => {
+                            self.builder.push(Instruction::Delete {
+                                dst: dst.0,
+                                obj: obj.0,
+                                key: key.0,
+                            });
+                        }
+                        AssignmentTarget::Variable(_) => {
+                            // TODO assigned to global variables.
+                            // TODO Strict mode
+                            self.compile_literal(Some(dst), Literal::Boolean(false));
+                        }
+                    }
+                    ass.free_temp(self);
+                    ExprValue::new_in(dst, self.alloc.clone())
+                }
                 x => {
                     panic!("unimplemented operator ast: {:#?}", x);
                 }
@@ -567,7 +596,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             StrictEqual => SEqual,
             NotEqual => NotEqual,
             StrictNotEqual => SNotEqual,
-            //In => In,
+            In => In,
             InstanceOf => InstanceOf,
         });
     }

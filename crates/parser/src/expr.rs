@@ -310,6 +310,9 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             ArrowBody::Expr(Box::new_in(expr, self.alloc.clone()))
         };
 
+        debug_assert_eq!(scope, self.symbol_table.current_scope());
+        self.symbol_table.pop_scope();
+
         Ok(Expr::Prime(PrimeExpr::ArrowFunction(scope, params, body)))
     }
 

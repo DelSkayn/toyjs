@@ -3,12 +3,10 @@ use common::atom::{self, Atoms};
 use crate::{
     cell::CellOwner,
     gc::Arena,
-    object::{ObjectFlags, ObjectKind},
+    object::{ObjectFlags, ObjectKind, Property, PropertyFlags},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, root, GcObject, Object, Value,
+    rebind, rebind_try, GcObject, Object, Value,
 };
-
-use super::new_func;
 
 fn construct<'l, 'cell>(
     arena: &'l mut Arena<'_, 'cell>,
@@ -77,23 +75,81 @@ pub fn init<'l, 'cell>(
     );
     construct.raw_index_set(owner, arena, atoms, atom::constant::prototype, prototype);
     prototype.raw_index_set(owner, arena, atoms, atom::constant::constructor, construct);
-    construct.raw_index_set(owner, arena, atoms, atom::constant::EPSILON, f64::EPSILON);
-    construct.raw_index_set(owner, arena, atoms, atom::constant::MIN_VALUE, f64::MIN);
-    construct.raw_index_set(owner, arena, atoms, atom::constant::MAX_VALUE, f64::MAX);
-    construct.raw_index_set(owner, arena, atoms, atom::constant::NaN, f64::NAN);
-    construct.raw_index_set(
+    construct.raw_index_set_prop(
         owner,
         arena,
         atoms,
-        atom::constant::NEGATIVE_INFINITY,
-        f64::NEG_INFINITY,
+        Property::value(
+            f64::EPSILON.into(),
+            PropertyFlags::empty(),
+            atom::constant::EPSILON,
+        ),
     );
-    construct.raw_index_set(
+    construct.raw_index_set_prop(
         owner,
         arena,
         atoms,
-        atom::constant::POSITIVE_INFINITY,
-        f64::INFINITY,
+        Property::value(
+            f64::MIN.into(),
+            PropertyFlags::empty(),
+            atom::constant::MIN_VALUE,
+        ),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(
+            f64::MAX.into(),
+            PropertyFlags::empty(),
+            atom::constant::MAX_VALUE,
+        ),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(
+            (((1u64 << 52) - 1) as f64).into(),
+            PropertyFlags::empty(),
+            atom::constant::MAX_SAFE_INTEGER,
+        ),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(
+            (-((1i64 << 52) - 1) as f64).into(),
+            PropertyFlags::empty(),
+            atom::constant::MIN_SAFE_INTEGER,
+        ),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(f64::NAN.into(), PropertyFlags::empty(), atom::constant::NaN),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(
+            f64::NEG_INFINITY.into(),
+            PropertyFlags::empty(),
+            atom::constant::NEGATIVE_INFINITY,
+        ),
+    );
+    construct.raw_index_set_prop(
+        owner,
+        arena,
+        atoms,
+        Property::value(
+            f64::INFINITY.into(),
+            PropertyFlags::empty(),
+            atom::constant::POSITIVE_INFINITY,
+        ),
     );
     global.raw_index_set(owner, arena, atoms, atom::constant::Number, construct);
 

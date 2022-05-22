@@ -210,8 +210,11 @@ define_instructions! {
         Upvalue{dst: u8, slot: u16},
         UpvalueAssign{src: u8, slot: u16},
 
+        Delete{dst: u8,obj: u8, key: u8},
+
         InstanceOf{dst: u8, left:u8, righ:u8},
         TypeOf{ dst: u8, src: u8},
+        In{dst: u8, left:u8, righ:u8},
 
         Add{dst: u8, left: u8, righ:u8},
         Sub{dst: u8, left: u8, righ:u8},

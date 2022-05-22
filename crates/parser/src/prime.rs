@@ -192,6 +192,8 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
                 Ok(stmts)
             },
         )?;
+
+        debug_assert_eq!(scope, self.symbol_table.current_scope());
         self.symbol_table.pop_scope();
         Ok(ast::PrimeExpr::Function(scope, symbol, params, stmts))
     }
