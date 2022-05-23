@@ -782,10 +782,29 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     /// Coerces a value to a object.
     pub fn to_object<'l>(
         self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l Arena<'_, 'cell>,
+        atoms: &Atoms,
         value: Value<'l, 'cell>,
     ) -> Result<GcObject<'l, 'cell>, Value<'l, 'cell>> {
         if let Some(x) = value.into_object() {
             return Ok(x);
+        }
+        if value.is_null() {
+            return Err(self.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "cannot make null into an object",
+            ));
+        }
+        if value.is_undefined() {
+            return Err(self.create_type_error(
+                owner,
+                arena,
+                atoms,
+                "cannot make null into an object",
+            ));
         }
         todo!("toObject: {:?}", value);
     }
@@ -1341,7 +1360,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         let ctx = unsafe {
             ExecutionContext {
                 function: gc::rebind(function),
-                this: gc::rebind(obj).into(),
+                this: gc::rebind(obj),
                 new_target: Value::undefined(),
             }
         };
@@ -1476,9 +1495,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
         let object = if value.is_string() {
             self.borrow(owner).builtin.string_proto
-        } else if value.is_number() {
-            todo!()
-        } else if value.is_bool() {
+        } else if value.is_number() || value.is_bool() {
             todo!()
         } else if value.is_undefined() {
             return Err(self.create_type_error(owner, arena, atoms, "undefined has no properties"));

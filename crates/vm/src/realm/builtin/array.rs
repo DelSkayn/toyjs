@@ -28,7 +28,7 @@ fn construct<'l, 'cell>(
     let proto = rebind!(arena, proto);
     let proto = proto
         .into_object()
-        .unwrap_or(rebind!(arena, realm.borrow(&owner).builtin.array_proto));
+        .unwrap_or(rebind!(arena, realm.borrow(owner).builtin.array_proto));
 
     if realm.argc(owner) > 0 {
         let obj = Object::new_gc(arena, Some(proto), ObjectFlags::ORDINARY, ObjectKind::Array);

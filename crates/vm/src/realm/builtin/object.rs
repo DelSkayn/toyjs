@@ -44,7 +44,7 @@ fn construct<'l, 'cell>(
 
             return Ok(obj.into());
         }
-        return Ok(realm.to_object(value)?.into());
+        return Ok(realm.to_object(owner, arena, atoms, value)?.into());
     }
 
     let proto = if let Some(object) = ctx.new_target.into_object() {
@@ -71,12 +71,12 @@ fn construct<'l, 'cell>(
 fn get_prototype_of<'l, 'cell>(
     arena: &'l mut Arena<'_, 'cell>,
     owner: &mut CellOwner<'cell>,
-    _atoms: &Atoms,
+    atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     _ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
     let value = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
-    let object = rebind_try!(arena, realm.to_object(value));
+    let object = rebind_try!(arena, realm.to_object(owner, arena, atoms, value));
     let res = object
         .borrow(owner)
         .prototype()
@@ -132,15 +132,17 @@ fn assign<'l, 'cell>(
         return Ok(Value::undefined());
     };
 
-    let to = rebind_try!(arena, realm.to_object(to));
+    let to = rebind_try!(arena, realm.to_object(owner, arena, atoms, to));
     if realm.argc(owner) == 1 {
         return Ok(rebind!(arena, to).into());
     }
 
+    root!(arena, to);
     let mut i = 1;
     while let Some(from) = realm.arg(owner, i) {
         i += 1;
-        let from = rebind_try!(arena, realm.to_object(from));
+        let from = rebind_try!(arena, realm.to_object(owner, arena, atoms, from));
+        root!(arena, from);
 
         let (b_from, b_to) = Gc::borrow_mut_2(owner, arena, from, to);
         b_from.elements.for_each(|idx, value| {
@@ -255,8 +257,9 @@ fn create<'l, 'cell>(
     }
 
     let from = realm.arg(owner, 1).unwrap();
-    let from = rebind_try!(arena, realm.to_object(from));
+    let from = rebind_try!(arena, realm.to_object(owner, arena, atoms, from));
 
+    root!(arena, from);
     root!(arena, obj);
 
     rebind_try!(arena, define_prop(owner, arena, atoms, realm, from, obj));
@@ -284,9 +287,11 @@ fn define_properties<'l, 'cell>(
     let obj = realm.arg(owner, 0).unwrap();
     let prop = realm.arg(owner, 1).unwrap();
 
-    let obj = rebind_try!(arena, realm.to_object(obj));
-    let prop = rebind_try!(arena, realm.to_object(prop));
+    let obj = rebind_try!(arena, realm.to_object(owner, arena, atoms, obj));
+    let prop = rebind_try!(arena, realm.to_object(owner, arena, atoms, prop));
 
+    root!(arena, obj);
+    root!(arena, prop);
     rebind_try!(arena, define_prop(owner, arena, atoms, realm, prop, obj));
 
     Ok(rebind!(arena, obj).into())

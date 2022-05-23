@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
 #![feature(allocator_api)]
 
-use ast::{Params, ScopeId, Script, Stmt, SymbolId, SymbolTable};
+use ast::{Params, ScopeId, Script, Stmt, SymbolId, SymbolTable, SymbolTableBuilder};
 use common::{
     atom::Atoms,
     newtype_key,
@@ -32,21 +32,19 @@ mod stmt;
 
 pub struct Compiler<'a, 'rt, 'cell, A: Allocator + Clone> {
     alloc: A,
-    symbol_table: &'a SymbolTable<A>,
     constants: Constants<'a, 'rt, 'cell, Global>,
     builder: ScriptBuilder<'a, A>,
 }
 
 impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn new(
-        symbol_table: &'a SymbolTable<A>,
+        symbol_table: SymbolTableBuilder<'a, A>,
         atoms: &'a Atoms,
         gc: &'a gc::Arena<'rt, 'cell>,
         root: ScopeId,
         alloc: A,
     ) -> Self {
         Compiler {
-            symbol_table,
             constants: Constants::new_in(atoms, gc, Global),
             builder: ScriptBuilder::new_in(alloc.clone(), symbol_table, root),
             alloc,
@@ -55,12 +53,12 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     pub fn compile_script(
         script: &'a Script<A>,
-        symbol_table: &'a SymbolTable<A>,
+        symbol_table: SymbolTableBuilder<'a, A>,
         atoms: &'a Atoms,
         gc: &'a gc::Arena<'rt, 'cell>,
         alloc: A,
     ) -> ByteCode<'a, 'cell> {
-        let mut this = Compiler::new(symbol_table, atoms, gc, symbol_table.global(), alloc);
+        let mut this = Compiler::new(symbol_table, atoms, gc, ScopeId::root(), alloc);
 
         let res = script
             .0

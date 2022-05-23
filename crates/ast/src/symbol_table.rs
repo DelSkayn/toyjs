@@ -2,7 +2,7 @@
 
 use common::{
     atom::Atom,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     newtype_key,
     slotmap::{SlotKey, SlotVec},
 };
@@ -16,8 +16,11 @@ pub enum DeclType {
     /// Declared with `var`
     Var,
     /// Declared implicitly by using a variable before it is declared.
-    /// Forbidden in strict mode.
+    /// Could be resolved later to a valid decltype
     Implicit,
+    /// Implicitly declared without ever being defined
+    /// Forbidden in strict mode.
+    ImplicitGlobal,
     /// Declared with `let`
     Let,
     /// Declared with `const`
@@ -30,7 +33,7 @@ impl DeclType {
     pub fn is_always_local(self) -> bool {
         match self {
             DeclType::Let | DeclType::Const | DeclType::Argument => true,
-            DeclType::Var | DeclType::Implicit => false,
+            DeclType::Var | DeclType::Implicit | DeclType::ImplicitGlobal => false,
         }
     }
 }
@@ -74,8 +77,6 @@ pub struct Scope<A: Allocator> {
     pub symbols: Vec<SymbolId, A>,
     /// The children scopes of this scope.
     pub children: Vec<ScopeId, A>,
-    /// Symbols used in this scope which are not declared in this function scope.
-    pub used: HashSet<SymbolId>,
     /// The kind of scope.
     pub kind: ScopeKind,
     /// The depth of the scope, i.e. number of parent function scopes
@@ -89,7 +90,6 @@ impl<A: Allocator> fmt::Debug for Scope<A> {
             .field("parent_function", &self.parent_function)
             .field("symbols", &self.symbols)
             .field("children", &self.children)
-            .field("used", &self.used)
             .field("kind", &self.kind)
             .field("function_depth", &self.function_depth)
             .finish()
@@ -109,7 +109,6 @@ impl<A: Allocator + Clone> Scope<A> {
             parent_function,
             symbols: Vec::new_in(alloc.clone()),
             children: Vec::new_in(alloc),
-            used: HashSet::default(),
             function_depth: depth,
             kind,
         }
@@ -121,6 +120,12 @@ newtype_key! {
     pub struct ScopeId(u32);
 }
 
+impl ScopeId {
+    pub const fn root() -> Self {
+        ScopeId(0)
+    }
+}
+
 type Scopes<A> = SlotVec<Scope<A>, ScopeId, A>;
 
 pub struct SymbolTable<A: Allocator> {
@@ -128,7 +133,6 @@ pub struct SymbolTable<A: Allocator> {
     symbols: Symbols<A>,
     /// Used for symbol lookup.
     symbols_by_ident: HashMap<Atom, Vec<(ScopeId, SymbolId)>>,
-    global: ScopeId,
     alloc: A,
 }
 
@@ -163,20 +167,17 @@ impl<A: Allocator + Clone> SymbolTable<A> {
             0,
             alloc.clone(),
         ));
+        debug_assert_eq!(global, ScopeId::root());
         SymbolTable {
             scopes,
             symbols: Symbols::new_in(alloc.clone()),
             symbols_by_ident: HashMap::default(),
-            global,
             alloc,
         }
     }
 }
 
 impl<A: Allocator> SymbolTable<A> {
-    pub fn global(&self) -> ScopeId {
-        self.global
-    }
     /// Returns the map containing all symbols
     pub fn symbols(&self) -> &Symbols<A> {
         &self.symbols
@@ -192,7 +193,7 @@ impl<A: Allocator> SymbolTable<A> {
         if sym.decl_type.is_always_local() {
             true
         } else {
-            sym.decl_type == DeclType::Var && self.function_scope(sym.decl_scope) != self.global
+            sym.decl_type == DeclType::Var && self.function_scope(sym.decl_scope) != ScopeId::root()
         }
     }
 
@@ -234,17 +235,6 @@ impl<A: Allocator> SymbolTable<A> {
                 .expect("lexical scopes should always have a parent"),
         }
     }
-
-    pub fn define_global(&mut self, str: Atom) -> SymbolId {
-        let symbol = self.symbols.insert(Symbol {
-            decl_type: DeclType::Var,
-            decl_scope: self.global,
-            ident: str,
-        });
-        let global = self.global;
-        self.scopes[global].symbols.push(symbol);
-        symbol
-    }
 }
 
 pub struct SymbolTableBuilder<'a, A: Allocator> {
@@ -252,16 +242,32 @@ pub struct SymbolTableBuilder<'a, A: Allocator> {
     current_scope: ScopeId,
     current_function: ScopeId,
     current_depth: u32,
+    pending_implicits: HashMap<SymbolId, Option<SymbolId>>,
+}
+
+impl<'a, A: Allocator> std::ops::Deref for SymbolTableBuilder<'a, A> {
+    type Target = SymbolTable<A>;
+
+    fn deref(&self) -> &Self::Target {
+        self.table
+    }
+}
+
+impl<'a, A: Allocator> std::ops::DerefMut for SymbolTableBuilder<'a, A> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.table
+    }
 }
 
 impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
     /// Creates a new builder from a existing table.
     pub fn new_script(table: &'a mut SymbolTable<A>) -> Self {
         SymbolTableBuilder {
-            current_scope: table.global,
-            current_function: table.global,
+            current_scope: ScopeId::root(),
+            current_function: ScopeId::root(),
             current_depth: 0,
             table,
+            pending_implicits: HashMap::default(),
         }
     }
 
@@ -278,8 +284,10 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             current_function: new_root,
             current_depth: 0,
             table,
+            pending_implicits: HashMap::default(),
         }
     }
+
     /// Looks up a symbol in current and parent scopes by the symbol's name.
     /// Returns None if no symbol with the given name was found in the current and parent scopes.
     fn lookup_symbol(&self, name: Atom) -> Option<SymbolId> {
@@ -326,7 +334,18 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                         DeclType::Let | DeclType::Const | DeclType::Argument => return None,
                         DeclType::Implicit => {
                             if self.table.symbols[existing].decl_scope == self.current_function {
-                                // Value previously implicitly declared is now declared as a global.
+                                // Value previously implicitly declared is now declared as a var.
+                                self.table.symbols[existing].decl_type = DeclType::Var;
+                                self.table.scopes[self.current_function]
+                                    .symbols
+                                    .push(existing);
+                                self.pending_implicits.remove(&existing);
+                                return Some(existing);
+                            }
+                        }
+                        DeclType::ImplicitGlobal => {
+                            if self.current_function == ScopeId::root() {
+                                // Value previously implicitly declared is now declared as a var.
                                 self.table.symbols[existing].decl_type = DeclType::Var;
                                 self.table.scopes[self.current_function]
                                     .symbols
@@ -337,10 +356,12 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                     }
                 }
             }
-            DeclType::Implicit => panic!("can't define variables explicitly implicit."),
+            DeclType::Implicit | DeclType::ImplicitGlobal => {
+                panic!("can't define variables explicitly implicit.")
+            }
         }
-        // Variable was not declared yet.
 
+        // Variable was not declared yet.
         match kind {
             // Let and const's are declared in lexical scope.
             // NOTE: not entirely true to spec but the semantics are almost identical.
@@ -377,20 +398,84 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
                     .push((self.current_function, new_symbol));
                 Some(new_symbol)
             }
-            DeclType::Implicit => panic!("can't define variables explicitly implicit."),
+            DeclType::Implicit | DeclType::ImplicitGlobal => {
+                panic!("can't define variables explicitly implicit.")
+            }
         }
+    }
+
+    pub fn resolve_symbol(&mut self, symbol: SymbolId) -> SymbolId {
+        // Symbol is already resolved in first pass
+        if self.table.symbols[symbol].decl_type != DeclType::Implicit {
+            return symbol;
+        }
+        // Symbol is already resolved in previous resolve_symbol call
+        if let Some(x) = self.pending_implicits.get(&symbol).unwrap() {
+            return *x;
+        }
+
+        let mut raise_symbols = vec![symbol];
+        // Resolve the symbol.
+        let symbol = &self.table.symbols[symbol];
+
+        let symbols_with_name = self.table.symbols_by_ident.get(&symbol.ident).unwrap();
+
+        let mut cur_scope = symbol.decl_scope;
+        while let Some(parent) = self.table.scopes[cur_scope].parent_function {
+            let find = symbols_with_name.iter().find(|x| x.0 == parent);
+            if let Some((_, found_symbol)) = find {
+                match self.table.symbols[*found_symbol].decl_type {
+                    DeclType::Var | DeclType::Const | DeclType::Let | DeclType::ImplicitGlobal => {
+                        for s in raise_symbols {
+                            *self.pending_implicits.get_mut(&s).unwrap() = Some(*found_symbol);
+                        }
+                        return *found_symbol;
+                    }
+                    DeclType::Implicit => {
+                        raise_symbols.push(*found_symbol);
+                    }
+                    DeclType::Argument => {
+                        panic!("an implicity should never be able to be raised to an argument");
+                    }
+                }
+            }
+            cur_scope = parent;
+        }
+
+        let ident = symbol.ident;
+
+        // No symbol found,
+        // Variable is an implicit global
+        let new_symbol = self.table.symbols.insert(Symbol {
+            decl_type: DeclType::ImplicitGlobal,
+            decl_scope: ScopeId::root(),
+            ident,
+        });
+
+        self.table
+            .symbols_by_ident
+            .get_mut(&ident)
+            .unwrap()
+            .push((ScopeId::root(), new_symbol));
+
+        for s in raise_symbols {
+            *self.pending_implicits.get_mut(&s).unwrap() = Some(new_symbol);
+        }
+
+        new_symbol
     }
 
     /// Use a symbol,
     /// Implicitly declares a variable if it was not yet declared.
     pub fn use_symbol(&mut self, name: Atom) -> SymbolId {
         if let Some(x) = self.lookup_symbol(name) {
-            if self.table.function_scope(self.table.symbols[x].decl_scope) != self.current_function
+            let symbol = &self.table.symbols[x];
+            if symbol.decl_type != DeclType::Implicit || symbol.decl_scope == self.current_function
             {
-                self.table.scopes[self.current_scope].used.insert(x);
+                return x;
             }
-            return x;
         }
+
         let new_symbol = self.table.symbols.insert(Symbol {
             decl_type: DeclType::Implicit,
             decl_scope: self.current_function,
@@ -400,8 +485,10 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         self.table
             .symbols_by_ident
             .entry(name)
-            .or_insert(Vec::new)
+            .or_insert_with(Vec::new)
             .push((self.current_function, new_symbol));
+
+        self.pending_implicits.insert(new_symbol, None);
 
         new_symbol
     }
@@ -413,15 +500,6 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
             symbol.decl_type = DeclType::Argument;
             let ident = symbol.ident;
             let old_scope = mem::replace(&mut symbol.decl_scope, self.current_function);
-            let idx = self.table.scopes[old_scope]
-                .symbols
-                .iter()
-                .enumerate()
-                .find(|x| *x.1 == id)
-                .unwrap()
-                .0;
-            self.table.scopes[old_scope].symbols.remove(idx);
-            self.table.scopes[self.current_function].symbols.push(id);
             let scopes = self.table.symbols_by_ident.get_mut(&ident).unwrap();
             for (ref mut scope, _) in scopes.iter_mut() {
                 if *scope == old_scope {

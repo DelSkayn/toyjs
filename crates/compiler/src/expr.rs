@@ -50,7 +50,10 @@ impl AssignmentTarget {
         assign: &'a Expr<A>,
     ) -> Self {
         match assign {
-            Expr::Prime(PrimeExpr::Variable(symbol)) => AssignmentTarget::Variable(*symbol),
+            Expr::Prime(PrimeExpr::Variable(symbol)) => {
+                let symbol = this.builder.symbol_table.resolve_symbol(*symbol);
+                AssignmentTarget::Variable(symbol)
+            }
             Expr::UnaryPostfix(expr, PostfixOperator::Dot(name)) => {
                 let reg = this.compile_expr(None, expr).eval(this);
                 AssignmentTarget::Dot(reg, *name)
@@ -100,8 +103,11 @@ impl AssignmentTarget {
     /// Returns an optional placement register if the assignment target is an local register.
     pub fn placement<A: Allocator + Clone>(&self, this: &mut Compiler<A>) -> Option<Register> {
         if let Self::Variable(x) = *self {
-            if this.symbol_table.is_symbol_local(x)
-                && this.symbol_table.in_scope(x, this.builder.lexical_scope())
+            if this.builder.symbol_table.is_symbol_local(x)
+                && this
+                    .builder
+                    .symbol_table
+                    .in_scope(x, this.builder.lexical_scope())
             {
                 Some(this.builder.alloc_symbol(x))
             } else {
@@ -118,10 +124,10 @@ impl AssignmentTarget {
     pub fn compile_assign<A: Allocator + Clone>(&self, this: &mut Compiler<A>, src: Register) {
         match *self {
             Self::Variable(symbol_id) => {
-                let symbol = &this.symbol_table.symbols()[symbol_id];
-                if !this.symbol_table.is_symbol_local(symbol_id) {
-                    let name =
-                        this.compile_atom(None, this.symbol_table.symbols()[symbol_id].ident);
+                let symbol = &this.builder.symbol_table.symbols()[symbol_id];
+                if !this.builder.symbol_table.is_symbol_local(symbol_id) {
+                    let name = this
+                        .compile_atom(None, this.builder.symbol_table.symbols()[symbol_id].ident);
                     this.builder.free_temp(name);
 
                     this.builder.push(Instruction::GlobalAssign {
@@ -129,6 +135,7 @@ impl AssignmentTarget {
                         key: name.0,
                     });
                 } else if !this
+                    .builder
                     .symbol_table
                     .in_scope(symbol_id, this.builder.lexical_scope())
                 {
@@ -448,8 +455,12 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     ass.free_temp(self);
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
-                x => {
-                    panic!("unimplemented operator ast: {:#?}", x);
+                PrefixOperator::Void => {
+                    let expr = self.compile_expr(None, expr).eval(self);
+                    self.builder.free_temp(expr);
+                    let dst = placement.unwrap_or_else(|| self.builder.alloc_temp());
+                    self.compile_literal(Some(dst), Literal::Undefined);
+                    ExprValue::new_in(dst, self.alloc.clone())
                 }
             },
         }
@@ -836,9 +847,11 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     /// Compile the use of a symbol
     /// Will put result of expression in given placement register if there is one.
     fn compile_symbol_use(&mut self, placement: Option<Register>, symbol_id: SymbolId) -> Register {
-        let symbol = &self.symbol_table.symbols()[symbol_id];
-        if self.symbol_table.is_symbol_local(symbol_id) {
+        let symbol_id = self.builder.symbol_table.resolve_symbol(symbol_id);
+        let symbol = &self.builder.symbol_table.symbols()[symbol_id];
+        if self.builder.symbol_table.is_symbol_local(symbol_id) {
             if self
+                .builder
                 .symbol_table
                 .in_scope(symbol_id, self.builder.lexical_scope())
             {

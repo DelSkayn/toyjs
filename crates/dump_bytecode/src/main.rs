@@ -14,7 +14,7 @@ use std::{
     fs::File,
     io::{self, Read},
 };
-use vm::gc;
+use vm::{gc, rebind};
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().nth(1) {
@@ -33,12 +33,13 @@ fn main() -> Result<(), io::Error> {
     let mut interner = Interner::new(&atoms);
     let lexer = Lexer::new(&source, &mut interner);
     let mut variables = SymbolTable::new();
-    let script = Parser::parse_script(lexer, &mut variables, Global).unwrap();
+    let (script, symbol_table) = Parser::parse_script(lexer, &mut variables, Global).unwrap();
 
     let roots = gc::Roots::new();
     let gc = gc::Arena::new(&roots);
 
-    let bytecode = Compiler::compile_script(&script, &variables, &atoms, &gc, Global);
+    let bytecode = Compiler::compile_script(&script, symbol_table, &atoms, &gc, Global);
+    let bytecode = rebind!(&gc, bytecode);
     std::mem::drop(interner);
 
     println!("{}", atoms);

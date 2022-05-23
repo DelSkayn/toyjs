@@ -53,7 +53,7 @@ impl_trace_tuple!(A, B, C, D, E, F);
 impl_trace_tuple!(A, B, C, D, E, F, G);
 impl_trace_tuple!(A, B, C, D, E, F, G, H);
 
-unsafe impl<'cell, T: Trace> Trace for Option<T> {
+unsafe impl<T: Trace> Trace for Option<T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -68,7 +68,7 @@ unsafe impl<'cell, T: Trace> Trace for Option<T> {
     }
 }
 
-unsafe impl<'cell, T: Trace> Trace for Box<T> {
+unsafe impl<T: Trace> Trace for Box<T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -81,7 +81,7 @@ unsafe impl<'cell, T: Trace> Trace for Box<T> {
     }
 }
 
-unsafe impl<'cell, T: Trace> Trace for [T] {
+unsafe impl<T: Trace> Trace for [T] {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -96,7 +96,7 @@ unsafe impl<'cell, T: Trace> Trace for [T] {
     }
 }
 
-unsafe impl<'cell, T: Trace> Trace for Vec<T> {
+unsafe impl<T: Trace> Trace for Vec<T> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -137,52 +137,50 @@ unsafe impl<'gc, 'cell> Trace for Gc<'gc, 'cell, dyn Trace> {
     }
 }
 
-unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for &'b T
+unsafe impl<'a, 'b, T: Rebind<'a>> Rebind<'a> for &'b T
 where
     T::Output: 'b,
 {
     type Output = &'b T::Output;
 }
 
-unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for &'b mut T
+unsafe impl<'a, 'b, T: Rebind<'a>> Rebind<'a> for &'b mut T
 where
     T::Output: 'b,
 {
     type Output = &'b mut T::Output;
 }
 
-unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for std::pin::Pin<&'b T>
+unsafe impl<'a, 'b, T: Rebind<'a>> Rebind<'a> for std::pin::Pin<&'b T>
 where
     T::Output: 'b,
 {
     type Output = std::pin::Pin<&'b T::Output>;
 }
 
-unsafe impl<'a, 'b, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for std::pin::Pin<&'b mut T>
+unsafe impl<'a, 'b, T: Rebind<'a>> Rebind<'a> for std::pin::Pin<&'b mut T>
 where
     T::Output: 'b,
 {
     type Output = std::pin::Pin<&'b mut T::Output>;
 }
 
-unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Vec<T> {
+unsafe impl<'a, T: Rebind<'a>> Rebind<'a> for Vec<T> {
     type Output = Vec<T::Output>;
 }
 
-unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Box<T> {
+unsafe impl<'a, T: Rebind<'a>> Rebind<'a> for Box<T> {
     type Output = Box<T::Output>;
 }
 
-unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>> Rebind<'a> for Option<T> {
+unsafe impl<'a, T: Rebind<'a>> Rebind<'a> for Option<T> {
     type Output = Option<T::Output>;
 }
 
-unsafe impl<'a, 'gc, 'cell, T: Rebind<'a>, R: Rebind<'a>> Rebind<'a> for Result<T, R> {
+unsafe impl<'a, T: Rebind<'a>, R: Rebind<'a>> Rebind<'a> for Result<T, R> {
     type Output = Result<T::Output, R::Output>;
 }
 
-unsafe impl<'a, 'gc, 'cell, K: Rebind<'a>, V: Rebind<'a>> Rebind<'a>
-    for std::collections::HashMap<K, V>
-{
+unsafe impl<'a, K: Rebind<'a>, V: Rebind<'a>> Rebind<'a> for std::collections::HashMap<K, V> {
     type Output = std::collections::HashMap<K::Output, V::Output>;
 }

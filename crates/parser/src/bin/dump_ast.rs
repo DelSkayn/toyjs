@@ -32,7 +32,7 @@ fn main() -> Result<(), io::Error> {
     let lexer = Lexer::new(&source, &mut interner);
     let mut variables = SymbolTable::new();
     match Parser::parse_script(lexer, &mut variables, Global) {
-        Ok(x) => println!("{:#?}", x),
+        Ok((x, _)) => println!("{:#?}", x),
         Err(e) => {
             let formated_error = e.format(&source, &atoms);
             eprintln!("Error parsing script: {}", formated_error);

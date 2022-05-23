@@ -1,6 +1,6 @@
 use std::{alloc::Allocator, convert::TryInto};
 
-use ast::{symbol_table::ScopeKind, ScopeId, SymbolId, SymbolTable};
+use ast::{symbol_table::ScopeKind, ScopeId, SymbolId, SymbolTable, SymbolTableBuilder};
 use common::{
     newtype_key,
     slotmap::{SlotKey, SlotStack},
@@ -66,11 +66,11 @@ pub struct ScriptBuilder<'a, A: Allocator + Clone> {
     functions: SlotStack<BuilderFunction<A>, FunctionId, A>,
     current: FunctionId,
     alloc: A,
-    symbol_table: &'a SymbolTable<A>,
+    pub symbol_table: SymbolTableBuilder<'a, A>,
 }
 
 impl<'a, A: Allocator + Clone> ScriptBuilder<'a, A> {
-    pub fn new_in(alloc: A, symbol_table: &'a SymbolTable<A>, start_scope: ScopeId) -> Self {
+    pub fn new_in(alloc: A, symbol_table: SymbolTableBuilder<'a, A>, start_scope: ScopeId) -> Self {
         let mut functions = SlotStack::new_in(alloc.clone());
         let current = functions.push(BuilderFunction {
             parent: None,

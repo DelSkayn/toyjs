@@ -9,6 +9,7 @@ const CALL_DEEP_SOURCE: &str = include_str!("./callDeep.js");
 const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
 const THIS_SOURCE: &str = include_str!("./this.js");
 const OBJECT_SOURCE: &str = include_str!("./object.js");
+const RESOLVE_SYMBOLS_SOURCE: &str = include_str!("./resolve_symbols.js");
 
 pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     if let Some(x) = args.get(0) {
@@ -84,4 +85,9 @@ fn script_this() {
 #[test]
 fn script_object() {
     eval_script(OBJECT_SOURCE);
+}
+
+#[test]
+fn script_resolve_symbols() {
+    eval_script(RESOLVE_SYMBOLS_SOURCE);
 }
