@@ -219,7 +219,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     pub fn nan() -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: std::mem::transmute::<f64, u64>(f64::NAN) + MIN_FLOAT,
+                bits: f64::NAN.to_bits() + MIN_FLOAT,
             })
         }
     }
@@ -229,7 +229,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
         unsafe {
             Value {
                 value: ValueUnion {
-                    bits: std::mem::transmute::<f64, u64>(v) + MIN_FLOAT,
+                    bits: v.to_bits() + MIN_FLOAT,
                 },
                 marker: PhantomData,
                 id: Id::new(),

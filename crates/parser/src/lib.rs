@@ -47,7 +47,7 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
         lexer: Lexer<'source, 'atoms>,
         symbol_table: &'source mut SymbolTable<A>,
         alloc: A,
-    ) -> Result<ast::Script<A>> {
+    ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
         Parser {
             lexer,
             peek: None,
@@ -68,7 +68,7 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
         lexer: Lexer<'source, 'atoms>,
         symbol_table: &'source mut SymbolTable<A>,
         alloc: A,
-    ) -> Result<ast::Script<A>> {
+    ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
         Parser {
             lexer,
             peek: None,
@@ -173,7 +173,7 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
         }
     }
 
-    fn do_parse_script(mut self) -> Result<ast::Script<A>> {
+    fn do_parse_script(mut self) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
         #[cfg(debug_assertions)]
         let start_scope = self.symbol_table.current_scope();
 
@@ -185,10 +185,10 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
         #[cfg(debug_assertions)]
         assert_eq!(start_scope, self.symbol_table.current_scope());
 
-        Ok(ast::Script(stmts))
+        Ok((ast::Script(stmts), self.symbol_table))
     }
 
-    fn do_parse_module(self) -> Result<ast::Script<A>> {
+    fn do_parse_module(self) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
         todo!("parsing module")
     }
 }

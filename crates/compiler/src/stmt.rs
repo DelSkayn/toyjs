@@ -69,8 +69,9 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             Stmt::Var(symbols) => {
                 let mut reg = None;
                 for (symbol, expr) in symbols {
-                    if self.symbol_table.is_symbol_local(*symbol) {
-                        let dst = self.builder.alloc_symbol(*symbol);
+                    let symbol = self.builder.symbol_table.resolve_symbol(*symbol);
+                    if self.builder.symbol_table.is_symbol_local(symbol) {
+                        let dst = self.builder.alloc_symbol(symbol);
                         if let Some(x) = expr.as_ref() {
                             reg = Some(self.compile_expr(Some(dst), x).eval(self));
                         } else {
@@ -79,8 +80,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                         }
                     } else if let Some(expr) = expr {
                         let expr = self.compile_expr(None, expr).eval(self);
-                        let name =
-                            self.compile_atom(None, self.symbol_table.symbols()[*symbol].ident);
+                        let name = self
+                            .compile_atom(None, self.builder.symbol_table.symbols()[symbol].ident);
                         self.builder.push(Instruction::GlobalAssign {
                             key: name.0,
                             src: expr.0,
@@ -103,7 +104,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     dst: fnc.0,
                     func: id.0,
                 });
-                let key = self.compile_atom(None, self.symbol_table.symbols()[*symbol].ident);
+                let key =
+                    self.compile_atom(None, self.builder.symbol_table.symbols()[*symbol].ident);
                 self.builder.push(Instruction::GlobalAssign {
                     key: key.0,
                     src: fnc.0,

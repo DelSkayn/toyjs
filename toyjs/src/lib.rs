@@ -13,6 +13,7 @@ use vm::{
     gc::{Arena, OwnedGc, Roots},
     object::{ObjectFlags, ObjectKind, StaticFn, VmFunction},
     realm::GcRealm,
+    rebind,
 };
 
 mod lock;
@@ -193,7 +194,7 @@ impl<'js> Ctx<'js> {
         let mut interner = Interner::new(self.context.atoms);
         let lexer = Lexer::new(&source, &mut interner);
         let mut symbol_table = SymbolTable::new();
-        let script = match Parser::parse_script(lexer, &mut symbol_table, Global) {
+        let (script, symbol_table) = match Parser::parse_script(lexer, &mut symbol_table, Global) {
             Ok(x) => x,
             Err(e) => {
                 return Err(Error::Syntax(format!(
@@ -204,7 +205,9 @@ impl<'js> Ctx<'js> {
         };
 
         let bc =
-            Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
+            Compiler::compile_script(&script, symbol_table, self.context.atoms, &arena, Global);
+
+        let bc = rebind!(&arena, bc);
         mem::drop(interner);
 
         let bc = arena.add(bc);
@@ -231,7 +234,7 @@ impl<'js> Ctx<'js> {
         let mut interner = Interner::new(self.context.atoms);
         let lexer = Lexer::new(&source, &mut interner);
         let mut symbol_table = SymbolTable::new();
-        let script = match Parser::parse_script(lexer, &mut symbol_table, Global) {
+        let (script, symbol_table) = match Parser::parse_script(lexer, &mut symbol_table, Global) {
             Ok(x) => x,
             Err(e) => {
                 return Err(Error::Syntax(format!(
@@ -242,7 +245,8 @@ impl<'js> Ctx<'js> {
         };
 
         let bc =
-            Compiler::compile_script(&script, &symbol_table, self.context.atoms, &arena, Global);
+            Compiler::compile_script(&script, symbol_table, self.context.atoms, &arena, Global);
+        let bc = rebind!(&arena, bc);
         mem::drop(interner);
 
         let bc = arena.add(bc);
