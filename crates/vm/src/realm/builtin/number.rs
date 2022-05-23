@@ -22,7 +22,7 @@ fn construct<'l, 'cell>(
     };
 
     if ctx.new_target.is_undefined() {
-        Ok(value)
+        Ok(rebind!(arena, value))
     } else {
         let proto = if let Some(object) = ctx.new_target.into_object() {
             let res = rebind_try!(

@@ -10,6 +10,9 @@ mod tagged_union;
 #[cfg(any(feature = "tagged-union", not(target_pointer_width = "64")))]
 pub use tagged_union::Value;
 
+//mod tagged_union;
+//pub use tagged_union::Value;
+
 #[cfg(test)]
 mod test {
     use super::Value;
