@@ -785,10 +785,10 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         owner: &mut CellOwner<'cell>,
         arena: &'l Arena<'_, 'cell>,
         atoms: &Atoms,
-        value: Value<'l, 'cell>,
+        value: Value<'_, 'cell>,
     ) -> Result<GcObject<'l, 'cell>, Value<'l, 'cell>> {
         if let Some(x) = value.into_object() {
-            return Ok(x);
+            return Ok(rebind!(arena, x));
         }
         if value.is_null() {
             return Err(self.create_type_error(
