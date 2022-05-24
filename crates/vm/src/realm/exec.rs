@@ -1601,7 +1601,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         let mut int = value.trunc() as u64;
         loop {
             let m = (int % radix as u64) as u32;
-            int = int / radix as u64;
+            int /= radix as u64;
             buffer.push(char::from_digit(m, radix.into()).unwrap());
             if int == 0 {
                 break;

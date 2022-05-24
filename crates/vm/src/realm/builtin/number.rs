@@ -100,7 +100,7 @@ fn to_string<'l, 'cell>(
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
     let radix = if let Some(x) = realm.arg(owner, 0) {
         let radix = rebind_try!(arena, realm.to_integer_or_infinity(owner, arena, atoms, x));
-        if radix < 2.0 || radix > 36.0 {
+        if !(2.0..=36.0).contains(&radix) {
             //TODO: switch to range error
             return Err(realm.create_type_error(
                 owner,
