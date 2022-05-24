@@ -453,6 +453,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     }
 
     pub fn compile_for_in(&mut self, decl: SymbolId, expr: &'a [Expr<A>], stmt: &'a Stmt<A>) {
+        let decl = self.builder.symbol_table.resolve_symbol(decl);
         let tgt = AssignmentTarget::from_symbol(decl);
         let res = self.compile_expressions(None, expr).eval(self);
         self.builder.free_temp(res);
