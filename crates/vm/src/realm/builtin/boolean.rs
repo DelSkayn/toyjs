@@ -58,10 +58,10 @@ fn bool_value<'l, 'cell>(
     this: Value<'_, 'cell>,
 ) -> Result<bool, Value<'l, 'cell>> {
     if let Some(x) = this.into_bool() {
-        return Ok(x.into());
+        return Ok(x);
     } else if let Some(obj) = this.into_object() {
         if let ObjectKind::Boolean(x) = unsafe { obj.borrow(owner).kind() } {
-            return Ok((*x).into());
+            return Ok(*x);
         }
     }
     return Err(realm.create_type_error(
