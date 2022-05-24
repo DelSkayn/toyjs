@@ -790,6 +790,41 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         if let Some(x) = value.into_object() {
             return Ok(rebind!(arena, x));
         }
+        if let Some(x) = value.into_string() {
+            let proto = self.borrow(owner).builtin.string_proto;
+            let object = Object::new_gc(
+                arena,
+                Some(proto),
+                ObjectFlags::ORDINARY,
+                ObjectKind::String(x),
+            );
+            return Ok(rebind!(arena, object));
+        }
+        if value.is_number() {
+            let value = if let Some(x) = value.into_int() {
+                x as f64
+            } else {
+                value.into_float().unwrap()
+            };
+            let proto = self.borrow(owner).builtin.number_proto;
+            let object = Object::new_gc(
+                arena,
+                Some(proto),
+                ObjectFlags::ORDINARY,
+                ObjectKind::Number(value),
+            );
+            return Ok(rebind!(arena, object));
+        }
+        if let Some(x) = value.into_bool() {
+            let proto = self.borrow(owner).builtin.boolean_proto;
+            let object = Object::new_gc(
+                arena,
+                Some(proto),
+                ObjectFlags::ORDINARY,
+                ObjectKind::Boolean(x),
+            );
+            return Ok(rebind!(arena, object));
+        }
         if value.is_null() {
             return Err(self.create_type_error(
                 owner,
@@ -916,7 +951,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         const PREFER_STRING: &[atom::Atom] = &[atom::constant::toString, atom::constant::valueOf];
         const PREFER_VALUE: &[atom::Atom] = &[atom::constant::valueOf, atom::constant::toString];
 
-        if let Some(obj) = dbg!(value).into_object() {
+        if let Some(obj) = value.into_object() {
             // Again not sure why this needs to be rooted but it doesn not work otherwise.
             root!(arena, obj);
             let keys = if prefer_string {
@@ -1502,7 +1537,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         let object = if value.is_string() {
             self.borrow(owner).builtin.string_proto
         } else if value.is_number() {
-            todo!("index number")
+            self.borrow(owner).builtin.number_proto
         } else if value.is_bool() {
             todo!("index bool")
         } else if value.is_undefined() {
