@@ -836,13 +836,19 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             Some(Value::ensure_float(x))
         } else if value.is_undefined() {
             Some(Value::nan())
-        } else if value.is_null() || value.is_false() {
+        } else if value.is_null() {
             Some(Value::from(0i32))
         } else if let Some(value) = value.into_string() {
             if let Ok(v) = value.borrow(owner).parse::<f64>() {
                 Some(Value::from(v))
             } else {
                 Some(Value::nan())
+            }
+        } else if let Some(b) = value.into_bool() {
+            if b {
+                Some(Value::from(1))
+            } else {
+                Some(Value::from(0))
             }
         } else {
             None
@@ -910,7 +916,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         const PREFER_STRING: &[atom::Atom] = &[atom::constant::toString, atom::constant::valueOf];
         const PREFER_VALUE: &[atom::Atom] = &[atom::constant::valueOf, atom::constant::toString];
 
-        if let Some(obj) = value.into_object() {
+        if let Some(obj) = dbg!(value).into_object() {
             // Again not sure why this needs to be rooted but it doesn not work otherwise.
             root!(arena, obj);
             let keys = if prefer_string {
@@ -1495,8 +1501,10 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
         let object = if value.is_string() {
             self.borrow(owner).builtin.string_proto
-        } else if value.is_number() || value.is_bool() {
-            todo!()
+        } else if value.is_number() {
+            todo!("index number")
+        } else if value.is_bool() {
+            todo!("index bool")
         } else if value.is_undefined() {
             return Err(self.create_type_error(owner, arena, atoms, "undefined has no properties"));
         } else if value.is_nullish() {
