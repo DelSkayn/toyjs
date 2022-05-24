@@ -82,5 +82,6 @@ define_atom!(
     POSITIVE_INFINITY,
     NEGATIVE_INFINITY,
     MAX_SAFE_INTEGER,
-    MIN_SAFE_INTEGER
+    MIN_SAFE_INTEGER,
+    Boolean
 );
