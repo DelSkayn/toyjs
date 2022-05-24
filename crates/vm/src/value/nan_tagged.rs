@@ -160,7 +160,9 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     /// Is this value a number type.
     #[inline]
     pub fn is_number(self) -> bool {
-        unsafe { self.value.bits >= MIN_NUMBER }
+        unsafe {
+            self.value.bits >= MIN_NUMBER
+        }
     }
 
     /// Is this value a number integer.

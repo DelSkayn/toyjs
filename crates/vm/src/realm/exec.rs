@@ -1235,7 +1235,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         debug_assert!(l.is_number());
         let left = unsafe { gc::rebind(l) };
         let r = rebind_try!(arena, self.to_number(owner, arena, atoms, right));
-        debug_assert!(right.is_number());
+        debug_assert!(r.is_number());
         let right = unsafe { gc::rebind(r) };
         let left = if let Some(left) = left.into_int() {
             left as f64
@@ -1575,7 +1575,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     pub fn to_string_radix(value: f64, radix: u8) -> String {
-        assert!(radix > 2 && radix < 36);
+        assert!((2..=36).contains(&radix));
 
         if value.is_nan() {
             return "NaN".to_string();
