@@ -1553,6 +1553,75 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         Ok(rebind!(arena, res))
     }
 
+    pub fn to_integer_or_infinity<'l>(
+        self,
+        owner: &mut CellOwner<'cell>,
+        arena: &'l mut Arena<'_, 'cell>,
+        atoms: &Atoms,
+        value: Value<'_, 'cell>,
+    ) -> Result<f64, Value<'l, 'cell>> {
+        let number = rebind_try!(arena, self.to_number(owner, arena, atoms, value));
+        if let Some(x) = number.into_float() {
+            if x.is_nan() {
+                return Ok(0.0);
+            }
+            if x.is_infinite() {
+                return Ok(x);
+            }
+            let res = x.abs().floor().copysign(x);
+            return Ok(res);
+        }
+        Ok(number.into_int().unwrap() as f64)
+    }
+
+    pub fn to_string_radix(value: f64, radix: u8) -> String {
+        assert!(radix > 2 && radix < 36);
+
+        if value.is_nan() {
+            return "NaN".to_string();
+        }
+        if value == 0.0 {
+            return "0".to_string();
+        }
+        if value.is_infinite() {
+            if value > 0.0 {
+                return "Infinity".to_string();
+            }
+            return "-Infinity".to_string();
+        }
+
+        let mut buffer = String::new();
+        let value = if value < 0.0 {
+            buffer.push('-');
+            -value
+        } else {
+            value
+        };
+
+        let mut int = value.trunc() as u64;
+        loop {
+            let m = (int % radix as u64) as u32;
+            int = int / radix as u64;
+            buffer.push(char::from_digit(m, radix.into()).unwrap());
+            if int == 0 {
+                break;
+            }
+        }
+
+        let mut fract = value.fract();
+        if fract == 0.0 {
+            return buffer;
+        }
+        buffer.push('.');
+        while fract > f64::EPSILON && buffer.len() < 21 {
+            let num = fract * radix as f64;
+            let int = num.trunc() as u32;
+            fract = num.fract();
+            buffer.push(char::from_digit(int, radix.into()).unwrap());
+        }
+        buffer
+    }
+
     #[cold]
     pub fn create_type_error<'l>(
         self,
