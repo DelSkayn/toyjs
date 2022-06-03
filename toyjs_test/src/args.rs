@@ -2,14 +2,22 @@ use clap::{Parser, Subcommand};
 
 #[derive(Subcommand, Debug)]
 pub enum Sub {
-    All,
-    Single { path: String },
-    Delta { from: String, to: String },
+    All {
+        #[clap(short, long)]
+        filter: Option<String>,
+    },
+    Single {
+        path: String,
+    },
+    Delta {
+        from: String,
+        to: String,
+    },
 }
 
 impl Default for Sub {
     fn default() -> Self {
-        Sub::All
+        Sub::All { filter: None }
     }
 }
 

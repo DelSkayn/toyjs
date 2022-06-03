@@ -139,7 +139,8 @@ impl AssignmentTarget {
                     .symbol_table
                     .in_scope(symbol_id, this.builder.lexical_scope())
                 {
-                    let upvalue = this.builder.capture_upvalue(symbol_id, symbol.decl_scope);
+                    let scope = symbol.decl_scope;
+                    let upvalue = this.builder.capture_upvalue(symbol_id, scope);
                     this.builder.push(Instruction::UpvalueAssign {
                         src: src.0,
                         slot: upvalue.0,
@@ -868,7 +869,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     self.builder.alloc_symbol(symbol_id)
                 }
             } else {
-                let upvalue = self.builder.capture_upvalue(symbol_id, symbol.decl_scope);
+                let scope = symbol.decl_scope;
+                let upvalue = self.builder.capture_upvalue(symbol_id, scope);
                 let place = placement.unwrap_or_else(|| self.builder.alloc_temp());
                 self.builder.push(Instruction::Upvalue {
                     dst: place.0,
@@ -877,7 +879,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 place
             }
         } else {
-            let name = self.compile_atom(None, symbol.ident);
+            let ident = symbol.ident;
+            let name = self.compile_atom(None, ident);
             if let Some(place) = placement {
                 self.builder.free_temp(name);
                 self.builder.push(Instruction::GlobalIndex {

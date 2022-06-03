@@ -1,6 +1,9 @@
 use super::{Allocator, Error, ErrorKind, Parser, Result};
-use ast::symbol_table::{DeclType, ScopeKind};
-use token::t;
+use ast::{
+    symbol_table::{DeclType, ScopeKind},
+    Binding, BindingRestElement, Expr, Literal,
+};
+use token::{t, TokenKind};
 
 impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
     pub(crate) fn parse_stmt(&mut self) -> Result<ast::Stmt<A>> {
@@ -222,14 +225,14 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
     fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForDecl<A>) -> Result<ast::Stmt<A>> {
         let binding = match decl {
             ast::ForDecl::Stmt(stmt) => match *stmt {
-                ast::Stmt::Let(binding, None) => binding,
+                ast::Stmt::Let(ast::Let::Single(binding, None)) => binding,
                 ast::Stmt::Var(x) if x.len() == 1 => {
                     if x[0].1.is_some() {
                         unexpected!(self => "a for-in/of loop declaration can't have an initializer")
                     }
                     x[0].0
                 }
-                ast::Stmt::Let(_, Some(_)) => {
+                ast::Stmt::Let(ast::Let::Single(_, Some(_))) => {
                     unexpected!(self => "a for-in/of loop declaration can't have an initializer")
                 }
                 _ => unexpected!(self => "invalid for-in/of left-hand side"),
@@ -275,17 +278,29 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
 
     fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "let");
-        expect_bind!(self, let id = "ident");
-        let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
-        let expr = if self.eat(t!("="))? {
-            Some(self.parse_single_expr()?)
-        } else {
-            None
-        };
-        Ok(ast::Stmt::Let(var, expr))
+
+        match self.peek_kind()? {
+            Some(t!("{")) | Some(t!("[")) => {
+                let binding = self.parse_binding(Some(DeclType::Let))?;
+                expect!(self,"=" => "binding must be initialized");
+                let expr = self.parse_single_expr()?;
+                Ok(ast::Stmt::Let(ast::Let::Binding(binding, expr)))
+            }
+            Some(TokenKind::Ident(id)) => {
+                self.next()?;
+                let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
+                    kind: ErrorKind::RedeclaredVariable,
+                    origin: self.last_span,
+                })?;
+                let expr = if self.eat(t!("="))? {
+                    Some(self.parse_single_expr()?)
+                } else {
+                    None
+                };
+                Ok(ast::Stmt::Let(ast::Let::Single(var, expr)))
+            }
+            _ => unexpected!(self, "{", "[", "ident"),
+        }
     }
 
     fn parse_var_binding(&mut self) -> Result<ast::Stmt<A>> {
@@ -312,14 +327,202 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
 
     fn parse_const_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "const");
-        expect_bind!(self, let id = "ident");
-        expect!(self, "=" => "constant needs to be initialized");
-        let var = self.symbol_table.define(id, DeclType::Const).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
-        let expr = self.parse_single_expr()?;
-        Ok(ast::Stmt::Const(var, expr))
+        match self.peek_kind()? {
+            Some(t!("{")) | Some(t!("[")) => {
+                let binding = self.parse_binding(Some(DeclType::Const))?;
+                expect!(self,"=" => "binding must be initialized");
+                let expr = self.parse_single_expr()?;
+                Ok(ast::Stmt::Const(ast::Const::Binding(binding, expr)))
+            }
+            Some(TokenKind::Ident(id)) => {
+                self.next()?;
+                let var = self.symbol_table.define(id, DeclType::Const).ok_or(Error {
+                    kind: ErrorKind::RedeclaredVariable,
+                    origin: self.last_span,
+                })?;
+                expect!(self,"=" => "const bindings must be initialized");
+                let expr = self.parse_single_expr()?;
+                Ok(ast::Stmt::Const(ast::Const::Single(var, expr)))
+            }
+            _ => unexpected!(self, "{", "[", "ident"),
+        }
+    }
+
+    fn parse_binding(&mut self, define: Option<DeclType>) -> Result<ast::Binding<A>> {
+        if self.eat(t!("{"))? {
+            let mut properties = Vec::new_in(self.alloc.clone());
+            while !self.eat(t!("}"))? {
+                if self.eat(t!("..."))? {
+                    expect_bind!(self,let id = "ident");
+                    let symbol = if let Some(d) = define {
+                        self.symbol_table.define(id, d).ok_or(Error {
+                            kind: ErrorKind::RedeclaredVariable,
+                            origin: self.last_span,
+                        })?
+                    } else {
+                        self.symbol_table.use_symbol(id)
+                    };
+                    expect!(self,"}" => "binding pattern should end after rest property");
+                    return Ok(Binding::Object(properties, Some(symbol)));
+                }
+
+                properties.push(self.parse_binding_property(define)?);
+
+                if self.eat(t!(","))? {
+                    if self.peek_kind()? == Some(t!("}")) {
+                        unexpected!(self => "trailing comma");
+                    }
+                }
+            }
+            return Ok(Binding::Object(properties, None));
+        }
+        if self.eat(t!("["))? {
+            let mut elements = Vec::new_in(self.alloc.clone());
+            while !self.eat(t!("]"))? {
+                if self.eat(t!(","))? {
+                    elements.push(None);
+                    if self.eat(t!("]"))? {
+                        elements.push(None);
+                        break;
+                    }
+                    continue;
+                }
+
+                if self.eat(t!("..."))? {
+                    match self.peek_kind()? {
+                        Some(t!("{")) | Some(t!("[")) => {
+                            let binding = self.parse_binding(define)?;
+                            return Ok(Binding::Array(
+                                elements,
+                                BindingRestElement::Binding(Box::new_in(
+                                    binding,
+                                    self.alloc.clone(),
+                                )),
+                            ));
+                        }
+                        Some(t!("ident", id)) => {
+                            let symbol = if let Some(d) = define {
+                                self.symbol_table.define(id, d).ok_or(Error {
+                                    kind: ErrorKind::RedeclaredVariable,
+                                    origin: self.last_span,
+                                })?
+                            } else {
+                                self.symbol_table.use_symbol(id)
+                            };
+                            return Ok(Binding::Array(
+                                elements,
+                                BindingRestElement::Single(symbol),
+                            ));
+                        }
+                        _ => unexpected!(self, "{", "[", "ident"),
+                    }
+                }
+
+                elements.push(Some(self.parse_binding_element(define)?));
+
+                if self.eat(t!(","))? {
+                    if self.eat(t!("]"))? {
+                        elements.push(None);
+                        break;
+                    }
+                } else {
+                    expect!(self, "]");
+                    break;
+                }
+            }
+            return Ok(Binding::Array(elements, BindingRestElement::None));
+        }
+        unexpected!(self, "{","[" => "expected binding pattern")
+    }
+
+    fn parse_binding_property(
+        &mut self,
+        define: Option<DeclType>,
+    ) -> Result<ast::BindingProperty<A>> {
+        if self.eat(t!("["))? {
+            let computed = self.parse_single_expr()?;
+            expect!(self, "]");
+            expect!(self,":" => "computed bindings require an element binding");
+            let element = self.parse_binding_element(define)?;
+            return Ok(ast::BindingProperty::Computed(computed, element));
+        } else if let Some(TokenKind::Literal(x)) = self.peek_kind()? {
+            self.next()?;
+            let computed = match x {
+                token::Literal::Number(token::Number::Integer(x)) => {
+                    Expr::Prime(ast::PrimeExpr::Literal(Literal::Integer(x)))
+                }
+                token::Literal::Number(token::Number::Float(x)) => {
+                    Expr::Prime(ast::PrimeExpr::Literal(Literal::Float(x)))
+                }
+                token::Literal::String(x) => {
+                    Expr::Prime(ast::PrimeExpr::Literal(Literal::String(x)))
+                }
+                _ => {
+                    unexpected!(self => "bigints are not allowed as a computed properties")
+                }
+            };
+            let element = self.parse_binding_element(define)?;
+            return Ok(ast::BindingProperty::Computed(computed, element));
+        } else if let Some(TokenKind::Ident(id)) = self.next()?.map(|x| x.kind) {
+            if self.eat(t!(":"))? {
+                let element = self.parse_binding_element(define)?;
+                return Ok(ast::BindingProperty::Ident(id, element));
+            } else {
+                let symbol = if let Some(d) = define {
+                    self.symbol_table.define(id, d).ok_or(Error {
+                        kind: ErrorKind::RedeclaredVariable,
+                        origin: self.last_span,
+                    })?
+                } else {
+                    self.symbol_table.use_symbol(id)
+                };
+                let init = if self.eat(t!("="))? {
+                    Some(self.parse_single_expr()?)
+                } else {
+                    None
+                };
+                return Ok(ast::BindingProperty::Single(symbol, init));
+            }
+        }
+        unexpected!(self, "[", "ident")
+    }
+
+    fn parse_binding_element(
+        &mut self,
+        define: Option<DeclType>,
+    ) -> Result<ast::BindingElement<A>> {
+        match self.peek_kind()? {
+            Some(t!("{")) | Some(t!("[")) => {
+                let binding = self.parse_binding(define)?;
+                let init = if self.eat(t!("="))? {
+                    Some(self.parse_single_expr()?)
+                } else {
+                    None
+                };
+                return Ok(ast::BindingElement::Binding(
+                    Box::new_in(binding, self.alloc.clone()),
+                    init,
+                ));
+            }
+            Some(TokenKind::Ident(id)) => {
+                self.next()?;
+                let symbol = if let Some(d) = define {
+                    self.symbol_table.define(id, d).ok_or(Error {
+                        kind: ErrorKind::RedeclaredVariable,
+                        origin: self.last_span,
+                    })?
+                } else {
+                    self.symbol_table.use_symbol(id)
+                };
+                let init = if self.eat(t!("="))? {
+                    Some(self.parse_single_expr()?)
+                } else {
+                    None
+                };
+                return Ok(ast::BindingElement::Single(symbol, init));
+            }
+            _ => unexpected!(self, "{", "[", "ident"),
+        }
     }
 
     fn parse_block(&mut self) -> Result<ast::Stmt<A>> {

@@ -1,4 +1,7 @@
-use ast::{ArrowBody, Case, Expr, ForDecl, Literal, Params, ScopeId, Stmt, SymbolId};
+use ast::{
+    ArrowBody, Binding, BindingElement, BindingRestElement, Case, Expr, ForDecl, Literal, Params,
+    ScopeId, Stmt, SymbolId,
+};
 use vm::instructions::Instruction;
 
 use crate::{
@@ -53,18 +56,34 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 self.builder.push_break();
                 None
             }
-            Stmt::Let(symbol, expr) => {
+            Stmt::Let(ast::Let::Single(symbol, expr)) => {
                 let reg = self.builder.alloc_symbol(*symbol);
                 if let Some(x) = expr.as_ref() {
-                    Some(self.compile_expr(Some(reg), x).eval(self))
+                    let res = self.compile_expr(Some(reg), x).eval(self);
+                    self.builder.free_temp(res);
+                    Some(res)
                 } else {
                     self.compile_literal(Some(reg), Literal::Undefined);
                     None
                 }
             }
-            Stmt::Const(symbol, expr) => {
+            Stmt::Let(ast::Let::Binding(binding, expr)) => {
+                let expr = self.compile_expr(None, expr).eval(self);
+                self.compile_binding(binding, expr);
+                self.builder.free_temp(expr);
+                Some(expr)
+            }
+            Stmt::Const(ast::Const::Single(symbol, expr)) => {
                 let reg = self.builder.alloc_symbol(*symbol);
-                Some(self.compile_expr(Some(reg), expr).eval(self))
+                let res = self.compile_expr(Some(reg), expr).eval(self);
+                self.builder.free_temp(res);
+                Some(res)
+            }
+            Stmt::Const(ast::Const::Binding(binding, expr)) => {
+                let expr = self.compile_expr(None, expr).eval(self);
+                self.compile_binding(binding, expr);
+                self.builder.free_temp(expr);
+                Some(expr)
             }
             Stmt::Var(symbols) => {
                 let mut reg = None;
@@ -350,6 +369,144 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         }
         self.builder.pop_function();
         id
+    }
+
+    pub fn compile_binding(&mut self, binding: &'a Binding<A>, obj: Register) {
+        match binding {
+            Binding::Array(ref elements, ref rem) => {
+                for (idx, e) in elements.iter().enumerate() {
+                    if let Some(binding) = e {
+                        let key =
+                            self.compile_literal(None, Literal::Integer(idx.try_into().unwrap()));
+                        self.compile_binding_element(binding, key, obj)
+                    }
+                }
+
+                match rem {
+                    BindingRestElement::None => {}
+                    BindingRestElement::Binding(_) => todo!(),
+                    BindingRestElement::Single(_) => todo!(),
+                }
+            }
+            Binding::Object(properties, rem) => {
+                for p in properties.iter() {
+                    match *p {
+                        ast::BindingProperty::Single(sym, ref expr) => {
+                            let tgt = AssignmentTarget::Variable(sym);
+                            let key = self
+                                .compile_atom(None, self.builder.symbol_table.symbols()[sym].ident);
+                            let dst = tgt
+                                .placement(self)
+                                .unwrap_or_else(|| self.builder.alloc_temp());
+                            self.builder.free_temp(key);
+                            self.builder.push(Instruction::Index {
+                                dst: dst.0,
+                                obj: obj.0,
+                                key: key.0,
+                            });
+                            if let Some(ref expr) = *expr {
+                                let cond = self.builder.alloc_temp();
+                                self.builder.free_temp(cond);
+                                self.builder.push(Instruction::IsUndefined {
+                                    dst: cond.0,
+                                    op: dst.0,
+                                });
+                                let before = self.builder.push(Instruction::JumpFalse {
+                                    cond: cond.0,
+                                    tgt: 0,
+                                });
+                                self.compile_expr(Some(dst), expr).eval(self);
+                                self.builder
+                                    .patch_jump(before, self.builder.next_instruction_id());
+                            }
+                            tgt.compile_assign(self, dst);
+                            tgt.free_temp(self);
+                            self.builder.free_temp(dst);
+                        }
+                        ast::BindingProperty::Ident(atom, ref binding) => {
+                            let key = self.compile_atom(None, atom);
+                            self.compile_binding_element(binding, key, obj)
+                        }
+                        ast::BindingProperty::Computed(ref key, ref binding) => {
+                            let key = self.compile_expr(None, key).eval(self);
+                            self.compile_binding_element(binding, key, obj);
+                        }
+                    }
+                }
+
+                if let Some(_rem) = rem {
+                    todo!()
+                }
+            }
+        }
+    }
+
+    pub fn compile_binding_element(
+        &mut self,
+        binding: &'a BindingElement<A>,
+        key: Register,
+        obj: Register,
+    ) {
+        match *binding {
+            ast::BindingElement::Single(sym, ref expr) => {
+                let tgt = AssignmentTarget::Variable(sym);
+                // If you have more than 2^31 bindings in code then you deserve a
+                // panic.
+                let dst = tgt
+                    .placement(self)
+                    .unwrap_or_else(|| self.builder.alloc_temp());
+                self.builder.free_temp(key);
+                self.builder.push(Instruction::Index {
+                    dst: dst.0,
+                    obj: obj.0,
+                    key: key.0,
+                });
+                if let Some(x) = expr {
+                    let cond = self.builder.alloc_temp();
+                    self.builder.free_temp(cond);
+                    self.builder.push(Instruction::IsUndefined {
+                        dst: cond.0,
+                        op: dst.0,
+                    });
+                    let before = self.builder.push(Instruction::JumpFalse {
+                        cond: cond.0,
+                        tgt: 0,
+                    });
+                    self.compile_expr(Some(dst), x).eval(self);
+                    self.builder
+                        .patch_jump(before, self.builder.next_instruction_id());
+                }
+                tgt.compile_assign(self, dst);
+                tgt.free_temp(self);
+                self.builder.free_temp(dst);
+            }
+            ast::BindingElement::Binding(ref binding, ref expr) => {
+                let new_obj = self.builder.alloc_temp();
+                self.builder.free_temp(key);
+                self.builder.push(Instruction::Index {
+                    dst: new_obj.0,
+                    obj: obj.0,
+                    key: key.0,
+                });
+                if let Some(expr) = expr {
+                    let cond = self.builder.alloc_temp();
+                    self.builder.free_temp(cond);
+                    self.builder.push(Instruction::IsUndefined {
+                        dst: cond.0,
+                        op: new_obj.0,
+                    });
+                    let before = self.builder.push(Instruction::JumpFalse {
+                        cond: cond.0,
+                        tgt: 0,
+                    });
+                    self.compile_expr(Some(new_obj), expr).eval(self);
+                    self.builder
+                        .patch_jump(before, self.builder.next_instruction_id());
+                }
+                self.compile_binding(binding, new_obj);
+                self.builder.free_temp(new_obj);
+            }
+        }
     }
 
     pub fn compile_arrow_function_decl(

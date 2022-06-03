@@ -53,11 +53,55 @@ pub enum For<A: Allocator> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub enum BindingProperty<A: Allocator> {
+    Single(SymbolId, Option<Expr<A>>),
+    Ident(Atom, BindingElement<A>),
+    Computed(Expr<A>, BindingElement<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum BindingRestElement<A: Allocator> {
+    None,
+    Single(SymbolId),
+    Binding(Box<Binding<A>, A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum BindingElement<A: Allocator> {
+    Single(SymbolId, Option<Expr<A>>),
+    Binding(Box<Binding<A>, A>, Option<Expr<A>>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum Binding<A: Allocator> {
+    Array(Vec<Option<BindingElement<A>>, A>, BindingRestElement<A>),
+    Object(Vec<BindingProperty<A>, A>, Option<SymbolId>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum Let<A: Allocator> {
+    Single(SymbolId, Option<Expr<A>>),
+    Binding(Binding<A>, Expr<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum Const<A: Allocator> {
+    Single(SymbolId, Expr<A>),
+    Binding(Binding<A>, Expr<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
-    Let(SymbolId, Option<Expr<A>>),
+    Let(Let<A>),
+    Const(Const<A>),
     Var(Vec<(SymbolId, Option<Expr<A>>), A>),
-    Const(SymbolId, Expr<A>),
     Expr(Vec<Expr<A>, A>),
     Throw(Expr<A>),
     Break,

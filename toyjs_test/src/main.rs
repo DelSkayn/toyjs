@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let harness = harness::Harness::load(path)?;
 
     match args.subcommand.unwrap_or_default() {
-        Sub::All => commands::all::run(path, &harness),
+        Sub::All { filter } => commands::all::run(path, &harness, filter),
         Sub::Single { path: single_path } => {
             commands::single::run(Path::new(path).join(single_path), &harness)
         }

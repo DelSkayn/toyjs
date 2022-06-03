@@ -10,6 +10,7 @@ const VAR_FOR_SOURCE: &str = include_str!("./varFor.js");
 const THIS_SOURCE: &str = include_str!("./this.js");
 const OBJECT_SOURCE: &str = include_str!("./object.js");
 const RESOLVE_SYMBOLS_SOURCE: &str = include_str!("./resolve_symbols.js");
+const BINDING_SOURCE: &str = include_str!("./binding.js");
 
 pub fn assert<'js>(ctx: Ctx<'js>, args: Arguments<'js>) -> Result<'js, Value<'js>> {
     if let Some(x) = args.get(0) {
@@ -90,4 +91,9 @@ fn script_object() {
 #[test]
 fn script_resolve_symbols() {
     eval_script(RESOLVE_SYMBOLS_SOURCE);
+}
+
+#[test]
+fn binding_symbols() {
+    eval_script(BINDING_SOURCE);
 }

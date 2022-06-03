@@ -532,6 +532,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     let nullish = self.is_nullish(src);
                     self.w(owner).stack.write(dst, Value::from(nullish));
                 }
+                Instruction::IsUndefined { dst, op } => {
+                    let src = self.r(owner).stack.read(op);
+                    let undefined = src.is_undefined();
+                    self.w(owner).stack.write(dst, Value::from(undefined));
+                }
                 Instruction::Not { dst, src } => {
                     let src = self.r(owner).stack.read(src);
                     let falsish = self.is_falsish(owner, src);

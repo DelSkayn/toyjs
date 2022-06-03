@@ -247,6 +247,7 @@ define_instructions! {
         Positive{dst: u8, op: u8},
 
         IsNullish{dst: u8, op: u8},
+        IsUndefined{dst: u8, op: u8},
         Not{ dst: u8, src: u8},
 
         IterHead{dst: u8, obj: u8},

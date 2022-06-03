@@ -10,7 +10,7 @@ use crate::{
     test::{dir_walker, Test, TestResult},
 };
 
-pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
+pub fn run(p: impl AsRef<Path>, harness: &Harness, filter: Option<String>) -> Result<()> {
     let p = p.as_ref().join("test");
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
 
@@ -25,6 +25,15 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
 
     dir_walker(&p, &mut |path| {
         (|| {
+            if let Some(f) = filter.as_ref() {
+                if let Some(p) = path.to_str() {
+                    if !p.contains(f) {
+                        return Ok(());
+                    }
+                } else {
+                    return Ok(());
+                }
+            }
             write!(stdout, "{} => ", path.display())?;
             stdout.flush()?;
             let hook = panic::take_hook();
@@ -56,12 +65,14 @@ pub fn run(p: impl AsRef<Path>, harness: &Harness) -> Result<()> {
     })?;
 
     let report = Report::from_results(tests);
-    if Path::new("report.json").exists() {
+    if Path::new("report.json").exists() && filter.is_none() {
         writeln!(stdout, "Comparing changes")?;
         report.compare(&mut stdout, &c)?;
     }
-    writeln!(stdout, "Writing report")?;
-    report.write()?;
+    if filter.is_none() {
+        writeln!(stdout, "Writing report")?;
+        report.write()?;
+    }
 
     stdout.set_color(&c.header)?;
     writeln!(stdout, "Report:")?;
