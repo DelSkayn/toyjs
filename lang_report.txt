@@ -70,19 +70,9 @@
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-block-scoping.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (false) function _f() {} e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-no-else-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  }} ...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-switch-case-eval-global-block-scoping.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/global-switch-dflt-eval-global-block-scoping.js => [0m[1m[33mFAILED
@@ -162,12 +152,7 @@
 ./test262/test/annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-switch-case-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {switch (1) {  case 1:    func...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-switch-dflt-eval-func-skip-early-err-for-in.js => [0m[1m[33mFAILED
@@ -175,12 +160,7 @@
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-for.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-stmt-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-switch-dflt-eval-func-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-existing-block-fn-update.js => [0m[1m[32mPASSED
@@ -274,12 +254,7 @@
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-block-decl-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {{ function f() {  } }}       ...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-switch-dflt-eval-func-existing-fn-no-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
@@ -295,31 +270,16 @@
 [0m[37m	> Test returned error: Uncaught Test262Error: binding is not initialized to `undefined` Expected SameValue(«undefined», «123») to be true
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-stmt-eval-global-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-decl-no-else-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {if (true) function f() {  }} ...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-no-else-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/switch-case-decl-nostrict.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-switch-case-eval-global-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-decl-else-stmt-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
@@ -407,12 +367,7 @@
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-switch-dflt-eval-global-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {if (false) function _f() {} e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-skip-early-err-for-in.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-switch-case-eval-func-existing-var-update.js => [0m[1m[32mPASSED
@@ -457,12 +412,7 @@
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-block-decl-eval-func-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (false) ; else function f(...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-decl-else-stmt-eval-func-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-if-decl-else-stmt-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
@@ -485,12 +435,7 @@
 ./test262/test/annexB/language/eval-code/direct/global-switch-case-eval-global-existing-fn-no-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {switch (1) {  default:    fun...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-block-decl-eval-global-skip-early-err-for.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-no-else-eval-global-existing-global-update.js => [0m[1m[31mERROR: 
@@ -535,12 +480,7 @@
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-a-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-stmt-eval-func-skip-early-err.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: redeclared variable
  --> ??:0:44
@@ -551,12 +491,7 @@
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-no-else-eval-func-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-decl-else-stmt-eval-func-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-block-decl-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {{ function f() {  } }}    ass...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-block-decl-eval-func-no-skip-try.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-switch-case-eval-func-existing-block-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-switch-case-eval-global-existing-var-no-init.js => [0m[1m[32mPASSED
@@ -602,12 +537,7 @@
 [0m[37m	> Test returned error: Uncaught Test262Error: binding is not initialized to `undefined` Expected SameValue(«undefined», «123») to be true
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-if-stmt-else-decl-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {if (false) ; else function f(...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-existing-non-enumerable-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/global-block-decl-eval-global-existing-block-fn-update.js => [0m[1m[32mPASSED
@@ -639,22 +569,12 @@
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/func-block-decl-eval-func-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/func-switch-dflt-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {switch (1) {  default:    fun...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/direct/global-switch-dflt-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-switch-case-eval-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:286
-  |
-1 | ...    try {      throw {};    } catch ({ f }) {switch (1) {  case 1:    func...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/direct/func-if-decl-else-decl-b-eval-func-existing-fn-no-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/direct/func-switch-case-eval-func-block-scoping.js => [0m[1m[32mPASSED
@@ -807,19 +727,9 @@
 ./test262/test/annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-block-scoping.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (false) function _f() {} e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  }} ...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-switch-case-eval-global-block-scoping.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-block-scoping.js => [0m[1m[33mFAILED
@@ -849,19 +759,9 @@
 ./test262/test/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-switch-case-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {switch (1) {  case 1:    func...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-stmt-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-non-enumerable-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-update.js => [0m[1m[32mPASSED
@@ -912,12 +812,7 @@
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (true) function f() {  } e...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-switch-case-eval-global-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
@@ -981,12 +876,7 @@
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {if (false) ; else function f(...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-stmt-eval-global-skip-early-err-for-of.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
@@ -997,12 +887,7 @@
 ./test262/test/annexB/language/eval-code/indirect/global-switch-case-eval-global-existing-fn-no-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {switch (1) {  default:    fun...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-block-decl-eval-global-skip-early-err-for.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-global-update.js => [0m[1m[31mERROR: 
@@ -1034,12 +919,7 @@
 ./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-block-decl-eval-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:0:264
-  |
-1 | ...  );    try {    throw {};  } catch ({ f }) {{ function f() {  } }}    ass...
-  |                                         ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/eval-code/indirect/global-switch-case-eval-global-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-stmt-eval-global-no-skip-try.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-no-skip-try.js => [0m[1m[32mPASSED
@@ -1279,12 +1159,7 @@
    |            ^^ 
 
 ./test262/test/annexB/language/global-code/if-decl-else-decl-a-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:45:9
-   |
-46 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/block-decl-global-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/switch-dflt-global-no-skip-try.js => [0m[1m[32mPASSED
@@ -1331,24 +1206,14 @@
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/global-code/if-decl-else-decl-a-global-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/if-decl-no-else-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:45:9
-   |
-46 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/if-decl-else-stmt-global-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/switch-case-global-existing-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/global-code/if-decl-else-stmt-global-no-skip-try.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/switch-case-global-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/if-decl-else-decl-b-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:45:9
-   |
-46 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/switch-case-global-block-scoping.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/global-code/if-decl-else-stmt-global-existing-block-fn-update.js => [0m[1m[32mPASSED
@@ -1419,19 +1284,9 @@
 [0m[37m./test262/test/annexB/language/global-code/switch-case-global-existing-non-enumerable-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/global-code/if-decl-else-stmt-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:45:9
-   |
-46 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/block-decl-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:36:9
-   |
-37 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/switch-case-global-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/block-decl-global-skip-early-err-switch.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: redeclared variable
@@ -1468,12 +1323,7 @@
 ./test262/test/annexB/language/global-code/if-stmt-else-decl-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/global-code/switch-dflt-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:36:9
-   |
-37 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/switch-case-global-no-skip-try.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/switch-case-global-skip-early-err-for.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
@@ -1491,12 +1341,7 @@
 ./test262/test/annexB/language/global-code/if-stmt-else-decl-global-existing-block-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/block-decl-global-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/if-stmt-else-decl-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:45:9
-   |
-46 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/if-decl-no-else-global-skip-early-err-switch.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: redeclared variable
  --> ??:36:4
@@ -1546,12 +1391,7 @@
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/if-decl-else-decl-b-global-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/global-code/switch-case-global-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected 'ident'
- --> ??:36:9
-   |
-37 | } catch ({ f }) {
-   |          ^ 
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/global-code/if-decl-else-stmt-global-init.js => [0m[1m[31mERROR: 
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/expressions/template-literal/legacy-octal-escape-sequence-strict.js => [0m[1m[32mPASSED
@@ -1689,12 +1529,7 @@ info: |
 
 ./test262/test/annexB/language/function-code/if-decl-no-else-func-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-decl-else-decl-b-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:48:9
-   |
-49 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/if-decl-else-stmt-func-skip-early-err-switch.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found 'if' expected '=>'
  --> ??:40:0
@@ -1721,22 +1556,12 @@ info: |
 ./test262/test/annexB/language/function-code/block-decl-func-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/switch-dflt-func-existing-var-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-decl-else-stmt-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:48:9
-   |
-49 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/block-decl-func-existing-block-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/switch-case-func-existing-fn-no-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/function-code/switch-case-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:39:9
-   |
-40 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/if-decl-else-decl-a-func-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/switch-case-func-skip-early-err-for-of.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '[' expected '=>'
@@ -1824,11 +1649,11 @@ info: |
 ./test262/test/annexB/language/function-code/switch-dflt-func-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-stmt-else-decl-func-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/block-decl-func-skip-early-err-switch.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:31:0
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found 'f' expected '=>'
+ --> ??:32:9
    |
-32 | {
-   | ^ expected arrow function declaration
+33 | function f() {  }
+   |          ^ expected arrow function declaration
 
 ./test262/test/annexB/language/function-code/if-decl-else-stmt-func-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-decl-no-else-func-existing-block-fn-update.js => [0m[1m[32mPASSED
@@ -1882,12 +1707,7 @@ info: |
 ./test262/test/annexB/language/function-code/if-decl-else-decl-b-func-no-skip-try.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught Test262Error: binding value is updated following evaluation Expected SameValue(«undefined», «function») to be true
 ./test262/test/annexB/language/function-code/if-decl-no-else-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:48:9
-   |
-49 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/if-decl-else-stmt-func-init.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/if-stmt-else-decl-func-block-scoping.js => [0m[1m[33mFAILED
@@ -1927,12 +1747,7 @@ info: |
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/switch-dflt-func-existing-var-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/block-decl-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:39:9
-   |
-40 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/block-decl-func-skip-param.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '(' expected '=>'
  --> ??:22:10
@@ -1971,12 +1786,7 @@ info: |
 ./test262/test/annexB/language/function-code/if-decl-else-decl-a-func-existing-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/switch-dflt-decl-nostrict.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-stmt-else-decl-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:48:9
-   |
-49 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/if-stmt-else-decl-func-skip-param.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '(' expected '=>'
  --> ??:30:28
@@ -2042,12 +1852,7 @@ info: |
 [0m[37m./test262/test/annexB/language/function-code/if-stmt-else-decl-func-no-skip-try.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught Test262Error: binding value is updated following evaluation Expected SameValue(«undefined», «function») to be true
 ./test262/test/annexB/language/function-code/switch-dflt-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:39:9
-   |
-40 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 ./test262/test/annexB/language/function-code/block-decl-func-existing-block-fn-no-init.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-decl-no-else-func-skip-early-err-block.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
@@ -2144,12 +1949,7 @@ info: |
 
 ./test262/test/annexB/language/function-code/if-decl-else-decl-a-func-existing-block-fn-update.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/function-code/if-decl-else-decl-a-func-skip-early-err-try.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '{' expected '=>'
- --> ??:48:9
-   |
-49 | } catch ({ f }) {
-   |          ^ expected arrow function declaration
-
+[0m[37m	> Test returned error: Uncaught TypeError: undefined has no properties
 [0m[1mReport:
 [0m[1m[32m	passed: [0m[37m303
 [0m[1m[33m	failed: [0m[37m427

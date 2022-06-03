@@ -596,14 +596,14 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
                                 kind: ErrorKind::RedeclaredVariable,
                                 origin: self.last_span,
                             })?;
-                    stmt.push(ast::Param::Single(arg_var));
+                    stmt.push(ast::SymbolOrBinding::Single(arg_var));
                     if !self.eat(t!(","))? {
                         break;
                     }
                 }
                 t!("[") | t!("{") => {
                     let binding = self.parse_binding(Some(DeclType::Let))?;
-                    stmt.push(ast::Param::Binding(binding));
+                    stmt.push(ast::SymbolOrBinding::Binding(binding));
                     if !self.eat(t!(","))? {
                         break;
                     }
@@ -638,9 +638,16 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             let scope = self.symbol_table.push_scope(ScopeKind::Lexical);
             let binding = if self.peek_kind()? == Some(t!("(")) {
                 self.next()?;
-                expect_bind!(self, let binding = "ident");
+                let binding = if let Some(t!("{")) | Some(t!("[")) = self.peek_kind()? {
+                    let binding = self.parse_binding(Some(DeclType::Let))?;
+                    ast::SymbolOrBinding::Binding(binding)
+                } else {
+                    expect_bind!(self, let binding = "ident");
+                    let binding = self.symbol_table.define(binding, DeclType::Let).unwrap();
+                    ast::SymbolOrBinding::Single(binding)
+                };
                 expect!(self, ")");
-                self.symbol_table.define(binding, DeclType::Let)
+                Some(binding)
             } else {
                 None
             };

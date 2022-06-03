@@ -154,7 +154,13 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
             Stmt::Try(r#try, catch, finally) => {
                 let dst = catch
                     .as_ref()
-                    .and_then(|x| x.binding.map(|x| self.builder.alloc_symbol(x)))
+                    .and_then(|x| {
+                        if let Some(ast::SymbolOrBinding::Single(x)) = x.binding {
+                            Some(self.builder.alloc_symbol(x))
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_else(|| self.builder.alloc_temp());
                 let instr = self.builder.push(Instruction::Try { tgt: 0, dst: dst.0 });
                 self.compile_stmt(r#try);
@@ -163,6 +169,14 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     let catch_jmp = self.builder.push(Instruction::Jump { tgt: 0 });
                     self.builder
                         .patch_jump(instr, self.builder.next_instruction_id());
+
+                    match catch.binding {
+                        None => {}
+                        Some(ast::SymbolOrBinding::Single(_)) => {}
+                        Some(ast::SymbolOrBinding::Binding(ref x)) => {
+                            self.compile_binding(x, dst);
+                        }
+                    }
                     self.compile_stmt(&catch.stmt);
                     self.builder
                         .patch_jump(catch_jmp, self.builder.next_instruction_id());
@@ -364,11 +378,11 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     todo!("more then 16 arguments")
                 }
                 match p {
-                    ast::Param::Single(x) => {
+                    ast::SymbolOrBinding::Single(x) => {
                         self.builder.registers().alloc_arg(Some(*x));
                         None
                     }
-                    ast::Param::Binding(ref b) => {
+                    ast::SymbolOrBinding::Binding(ref b) => {
                         let reg = self.builder.registers().alloc_arg(None);
                         Some((reg, b))
                     }
@@ -551,11 +565,11 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                     todo!("more then 16 arguments")
                 }
                 match p {
-                    ast::Param::Single(x) => {
+                    ast::SymbolOrBinding::Single(x) => {
                         self.builder.registers().alloc_arg(Some(*x));
                         None
                     }
-                    ast::Param::Binding(ref b) => {
+                    ast::SymbolOrBinding::Binding(ref b) => {
                         let reg = self.builder.registers().alloc_arg(None);
                         Some((reg, b))
                     }
