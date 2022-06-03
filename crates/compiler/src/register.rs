@@ -12,11 +12,12 @@ enum AllocValue {
     Symbol(SymbolId),
     Global,
     Arg(SymbolId),
+    BoundArg,
 }
 
 impl AllocValue {
     pub fn is_arg(self) -> bool {
-        matches!(self, AllocValue::Arg(_))
+        matches!(self, AllocValue::Arg(_) | AllocValue::BoundArg)
     }
 }
 
@@ -90,12 +91,16 @@ impl Registers {
         Register(free as u8)
     }
 
-    pub fn alloc_arg(&mut self, symbol: SymbolId) -> Register {
+    pub fn alloc_arg(&mut self, symbol: Option<SymbolId>) -> Register {
         debug_assert!(
             self.cur_allocated == 0 || self.registers[self.cur_allocated as usize - 1].is_arg()
         );
         let res = Register(self.cur_allocated);
-        self.registers[self.cur_allocated as usize] = AllocValue::Arg(symbol);
+        if let Some(s) = symbol {
+            self.registers[self.cur_allocated as usize] = AllocValue::Arg(s);
+        } else {
+            self.registers[self.cur_allocated as usize] = AllocValue::BoundArg;
+        }
         self.cur_allocated += 1;
         self.max_allocated += 1;
         res

@@ -89,16 +89,9 @@ impl<'a, A: Allocator + Clone> ScriptBuilder<'a, A> {
         }
     }
 
-    pub fn push_function(&mut self, scope: ScopeId, params: &ast::Params<A>) -> FunctionId {
+    pub fn push_function(&mut self, scope: ScopeId) -> FunctionId {
         let res = self.functions.len().try_into().expect("to many functions");
-        let mut registers = Registers::new();
-
-        for (idx, p) in params.0.iter().enumerate() {
-            if idx >= 16 {
-                todo!("more then 16 arguments")
-            }
-            registers.alloc_arg(*p);
-        }
+        let registers = Registers::new();
 
         self.functions.push(BuilderFunction {
             parent: Some(self.current),

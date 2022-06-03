@@ -596,7 +596,14 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
                                 kind: ErrorKind::RedeclaredVariable,
                                 origin: self.last_span,
                             })?;
-                    stmt.push(arg_var);
+                    stmt.push(ast::Param::Single(arg_var));
+                    if !self.eat(t!(","))? {
+                        break;
+                    }
+                }
+                t!("[") | t!("{") => {
+                    let binding = self.parse_binding(Some(DeclType::Let))?;
+                    stmt.push(ast::Param::Binding(binding));
                     if !self.eat(t!(","))? {
                         break;
                     }

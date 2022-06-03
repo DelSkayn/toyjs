@@ -321,14 +321,15 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             Expr::Prime(ast::PrimeExpr::Variable(symbol)) => {
                 let symbol = self.symbol_table.reparse_function_param(symbol);
                 let mut res = Vec::new_in(self.alloc.clone());
-                res.push(symbol);
+                res.push(ast::Param::Single(symbol));
                 Ok(ast::Params(res, None))
             }
             Expr::Prime(ast::PrimeExpr::Covered(exprs)) => {
                 let mut res = Vec::new_in(self.alloc.clone());
                 for e in exprs {
                     if let Expr::Prime(ast::PrimeExpr::Variable(s)) = e {
-                        res.push(self.symbol_table.reparse_function_param(s));
+                        let sym = self.symbol_table.reparse_function_param(s);
+                        res.push(ast::Param::Single(sym));
                     } else {
                         unexpected!(self => "could not parse left hand side as arrow function parameters");
                     }

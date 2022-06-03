@@ -353,7 +353,33 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         params: &'a Params<A>,
         block: &'a [Stmt<A>],
     ) -> FunctionId {
-        let id = self.builder.push_function(scope, params);
+        let id = self.builder.push_function(scope);
+
+        let bindings: Vec<_> = params
+            .0
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, p)| {
+                if idx >= 16 {
+                    todo!("more then 16 arguments")
+                }
+                match p {
+                    ast::Param::Single(x) => {
+                        self.builder.registers().alloc_arg(Some(*x));
+                        None
+                    }
+                    ast::Param::Binding(ref b) => {
+                        let reg = self.builder.registers().alloc_arg(None);
+                        Some((reg, b))
+                    }
+                }
+            })
+            .collect();
+
+        for (reg, b) in bindings {
+            self.compile_binding(b, reg);
+        }
+
         for s in block.iter() {
             self.compile_stmt(s);
         }
@@ -515,7 +541,32 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         params: &'a Params<A>,
         body: &'a ArrowBody<A>,
     ) -> FunctionId {
-        let id = self.builder.push_function(scope, params);
+        let id = self.builder.push_function(scope);
+        let bindings: Vec<_> = params
+            .0
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, p)| {
+                if idx >= 16 {
+                    todo!("more then 16 arguments")
+                }
+                match p {
+                    ast::Param::Single(x) => {
+                        self.builder.registers().alloc_arg(Some(*x));
+                        None
+                    }
+                    ast::Param::Binding(ref b) => {
+                        let reg = self.builder.registers().alloc_arg(None);
+                        Some((reg, b))
+                    }
+                }
+            })
+            .collect();
+
+        for (reg, b) in bindings {
+            self.compile_binding(b, reg);
+        }
+
         match body {
             ArrowBody::Block(block) => {
                 for s in block {

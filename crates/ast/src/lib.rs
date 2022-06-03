@@ -22,7 +22,14 @@ pub enum Rest {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
-pub struct Params<A: Allocator>(pub Vec<SymbolId, A>, pub Option<Rest>);
+pub enum Param<A: Allocator> {
+    Single(SymbolId),
+    Binding(Binding<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub struct Params<A: Allocator>(pub Vec<Param<A>, A>, pub Option<Rest>);
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
