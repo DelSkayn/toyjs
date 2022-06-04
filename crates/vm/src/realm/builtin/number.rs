@@ -88,7 +88,7 @@ fn value_of<'l, 'cell>(
     realm: GcRealm<'_, 'cell>,
     ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-    number_value(arena, owner, atoms, realm, ctx.this)
+    rebind!(arena, number_value(arena, owner, atoms, realm, ctx.this))
 }
 
 fn to_string<'l, 'cell>(

@@ -1,6 +1,6 @@
 use ast::{
-    ArrowBody, Binding, BindingElement, BindingRestElement, Case, Expr, ForDecl, Literal, Params,
-    ScopeId, Stmt, SymbolId,
+    ArrowBody, Binding, BindingElement, BindingRestElement, CForDecl, Case, Define, Expr,
+    ForInOfDecl, Literal, Params, ScopeId, Stmt, SymbolId, SymbolOrBinding,
 };
 use vm::instructions::Instruction;
 
@@ -11,6 +11,8 @@ use crate::{
     Compiler,
 };
 use std::alloc::Allocator;
+
+const NO_DECL_PANIC: &str = "declarations should atleast have a single declared variable";
 
 impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub(crate) fn compile_stmt(&mut self, stmt: &'a Stmt<A>) -> Option<Register> {
@@ -42,7 +44,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 None
             }
             Stmt::For(ast::For::ForIn(decl, expr, stmt)) => {
-                self.compile_for_in(*decl, expr, &*stmt);
+                self.compile_for_in(decl, expr, &*stmt);
                 None
             }
             Stmt::For(ast::For::ForOf(_decl, _expr, _stmt)) => {
@@ -56,64 +58,21 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 self.builder.push_break();
                 None
             }
-            Stmt::Let(ast::Let::Single(symbol, expr)) => {
-                let reg = self.builder.alloc_symbol(*symbol);
-                if let Some(x) = expr.as_ref() {
-                    let res = self.compile_expr(Some(reg), x).eval(self);
-                    self.builder.free_temp(res);
-                    Some(res)
-                } else {
-                    self.compile_literal(Some(reg), Literal::Undefined);
-                    None
-                }
-            }
-            Stmt::Let(ast::Let::Binding(binding, expr)) => {
-                let expr = self.compile_expr(None, expr).eval(self);
-                self.compile_binding(binding, expr);
-                self.builder.free_temp(expr);
-                Some(expr)
-            }
-            Stmt::Const(ast::Const::Single(symbol, expr)) => {
-                let reg = self.builder.alloc_symbol(*symbol);
-                let res = self.compile_expr(Some(reg), expr).eval(self);
-                self.builder.free_temp(res);
-                Some(res)
-            }
-            Stmt::Const(ast::Const::Binding(binding, expr)) => {
-                let expr = self.compile_expr(None, expr).eval(self);
-                self.compile_binding(binding, expr);
-                self.builder.free_temp(expr);
-                Some(expr)
-            }
-            Stmt::Var(symbols) => {
-                let mut reg = None;
-                for (symbol, expr) in symbols {
-                    let symbol = self.builder.symbol_table.resolve_symbol(*symbol);
-                    if self.builder.symbol_table.is_symbol_local(symbol) {
-                        let dst = self.builder.alloc_symbol(symbol);
-                        if let Some(x) = expr.as_ref() {
-                            reg = Some(self.compile_expr(Some(dst), x).eval(self));
-                        } else {
-                            self.compile_literal(Some(dst), Literal::Undefined);
-                            reg = None;
-                        }
-                    } else if let Some(expr) = expr {
-                        let expr = self.compile_expr(None, expr).eval(self);
-                        let name = self
-                            .compile_atom(None, self.builder.symbol_table.symbols()[symbol].ident);
-                        self.builder.push(Instruction::GlobalAssign {
-                            key: name.0,
-                            src: expr.0,
-                        });
-                        self.builder.free_temp(expr);
-                        self.builder.free_temp(name);
-                        reg = Some(expr);
-                    } else {
-                        reg = None;
-                    }
-                }
-                reg
-            }
+            Stmt::Let(x) => x
+                .iter()
+                .map(|d| self.compile_define(d))
+                .last()
+                .expect(NO_DECL_PANIC),
+            Stmt::Const(x) => x
+                .iter()
+                .map(|d| self.compile_define(d))
+                .last()
+                .expect(NO_DECL_PANIC),
+            Stmt::Var(symbols) => symbols
+                .iter()
+                .map(|d| self.compile_define(d))
+                .last()
+                .expect(NO_DECL_PANIC),
             Stmt::Block(_, stmts) => stmts.iter().map(|x| self.compile_stmt(x)).last().flatten(),
             Stmt::Function(scope, symbol, params, stmts) => {
                 let id = self.compile_function_decl(*scope, params, stmts);
@@ -192,6 +151,37 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 self.builder.free_temp(dst);
 
                 None
+            }
+        }
+    }
+
+    pub fn compile_define(&mut self, define: &'a Define<A>) -> Option<Register> {
+        match *define {
+            ast::Define::Single { symbol, ref init } => {
+                if let Some(x) = init.as_ref() {
+                    let tgt = AssignmentTarget::Variable(symbol);
+                    let place = tgt.placement(self);
+                    let res = self.compile_expr(place, x).eval(self);
+                    tgt.compile_assign(self, res);
+                    self.builder.free_temp(res);
+                    Some(res)
+                } else {
+                    let tgt = AssignmentTarget::Variable(symbol);
+                    let place = tgt.placement(self);
+                    let res = self.compile_literal(place, Literal::Undefined);
+                    tgt.compile_assign(self, res);
+                    self.builder.free_temp(res);
+                    None
+                }
+            }
+            ast::Define::Binding {
+                ref binding,
+                ref init,
+            } => {
+                let expr = self.compile_expr(None, init).eval(self);
+                self.compile_binding(binding, expr);
+                self.builder.free_temp(expr);
+                Some(expr)
             }
         }
     }
@@ -609,19 +599,21 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     pub fn compile_for(
         &mut self,
-        decl: &'a Option<ForDecl<A>>,
+        decl: &'a Option<CForDecl<A>>,
         cond: Option<&'a [Expr<A>]>,
         post: Option<&'a [Expr<A>]>,
         block: &'a Stmt<A>,
     ) {
         if let Some(decl) = decl {
             match decl {
-                ForDecl::Stmt(x) => {
-                    self.compile_stmt(x);
+                CForDecl::Expr(x) => {
+                    let res = self.compile_expressions(None, x).eval(self);
+                    self.builder.free_temp(res);
                 }
-                ForDecl::Expr(x) => {
-                    let reg = self.compile_expr(None, x).eval(self);
-                    self.builder.free_temp(reg);
+                CForDecl::Define(x) => {
+                    for d in x.iter() {
+                        self.compile_define(d);
+                    }
                 }
             }
         }
@@ -674,27 +666,64 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         }
     }
 
-    pub fn compile_for_in(&mut self, decl: SymbolId, expr: &'a [Expr<A>], stmt: &'a Stmt<A>) {
-        let decl = self.builder.symbol_table.resolve_symbol(decl);
-        let tgt = AssignmentTarget::from_symbol(decl);
+    pub fn compile_for_in(
+        &mut self,
+        decl: &'a ForInOfDecl<A>,
+        expr: &'a [Expr<A>],
+        stmt: &'a Stmt<A>,
+    ) {
         let res = self.compile_expressions(None, expr).eval(self);
-        self.builder.free_temp(res);
-        let iter = self.builder.alloc_temp();
         self.builder.push(Instruction::IterHead {
-            dst: iter.0,
+            dst: res.0,
             obj: res.0,
         });
+        let iter = res;
         let jump_head = self.builder.push(Instruction::Jump { tgt: 0 });
 
-        let tgt_reg = tgt
-            .placement(self)
-            .unwrap_or_else(|| self.builder.alloc_temp());
-        let start = self.builder.push(Instruction::Iter {
-            dst: tgt_reg.0,
-            obj: iter.0,
-        });
-        let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
-        tgt.compile_assign(self, tgt_reg);
+        let (start, jump_iter) = match *decl {
+            ForInOfDecl::Define(SymbolOrBinding::Single(x)) => {
+                let tgt = AssignmentTarget::Variable(x);
+                let dst = tgt
+                    .placement(self)
+                    .unwrap_or_else(|| self.builder.alloc_temp());
+                let start = self.builder.push(Instruction::Iter {
+                    dst: dst.0,
+                    obj: iter.0,
+                });
+                let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
+                tgt.compile_assign(self, dst);
+                self.builder.free_temp(dst);
+                (start, jump_iter)
+            }
+            ForInOfDecl::Define(SymbolOrBinding::Binding(ref x)) => {
+                let dst = self.builder.alloc_temp();
+                let start = self.builder.push(Instruction::Iter {
+                    dst: dst.0,
+                    obj: iter.0,
+                });
+                let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
+                self.compile_binding(x, dst);
+                self.builder.free_temp(dst);
+                (start, jump_iter)
+            }
+            ForInOfDecl::Expr(ref x) => match x {
+                Expr::Prime(ast::PrimeExpr::Object(_)) => todo!(),
+                Expr::Prime(ast::PrimeExpr::Array(_)) => todo!(),
+                x => {
+                    let dst = self.builder.alloc_temp();
+                    let start = self.builder.push(Instruction::Iter {
+                        dst: dst.0,
+                        obj: iter.0,
+                    });
+                    let jump_iter = self.builder.push(Instruction::Jump { tgt: 0 });
+                    let tgt = AssignmentTarget::from_expr(self, &x);
+                    tgt.compile_assign(self, dst);
+                    self.builder.free_temp(dst);
+                    tgt.free_temp(self);
+                    (start, jump_iter)
+                }
+            },
+        };
 
         self.builder.push_flow_scope();
         self.compile_stmt(stmt);
@@ -708,7 +737,6 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         self.builder.patch_jump(j, start);
 
         self.builder.free_temp(iter);
-        self.builder.free_temp(tgt_reg);
 
         for x in flow_scope.patch_break {
             self.builder

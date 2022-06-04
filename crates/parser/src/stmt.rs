@@ -160,6 +160,58 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
         ))
     }
 
+    pub(crate) fn parse_symbol_or_binding(
+        &mut self,
+        decl_type: Option<DeclType>,
+    ) -> Result<ast::SymbolOrBinding<A>> {
+        match self.peek_kind()? {
+            Some(t!("{")) | Some(t!("[")) => {
+                let binding = self.parse_binding(decl_type)?;
+                Ok(ast::SymbolOrBinding::Binding(binding))
+            }
+            Some(t!("ident", ident)) => {
+                self.next()?;
+                let sym = if let Some(decl_type) = decl_type {
+                    self.symbol_table.define(ident, decl_type).ok_or(Error {
+                        kind: ErrorKind::RedeclaredVariable,
+                        origin: self.last_span,
+                    })?
+                } else {
+                    self.symbol_table.use_symbol(ident)
+                };
+                Ok(ast::SymbolOrBinding::Single(sym))
+            }
+            _ => unexpected!(self, "ident", "[", "{" => "expected binding"),
+        }
+    }
+
+    /*
+    pub(crate) fn parse_for_decl(&mut self) -> Result<ast::ForDecl<A>> {
+        match self.peek_kind()?{
+            None => unexpected!(self, "let", "var", "const", "ident", "expression"),
+            Some(t!("let")) => {
+                self.next();
+                let decl = self.parse_symbol_or_binding(Some(DeclType::Let))?;
+                Ok(ast::ForDecl::Decl(decl))
+            }
+            Some(t!("const")) => {
+                self.next();
+                let decl = self.parse_symbol_or_binding(Some(DeclType::Const))?;
+                Ok(ast::ForDecl::Decl(decl))
+            }
+            Some(t!("var")) => {
+                self.next();
+                let decl = self.parse_symbol_or_binding(Some(DeclType::Var))?;
+                Ok(ast::ForDecl::Decl(decl))
+            }
+            _ => {
+                let expr = self.parse_single_expr()?;
+                Ok(ast::ForDecl::Expr(expr))
+            }
+        }
+    }
+    */
+
     pub(crate) fn parse_for(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "for");
         expect!(self, "(");
@@ -167,25 +219,107 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
         let decl = if self.eat(t!(";"))? {
             None
         } else {
-            let decl = match self.peek_kind()? {
-                None => unexpected!(self, "let", "var", "const", "ident"),
-                Some(t!("let")) => {
-                    ast::ForDecl::Stmt(Box::new_in(self.parse_let_binding()?, self.alloc.clone()))
-                }
-                Some(t!("const")) => {
-                    ast::ForDecl::Stmt(Box::new_in(self.parse_const_binding()?, self.alloc.clone()))
-                }
-                Some(t!("var")) => {
-                    ast::ForDecl::Stmt(Box::new_in(self.parse_var_binding()?, self.alloc.clone()))
-                }
-                _ => ast::ForDecl::Expr(self.parse_single_expr()?),
+            let peek = if let Some(x) = self.peek_kind()? {
+                x
+            } else {
+                unexpected!(self, "let", "var", "const", "ident", "expression")
             };
-            if self.peek_kind()? == Some(t!("in")) {
-                return self.parse_for_in_of(false, decl);
-            }
-            if self.peek_kind()? == Some(t!("of")) {
-                return self.parse_for_in_of(true, decl);
-            }
+
+            let decl_type = match peek {
+                t!("let") => {
+                    self.next()?;
+                    Some(DeclType::Let)
+                }
+                t!("const") => {
+                    self.next()?;
+                    Some(DeclType::Const)
+                }
+                t!("var") => {
+                    self.next()?;
+                    Some(DeclType::Var)
+                }
+                _ => None,
+            };
+
+            let decl = if let Some(decl) = decl_type {
+                let decl = ast::ForInOfDecl::Define(self.parse_symbol_or_binding(Some(decl))?);
+                let peek = self.peek_kind()?;
+                if peek == Some(t!("in")) {
+                    return self.parse_for_in_of(false, decl);
+                }
+                if peek == Some(t!("of")) {
+                    return self.parse_for_in_of(true, decl);
+                }
+                decl
+            } else {
+                let expr = self.parse_single_expr()?;
+                let peek = self.peek_kind()?;
+                if peek == Some(t!("in")) {
+                    let invalid = match expr {
+                        Expr::Prime(ast::PrimeExpr::Object(_))
+                        | Expr::Prime(ast::PrimeExpr::Array(_)) => false,
+                        ref x => !x.is_assignable(),
+                    };
+                    if invalid {
+                        unexpected!(self => "left hand is not a assignable expression or object or array literal");
+                    }
+                    let decl = ast::ForInOfDecl::Expr(expr);
+                    return self.parse_for_in_of(false, decl);
+                }
+                if peek == Some(t!("of")) {
+                    let invalid = match expr {
+                        Expr::Prime(ast::PrimeExpr::Object(_))
+                        | Expr::Prime(ast::PrimeExpr::Array(_)) => false,
+                        ref x => !x.is_assignable(),
+                    };
+                    if invalid {
+                        unexpected!(self => "left hand is not a assignable expression or object or array literal");
+                    }
+                    let decl = ast::ForInOfDecl::Expr(expr);
+                    return self.parse_for_in_of(true, decl);
+                }
+                ast::ForInOfDecl::Expr(expr)
+            };
+
+            let decl = match decl {
+                ast::ForInOfDecl::Expr(x) => {
+                    let mut expr = Vec::with_capacity_in(1, self.alloc.clone());
+                    expr.push(x);
+                    while self.eat(t!(","))? {
+                        let e = self.parse_single_expr()?;
+                        expr.push(e);
+                    }
+                    ast::CForDecl::Expr(expr)
+                }
+                ast::ForInOfDecl::Define(x) => {
+                    let binding = match x {
+                        ast::SymbolOrBinding::Binding(binding) => {
+                            expect!(self, "=" => "binding declarations must be initialized");
+                            let init = self.parse_single_expr()?;
+                            ast::Define::Binding { binding, init }
+                        }
+                        ast::SymbolOrBinding::Single(symbol) => {
+                            let init = if decl_type == Some(DeclType::Const) {
+                                expect!(self, "=" => "const declarations must be initialized");
+                                Some(self.parse_single_expr()?)
+                            } else {
+                                self.eat(t!("="))?
+                                    .then(|| self.parse_single_expr())
+                                    .transpose()?
+                            };
+                            ast::Define::Single { symbol, init }
+                        }
+                    };
+                    let mut defs = Vec::with_capacity_in(1, self.alloc.clone());
+                    defs.push(binding);
+                    while self.eat(t!(","))? {
+                        let def = self.parse_define(decl_type.unwrap())?;
+                        defs.push(def)
+                    }
+                    ast::CForDecl::Define(defs)
+                }
+            };
+
             expect!(self, ";");
             Some(decl)
         };
@@ -222,25 +356,7 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
         )))
     }
 
-    fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForDecl<A>) -> Result<ast::Stmt<A>> {
-        let binding = match decl {
-            ast::ForDecl::Stmt(stmt) => match *stmt {
-                ast::Stmt::Let(ast::Let::Single(binding, None)) => binding,
-                ast::Stmt::Var(x) if x.len() == 1 => {
-                    if x[0].1.is_some() {
-                        unexpected!(self => "a for-in/of loop declaration can't have an initializer")
-                    }
-                    x[0].0
-                }
-                ast::Stmt::Let(ast::Let::Single(_, Some(_))) => {
-                    unexpected!(self => "a for-in/of loop declaration can't have an initializer")
-                }
-                _ => unexpected!(self => "invalid for-in/of left-hand side"),
-            },
-            ast::ForDecl::Expr(ast::Expr::Prime(ast::PrimeExpr::Variable(x))) => x,
-            _ => unexpected!(self => "invalid for-in/of left-hand side"),
-        };
-
+    fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForInOfDecl<A>) -> Result<ast::Stmt<A>> {
         if is_of {
             expect!(self, "of");
         } else {
@@ -263,89 +379,81 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
 
         if is_of {
             Ok(ast::Stmt::For(ast::For::ForOf(
-                binding,
+                decl,
                 e,
                 Box::new_in(stmt, self.alloc.clone()),
             )))
         } else {
             Ok(ast::Stmt::For(ast::For::ForIn(
-                binding,
+                decl,
                 e,
                 Box::new_in(stmt, self.alloc.clone()),
             )))
         }
     }
 
-    fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "let");
-
+    fn parse_define(&mut self, decl_type: DeclType) -> Result<ast::Define<A>> {
         match self.peek_kind()? {
             Some(t!("{")) | Some(t!("[")) => {
-                let binding = self.parse_binding(Some(DeclType::Let))?;
+                let binding = self.parse_binding(Some(decl_type))?;
                 expect!(self,"=" => "binding must be initialized");
-                let expr = self.parse_single_expr()?;
-                Ok(ast::Stmt::Let(ast::Let::Binding(binding, expr)))
+                let init = self.parse_single_expr()?;
+                Ok(ast::Define::Binding { binding, init })
             }
             Some(TokenKind::Ident(id)) => {
                 self.next()?;
-                let var = self.symbol_table.define(id, DeclType::Let).ok_or(Error {
+                let symbol = self.symbol_table.define(id, decl_type).ok_or(Error {
                     kind: ErrorKind::RedeclaredVariable,
                     origin: self.last_span,
                 })?;
-                let expr = if self.eat(t!("="))? {
+                let init = if decl_type == DeclType::Const {
+                    expect!(self,"=" => "const binding must be initialized");
+                    Some(self.parse_single_expr()?)
+                } else if self.eat(t!("="))? {
                     Some(self.parse_single_expr()?)
                 } else {
                     None
                 };
-                Ok(ast::Stmt::Let(ast::Let::Single(var, expr)))
+                Ok(ast::Define::Single { symbol, init })
             }
             _ => unexpected!(self, "{", "[", "ident"),
         }
+    }
+
+    fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
+        expect!(self, "let");
+        let define = self.parse_define(DeclType::Let)?;
+        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
+        vec.push(define);
+        while self.eat(t!(","))? {
+            let define = self.parse_define(DeclType::Let)?;
+            vec.push(define);
+        }
+        Ok(ast::Stmt::Let(vec))
     }
 
     fn parse_var_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "var");
-        let mut bindings = Vec::new_in(self.alloc.clone());
-        loop {
-            expect_bind!(self, let id = "ident");
-            let var = self.symbol_table.define(id, DeclType::Var).ok_or(Error {
-                kind: ErrorKind::RedeclaredVariable,
-                origin: self.last_span,
-            })?;
-            let expr = if self.eat(t!("="))? {
-                Some(self.parse_single_expr()?)
-            } else {
-                None
-            };
-            bindings.push((var, expr));
-            if !self.eat(t!(","))? {
-                break;
-            }
+        let define = self.parse_define(DeclType::Var)?;
+        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
+        vec.push(define);
+        while self.eat(t!(","))? {
+            let define = self.parse_define(DeclType::Var)?;
+            vec.push(define);
         }
-        Ok(ast::Stmt::Var(bindings))
+        Ok(ast::Stmt::Var(vec))
     }
 
     fn parse_const_binding(&mut self) -> Result<ast::Stmt<A>> {
         expect!(self, "const");
-        match self.peek_kind()? {
-            Some(t!("{")) | Some(t!("[")) => {
-                let binding = self.parse_binding(Some(DeclType::Const))?;
-                expect!(self,"=" => "binding must be initialized");
-                let expr = self.parse_single_expr()?;
-                Ok(ast::Stmt::Const(ast::Const::Binding(binding, expr)))
-            }
-            Some(TokenKind::Ident(id)) => {
-                self.next()?;
-                let var = self.symbol_table.define(id, DeclType::Const).ok_or(Error {
-                    kind: ErrorKind::RedeclaredVariable,
-                    origin: self.last_span,
-                })?;
-                expect!(self,"=" => "const bindings must be initialized");
-                let expr = self.parse_single_expr()?;
-                Ok(ast::Stmt::Const(ast::Const::Single(var, expr)))
-            }
-            _ => unexpected!(self, "{", "[", "ident"),
+        let define = self.parse_define(DeclType::Const)?;
+        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
+        vec.push(define);
+        while self.eat(t!(","))? {
+            let define = self.parse_define(DeclType::Const)?;
+            vec.push(define);
         }
+        Ok(ast::Stmt::Var(vec))
     }
 
     fn parse_binding(&mut self, define: Option<DeclType>) -> Result<ast::Binding<A>> {

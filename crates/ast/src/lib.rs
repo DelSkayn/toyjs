@@ -47,15 +47,29 @@ pub struct Case<A: Allocator> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
+pub enum ForInOfDecl<A: Allocator> {
+    Define(SymbolOrBinding<A>),
+    Expr(Expr<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub enum CForDecl<A: Allocator> {
+    Define(Vec<Define<A>, A>),
+    Expr(Vec<Expr<A>, A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
 pub enum For<A: Allocator> {
     CStyle(
-        Option<ForDecl<A>>,
+        Option<CForDecl<A>>,
         Option<Vec<Expr<A>, A>>,
         Option<Vec<Expr<A>, A>>,
         Box<Stmt<A>, A>,
     ),
-    ForIn(SymbolId, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
-    ForOf(SymbolId, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
+    ForIn(ForInOfDecl<A>, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
+    ForOf(ForInOfDecl<A>, Vec<Expr<A>, A>, Box<Stmt<A>, A>),
 }
 
 #[derive(Derivative, PartialEq)]
@@ -90,9 +104,15 @@ pub enum Binding<A: Allocator> {
 
 #[derive(Derivative, PartialEq)]
 #[derivative(Debug(bound = ""))]
-pub enum Let<A: Allocator> {
-    Single(SymbolId, Option<Expr<A>>),
-    Binding(Binding<A>, Expr<A>),
+pub enum Define<A: Allocator> {
+    Single {
+        symbol: SymbolId,
+        init: Option<Expr<A>>,
+    },
+    Binding {
+        binding: Binding<A>,
+        init: Expr<A>,
+    },
 }
 
 #[derive(Derivative, PartialEq)]
@@ -106,9 +126,9 @@ pub enum Const<A: Allocator> {
 #[derivative(Debug(bound = ""))]
 pub enum Stmt<A: Allocator> {
     Empty,
-    Let(Let<A>),
-    Const(Const<A>),
-    Var(Vec<(SymbolId, Option<Expr<A>>), A>),
+    Let(Vec<Define<A>, A>),
+    Const(Vec<Define<A>, A>),
+    Var(Vec<Define<A>, A>),
     Expr(Vec<Expr<A>, A>),
     Throw(Expr<A>),
     Break,
@@ -122,13 +142,6 @@ pub enum Stmt<A: Allocator> {
     Function(ScopeId, SymbolId, Params<A>, Vec<Stmt<A>, A>),
     Return(Option<Vec<Expr<A>, A>>),
     Try(Box<Stmt<A>, A>, Option<Catch<A>>, Option<Box<Stmt<A>, A>>),
-}
-
-#[derive(Derivative, PartialEq)]
-#[derivative(Debug(bound = ""))]
-pub enum ForDecl<A: Allocator> {
-    Stmt(Box<Stmt<A>, A>),
-    Expr(Expr<A>),
 }
 
 #[derive(Derivative, PartialEq)]
