@@ -1,7 +1,7 @@
 use ast::{
     symbol_table::{DeclType, Symbol},
     ArrowBody, AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator,
-    PrimeExpr, SymbolId,
+    PrimeExpr, SymbolId, Template,
 };
 use common::atom::Atom;
 use vm::instructions::Instruction;
@@ -842,7 +842,39 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
                 }
                 ExprValue::new_in(dst, self.alloc.clone())
             }
+            PrimeExpr::Template(x) => {
+                ExprValue::new_in(self.compile_template(placement, x), self.alloc.clone())
+            }
         }
+    }
+
+    fn compile_template(
+        &mut self,
+        placement: Option<Register>,
+        template: &'a Template<A>,
+    ) -> Register {
+        let accum = placement.unwrap_or_else(|| self.builder.alloc_temp());
+        self.compile_literal(Some(accum), Literal::String(template.head));
+
+        for (expr, tail) in &template.subtitutions {
+            let tmp = self.compile_expressions(None, expr).eval(self);
+            self.builder.push(Instruction::Add {
+                dst: accum.0,
+                left: accum.0,
+                righ: tmp.0,
+            });
+            self.builder.free_temp(tmp);
+            if let Some(tail) = *tail {
+                let tmp = self.compile_literal(None, Literal::String(tail));
+                self.builder.push(Instruction::Add {
+                    dst: accum.0,
+                    left: accum.0,
+                    righ: tmp.0,
+                });
+                self.builder.free_temp(tmp);
+            }
+        }
+        accum
     }
 
     /// Compile the use of a symbol

@@ -241,6 +241,18 @@ impl<'a, 'b> Lexer<'a, 'b> {
         })
     }
 
+    pub fn relex_template_subsituation(&mut self, token: Token) -> Result<Token> {
+        debug_assert_eq!(token.span.hi as usize, self.offset - 1);
+        debug_assert_eq!(token.kind, t!("}"));
+        self.lex_template(b'}').map_err(|e| Error {
+            kind: e,
+            origin: Span {
+                hi: u32::try_from(self.offset).expect("source file to big for span"),
+                low: token.span.low,
+            },
+        })
+    }
+
     /// Parses the next token.
     /// Returns an error without Span.
     fn next_inner(&mut self) -> LexResult<Option<Token>> {
@@ -477,7 +489,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
             b'\\' => todo!("token \\ "),
             b'\'' => self.lex_string(b'\'')?,
             b'\"' => self.lex_string(b'\"')?,
-
+            b'`' => self.lex_template(b'`')?,
             x if x.is_ascii_digit() => self.lex_number(x)?,
             x if x.is_ascii_alphabetic() => self.lex_ident(self.offset - 1)?,
             // The lexers parses bytes by default as most code contains just simple ascii bytes.

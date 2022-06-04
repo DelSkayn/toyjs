@@ -3,6 +3,7 @@ use ast::{
     symbol_table::{DeclType, ScopeKind},
     Expr, Literal, PrimeExpr,
 };
+use common::atom::Atom;
 use token::t;
 
 impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
@@ -69,6 +70,18 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             }
             t!("{") => self.parse_object(),
             t!("[") => self.parse_array(),
+            t!("`..`", x) => {
+                self.next()?;
+
+                Ok(PrimeExpr::Template(ast::Template {
+                    head: x,
+                    subtitutions: Vec::new_in(self.alloc.clone()),
+                }))
+            }
+            t!("`..${", x) => {
+                self.next()?;
+                self.parse_template(x)
+            }
             TokenKind::Literal(x) => {
                 self.next()?;
                 Ok(match x {
@@ -95,6 +108,50 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
         let expr = self.parse_expr()?;
         expect!(self, ")");
         Ok(Some(PrimeExpr::Eval(expr)))
+    }
+
+    fn parse_template(&mut self, head: Atom) -> Result<PrimeExpr<A>> {
+        let mut subtitutions = Vec::new_in(self.alloc.clone());
+        let empty = self.lexer.interner.intern("");
+        loop {
+            let mut exprs = Vec::new_in(self.alloc.clone());
+            let token = loop {
+                let expr = self.parse_single_expr()?;
+                exprs.push(expr);
+                let next = self.next()?;
+                let next = if let Some(next) = next {
+                    next
+                } else {
+                    unexpected!(self,"}" => "unfinished template")
+                };
+                if next.kind != t!(",") {
+                    break next;
+                }
+            };
+            if token.kind != t!("}") {
+                unexpected!(self, "}" => "expected template subtitution to end here");
+            }
+            let token = self.lexer.relex_template_subsituation(token)?;
+            match token.kind {
+                t!("}..${", x) => {
+                    if x == empty {
+                        subtitutions.push((exprs, None))
+                    } else {
+                        subtitutions.push((exprs, Some(x)))
+                    }
+                }
+                t!("}..`", x) => {
+                    if x == empty {
+                        subtitutions.push((exprs, None))
+                    } else {
+                        subtitutions.push((exprs, Some(x)))
+                    }
+                    break;
+                }
+                _ => unexpected!(self, "}" => "expected template subtitution to end here"),
+            }
+        }
+        Ok(PrimeExpr::Template(ast::Template { head, subtitutions }))
     }
 
     pub(crate) fn parse_object(&mut self) -> Result<PrimeExpr<A>> {

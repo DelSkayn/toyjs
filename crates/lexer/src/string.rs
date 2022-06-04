@@ -1,6 +1,6 @@
 use super::{chars, is_radix, ErrorKind, LexResult, Lexer, Token};
 use std::convert::TryInto;
-use token::{Literal, TokenKind};
+use token::{Literal, Template, TokenKind};
 
 fn from_ascii_digit(digit: u8) -> u8 {
     if digit.is_ascii_digit() {
@@ -32,6 +32,42 @@ impl<'a, 'b> Lexer<'a, 'b> {
                     x => self.buffer.push(x),
                 },
                 x => self.buffer.push(x.into()),
+            }
+        }
+    }
+
+    pub(super) fn lex_template(&mut self, start: u8) -> LexResult<Token> {
+        self.buffer.clear();
+        loop {
+            match self.next_byte().ok_or(ErrorKind::UnClosedString)? {
+                b'\\' => self.lex_escape_code()?,
+                b'`' if start == b'`' => {
+                    let s = self.interner.intern(&self.buffer);
+                    return Ok(self.token(TokenKind::Template(Template::NoSubstitution(s))));
+                }
+                b'`' => {
+                    let s = self.interner.intern(&self.buffer);
+                    return Ok(self.token(TokenKind::Template(Template::TemplateTail(s))));
+                }
+                b'$' => {
+                    if self.peek_byte().ok_or(ErrorKind::UnClosedString)? == b'{' {
+                        self.next_byte();
+                        let s = self.interner.intern(&self.buffer);
+                        if start == b'`' {
+                            return Ok(self.token(TokenKind::Template(Template::TemplateHead(s))));
+                        } else {
+                            return Ok(self.token(TokenKind::Template(Template::TemplateMiddle(s))));
+                        }
+                    }
+                    self.buffer.push('$');
+                }
+                x if !x.is_ascii() => {
+                    let char = self.next_char(x)?;
+                    self.buffer.push(char);
+                }
+                x => {
+                    self.buffer.push(x.into());
+                }
             }
         }
     }

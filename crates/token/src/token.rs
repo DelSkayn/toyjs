@@ -165,6 +165,14 @@ pub enum AssignOperator {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Template {
+    TemplateHead(Atom),
+    TemplateMiddle(Atom),
+    TemplateTail(Atom),
+    NoSubstitution(Atom),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TokenKind {
     Ident(Atom),
     Literal(Literal),
@@ -198,6 +206,7 @@ pub enum TokenKind {
     /// `\n`
     LineTerminator,
     Unknown,
+    Template(Template),
 }
 
 impl TokenKind {
@@ -365,6 +374,10 @@ impl fmt::Display for FormatedTokenKind<'_> {
             TokenKind::NullCoalescing => write!(f, "??"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::LineTerminator => write!(f, "\\n"),
+            TokenKind::Template(Template::TemplateHead(_)) => write!(f, "` .. ${{"),
+            TokenKind::Template(Template::TemplateMiddle(_)) => write!(f, "}} .. ${{"),
+            TokenKind::Template(Template::TemplateTail(_)) => write!(f, "}} .. `"),
+            TokenKind::Template(Template::NoSubstitution(_)) => write!(f, "` .. `"),
             TokenKind::Unknown => write!(f, "unknown"),
         }
     }

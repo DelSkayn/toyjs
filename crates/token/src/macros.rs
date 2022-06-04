@@ -46,6 +46,30 @@ macro_rules! t {
     ("ident"$($rest:tt)*) => {
         $crate::TokenKind::Ident(_)
     };
+    ("`..`",$x:ident) => {
+        $crate::TokenKind::Template($crate::Template::NoSubstitution($x))
+    };
+    ("`..`"$($rest:tt)*) => {
+        $crate::TokenKind::Template($crate::Template::NoSubstitution(_))
+    };
+    ("`..${",$x:ident) => {
+        $crate::TokenKind::Template($crate::Template::TemplateHead($x))
+    };
+    ("`..${"$($rest:tt)*) => {
+        $crate::TokenKind::Template($crate::Template::TemplateHead(_))
+    };
+    ("}..${",$x:ident) => {
+        $crate::TokenKind::Template($crate::Template::TemplateMiddle($x))
+    };
+    ("}..${"$($rest:tt)*) => {
+        $crate::TokenKind::Template($crate::Template::TemplateMiddle(_))
+    };
+    ("}..`",$x:ident) => {
+        $crate::TokenKind::Template($crate::Template::TemplateTail($x))
+    };
+    ("}..`"$($rest:tt)*) => {
+        $crate::TokenKind::Template($crate::Template::TemplateTail(_))
+    };
     ("\n"$($rest:tt)*) => {
         $crate::TokenKind::LineTerminator
     };

@@ -244,7 +244,8 @@ impl<A: Allocator> Expr<A> {
                 | PrimeExpr::ArrowFunction(_, _, _)
                 | PrimeExpr::ArrowArgs(_)
                 | PrimeExpr::This
-                | PrimeExpr::NewTarget => false,
+                | PrimeExpr::NewTarget
+                | PrimeExpr::Template(_) => false,
             },
             Expr::Assign(ref left, ref op, _) => match op {
                 AssignOperator::Assign => left.is_assignable(),
@@ -283,6 +284,14 @@ pub enum PrimeExpr<A: Allocator> {
     Eval(Vec<Expr<A>, A>),
     This,
     NewTarget,
+    Template(Template<A>),
+}
+
+#[derive(Derivative, PartialEq)]
+#[derivative(Debug(bound = ""))]
+pub struct Template<A: Allocator> {
+    pub head: Atom,
+    pub subtitutions: Vec<(Vec<Expr<A>, A>, Option<Atom>), A>,
 }
 
 #[derive(Derivative, Clone, Copy)]

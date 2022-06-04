@@ -2,56 +2,56 @@
 [0m[37m./test262/test/annexB/language/literals/numeric/legacy-octal-integer.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught Test262Error: Expected SameValue(«70», «56») to be true
 ./test262/test/annexB/language/literals/regexp/class-escape.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:29:8
    |
 30 | match = /\c0/.exec('\x0f\x10\x11');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/quantifiable-assertion-followed-by.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:29:8
    |
 30 | match = /.(?=Z)*/.exec('a bZ cZZ dZZZ eZZZZ');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/non-empty-class-ranges-no-dash.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:30:8
    |
 31 | match = /[\d-a]+/.exec(':a0123456789-:');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/identity-escape.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:15:8
    |
 16 | match = /\C/.exec('ABCDE');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/quantifiable-assertion-not-followed-by.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:29:8
    |
 30 | match = /[a-e](?!Z)*/.exec('aZZZZ bZZZ cZZ dZ e');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/extended-pattern-char.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:19:8
    |
 20 | match = /]/.exec(' ]{}');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/non-empty-class-ranges.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:29:8
    |
 30 | match = /[--\d]+/.exec('.-0123456789-.');
    |         ^ 
 
 ./test262/test/annexB/language/literals/regexp/legacy-octal-escape.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: Operator(Div)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: Operator(Div)
  --> ??:26:17
    |
 27 | assert.sameValue(/\1/.exec('\x01')[0], '\x01', '\\1');
@@ -1396,12 +1396,7 @@
 [0m[37m	> failed to execute harness file `fnGlobalObject.js`: Uncaught TypeError: tried to call non function value
 ./test262/test/annexB/language/expressions/template-literal/legacy-octal-escape-sequence-strict.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/expressions/template-literal/legacy-octal-escape-sequence-non-strict.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: invalid token
- --> ??:12:17
-   |
-13 | assert.sameValue(`${'\07'}`, '\u0007');
-   |                  ^^ 
-
+[0m[37m	> Test returned error: Uncaught Test262Error: Expected SameValue(« 7», «») to be true
 ./test262/test/annexB/language/expressions/yield/star-iterable-return-emulates-undefined-throws-when-called.js => [0m[1m[33mFAILED
 [0m[37m	> Test returned error: Uncaught SyntaxError: error: unexpected token: found '[' expected 'ident'
  --> ??:14:0
@@ -1460,7 +1455,7 @@ info: |
 
 ./test262/test/annexB/language/statements/for-in/const-initializer.js => [0m[1m[32mPASSED
 [0m[37m./test262/test/annexB/language/statements/for-in/nonstrict-initializer.js => [0m[1m[33mFAILED
-[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:86, Sorry! token: DelimClose(Brace)
+[0m[37m	> Test returned error: Uncaught SyntaxError: error: parser encountered an unimplemented path in: crates/parser/src/prime.rs:99, Sorry! token: DelimClose(Brace)
  --> ??:12:0
    |
 13 | })();
