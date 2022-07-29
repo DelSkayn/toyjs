@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::gc::{self, Arena, Gc, Rebind, Trace, Tracer};
+use dreck::{self, Root, Gc, Bound, Trace, Tracer};
 
 mod elements;
 mod function;
@@ -21,22 +21,22 @@ bitflags::bitflags! {
     }
 }
 
-pub type GcObject<'gc, 'cell> = Gc<'gc, 'cell, Object<'gc, 'cell>>;
+pub type GcObject<'gc, 'own> = Gc<'gc, 'own, Object<'gc, 'own>>;
 
-pub enum ObjectKind<'gc, 'cell> {
+pub enum ObjectKind<'gc, 'own> {
     Ordinary,
     Array,
     Error,
-    VmFn(VmFunction<'gc, 'cell>),
+    VmFn(VmFunction<'gc, 'own>),
     SharedFn(SharedFn),
     StaticFn(StaticFn),
     Boolean(bool),
     Number(f64),
-    String(Gc<'gc, 'cell, String>),
+    String(Gc<'gc, 'own, String>),
     //ForInIterator(ForInIterator),
 }
 
-impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
+impl<'gc, 'own> fmt::Debug for ObjectKind<'gc, 'own> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -57,7 +57,7 @@ impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for ObjectKind<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -84,23 +84,23 @@ unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ObjectKind<'gc, 'cell> {
-    type Output = ObjectKind<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for ObjectKind<'gc, 'own> {
+    type Rebound = ObjectKind<'a, 'own>;
 }
 
-pub struct Object<'gc, 'cell> {
+pub struct Object<'gc, 'own> {
     flags: ObjectFlags,
-    prototype: Option<GcObject<'gc, 'cell>>,
-    kind: ObjectKind<'gc, 'cell>,
-    pub(crate) properties: Properties<'gc, 'cell>,
-    pub(crate) elements: Elements<'gc, 'cell>,
+    prototype: Option<GcObject<'gc, 'own>>,
+    kind: ObjectKind<'gc, 'own>,
+    pub(crate) properties: Properties<'gc, 'own>,
+    pub(crate) elements: Elements<'gc, 'own>,
 }
 
-impl<'gc, 'cell> Object<'gc, 'cell> {
+impl<'gc, 'own> Object<'gc, 'own> {
     pub fn new(
-        prototype: Option<GcObject<'gc, 'cell>>,
+        prototype: Option<GcObject<'gc, 'own>>,
         flags: ObjectFlags,
-        kind: ObjectKind<'gc, 'cell>,
+        kind: ObjectKind<'gc, 'own>,
     ) -> Self {
         Object {
             flags,
@@ -112,16 +112,16 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
     }
 
     pub fn new_gc<'l>(
-        arena: &'l Arena<'_, 'cell>,
-        prototype: Option<GcObject<'_, 'cell>>,
+        arena: &'l Root<'own>,
+        prototype: Option<GcObject<'_, 'own>>,
         flags: ObjectFlags,
-        kind: ObjectKind<'_, 'cell>,
-    ) -> GcObject<'l, 'cell> {
+        kind: ObjectKind<'_, 'own>,
+    ) -> GcObject<'l, 'own> {
         unsafe {
             arena.add(Object {
                 flags,
-                prototype: gc::rebind(prototype),
-                kind: gc::rebind(kind),
+                prototype: dreck::rebind(prototype),
+                kind: dreck::rebind(kind),
                 properties: Properties::new(),
                 elements: Elements::new(),
             })
@@ -134,16 +134,16 @@ impl<'gc, 'cell> Object<'gc, 'cell> {
 
     /// # Safety
     /// Accessing function kinds as mutable is unsafe
-    pub unsafe fn kind(&self) -> &ObjectKind<'gc, 'cell> {
+    pub unsafe fn kind(&self) -> &ObjectKind<'gc, 'own> {
         &self.kind
     }
 
-    pub fn prototype(&self) -> Option<GcObject<'gc, 'cell>> {
+    pub fn prototype(&self) -> Option<GcObject<'gc, 'own>> {
         self.prototype
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Object<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -157,14 +157,8 @@ unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
         self.properties.trace(trace);
         self.elements.trace(trace);
     }
-
-    fn finalize(&self, atoms: &common::atom::Atoms) {
-        for p in self.properties.iter() {
-            atoms.decrement(p.atom());
-        }
-    }
 }
 
-unsafe impl<'a, 'gc, 'cell: 'a> Rebind<'a> for Object<'gc, 'cell> {
-    type Output = Object<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own: 'a> Bound<'a> for Object<'gc, 'own> {
+    type Rebound = Object<'a, 'own>;
 }

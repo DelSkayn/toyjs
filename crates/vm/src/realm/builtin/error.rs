@@ -1,11 +1,10 @@
 use common::atom::{self, Atoms};
+use dreck::{Gc, Owner, Root, rebind, root};
 
 use crate::{
-    cell::CellOwner,
-    gc::{Arena, Gc},
     object::{ObjectFlags, ObjectKind},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, root, GcObject, Object, Value,
+    GcObject, Object, Value,
 };
 
 #[repr(u8)]
@@ -15,13 +14,13 @@ pub enum ErrorType {
     Type,
 }
 
-pub fn construct<'l, 'cell, const KIND: u8>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+pub fn construct<'l, 'own, const KIND: u8>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let new_target = if ctx.new_target.is_undefined() {
         ctx.function.into()
     } else {
@@ -81,14 +80,14 @@ pub fn construct<'l, 'cell, const KIND: u8>(
     Ok(res.into())
 }
 
-pub fn create<'l, 'cell>(
-    arena: &'l Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+pub fn create<'l, 'own>(
+    arena: &'l Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    prototype: GcObject<'_, 'cell>,
-    message: Option<Gc<'_, 'cell, String>>,
-    cause: Option<Value<'_, 'cell>>,
-) -> GcObject<'l, 'cell> {
+    prototype: GcObject<'_, 'own>,
+    message: Option<Gc<'_, 'own, String>>,
+    cause: Option<Value<'_, 'own>>,
+) -> GcObject<'l, 'own> {
     let res = Object::new_gc(
         arena,
         Some(prototype),
@@ -104,13 +103,13 @@ pub fn create<'l, 'cell>(
     res
 }
 
-pub fn to_string<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+pub fn to_string<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let this = ctx.this;
     let this = this
         .into_object()
@@ -149,14 +148,14 @@ pub fn to_string<'l, 'cell>(
     Ok(res.into())
 }
 
-pub fn init<'gc, 'cell, const KIND: u8>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'gc Arena<'_, 'cell>,
+pub fn init<'gc, 'own, const KIND: u8>(
+    owner: &mut Owner<'own>,
+    arena: &'gc Root< 'own>,
     atoms: &Atoms,
-    name: Gc<'_, 'cell, String>,
-    construct_proto: GcObject<'_, 'cell>,
-    proto_proto: GcObject<'_, 'cell>,
-) -> (GcObject<'gc, 'cell>, GcObject<'gc, 'cell>) {
+    name: Gc<'_, 'own, String>,
+    construct_proto: GcObject<'_, 'own>,
+    proto_proto: GcObject<'_, 'own>,
+) -> (GcObject<'gc, 'own>, GcObject<'gc, 'own>) {
     let proto = Object::new_gc(
         arena,
         Some(proto_proto),

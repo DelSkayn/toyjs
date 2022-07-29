@@ -1,18 +1,17 @@
 use common::atom::{self, Atoms};
+use dreck::{Owner, Root, rebind};
 
 use crate::{
-    cell::CellOwner,
-    gc::Arena,
     object::{ObjectFlags, ObjectKind, Property, PropertyFlags},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, GcObject, Object, Value,
+    GcObject, Object, Value,
 };
 
 use super::new_func;
 
 fn construct<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+    arena: &'l mut Root< 'cell>,
+    owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     ctx: &ExecutionContext<'_, 'cell>,
@@ -51,8 +50,8 @@ fn construct<'l, 'cell>(
 }
 
 fn bool_value<'l, 'cell>(
-    arena: &'l Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+    arena: &'l Root< 'cell>,
+    owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     this: Value<'_, 'cell>,
@@ -73,8 +72,8 @@ fn bool_value<'l, 'cell>(
 }
 
 fn value_of<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+    arena: &'l mut Root< 'cell>,
+    owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     ctx: &ExecutionContext<'_, 'cell>,
@@ -83,8 +82,8 @@ fn value_of<'l, 'cell>(
 }
 
 fn to_string<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+    arena: &'l mut Root< 'cell>,
+    owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     ctx: &ExecutionContext<'_, 'cell>,
@@ -97,8 +96,8 @@ fn to_string<'l, 'cell>(
 }
 
 pub fn init<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l Arena<'_, 'cell>,
+    owner: &mut Owner<'cell>,
+    arena: &'l Root< 'cell>,
     atoms: &Atoms,
     op: GcObject<'_, 'cell>,
     fp: GcObject<'_, 'cell>,

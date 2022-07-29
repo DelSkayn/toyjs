@@ -24,12 +24,10 @@
 mod macros;
 use std::{error::Error, fmt};
 
-use common::atom::Atoms;
+//use common::atom::Atoms;
+use dreck::{Gc, Bound, Trace, Tracer};
 
-use crate::{
-    gc::{Gc, Rebind, Trace, Tracer},
-    value::Value,
-};
+use crate:: value::Value;
 
 #[derive(Debug)]
 pub enum ValidationError {}
@@ -60,13 +58,13 @@ pub struct ByteFunction {
     pub upvalues: Box<[Upvalue]>,
 }
 
-pub type GcByteCode<'gc, 'cell> = Gc<'gc, 'cell, ByteCode<'gc, 'cell>>;
+pub type GcByteCode<'gc, 'own> = Gc<'gc, 'own, ByteCode<'gc, 'own>>;
 
 /// A generic set of instructions, functions and constants.
 #[derive(Debug)]
-pub struct ByteCode<'gc, 'cell> {
+pub struct ByteCode<'gc, 'own> {
     /// Constants used in this bytecode set.
-    pub constants: Box<[Value<'gc, 'cell>]>,
+    pub constants: Box<[Value<'gc, 'own>]>,
     /// The functions defined in this bytecode, the entry function is always the first one.
     pub functions: Box<[ByteFunction]>,
     //// All instructions belonging to all functions defined in the bytecode.
@@ -74,7 +72,7 @@ pub struct ByteCode<'gc, 'cell> {
 }
 
 /*
-impl<'gc, 'cell> ByteCode<'gc, 'cell> {
+impl<'gc, 'own> ByteCode<'gc, 'own> {
     /// Makes sure that bytecode is valid and returns a struct signifying that the bytecode has
     /// been validated.
     ///
@@ -107,7 +105,7 @@ impl<'gc, 'cell> ByteCode<'gc, 'cell> {
 }
 */
 
-unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for ByteCode<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -115,24 +113,16 @@ unsafe impl<'gc, 'cell> Trace for ByteCode<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, ctx: Tracer) {
+    fn trace<'a>(&self, ctx: Tracer<'a,'own>) {
         self.constants.iter().for_each(|x| x.trace(ctx));
     }
-
-    fn finalize(&self, atoms: &Atoms) {
-        for c in self.constants.iter() {
-            if let Some(x) = c.into_atom() {
-                atoms.decrement(x)
-            }
-        }
-    }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ByteCode<'gc, 'cell> {
-    type Output = ByteCode<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for ByteCode<'gc, 'own> {
+    type Rebound = ByteCode<'a, 'own>;
 }
 
-impl<'gc, 'cell> fmt::Display for ByteCode<'gc, 'cell> {
+impl<'gc, 'own> fmt::Display for ByteCode<'gc, 'own> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "> CONSTANTS")?;
         for (idx, c) in self.constants.iter().enumerate() {

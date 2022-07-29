@@ -1,8 +1,9 @@
 use common::atom::Atom;
 
+
+use dreck::{Bound, Gc, Trace, Tracer, marker::Invariant};
+
 use crate::{
-    cell::Id,
-    gc::{Gc, GcBox, Rebind, Trace, Tracer},
     GcObject, Object,
 };
 
@@ -52,18 +53,18 @@ impl cmp::PartialEq<ValueUnion> for ValueUnion {
 ///
 /// Toyjs uses nan-tagging for its value.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct Value<'gc, 'cell> {
+pub struct Value<'gc, 'own> {
     value: ValueUnion,
     marker: PhantomData<&'gc ()>,
-    id: Id<'cell>,
+    id: Invariant<'own>,
 }
 
-impl<'gc, 'cell> Value<'gc, 'cell> {
+impl<'gc, 'own> Value<'gc, 'own> {
     unsafe fn from_value(v: ValueUnion) -> Self {
         Value {
             value: v,
             marker: PhantomData,
-            id: Id::new(),
+            id: Invariant::new(),
         }
     }
 
@@ -79,7 +80,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn to_static(self) -> Option<Value<'static, 'cell>> {
+    pub fn to_static(self) -> Option<Value<'static, 'own>> {
         unsafe {
             let tag = self.value.bits & TAG_MASK;
             if tag == TAG_OBJECT || tag == TAG_STRING {
@@ -89,7 +90,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
             Some(Value {
                 value: self.value,
                 marker: PhantomData,
-                id: Id::new(),
+                id: Invariant::new(),
             })
         }
     }
@@ -234,7 +235,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
                     bits: v.to_bits() + MIN_FLOAT,
                 },
                 marker: PhantomData,
-                id: Id::new(),
+                id: Invariant::new(),
             }
         }
     }
@@ -270,7 +271,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_string(self) -> Option<Gc<'gc, 'cell, String>> {
+    pub fn into_string(self) -> Option<Gc<'gc, 'own, String>> {
         unsafe {
             if self.is_string() {
                 let ptr = (self.value.bits & PTR_MASK) as *mut _;
@@ -282,10 +283,10 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<GcObject<'gc, 'cell>> {
+    pub fn into_object(self) -> Option<GcObject<'gc, 'own>> {
         unsafe {
             if self.is_object() {
-                let ptr = (self.value.bits & PTR_MASK) as *mut GcBox<'cell, Object<'gc, 'cell>>;
+                let ptr = (self.value.bits & PTR_MASK) as *const Object<'gc, 'own>;
                 Some(Gc::from_raw(ptr))
             } else {
                 None
@@ -303,7 +304,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
     #[inline]
     fn from(v: bool) -> Self {
         unsafe {
@@ -314,7 +315,7 @@ impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<i32> for Value<'gc, 'own> {
     #[inline]
     fn from(v: i32) -> Self {
         unsafe {
@@ -325,7 +326,7 @@ impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<f64> for Value<'gc, 'own> {
     #[inline]
     fn from(v: f64) -> Self {
         if v as i32 as f64 == v {
@@ -336,7 +337,7 @@ impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<Gc<'gc, 'own, String>> for Value<'gc, 'own> {
     #[inline]
     fn from(v: Gc<String>) -> Self {
         unsafe {
@@ -347,9 +348,9 @@ impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<GcObject<'gc, 'cell>> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<GcObject<'gc, 'own>> for Value<'gc, 'own> {
     #[inline]
-    fn from(v: Gc<Object>) -> Self {
+    fn from(v: GcObject<'gc,'own>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
                 bits: TAG_OBJECT | Gc::into_raw(v) as u64,
@@ -358,7 +359,7 @@ impl<'gc, 'cell> From<GcObject<'gc, 'cell>> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<Atom> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<Atom> for Value<'gc, 'own> {
     #[inline]
     fn from(v: Atom) -> Self {
         unsafe {
@@ -369,7 +370,7 @@ impl<'gc, 'cell> From<Atom> for Value<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -377,7 +378,7 @@ unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, tracer: Tracer) {
+    fn trace<'a>(&self, tracer: Tracer<'a,'own>) {
         if let Some(obj) = self.into_object() {
             tracer.mark(obj);
         } else if let Some(s) = self.into_string() {
@@ -386,11 +387,11 @@ unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Value<'gc, 'cell> {
-    type Output = Value<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for Value<'gc, 'own> {
+    type Rebound = Value<'a, 'own>;
 }
 
-impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
+impl<'gc, 'own> fmt::Debug for Value<'gc, 'own> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             match self.value.bits & TAG_MASK {

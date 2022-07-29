@@ -1,22 +1,21 @@
 use common::atom::{self, Atoms};
+use dreck::{Owner, Root, rebind};
 
 use crate::{
-    cell::CellOwner,
-    gc::Arena,
     object::{ObjectFlags, ObjectKind, Property, PropertyFlags},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, GcObject, Object, Value,
+    GcObject, Object, Value,
 };
 
 use super::new_func;
 
-fn construct<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn construct<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let value = if let Some(x) = realm.arg(owner, 0) {
         rebind_try!(arena, realm.to_number(owner, arena, atoms, x))
     } else {
@@ -55,13 +54,13 @@ fn construct<'l, 'cell>(
     }
 }
 
-fn number_value<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn number_value<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    this: Value<'_, 'cell>,
-) -> Result<Value<'static, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    this: Value<'_, 'own>,
+) -> Result<Value<'static, 'own>, Value<'l, 'own>> {
     if let Some(x) = this.into_int() {
         return Ok(x.into());
     }
@@ -81,23 +80,23 @@ fn number_value<'l, 'cell>(
     ));
 }
 
-fn value_of<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn value_of<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     number_value(arena, owner, atoms, realm, ctx.this)
 }
 
-fn to_string<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn to_string<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let radix = if let Some(x) = realm.arg(owner, 0) {
         let radix = rebind_try!(arena, realm.to_integer_or_infinity(owner, arena, atoms, x));
         if !(2.0..=36.0).contains(&radix) {
@@ -130,14 +129,14 @@ fn to_string<'l, 'cell>(
     }
 }
 
-pub fn init<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l Arena<'_, 'cell>,
+pub fn init<'l, 'own>(
+    owner: &mut Owner<'own>,
+    arena: &'l Root< 'own>,
     atoms: &Atoms,
-    op: GcObject<'_, 'cell>,
-    fp: GcObject<'_, 'cell>,
-    global: GcObject<'_, 'cell>,
-) -> GcObject<'l, 'cell> {
+    op: GcObject<'_, 'own>,
+    fp: GcObject<'_, 'own>,
+    global: GcObject<'_, 'own>,
+) -> GcObject<'l, 'own> {
     let prototype = Object::new_gc(
         arena,
         Some(op),

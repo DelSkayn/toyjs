@@ -1,27 +1,26 @@
 use common::atom::{self, Atom, Atoms};
 
+use dreck::{self, Bound, Gc, Owner, Root, Trace, Tracer, rebind, root};
+
 use crate::{
-    cell::CellOwner,
-    gc::{self, Gc, Rebind, Trace, Tracer},
     instructions::GcByteCode,
     object::{ObjectFlags, ObjectKind, VmFunction},
     realm::exec::InstructionReader,
-    rebind, rebind_try, root, GcObject, Object, Value,
+    GcObject, Object, Value,
 };
 
 mod builtin;
 mod exec;
 mod stack;
-use self::stack::Stack;
-pub use self::stack::{GcUpvalueObject, UpvalueObject};
+pub use self::stack::{GcUpvalueObject, Stack, UpvalueObject};
 
-pub struct ExecutionContext<'gc, 'cell> {
-    pub function: GcObject<'gc, 'cell>,
-    pub this: Value<'gc, 'cell>,
-    pub new_target: Value<'gc, 'cell>,
+pub struct ExecutionContext<'gc, 'own> {
+    pub function: GcObject<'gc, 'own>,
+    pub this: Value<'gc, 'own>,
+    pub new_target: Value<'gc, 'own>,
 }
 
-unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for ExecutionContext<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -29,21 +28,21 @@ unsafe impl<'gc, 'cell> Trace for ExecutionContext<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer) {
         trace.mark(self.function);
         self.this.trace(trace);
         self.new_target.trace(trace);
     }
 }
 
-pub struct Realm<'gc, 'cell> {
-    pub builtin: builtin::Builtin<'gc, 'cell>,
-    pub(crate) stack: Stack<'gc, 'cell>,
+pub struct Realm<'gc, 'own> {
+    pub builtin: builtin::Builtin<'gc, 'own>,
+    pub(crate) stack: Stack<'gc, 'own>,
 }
 
-pub type GcRealm<'gc, 'cell> = Gc<'gc, 'cell, Realm<'gc, 'cell>>;
+pub type GcRealm<'gc, 'own> = Gc<'gc, 'own, Realm<'gc, 'own>>;
 
-unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Realm<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -51,20 +50,20 @@ unsafe impl<'gc, 'cell> Trace for Realm<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         self.builtin.trace(trace);
         self.stack.trace(trace);
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Realm<'gc, 'cell> {
-    type Output = Realm<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for Realm<'gc, 'own> {
+    type Rebound = Realm<'a, 'own>;
 }
 
-impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
-    pub fn new<'rt>(
-        owner: &mut CellOwner<'cell>,
-        arena: &'gc gc::Arena<'rt, 'cell>,
+impl<'gc, 'own: 'gc> Realm<'gc, 'own> {
+    pub fn new(
+        owner: &mut Owner<'own>,
+        arena: &'gc Root<'own>,
         atoms: &Atoms,
     ) -> Self {
         let builtin = builtin::Builtin::new(owner, arena, atoms);
@@ -73,9 +72,9 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
     }
 
     pub fn atomize_primitive(
-        owner: &CellOwner<'cell>,
+        owner: &Owner<'own>,
         atoms: &Atoms,
-        value: Value<'gc, 'cell>,
+        value: Value<'gc, 'own>,
     ) -> Atom {
         if let Some(x) = value.into_atom() {
             return x;
@@ -100,41 +99,41 @@ impl<'gc, 'cell: 'gc> Realm<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> GcRealm<'gc, 'cell> {
-    pub fn argc(self, owner: &CellOwner<'cell>) -> u32 {
-        unsafe { self.borrow(owner).stack.frame_size() as u32 }
+impl<'gc, 'own> Realm<'gc, 'own> {
+    pub fn argc(this: GcRealm<'gc,'own>, owner: &Owner<'own>) -> u32 {
+        unsafe { this.borrow(owner).stack.frame_size() as u32 }
     }
 
-    pub fn arg(self, owner: &CellOwner<'cell>, idx: u32) -> Option<Value<'gc, 'cell>> {
-        unsafe { gc::rebind(self.borrow(owner).stack.read_arg(idx)) }
+    pub fn arg(this: GcRealm<'gc,'own>, owner: &Owner<'own>, idx: u32) -> Option<Value<'gc, 'own>> {
+        unsafe { dreck::rebind(this.borrow(owner).stack.read_arg(idx)) }
     }
 
     pub fn push(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &gc::Arena<'_, 'cell>,
-        v: &[Value<'_, 'cell>],
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &Root<'own>,
+        v: &[Value<'_, 'own>],
     ) {
-        let b = self.borrow_mut(owner, arena);
+        let b = this.borrow_mut(owner, arena);
         for &v in v {
             unsafe { b.stack.push(v) };
         }
     }
 
     pub fn call<'l>(
-        self,
-        arena: &'l mut gc::Arena<'_, 'cell>,
-        owner: &mut CellOwner<'cell>,
+        this: GcRealm<'gc,'own>,
+        arena: &'l mut Root<'own>,
+        owner: &mut Owner<'own>,
         atoms: &Atoms,
-        function: GcObject<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        function: GcObject<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let ctx = ExecutionContext {
             function,
             this: Value::undefined(),
             new_target: Value::undefined(),
         };
 
-        unsafe { self.vm_call(owner, arena, atoms, ctx) }
+        unsafe { this.vm_call(owner, arena, atoms, ctx) }
     }
 
     /// # Safety
@@ -142,12 +141,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     /// The bytecode must be valid
     #[allow(unused_unsafe)]
     pub unsafe fn eval<'l>(
-        self,
-        arena: &'l mut gc::Arena<'_, 'cell>,
-        owner: &mut CellOwner<'cell>,
+        this: GcRealm<'gc,'own>,
+        arena: &'l mut Root<'own>,
+        owner: &mut Owner<'own>,
         atoms: &Atoms,
-        bc: GcByteCode<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        bc: GcByteCode<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let vm_function = VmFunction {
             bc,
             function: 0,
@@ -168,23 +167,23 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
         let guard = rebind_try!(
             arena,
-            self.unsafe_borrow_mut(owner)
+            this.unsafe_borrow_mut(owner)
                 .stack
                 .push_frame(frame_size)
                 .ok_or_else(|| {
-                    self.create_runtime_error(owner, arena, atoms, Stack::DEPTH_EXCEEDED_MSG, None)
+                    this.create_runtime_error(owner, arena, atoms, Stack::DEPTH_EXCEEDED_MSG, None)
                 })
         );
-        let res = self.run(arena, owner, atoms, &mut instr, &ctx);
+        let res = this.run(arena, owner, atoms, &mut instr, &ctx);
         let res = rebind!(arena, res);
-        self.unsafe_borrow_mut(owner).stack.pop_frame(arena, guard);
+        this.unsafe_borrow_mut(owner).stack.pop_frame(arena, guard);
         res
     }
 }
 
-impl<'gc, 'cell> Gc<'gc, 'cell, Realm<'gc, 'cell>> {
+impl<'gc, 'own> Realm<'gc, 'own> {
     #[inline]
-    pub fn global(&self, owner: &CellOwner<'cell>) -> GcObject<'gc, 'cell> {
-        self.borrow(owner).builtin.global
+    pub fn global(this: GcRealm<'gc,'own>, owner: &Owner<'own>) -> GcObject<'gc, 'own> {
+        this.borrow(owner).builtin.global
     }
 }
