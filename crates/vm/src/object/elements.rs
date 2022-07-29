@@ -1,21 +1,21 @@
 use std::collections::BTreeMap;
+use dreck::{self, Trace, Tracer};
 
 use crate::{
-    gc::{self, Trace, Tracer},
     Value,
 };
 
-enum ElementsInner<'gc, 'cell> {
-    Array(Vec<Value<'gc, 'cell>>),
+enum ElementsInner<'gc, 'own> {
+    Array(Vec<Value<'gc, 'own>>),
     Tree {
-        tree: BTreeMap<usize, Value<'gc, 'cell>>,
+        tree: BTreeMap<usize, Value<'gc, 'own>>,
         len: usize,
     },
 }
 
-pub struct Elements<'gc, 'cell>(ElementsInner<'gc, 'cell>);
+pub struct Elements<'gc, 'own>(ElementsInner<'gc, 'own>);
 
-impl<'gc, 'cell> Elements<'gc, 'cell> {
+impl<'gc, 'own> Elements<'gc, 'own> {
     /// The ratio of empty values a entry must be from the previous in order to cause a fallback to a
     /// hashmap implementation
     const BACKDOWN_RATIO: f64 = 1.5;
@@ -62,9 +62,9 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
         }
     }
 
-    pub fn set(&mut self, key: usize, v: Value<'_, 'cell>) {
+    pub fn set(&mut self, key: usize, v: Value<'_, 'own>) {
         // Safe to rebind as v will be kept alive inside elements
-        let v = unsafe { gc::rebind(v) };
+        let v = unsafe { dreck::rebind(v) };
 
         match self.0 {
             ElementsInner::Array(ref mut array) => {
@@ -102,7 +102,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
         }
     }
 
-    pub fn get(&self, key: usize) -> Option<Value<'gc, 'cell>> {
+    pub fn get(&self, key: usize) -> Option<Value<'gc, 'own>> {
         // Safe as we only hold the mutable reference within this scope and no references can
         // escape.
         match self.0 {
@@ -116,7 +116,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
         }
     }
 
-    pub fn for_each<F: FnMut(usize, Value<'gc, 'cell>)>(&self, mut f: F) {
+    pub fn for_each<F: FnMut(usize, Value<'gc, 'own>)>(&self, mut f: F) {
         match self.0 {
             ElementsInner::Array(ref array) => array
                 .iter()
@@ -132,7 +132,7 @@ impl<'gc, 'cell> Elements<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for Elements<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Elements<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -140,7 +140,7 @@ unsafe impl<'gc, 'cell> Trace for Elements<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         // Safe as we only hold the mutable reference within this scope and no references can
         // escape.
         match self.0 {

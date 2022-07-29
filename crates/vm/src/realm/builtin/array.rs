@@ -1,26 +1,21 @@
 use common::atom::{self, Atoms};
+use dreck::{Owner, Root, rebind, root};
 
-use crate::{
-    cell::CellOwner,
-    gc::Arena,
-    object::{Accessor, ObjectFlags, ObjectKind, Property, PropertyFlags},
-    realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, root, GcObject, Object, Value,
-};
+use crate::{GcObject, Object, Realm, Value, object::{Accessor, ObjectFlags, ObjectKind, Property, PropertyFlags}, realm::{ExecutionContext, GcRealm}};
 
 use super::new_func;
 
-fn construct<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn construct<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let proto = if let Some(object) = ctx.new_target.into_object() {
         rebind_try!(
             arena,
-            object.index(owner, arena, atoms, realm, atom::constant::prototype)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::prototype)
         )
     } else {
         Value::undefined()
@@ -30,7 +25,7 @@ fn construct<'l, 'cell>(
         .into_object()
         .unwrap_or(rebind!(arena, realm.borrow(owner).builtin.array_proto));
 
-    if realm.argc(owner) > 0 {
+    if Realm::argc(realm,owner) > 0 {
         let obj = Object::new_gc(arena, Some(proto), ObjectFlags::ORDINARY, ObjectKind::Array);
         define_length(
             owner,
@@ -39,11 +34,11 @@ fn construct<'l, 'cell>(
             realm.borrow(owner).builtin.array_proto,
             obj,
         );
-        if realm.argc(owner) == 1 {
+        if Realm::argc(realm,owner) == 1 {
             root!(arena, obj);
-            let len = realm.arg(owner, 0).unwrap();
+            let len = Realm::arg(realm,owner, 0).unwrap();
             if len.is_number() {
-                let len = rebind_try!(arena, realm.to_uint32(owner, arena, atoms, len));
+                let len = rebind_try!(arena, Realm::to_uint32(realm,owner, arena, atoms, len));
                 // TODO SaveValueZero
                 unsafe {
                     // Safe because no new pointers are added into elements
@@ -56,7 +51,7 @@ fn construct<'l, 'cell>(
         }
 
         unsafe {
-            let len = realm.argc(owner);
+            let len = Realm::argc(realm,owner);
             // Safe because no new pointers are added into elements
             obj.unsafe_borrow_mut(owner)
                 .elements
@@ -64,7 +59,7 @@ fn construct<'l, 'cell>(
         }
 
         let mut i = 0;
-        while let Some(value) = realm.arg(owner, i) {
+        while let Some(value) = Realm::arg(realm,owner, i) {
             obj.borrow_mut(owner, arena)
                 .elements
                 .set(i.try_into().unwrap(), value);
@@ -79,13 +74,13 @@ fn construct<'l, 'cell>(
     }
 }
 
-fn get_length<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn get_length<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    _realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    _realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if let Some(this) = ctx.this.into_object() {
         Ok((this.borrow(owner).elements.len().min(u32::MAX as usize) as i32).into())
     } else {
@@ -93,16 +88,16 @@ fn get_length<'l, 'cell>(
     }
 }
 
-fn set_length<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn set_length<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if let Some(this) = ctx.this.into_object() {
-        let len = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
-        let len = realm.to_uint32(owner, arena, atoms, len)?;
+        let len = Realm::arg(realm,owner, 0).unwrap_or_else(Value::undefined);
+        let len = Realm::to_uint32(realm,owner, arena, atoms, len)?;
         unsafe {
             // Safe because no new pointers are inserted into the object
             this.unsafe_borrow_mut(owner).elements.set_len(len as usize);
@@ -111,12 +106,12 @@ fn set_length<'l, 'cell>(
     Ok(Value::undefined())
 }
 
-pub fn define_length<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l Arena<'_, 'cell>,
+pub fn define_length<'l, 'own>(
+    owner: &mut Owner<'own>,
+    arena: &'l Root< 'own>,
     atoms: &Atoms,
-    fp: GcObject<'_, 'cell>,
-    object: GcObject<'_, 'cell>,
+    fp: GcObject<'_, 'own>,
+    object: GcObject<'_, 'own>,
 ) {
     let get_length = new_func(arena, owner, atoms, fp, get_length, 0);
     let set_length = new_func(arena, owner, atoms, fp, set_length, 1);
@@ -131,14 +126,14 @@ pub fn define_length<'l, 'cell>(
     object.raw_index_set_prop(owner, arena, atoms, prop);
 }
 
-pub fn init<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l Arena<'_, 'cell>,
+pub fn init<'l, 'own>(
+    owner: &mut Owner<'own>,
+    arena: &'l Root< 'own>,
     atoms: &Atoms,
-    op: GcObject<'_, 'cell>,
-    fp: GcObject<'_, 'cell>,
-    global: GcObject<'_, 'cell>,
-) -> GcObject<'l, 'cell> {
+    op: GcObject<'_, 'own>,
+    fp: GcObject<'_, 'own>,
+    global: GcObject<'_, 'own>,
+) -> GcObject<'l, 'own> {
     let array_proto = Object::new_gc(arena, Some(op), ObjectFlags::empty(), ObjectKind::Array);
     array_proto.raw_index_set_flags(
         owner,

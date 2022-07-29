@@ -1,22 +1,21 @@
 use common::atom::{self, Atoms};
+use dreck::{Gc, Owner, Root, rebind, root};
 
 use crate::{
-    cell::CellOwner,
-    gc::{Arena, Gc},
     object::{GcObject, Object, ObjectFlags, ObjectKind, Property, PropertyFlags, PropertyValue},
     realm::{ExecutionContext, GcRealm},
-    rebind, rebind_try, root, Realm, Value,
+    Realm, Value,
 };
 
 use super::new_func;
 
-fn construct<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn construct<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if ctx.new_target.is_undefined()
         || ctx
             .new_target
@@ -68,13 +67,13 @@ fn construct<'l, 'cell>(
     Ok(object.into())
 }
 
-fn get_prototype_of<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn get_prototype_of<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let value = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     let object = rebind_try!(arena, realm.to_object(owner, arena, atoms, value));
     let res = object
@@ -85,13 +84,13 @@ fn get_prototype_of<'l, 'cell>(
     Ok(rebind!(arena, res))
 }
 
-fn is<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn is<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if let Some(a) = realm.arg(owner, 0) {
         if let Some(b) = realm.arg(owner, 1) {
             Ok(realm.strict_equal(owner, a, b).into())
@@ -103,13 +102,13 @@ fn is<'l, 'cell>(
     }
 }
 
-fn is_extensible<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn is_extensible<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let res = realm
         .arg(owner, 0)
         .and_then(|x| x.into_object())
@@ -119,13 +118,13 @@ fn is_extensible<'l, 'cell>(
     Ok(res.into())
 }
 
-fn assign<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn assign<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let to = if let Some(arg) = realm.arg(owner, 0) {
         arg
     } else {
@@ -189,14 +188,14 @@ fn assign<'l, 'cell>(
     Ok(rebind!(arena, to).into())
 }
 
-fn define_prop<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l mut Arena<'_, 'cell>,
+fn define_prop<'l, 'own>(
+    owner: &mut Owner<'own>,
+    arena: &'l mut Root< 'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    from: GcObject<'_, 'cell>,
-    to: GcObject<'_, 'cell>,
-) -> Result<(), Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    from: GcObject<'_, 'own>,
+    to: GcObject<'_, 'own>,
+) -> Result<(), Value<'l, 'own>> {
     let prorties = from.borrow(owner).properties.clone_properties();
     for p in prorties {
         let prop = if let Some(prop) = from.borrow(owner).properties.get(p.atom()) {
@@ -221,13 +220,13 @@ fn define_prop<'l, 'cell>(
     Ok(())
 }
 
-fn create<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn create<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let arg = realm.arg(owner, 0).ok_or_else(|| {
         realm.create_type_error(
             owner,
@@ -268,13 +267,13 @@ fn create<'l, 'cell>(
     Ok(obj.into())
 }
 
-fn define_properties<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn define_properties<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if realm.argc(owner) < 2 {
         return Err(realm.create_type_error(
             owner,
@@ -297,13 +296,13 @@ fn define_properties<'l, 'cell>(
     Ok(rebind!(arena, obj).into())
 }
 
-fn define_property<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn define_property<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let obj = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     let obj = obj.into_object().ok_or_else(|| {
         realm.create_type_error(
@@ -330,13 +329,13 @@ fn define_property<'l, 'cell>(
     Ok(rebind!(arena, obj).into())
 }
 
-fn freeze<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn freeze<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let v = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     if let Some(obj) = v.into_object() {
         if obj.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
@@ -353,13 +352,13 @@ fn freeze<'l, 'cell>(
     Ok(rebind!(arena, v))
 }
 
-fn seal<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn seal<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let v = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     if let Some(obj) = v.into_object() {
         if obj.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
@@ -376,13 +375,13 @@ fn seal<'l, 'cell>(
     Ok(rebind!(arena, v))
 }
 
-fn is_frozen<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn is_frozen<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let o = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     if let Some(o) = o.into_object() {
         if !o.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
@@ -393,13 +392,13 @@ fn is_frozen<'l, 'cell>(
     Ok(true.into())
 }
 
-fn is_sealed<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn is_sealed<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     let o = realm.arg(owner, 0).unwrap_or_else(Value::undefined);
     if let Some(o) = o.into_object() {
         if !o.borrow(owner).flags().contains(ObjectFlags::EXTENDABLE) {
@@ -410,23 +409,23 @@ fn is_sealed<'l, 'cell>(
     Ok(true.into())
 }
 
-fn to_string<'l, 'cell>(
-    arena: &'l mut Arena<'_, 'cell>,
-    _owner: &mut CellOwner<'cell>,
+fn to_string<'l, 'own>(
+    arena: &'l mut Root< 'own>,
+    _owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    _realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    _realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     Ok(arena.add("[Object object]".to_string()).into())
 }
 
-pub fn init<'l, 'cell>(
-    owner: &mut CellOwner<'cell>,
-    arena: &'l Arena<'_, 'cell>,
+pub fn init<'l, 'own>(
+    owner: &mut Owner<'own>,
+    arena: &'l Root< 'own>,
     atoms: &Atoms,
-    op: GcObject<'_, 'cell>,
-    fp: GcObject<'_, 'cell>,
-    global: GcObject<'_, 'cell>,
+    op: GcObject<'_, 'own>,
+    fp: GcObject<'_, 'own>,
+    global: GcObject<'_, 'own>,
 ) {
     let to_string = new_func(arena, owner, atoms, fp, to_string, 0);
     op.raw_index_set_flags(

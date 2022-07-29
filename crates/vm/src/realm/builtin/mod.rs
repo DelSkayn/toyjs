@@ -1,8 +1,7 @@
 use common::atom::{self, Atoms};
+use dreck::{Bound, Owner, Root, Trace, Tracer};
 
 use crate::{
-    cell::CellOwner,
-    gc::{Arena, Rebind, Trace},
     object::{ObjectFlags, ObjectKind, PropertyFlags, StaticFn},
     GcObject, Object, Value,
 };
@@ -18,25 +17,25 @@ mod number;
 mod object;
 mod string;
 
-pub struct Builtin<'gc, 'cell> {
+pub struct Builtin<'gc, 'own> {
     /// The global object.
-    pub global: GcObject<'gc, 'cell>,
-    pub object_proto: GcObject<'gc, 'cell>,
-    pub function_proto: GcObject<'gc, 'cell>,
+    pub global: GcObject<'gc, 'own>,
+    pub object_proto: GcObject<'gc, 'own>,
+    pub function_proto: GcObject<'gc, 'own>,
 
-    pub array_proto: GcObject<'gc, 'cell>,
+    pub array_proto: GcObject<'gc, 'own>,
 
-    pub string_proto: GcObject<'gc, 'cell>,
-    pub number_proto: GcObject<'gc, 'cell>,
-    pub boolean_proto: GcObject<'gc, 'cell>,
+    pub string_proto: GcObject<'gc, 'own>,
+    pub number_proto: GcObject<'gc, 'own>,
+    pub boolean_proto: GcObject<'gc, 'own>,
 
-    pub error_proto: GcObject<'gc, 'cell>,
-    pub syntax_error_proto: GcObject<'gc, 'cell>,
-    pub type_error_proto: GcObject<'gc, 'cell>,
-    pub runtime_error_proto: GcObject<'gc, 'cell>,
+    pub error_proto: GcObject<'gc, 'own>,
+    pub syntax_error_proto: GcObject<'gc, 'own>,
+    pub type_error_proto: GcObject<'gc, 'own>,
+    pub runtime_error_proto: GcObject<'gc, 'own>,
 }
 
-unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Builtin<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -44,7 +43,7 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: crate::gc::Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         trace.mark(self.global);
         trace.mark(self.object_proto);
         trace.mark(self.function_proto);
@@ -59,28 +58,28 @@ unsafe impl<'gc, 'cell> Trace for Builtin<'gc, 'cell> {
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Builtin<'gc, 'cell> {
-    type Output = Builtin<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for Builtin<'gc, 'own> {
+    type Rebound = Builtin<'a, 'own>;
 }
 
-fn function_proto<'l, 'cell>(
-    _arena: &'l mut Arena<'_, 'cell>,
-    _owner: &mut CellOwner<'cell>,
+fn function_proto<'l, 'own>(
+    _arena: &'l mut Root< 'own>,
+    _owner: &mut Owner<'own>,
     _atoms: &Atoms,
-    _realm: GcRealm<'_, 'cell>,
-    _ctx: &ExecutionContext<'_, 'cell>,
-) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    _realm: GcRealm<'_, 'own>,
+    _ctx: &ExecutionContext<'_, 'own>,
+) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     Ok(Value::undefined())
 }
 
-fn new_func<'l, 'cell>(
-    arena: &'l Arena<'_, 'cell>,
-    owner: &mut CellOwner<'cell>,
+fn new_func<'l, 'own>(
+    arena: &'l Root< 'own>,
+    owner: &mut Owner<'own>,
     atoms: &Atoms,
-    prototype: GcObject<'_, 'cell>,
+    prototype: GcObject<'_, 'own>,
     f: StaticFn,
     len: i32,
-) -> GcObject<'l, 'cell> {
+) -> GcObject<'l, 'own> {
     let object = Object::new_gc(
         arena,
         Some(prototype),
@@ -98,8 +97,8 @@ fn new_func<'l, 'cell>(
     object
 }
 
-impl<'gc, 'cell> Builtin<'gc, 'cell> {
-    pub fn new(owner: &mut CellOwner<'cell>, arena: &'gc Arena<'_, 'cell>, atoms: &Atoms) -> Self {
+impl<'gc, 'own> Builtin<'gc, 'own> {
+    pub fn new(owner: &mut Owner<'own>, arena: &'gc Root< 'own>, atoms: &Atoms) -> Self {
         let op = arena.add(Object::new(
             None,
             ObjectFlags::ORDINARY,

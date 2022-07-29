@@ -1,11 +1,10 @@
 use common::atom::{self, Atoms};
+use dreck::{Gc, Owner, Root, rebind, root};
 
 use crate::{
-    cell::CellOwner,
-    gc::{self, Arena, Gc},
     instructions::{GcByteCode, Instruction, Upvalue},
     object::{FunctionKind, ObjectFlags, ObjectKind, VmFunction},
-    rebind, rebind_try, root, root_clone, GcObject, Object, Realm, Value,
+    GcObject, Object, Realm, Value,
 };
 
 use super::{builtin, stack::Stack, ExecutionContext, GcRealm};
@@ -19,8 +18,8 @@ pub enum NumericOperator {
 }
 
 #[derive(Clone, Copy)]
-pub struct InstructionReader<'gc, 'cell> {
-    bc: GcByteCode<'gc, 'cell>,
+pub struct InstructionReader<'gc, 'own> {
+    bc: GcByteCode<'gc, 'own>,
     cur: *const Instruction,
     #[cfg(debug_assertions)]
     first: *const Instruction,
@@ -28,15 +27,15 @@ pub struct InstructionReader<'gc, 'cell> {
     last: *const Instruction,
 }
 
-impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
+impl<'gc, 'own> InstructionReader<'gc, 'own> {
     /// # Safety
     ///
     /// `func` must be a smaller the amount of function present in the bytecode.
     /// `bc` must contain valid bytecode.
     ///
     pub unsafe fn new_unsafe(
-        owner: &CellOwner<'cell>,
-        bc: GcByteCode<'gc, 'cell>,
+        owner: &Owner<'own>,
+        bc: GcByteCode<'gc, 'own>,
         func: u16,
     ) -> Self {
         debug_assert!(bc.borrow(owner).functions.len() > func as usize);
@@ -61,14 +60,14 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
         }
     }
 
-    pub fn bc(&self) -> GcByteCode<'gc, 'cell> {
+    pub fn bc(&self) -> GcByteCode<'gc, 'own> {
         self.bc
     }
 
     /// # Safety
     ///
     /// User must ensure that the reader does not read past the end of the instruction buffer
-    pub unsafe fn next(&mut self, _owner: &CellOwner<'cell>) -> Instruction {
+    pub unsafe fn next(&mut self, _owner: &Owner<'own>) -> Instruction {
         #[cfg(debug_assertions)]
         assert!(self.cur < self.last);
         let res = self.cur.read();
@@ -88,24 +87,24 @@ impl<'gc, 'cell> InstructionReader<'gc, 'cell> {
     /// # Safety
     ///
     /// `idx` must be smaller or equal to the amount of constants in the containted bytecode.
-    pub unsafe fn constant(&self, idx: u16, owner: &CellOwner<'cell>) -> Value<'gc, 'cell> {
+    pub unsafe fn constant(&self, idx: u16, owner: &Owner<'own>) -> Value<'gc, 'own> {
         debug_assert!(self.bc.borrow(owner).constants.len() > idx as usize);
         *self.bc.borrow(owner).constants.get_unchecked(idx as usize)
     }
 }
 
-impl<'gc, 'cell> GcRealm<'gc, 'cell> {
+impl<'gc, 'own> Realm<'gc, 'own> {
     // Shorthand for Gc::borrow
-    unsafe fn r<'a>(self, owner: &'a CellOwner<'cell>) -> &'a Realm<'gc, 'cell> {
-        gc::rebind(self.borrow(owner))
+    unsafe fn r<'a>(this: GcRealm<'gc,'own>, owner: &'a Owner<'own>) -> &'a Realm<'gc, 'own> {
+        dreck::rebind(this.borrow(owner))
     }
 
     // Shorthand for Gc::unsafe_borrow_mut
     //
     // Should only be used as long as before each collection and return from the loop the a
     // write_barrier is done for the realm
-    unsafe fn w<'a>(self, owner: &'a mut CellOwner<'cell>) -> &'a mut Realm<'gc, 'cell> {
-        gc::rebind(self.unsafe_borrow_mut(owner))
+    unsafe fn w<'a>(this: GcRealm<'gc,'own>, owner: &'a mut Owner<'own>) -> &'a mut Realm<'gc, 'own> {
+        dreck::rebind(this.unsafe_borrow_mut(owner))
     }
 
     /// # Safety
@@ -113,52 +112,52 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     /// Instruction reader must read valid bytecode.
     #[allow(unused_unsafe)]
     pub unsafe fn run<'l>(
-        self,
-        arena: &'l mut Arena<'_, 'cell>,
-        owner: &mut CellOwner<'cell>,
+        this: GcRealm<'gc,'own>,
+        arena: &'l mut Root< 'own>,
+        owner: &mut Owner<'own>,
         atoms: &Atoms,
-        upper_instr: &mut InstructionReader<'_, 'cell>,
-        ctx: &ExecutionContext<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        upper_instr: &mut InstructionReader<'_, 'own>,
+        ctx: &ExecutionContext<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let mut instr = *upper_instr;
         loop {
             match instr.next(owner) {
                 Instruction::LoadConst { dst, cons } => {
                     let con = instr.constant(cons, owner);
-                    self.w(owner).stack.write(dst, con);
+                    this.w(owner).stack.write(dst, con);
                 }
                 Instruction::LoadGlobal { dst } => {
-                    let global = self.r(owner).builtin.global;
-                    self.w(owner).stack.write(dst, global.into());
+                    let global = this.r(owner).builtin.global;
+                    this.w(owner).stack.write(dst, global.into());
                 }
                 Instruction::LoadFunction { dst, func } => {
-                    arena.write_barrier(self);
+                    arena.write_barrier(this);
                     arena.collect(owner, atoms);
 
-                    let fp = self.r(owner).builtin.function_proto;
-                    let func = self.construct_function(owner, arena, func, &instr, ctx.function);
+                    let fp = this.r(owner).builtin.function_proto;
+                    let func = this.construct_function(owner, arena, func, &instr, ctx.function);
                     let func = Object::new_gc(
                         arena,
                         Some(fp),
                         ObjectFlags::ORDINARY,
                         ObjectKind::VmFn(func),
                     );
-                    self.w(owner).stack.write(dst, func.into());
+                    Self::w(this,owner).stack.write(dst, func.into());
                 }
 
                 Instruction::LoadConstructor { dst, func } => {
-                    arena.write_barrier(self);
+                    arena.write_barrier(this);
                     arena.collect(owner, atoms);
 
-                    let fp = self.r(owner).builtin.function_proto;
-                    let func = self.construct_function(owner, arena, func, &instr, ctx.function);
+                    let fp = this.r(owner).builtin.function_proto;
+                    let func = this.construct_function(owner, arena, func, &instr, ctx.function);
                     let func = Object::new_gc(
                         arena,
                         Some(fp),
                         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
                         ObjectKind::VmFn(func),
                     );
-                    let op = self.r(owner).builtin.object_proto;
+                    let op = this.r(owner).builtin.object_proto;
                     let proto = Object::new_gc(
                         arena,
                         Some(op),
@@ -167,83 +166,83 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     );
                     func.raw_index_set(owner, arena, atoms, atom::constant::prototype, proto);
                     proto.raw_index_set(owner, arena, atoms, atom::constant::constructor, func);
-                    self.w(owner).stack.write(dst, func.into());
+                    this.w(owner).stack.write(dst, func.into());
                 }
 
                 Instruction::LoadThis { dst } => {
-                    self.w(owner).stack.write(dst, ctx.this);
+                    this.w(owner).stack.write(dst, ctx.this);
                 }
                 Instruction::LoadTarget { dst } => {
-                    self.w(owner).stack.write(dst, ctx.new_target);
+                    this.w(owner).stack.write(dst, ctx.new_target);
                 }
                 Instruction::Move { dst, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    self.w(owner).stack.write(dst, src);
+                    let src = this.r(owner).stack.read(src);
+                    this.w(owner).stack.write(dst, src);
                 }
                 Instruction::CreateObject { dst } => {
                     // Always retrace the current realm to allow ring without a write barrier
                     // otherwise.
-                    arena.write_barrier(self);
+                    arena.write_barrier(this);
                     arena.collect(owner, atoms);
-                    let op = self.r(owner).builtin.object_proto;
+                    let op = this.r(owner).builtin.object_proto;
                     let object = arena.add(Object::new(
                         Some(op),
                         ObjectFlags::ORDINARY,
                         ObjectKind::Ordinary,
                     ));
-                    self.w(owner).stack.write(dst, object.into());
+                    this.w(owner).stack.write(dst, object.into());
                 }
                 Instruction::CreateArray { dst } => {
                     // Always retrace the current realm to allow ring without a write barrier
                     // otherwise.
-                    arena.write_barrier(self);
+                    arena.write_barrier(this);
                     arena.collect(owner, atoms);
 
-                    let proto = self.borrow(owner).builtin.array_proto;
+                    let proto = this.borrow(owner).builtin.array_proto;
                     let res = Object::new_gc(
                         arena,
                         Some(proto),
                         ObjectFlags::ORDINARY,
                         ObjectKind::Array,
                     );
-                    let fp = self.borrow(owner).builtin.function_proto;
+                    let fp = this.borrow(owner).builtin.function_proto;
                     builtin::array::define_length(owner, arena, atoms, fp, res);
 
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::Index { dst, obj, key } => {
-                    let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).stack.read(obj);
+                    let key = this.r(owner).stack.read(key);
+                    let obj = this.r(owner).stack.read(obj);
                     if let Some(obj) = obj.into_object() {
                         let res =
-                            rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
-                        self.w(owner).stack.write(dst, res.empty_to_undefined());
+                            rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
+                        this.w(owner).stack.write(dst, res.empty_to_undefined());
                     } else {
                         let res = rebind_try!(
                             arena,
-                            self.index_non_object(owner, arena, atoms, obj, key)
+                            this.index_non_object(owner, arena, atoms, obj, key)
                         );
-                        self.w(owner).stack.write(dst, res.empty_to_undefined());
+                        this.w(owner).stack.write(dst, res.empty_to_undefined());
                     }
                 }
                 Instruction::IndexAssign { obj, key, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).stack.read(obj);
+                    let src = this.r(owner).stack.read(src);
+                    let key = this.r(owner).stack.read(key);
+                    let obj = this.r(owner).stack.read(obj);
                     if let Some(obj) = obj.into_object() {
                         rebind_try!(
                             arena,
-                            obj.index_set_value(owner, arena, atoms, self, key, src)
+                            obj.index_set_value(owner, arena, atoms, this. key, src)
                         );
                     } else if obj.is_undefined() {
-                        return Err(self.create_type_error(
+                        return Err(this.create_type_error(
                             owner,
                             arena,
                             atoms,
                             "undefined has no properties",
                         ));
                     } else if obj.is_null() {
-                        return Err(self.create_type_error(
+                        return Err(this.create_type_error(
                             owner,
                             arena,
                             atoms,
@@ -253,73 +252,73 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     }
                 }
                 Instruction::GlobalIndex { dst, key } => {
-                    let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).builtin.global;
+                    let key = this.r(owner).stack.read(key);
+                    let obj = this.r(owner).builtin.global;
 
-                    let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
-                    self.w(owner).stack.write(dst, res.empty_to_undefined());
+                    let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
+                    this.w(owner).stack.write(dst, res.empty_to_undefined());
                 }
                 Instruction::GlobalAssign { key, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).builtin.global;
+                    let src = this.r(owner).stack.read(src);
+                    let key = this.r(owner).stack.read(key);
+                    let obj = this.r(owner).builtin.global;
                     rebind_try!(
                         arena,
-                        obj.index_set_value(owner, arena, atoms, self, key, src)
+                        obj.index_set_value(owner, arena, atoms, this. key, src)
                     );
                 }
                 Instruction::Upvalue { dst, slot } => {
                     let upvalue =
                         ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
                     let res = upvalue.borrow(owner).read();
-                    self.w(owner).stack.write(dst, res);
+                    this.w(owner).stack.write(dst, res);
                 }
 
                 Instruction::UpvalueAssign { src, slot } => {
-                    let src = self.r(owner).stack.read(src);
+                    let src = this.r(owner).stack.read(src);
                     let upvalue =
                         ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
                     upvalue.borrow_mut(owner, arena).write(src);
                 }
 
                 Instruction::TypeOf { dst, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    let res = self.type_of(owner, src);
+                    let src = this.r(owner).stack.read(src);
+                    let res = this.type_of(owner, src);
                     let res = arena.add(String::from(res));
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::InstanceOf { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
 
                     let res =
-                        rebind_try!(arena, self.instance_of(owner, arena, atoms, left, right));
-                    self.w(owner).stack.write(dst, res.into());
+                        rebind_try!(arena, this.instance_of(owner, arena, atoms, left, right));
+                    this.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::Add { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
 
                     if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
-                        let res = Self::coerce_int(left as i64 + right as i64);
-                        self.w(owner).stack.write(dst, res);
+                        let res = Self::coerce_int(this,left as i64 + right as i64);
+                        this.w(owner).stack.write(dst, res);
                     } else {
-                        let res = rebind_try!(arena, self.add(owner, arena, atoms, left, right));
-                        self.w(owner).stack.write(dst, res);
+                        let res = rebind_try!(arena, this.add(owner, arena, atoms, left, right));
+                        this.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::Sub { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
-                        let res = Self::coerce_int(left as i64 - right as i64);
-                        self.w(owner).stack.write(dst, res);
+                        let res = Self::coerce_int(this,left as i64 - right as i64);
+                        this.w(owner).stack.write(dst, res);
                     } else {
                         let res = rebind_try!(
                             arena,
-                            self.numeric_operator(
+                            this.numeric_operator(
                                 owner,
                                 arena,
                                 atoms,
@@ -328,15 +327,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                                 NumericOperator::Sub
                             )
                         );
-                        self.w(owner).stack.write(dst, res);
+                        this.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::Mul { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.numeric_operator(
+                        this.numeric_operator(
                             owner,
                             arena,
                             atoms,
@@ -345,14 +344,14 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             NumericOperator::Mul
                         )
                     );
-                    self.w(owner).stack.write(dst, res);
+                    this.w(owner).stack.write(dst, res);
                 }
                 Instruction::Div { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.numeric_operator(
+                        this.numeric_operator(
                             owner,
                             arena,
                             atoms,
@@ -361,14 +360,14 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             NumericOperator::Div
                         )
                     );
-                    self.w(owner).stack.write(dst, res);
+                    this.w(owner).stack.write(dst, res);
                 }
                 Instruction::Mod { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.numeric_operator(
+                        this.numeric_operator(
                             owner,
                             arena,
                             atoms,
@@ -377,14 +376,14 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             NumericOperator::Mod
                         )
                     );
-                    self.w(owner).stack.write(dst, res);
+                    this.w(owner).stack.write(dst, res);
                 }
                 Instruction::Pow { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.numeric_operator(
+                        this.numeric_operator(
                             owner,
                             arena,
                             atoms,
@@ -393,167 +392,167 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                             NumericOperator::Pow
                         )
                     );
-                    self.w(owner).stack.write(dst, res);
+                    this.w(owner).stack.write(dst, res);
                 }
                 Instruction::BitwiseAnd { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, self.to_int32(owner, arena, atoms, right));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
                     let res = left & right;
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseOr { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, self.to_int32(owner, arena, atoms, right));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
                     let res = left | right;
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseXor { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, self.to_int32(owner, arena, atoms, right));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
                     let res = left ^ right;
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
                 Instruction::BitwiseNot { dst, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    let src = rebind_try!(arena, self.to_int32(owner, arena, atoms, src));
-                    self.w(owner).stack.write(dst, (!src).into());
+                    let src = this.r(owner).stack.read(src);
+                    let src = rebind_try!(arena, this.to_int32(owner, arena, atoms, src));
+                    this.w(owner).stack.write(dst, (!src).into());
                 }
                 Instruction::ShiftLeft { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_int32(owner, arena, atoms, left));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
                     let right =
-                        rebind_try!(arena, self.to_int32(owner, arena, atoms, right)) as u32 % 32;
-                    self.w(owner).stack.write(dst, Value::from(left << right));
+                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                    this.w(owner).stack.write(dst, Value::from(left << right));
                 }
                 Instruction::ShiftRight { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_int32(owner, arena, atoms, left));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
                     let right =
-                        rebind_try!(arena, self.to_int32(owner, arena, atoms, right)) as u32 % 32;
-                    self.w(owner).stack.write(dst, Value::from(left >> right));
+                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                    this.w(owner).stack.write(dst, Value::from(left >> right));
                 }
                 Instruction::ShiftUnsigned { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, self.to_uint32(owner, arena, atoms, left));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let left = rebind_try!(arena, this.to_uint32(owner, arena, atoms, left));
                     let right =
-                        rebind_try!(arena, self.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
                     let v = left >> right;
                     if v > i32::MAX as u32 {
-                        self.w(owner).stack.write(dst, Value::from(v as f64));
+                        this.w(owner).stack.write(dst, Value::from(v as f64));
                     } else {
-                        self.w(owner).stack.write(dst, Value::from(v as i32));
+                        this.w(owner).stack.write(dst, Value::from(v as i32));
                     }
                 }
                 Instruction::Equal { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let res = rebind_try!(arena, self.equal(owner, arena, atoms, left, right));
-                    self.w(owner).stack.write(dst, Value::from(res));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let res = rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
+                    this.w(owner).stack.write(dst, Value::from(res));
                 }
                 Instruction::NotEqual { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let res = !rebind_try!(arena, self.equal(owner, arena, atoms, left, right));
-                    self.w(owner).stack.write(dst, Value::from(res));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let res = !rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
+                    this.w(owner).stack.write(dst, Value::from(res));
                 }
 
                 Instruction::SEqual { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let res = self.strict_equal(owner, left, right);
-                    self.w(owner).stack.write(dst, Value::from(res));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let res = this.strict_equal(owner, left, right);
+                    this.w(owner).stack.write(dst, Value::from(res));
                 }
                 Instruction::SNotEqual { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
-                    let res = !self.strict_equal(owner, left, right);
-                    self.w(owner).stack.write(dst, Value::from(res));
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
+                    let res = !this.strict_equal(owner, left, right);
+                    this.w(owner).stack.write(dst, Value::from(res));
                 }
 
                 Instruction::Greater { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.less_then(owner, arena, atoms, left, right, true)
+                        this.less_then(owner, arena, atoms, left, right, true)
                     );
                     if res.is_undefined() {
-                        self.w(owner).stack.write(dst, false.into());
+                        this.w(owner).stack.write(dst, false.into());
                     } else {
-                        self.w(owner).stack.write(dst, res);
+                        this.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::GreaterEq { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.less_then(owner, arena, atoms, left, right, false)
+                        this.less_then(owner, arena, atoms, left, right, false)
                     );
                     let res = res.is_false() && !res.is_undefined();
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::Less { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.less_then(owner, arena, atoms, left, right, false)
+                        this.less_then(owner, arena, atoms, left, right, false)
                     );
                     if res.is_undefined() {
-                        self.w(owner).stack.write(dst, false.into());
+                        this.w(owner).stack.write(dst, false.into());
                     } else {
-                        self.w(owner).stack.write(dst, res);
+                        this.w(owner).stack.write(dst, res);
                     }
                 }
                 Instruction::LessEq { dst, left, righ } => {
-                    let left = self.r(owner).stack.read(left);
-                    let right = self.r(owner).stack.read(righ);
+                    let left = this.r(owner).stack.read(left);
+                    let right = this.r(owner).stack.read(righ);
                     let res = rebind_try!(
                         arena,
-                        self.less_then(owner, arena, atoms, left, right, true)
+                        this.less_then(owner, arena, atoms, left, right, true)
                     );
                     let res = res.is_false() && !res.is_undefined();
-                    self.w(owner).stack.write(dst, res.into());
+                    this.w(owner).stack.write(dst, res.into());
                 }
 
                 Instruction::IsNullish { dst, op } => {
-                    let src = self.r(owner).stack.read(op);
-                    let nullish = self.is_nullish(src);
-                    self.w(owner).stack.write(dst, Value::from(nullish));
+                    let src = this.r(owner).stack.read(op);
+                    let nullish = this.is_nullish(src);
+                    this.w(owner).stack.write(dst, Value::from(nullish));
                 }
                 Instruction::Not { dst, src } => {
-                    let src = self.r(owner).stack.read(src);
-                    let falsish = self.is_falsish(owner, src);
-                    self.w(owner).stack.write(dst, Value::from(falsish));
+                    let src = this.r(owner).stack.read(src);
+                    let falsish = this.is_falsish(owner, src);
+                    this.w(owner).stack.write(dst, Value::from(falsish));
                 }
                 Instruction::Negative { dst, op } => {
-                    let src = self.r(owner).stack.read(op);
+                    let src = this.r(owner).stack.read(op);
                     {
-                        let number = rebind_try!(arena, self.to_number(owner, arena, atoms, src));
+                        let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
                         if let Some(number) = number.into_int() {
                             let number = -(number as i64);
                             if number as i32 as i64 == number {
-                                self.w(owner).stack.write(dst, Value::from(number as i32))
+                                this.w(owner).stack.write(dst, Value::from(number as i32))
                             } else {
-                                self.w(owner).stack.write(dst, Value::from(number as f64))
+                                this.w(owner).stack.write(dst, Value::from(number as f64))
                             }
                         } else if let Some(number) = number.into_float() {
                             let number = -number;
                             if number as i32 as f64 == number {
-                                self.w(owner).stack.write(dst, Value::from(number as i32));
+                                this.w(owner).stack.write(dst, Value::from(number as i32));
                             } else {
-                                self.w(owner).stack.write(dst, Value::from(number));
+                                this.w(owner).stack.write(dst, Value::from(number));
                             }
                         } else {
                             unreachable!()
@@ -561,32 +560,32 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     }
                 }
                 Instruction::Positive { dst, op } => {
-                    let src = self.r(owner).stack.read(op);
-                    let number = rebind_try!(arena, self.to_number(owner, arena, atoms, src));
-                    self.w(owner).stack.write(dst, number);
+                    let src = this.r(owner).stack.read(op);
+                    let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
+                    this.w(owner).stack.write(dst, number);
                 }
 
                 Instruction::Jump { tgt } => instr.jump(tgt),
                 Instruction::JumpFalse { cond, tgt } => {
-                    let cond = self.r(owner).stack.read(cond);
-                    if self.is_falsish(owner, cond) {
+                    let cond = this.r(owner).stack.read(cond);
+                    if this.is_falsish(owner, cond) {
                         instr.jump(tgt)
                     }
                 }
                 Instruction::JumpTrue { cond, tgt } => {
-                    let cond = self.r(owner).stack.read(cond);
-                    if !self.is_falsish(owner, cond) {
+                    let cond = this.r(owner).stack.read(cond);
+                    if !this.is_falsish(owner, cond) {
                         instr.jump(tgt)
                     }
                 }
 
                 Instruction::Try { dst, tgt } => {
-                    match self.run(arena, owner, atoms, &mut instr, ctx) {
+                    match this.run(arena, owner, atoms, &mut instr, ctx) {
                         Ok(_) => {
-                            self.w(owner).stack.write(dst, Value::empty());
+                            this.w(owner).stack.write(dst, Value::empty());
                         }
                         Err(e) => {
-                            self.w(owner).stack.write(dst, e);
+                            this.w(owner).stack.write(dst, e);
                             instr.jump(tgt);
                         }
                     }
@@ -598,29 +597,29 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 }
 
                 Instruction::Throw { src } => {
-                    let src = self.r(owner).stack.read(src);
+                    let src = this.r(owner).stack.read(src);
                     if !src.is_empty() {
                         return Err(rebind!(arena, src));
                     }
                 }
 
                 Instruction::Push { src } => {
-                    let src = self.r(owner).stack.read(src);
-                    self.w(owner).stack.push(src);
+                    let src = this.r(owner).stack.read(src);
+                    this.w(owner).stack.push(src);
                 }
 
                 Instruction::Call { dst, func } => {
-                    let func = self.r(owner).stack.read(func);
+                    let func = this.r(owner).stack.read(func);
                     if let Some(obj) = func.into_object() {
                         let ctx = ExecutionContext {
                             function: obj,
                             this: obj.into(),
                             new_target: Value::undefined(),
                         };
-                        let res = rebind_try!(arena, self.vm_call(owner, arena, atoms, ctx));
-                        self.w(owner).stack.write(dst, res);
+                        let res = rebind_try!(arena, this.vm_call(owner, arena, atoms, ctx));
+                        this.w(owner).stack.write(dst, res);
                     } else {
-                        return Err(self.create_type_error(
+                        return Err(this.create_type_error(
                             owner,
                             arena,
                             atoms,
@@ -629,21 +628,21 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     }
                 }
                 Instruction::CallMethod { dst, key, obj } => {
-                    let key = self.r(owner).stack.read(key);
-                    let obj = self.r(owner).stack.read(obj);
+                    let key = this.r(owner).stack.read(key);
+                    let obj = this.r(owner).stack.read(obj);
 
                     if let Some(obj) = obj.into_object() {
                         let func =
-                            rebind_try!(arena, obj.index_value(owner, arena, atoms, self, key));
+                            rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
                         if let Some(function) = func.into_object() {
                             root!(arena, function);
                             let res = rebind_try!(
                                 arena,
-                                self.method_call(owner, arena, atoms, function, obj.into())
+                                this.method_call(owner, arena, atoms, function, obj.into())
                             );
-                            self.w(owner).stack.write(dst, res);
+                            this.w(owner).stack.write(dst, res);
                         } else {
-                            return Err(self.create_type_error(
+                            return Err(this.create_type_error(
                                 owner,
                                 arena,
                                 atoms,
@@ -653,17 +652,17 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     } else {
                         let func = rebind_try!(
                             arena,
-                            self.index_non_object(owner, arena, atoms, obj, key)
+                            this.index_non_object(owner, arena, atoms, obj, key)
                         );
                         if let Some(function) = func.into_object() {
                             root!(arena, function);
                             let res = rebind_try!(
                                 arena,
-                                self.method_call(owner, arena, atoms, function, obj)
+                                this.method_call(owner, arena, atoms, function, obj)
                             );
-                            self.w(owner).stack.write(dst, res);
+                            this.w(owner).stack.write(dst, res);
                         } else {
-                            return Err(self.create_type_error(
+                            return Err(this.create_type_error(
                                 owner,
                                 arena,
                                 atoms,
@@ -673,19 +672,19 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                     }
                 }
                 Instruction::CallConstruct { dst, func, obj } => {
-                    let func = self.r(owner).stack.read(func);
-                    let obj = self.r(owner).stack.read(obj);
+                    let func = this.r(owner).stack.read(func);
+                    let obj = this.r(owner).stack.read(obj);
 
                     if let Some(func) = func.into_object() {
                         if let Some(obj) = obj.into_object() {
                             let res = rebind_try!(
                                 arena,
-                                self.construct_call(owner, arena, atoms, func, obj)
+                                this.construct_call(owner, arena, atoms, func, obj)
                             );
-                            self.w(owner).stack.write(dst, res);
+                            this.w(owner).stack.write(dst, res);
                         }
                     } else {
-                        return Err(self.create_type_error(
+                        return Err(this.create_type_error(
                             owner,
                             arena,
                             atoms,
@@ -695,16 +694,16 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 }
 
                 Instruction::Return { ret } => {
-                    let res = self.r(owner).stack.read(ret);
-                    arena.write_barrier(self);
+                    let res = this.r(owner).stack.read(ret);
+                    arena.write_barrier(this);
                     return Ok(rebind!(arena, res));
                 }
                 Instruction::ReturnUndefined { _ignore } => {
-                    arena.write_barrier(self);
+                    arena.write_barrier(this);
                     return Ok(Value::undefined());
                 }
                 _ => {
-                    return Err(self.create_runtime_error(
+                    return Err(this.create_runtime_error(
                         owner,
                         arena,
                         atoms,
@@ -717,7 +716,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     /// Returns wether a value is falsish.
-    pub fn is_falsish<'l>(self, owner: &CellOwner<'cell>, value: Value<'l, 'cell>) -> bool {
+    pub fn is_falsish<'l>(this: GcRealm<'gc,'own>, owner: &Owner<'own>, value: Value<'l, 'own>) -> bool {
         if let Some(v) = value.into_int() {
             v == 0
         } else if let Some(v) = value.into_float() {
@@ -730,22 +729,21 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     /// Returns wether a values is like null, i.e. null or undefined
-    pub fn is_nullish<'l>(self, value: Value<'l, 'cell>) -> bool {
+    pub fn is_nullish<'l>(this: GcRealm<'gc,'own>, value: Value<'l, 'own>) -> bool {
         value.is_null() || value.is_undefined()
     }
 
     /// Coerces a value to a string.
     pub fn to_string<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<Gc<'l, 'cell, String>, Value<'l, 'cell>> {
-        let primitive = rebind_try!(arena, self.to_primitive(owner, arena, atoms, value, true));
+        value: Value<'_, 'own>,
+    ) -> Result<Gc<'l, 'own, String>, Value<'l, 'own>> {
+        let primitive = rebind_try!(arena, this.to_primitive(owner, arena, atoms, value, true));
         let primitive = rebind!(arena, primitive);
-        let res = self
-            .to_string_primitive(arena, atoms, primitive)
+        let res = Self::to_string_primitive(this,arena, atoms, primitive)
             .expect("to_primitive returned an object");
 
         Ok(rebind!(arena, res))
@@ -753,11 +751,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Coerces a value which is already a primitive to a string.
     pub fn to_string_primitive<'l>(
-        self,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        arena: &'l Root< 'own>,
         _atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Option<Gc<'l, 'cell, String>> {
+        value: Value<'_, 'own>,
+    ) -> Option<Gc<'l, 'own, String>> {
         if let Some(value) = value.into_string() {
             Some(rebind!(arena, value))
         } else if let Some(value) = value.into_int() {
@@ -781,17 +779,17 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Coerces a value to a object.
     pub fn to_object<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<GcObject<'l, 'cell>, Value<'l, 'cell>> {
+        value: Value<'_, 'own>,
+    ) -> Result<GcObject<'l, 'own>, Value<'l, 'own>> {
         if let Some(x) = value.into_object() {
             return Ok(rebind!(arena, x));
         }
         if let Some(x) = value.into_string() {
-            let proto = self.borrow(owner).builtin.string_proto;
+            let proto = this.borrow(owner).builtin.string_proto;
             let object = Object::new_gc(
                 arena,
                 Some(proto),
@@ -806,7 +804,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             } else {
                 value.into_float().unwrap()
             };
-            let proto = self.borrow(owner).builtin.number_proto;
+            let proto = this.borrow(owner).builtin.number_proto;
             let object = Object::new_gc(
                 arena,
                 Some(proto),
@@ -816,7 +814,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             return Ok(rebind!(arena, object));
         }
         if let Some(x) = value.into_bool() {
-            let proto = self.borrow(owner).builtin.boolean_proto;
+            let proto = this.borrow(owner).builtin.boolean_proto;
             let object = Object::new_gc(
                 arena,
                 Some(proto),
@@ -826,7 +824,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             return Ok(rebind!(arena, object));
         }
         if value.is_null() {
-            return Err(self.create_type_error(
+            return Err(this.create_type_error(
                 owner,
                 arena,
                 atoms,
@@ -834,7 +832,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             ));
         }
         if value.is_undefined() {
-            return Err(self.create_type_error(
+            return Err(this.create_type_error(
                 owner,
                 arena,
                 atoms,
@@ -846,25 +844,24 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Coerces a value to a number.
     pub fn to_number<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<Value<'static, 'cell>, Value<'l, 'cell>> {
-        let prim = rebind_try!(arena, self.to_primitive(owner, arena, atoms, value, false));
-        let res = self
-            .to_number_primitive(owner, prim)
+        value: Value<'_, 'own>,
+    ) -> Result<Value<'static, 'own>, Value<'l, 'own>> {
+        let prim = rebind_try!(arena, this.to_primitive(owner, arena, atoms, value, false));
+        let res = Self::to_number_primitive(this,owner, prim)
             .expect("to primitive returned an object");
         Ok(res)
     }
 
     /// Coerces a value which is already a primitive to a number.
     pub fn to_number_primitive(
-        self,
-        owner: &CellOwner<'cell>,
-        value: Value<'_, 'cell>,
-    ) -> Option<Value<'static, 'cell>> {
+        this: GcRealm<'gc,'own>,
+        owner: &Owner<'own>,
+        value: Value<'_, 'own>,
+    ) -> Option<Value<'static, 'own>> {
         if let Some(x) = value.into_int() {
             Some(x.into())
         } else if let Some(x) = value.into_float() {
@@ -892,13 +889,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
     pub fn to_int32<'l>(
-        &self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        &this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<i32, Value<'l, 'cell>> {
-        let number = self.to_number(owner, arena, atoms, value)?;
+        value: Value<'_, 'own>,
+    ) -> Result<i32, Value<'l, 'own>> {
+        let number = this.to_number(owner, arena, atoms, value)?;
         Ok(if let Some(number) = number.into_int() {
             number
         } else if let Some(f) = number.into_float() {
@@ -919,13 +916,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Implements type conversion [`ToUint32`](https://tc39.es/ecma262/#sec-touint32)
     pub fn to_uint32<'l>(
-        &self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        &this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<u32, Value<'l, 'cell>> {
-        let number = self.to_number(owner, arena, atoms, value)?;
+        value: Value<'_, 'own>,
+    ) -> Result<u32, Value<'l, 'own>> {
+        let number = this.to_number(owner, arena, atoms, value)?;
         Ok(if let Some(number) = number.into_int() {
             number as u32
         } else if let Some(f) = number.into_float() {
@@ -941,13 +938,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Coerces a value to a primitive.
     pub fn to_primitive<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
+        value: Value<'_, 'own>,
         prefer_string: bool,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         const PREFER_STRING: &[atom::Atom] = &[atom::constant::toString, atom::constant::valueOf];
         const PREFER_VALUE: &[atom::Atom] = &[atom::constant::valueOf, atom::constant::toString];
 
@@ -960,16 +957,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 PREFER_VALUE
             };
             for &k in keys {
-                let func = rebind_try!(arena, obj.index(owner, arena, atoms, self, k))
+                let func = rebind_try!(arena, obj.index(owner, arena, atoms, this. k))
                     .empty_to_undefined();
-                root_clone!(arena, func);
 
                 #[allow(unused_unsafe)]
                 if let Some(func) = func.into_object() {
                     if func.borrow(owner).is_function() {
                         let res = rebind_try!(
                             arena,
-                            self.method_call(owner, arena, atoms, func, obj.into())
+                            this.method_call(owner, arena, atoms, func, obj.into())
                         );
                         if !res.is_object() {
                             return Ok(rebind!(arena, res));
@@ -978,7 +974,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                 }
             }
 
-            return Err(self.create_type_error(
+            return Err(this.create_type_error(
                 owner,
                 arena,
                 atoms,
@@ -990,10 +986,10 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Returns wether to values are strictly equal.
     pub fn strict_equal(
-        self,
-        owner: &CellOwner<'cell>,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &Owner<'own>,
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
     ) -> bool {
         if !left.same_type(right) {
             #[cfg(debug_assertions)]
@@ -1039,15 +1035,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Returns wether to values are considered equal.
     pub fn equal<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
-    ) -> Result<bool, Value<'l, 'cell>> {
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
+    ) -> Result<bool, Value<'l, 'own>> {
         if left.same_type(right) {
-            return Ok(self.strict_equal(owner, left, right));
+            return Ok(this.strict_equal(owner, left, right));
         }
 
         if left.is_undefined() && right.is_null() {
@@ -1058,37 +1054,35 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
         if left.is_number() && right.is_string() {
             // Should not return error and always a number
-            let right = unsafe { gc::rebind(self.to_number(owner, arena, atoms, right).unwrap()) };
+            let right = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
             debug_assert!(right.is_number());
-            return self.equal(owner, arena, atoms, left, right);
+            return this.equal(owner, arena, atoms, left, right);
         }
         if right.is_number() && left.is_string() {
             // Should not return error and always a number
-            let left = unsafe { gc::rebind(self.to_number(owner, arena, atoms, left).unwrap()) };
+            let left = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, left).unwrap()) };
             debug_assert!(left.is_number());
-            return self.equal(owner, arena, atoms, left, right);
+            return this.equal(owner, arena, atoms, left, right);
         }
         if left.is_bool() {
             // Should not return error and always a number
-            let left = unsafe { gc::rebind(self.to_number(owner, arena, atoms, left).unwrap()) };
+            let left = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, left).unwrap()) };
             debug_assert!(left.is_number());
-            return self.equal(owner, arena, atoms, left, right);
+            return this.equal(owner, arena, atoms, left, right);
         }
         if right.is_bool() {
             // Should not return error and always a number
-            let right = unsafe { gc::rebind(self.to_number(owner, arena, atoms, right).unwrap()) };
+            let right = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
             debug_assert!(right.is_number());
-            return self.equal(owner, arena, atoms, left, right);
+            return this.equal(owner, arena, atoms, left, right);
         }
         if !left.is_object() && right.is_object() {
-            let right = rebind_try!(arena, self.to_primitive(owner, arena, atoms, right, true));
-            root_clone!(arena, right);
-            return self.equal(owner, arena, atoms, left, right);
+            let right = rebind_try!(arena, this.to_primitive(owner, arena, atoms, right, true));
+            return this.equal(owner, arena, atoms, left, right);
         }
         if !right.is_object() && left.is_object() {
-            let left = rebind_try!(arena, self.to_primitive(owner, arena, atoms, left, true));
-            root_clone!(arena, left);
-            return self.equal(owner, arena, atoms, left, right);
+            let left = rebind_try!(arena, this.to_primitive(owner, arena, atoms, left, true));
+            return this.equal(owner, arena, atoms, left, right);
         }
         Ok(false)
     }
@@ -1097,29 +1091,27 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     ///
     /// Swap changes the order of evaluation.
     pub fn less_then<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
         swap: bool,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let (left, right) = if swap {
-            let r = rebind_try!(arena, self.to_primitive(owner, arena, atoms, left, false));
-            root_clone!(arena, r);
-            let l = rebind_try!(arena, self.to_primitive(owner, arena, atoms, right, false));
+            let r = rebind_try!(arena, this.to_primitive(owner, arena, atoms, left, false));
+            let l = rebind_try!(arena, this.to_primitive(owner, arena, atoms, right, false));
             (rebind!(arena, l), rebind!(arena, r))
         } else {
-            let l = rebind_try!(arena, self.to_primitive(owner, arena, atoms, left, false));
-            root_clone!(arena, l);
-            let r = rebind_try!(arena, self.to_primitive(owner, arena, atoms, right, false));
+            let l = rebind_try!(arena, this.to_primitive(owner, arena, atoms, left, false));
+            let r = rebind_try!(arena, this.to_primitive(owner, arena, atoms, right, false));
             let r = rebind!(arena, r);
             (rebind!(arena, l), r)
         };
         if left.is_string() || right.is_string() {
-            let left = self.to_string_primitive(arena, atoms, left).unwrap();
-            let right = self.to_string_primitive(arena, atoms, right).unwrap();
+            let left = this.to_string_primitive(arena, atoms, left).unwrap();
+            let right = this.to_string_primitive(arena, atoms, right).unwrap();
 
             if left
                 .borrow(owner)
@@ -1147,8 +1139,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
 
         // Left and right are already primitives so they cannot return an error
-        let left = self.to_number_primitive(owner, left).unwrap();
-        let right = self.to_number_primitive(owner, right).unwrap();
+        let left = this.to_number_primitive(owner, left).unwrap();
+        let right = this.to_number_primitive(owner, right).unwrap();
         let left = if let Some(left) = left.into_float() {
             left
         } else {
@@ -1180,30 +1172,29 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     /// Add to values together
     pub fn add<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let (left, right) = {
-            let l = rebind_try!(arena, self.to_primitive(owner, arena, atoms, left, true));
-            root_clone!(arena, l);
-            let r = rebind_try!(arena, self.to_primitive(owner, arena, atoms, right, true));
+            let l = rebind_try!(arena, this.to_primitive(owner, arena, atoms, left, true));
+            let r = rebind_try!(arena, this.to_primitive(owner, arena, atoms, right, true));
             let r = rebind!(arena, r);
             let l = rebind!(arena, l);
             (l, r)
         };
 
         if left.is_string() || right.is_string() {
-            let left = self.to_string_primitive(arena, atoms, left).unwrap();
-            let right = self.to_string_primitive(arena, atoms, right).unwrap();
+            let left = this.to_string_primitive(arena, atoms, left).unwrap();
+            let right = this.to_string_primitive(arena, atoms, right).unwrap();
             let v = arena.add(left.borrow(owner).to_string() + right.borrow(owner));
             return Ok(v.into());
         }
-        let left = self.to_number_primitive(owner, left).unwrap();
-        let right = self.to_number_primitive(owner, right).unwrap();
+        let left = this.to_number_primitive(owner, left).unwrap();
+        let right = this.to_number_primitive(owner, right).unwrap();
         let left = if let Some(left) = left.into_int() {
             left as f64
         } else if let Some(left) = left.into_float() {
@@ -1223,20 +1214,20 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[inline]
     pub fn numeric_operator<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
         op: NumericOperator,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let l = rebind_try!(arena, self.to_number(owner, arena, atoms, left));
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
+        let l = rebind_try!(arena, this.to_number(owner, arena, atoms, left));
         debug_assert!(l.is_number());
-        let left = unsafe { gc::rebind(l) };
-        let r = rebind_try!(arena, self.to_number(owner, arena, atoms, right));
+        let left = unsafe { dreck::rebind(l) };
+        let r = rebind_try!(arena, this.to_number(owner, arena, atoms, right));
         debug_assert!(r.is_number());
-        let right = unsafe { gc::rebind(r) };
+        let right = unsafe { dreck::rebind(r) };
         let left = if let Some(left) = left.into_int() {
             left as f64
         } else if let Some(left) = left.into_float() {
@@ -1265,7 +1256,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         }
     }
 
-    pub fn type_of<'l>(self, owner: &CellOwner<'cell>, v: Value<'l, 'cell>) -> &'l str {
+    pub fn type_of<'l>(this: GcRealm<'gc,'own>, owner: &Owner<'own>, v: Value<'l, 'own>) -> &'l str {
         if v.is_undefined() {
             "undefined"
         } else if v.is_null() {
@@ -1288,16 +1279,16 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     pub fn instance_of<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        left: Value<'_, 'cell>,
-        right: Value<'_, 'cell>,
-    ) -> Result<bool, Value<'l, 'cell>> {
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
+    ) -> Result<bool, Value<'l, 'own>> {
         let right = rebind_try!(
             arena,
-            right.into_object().ok_or_else(|| self.create_type_error(
+            right.into_object().ok_or_else(|| this.create_type_error(
                 owner,
                 arena,
                 atoms,
@@ -1313,7 +1304,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
         // TODO implement @@hasInstance method
         if right.borrow(owner).is_function() {
-            return Err(self.create_type_error(
+            return Err(this.create_type_error(
                 owner,
                 arena,
                 atoms,
@@ -1321,11 +1312,11 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             ));
         }
 
-        let tgt_proto = right.index(owner, arena, atoms, self, atom::constant::prototype);
+        let tgt_proto = right.index(owner, arena, atoms, this, atom::constant::prototype);
         let tgt_proto = rebind_try!(arena, tgt_proto).empty_to_undefined();
         let tgt_proto = rebind!(arena, tgt_proto);
         let tgt_proto = tgt_proto.into_object().ok_or_else(|| {
-            self.create_type_error(owner, arena, atoms, "object prototype is not an object")
+            this.create_type_error(owner, arena, atoms, "object prototype is not an object")
         });
 
         let tgt_proto = rebind_try!(arena, tgt_proto);
@@ -1346,7 +1337,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     #[inline]
-    fn coerce_int(int: i64) -> Value<'static, 'cell> {
+    fn coerce_int(int: i64) -> Value<'static, 'own> {
         if int as i32 as i64 == int {
             Value::from(int as i32)
         } else {
@@ -1356,13 +1347,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[allow(unused_unsafe)]
     pub unsafe fn construct_function<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l Root< 'own>,
         function_id: u16,
-        read: &InstructionReader<'_, 'cell>,
-        function: GcObject<'_, 'cell>,
-    ) -> VmFunction<'l, 'cell> {
+        read: &InstructionReader<'_, 'own>,
+        function: GcObject<'_, 'own>,
+    ) -> VmFunction<'l, 'own> {
         let bc = &read.bc.borrow(owner).functions[function_id as usize];
         let up_func = function.borrow(owner).as_vm_function();
         let upvalues = bc
@@ -1370,7 +1361,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             .iter()
             .copied()
             .map(|x| match x {
-                Upvalue::Local(register) => (*self.get()).stack.create_upvalue(arena, register),
+                Upvalue::Local(register) => (*this.get()).stack.create_upvalue(arena, register),
                 Upvalue::Parent(slot) => {
                     rebind!(arena, up_func.upvalues[slot as usize])
                 }
@@ -1387,45 +1378,45 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     pub fn method_call<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        function: GcObject<'_, 'cell>,
-        obj: Value<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        function: GcObject<'_, 'own>,
+        obj: Value<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         // Life times function and object are independent of arena,
         // as such they have to be rooted so they are valid for the entire function and can be
         // rebind to the lifetime of the other
 
         let ctx = unsafe {
             ExecutionContext {
-                function: gc::rebind(function),
-                this: gc::rebind(obj),
+                function: dreck::rebind(function),
+                this: dreck::rebind(obj),
                 new_target: Value::undefined(),
             }
         };
 
-        unsafe { self.vm_call(owner, arena, atoms, ctx) }
+        unsafe { this.vm_call(owner, arena, atoms, ctx) }
     }
 
     pub fn construct_call<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        function: GcObject<'_, 'cell>,
-        target_obj: GcObject<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        function: GcObject<'_, 'own>,
+        target_obj: GcObject<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let proto = rebind!(
             arena,
             rebind_try!(
                 arena,
-                function.index(owner, arena, atoms, self, atom::constant::prototype)
+                function.index(owner, arena, atoms, this, atom::constant::prototype)
             )
         )
         .into_object()
-        .unwrap_or_else(|| rebind!(arena, unsafe { self.r(owner).builtin.object_proto }));
+        .unwrap_or_else(|| rebind!(arena, unsafe { this.r(owner).builtin.object_proto }));
         let this = Object::new(Some(proto), ObjectFlags::ORDINARY, ObjectKind::Ordinary);
         let this = arena.add(this);
         root!(arena, this);
@@ -1435,17 +1426,17 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
         // rebind to the lifetime of the other
 
         let ctx = unsafe {
-            let new_target = gc::rebind(target_obj).into();
-            let function = gc::rebind(function);
+            let new_target = dreck::rebind(target_obj).into();
+            let function = dreck::rebind(function);
 
-            ExecutionContext::<'_, 'cell> {
+            ExecutionContext::<'_, 'own> {
                 this: this.into(),
                 function,
                 new_target,
             }
         };
 
-        let res = rebind_try!(arena, unsafe { self.vm_call(owner, arena, atoms, ctx) });
+        let res = rebind_try!(arena, unsafe { this.vm_call(owner, arena, atoms, ctx) });
         let res = rebind!(arena, res);
         if let Some(obj) = res.into_object() {
             Ok(obj.into())
@@ -1456,12 +1447,12 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[allow(unused_unsafe)]
     pub unsafe fn vm_call<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        ctx: ExecutionContext<'_, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        ctx: ExecutionContext<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         match ctx.function.as_function_kind(owner) {
             FunctionKind::VmFn(func) => {
                 let bc = func.bc;
@@ -1471,8 +1462,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
                 let guard = rebind_try!(
                     arena,
-                    self.w(owner).stack.push_frame(frame_size).ok_or_else(|| {
-                        self.create_runtime_error(
+                    this.w(owner).stack.push_frame(frame_size).ok_or_else(|| {
+                        this.create_runtime_error(
                             owner,
                             arena,
                             atoms,
@@ -1481,16 +1472,16 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         )
                     })
                 );
-                let res = self.run(arena, owner, atoms, &mut instr, &ctx);
+                let res = this.run(arena, owner, atoms, &mut instr, &ctx);
                 let res = rebind!(arena, res);
-                self.w(owner).stack.pop_frame(arena, guard);
+                this.w(owner).stack.pop_frame(arena, guard);
                 res
             }
             FunctionKind::StaticFn(x) => {
                 let guard = rebind_try!(
                     arena,
-                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
-                        self.create_runtime_error(
+                    this.w(owner).stack.push_frame(0).ok_or_else(|| {
+                        this.create_runtime_error(
                             owner,
                             arena,
                             atoms,
@@ -1499,15 +1490,15 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         )
                     })
                 );
-                let res = rebind!(arena, x(arena, owner, atoms, self, &ctx));
-                self.w(owner).stack.pop_frame(arena, guard);
+                let res = rebind!(arena, x(arena, owner, atoms, this, &ctx));
+                this.w(owner).stack.pop_frame(arena, guard);
                 res
             }
             FunctionKind::SharedFn(x) => {
                 let guard = rebind_try!(
                     arena,
-                    self.w(owner).stack.push_frame(0).ok_or_else(|| {
-                        self.create_runtime_error(
+                    this.w(owner).stack.push_frame(0).ok_or_else(|| {
+                        this.create_runtime_error(
                             owner,
                             arena,
                             atoms,
@@ -1516,8 +1507,8 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
                         )
                     })
                 );
-                let res = rebind!(arena, (*x)(arena, owner, atoms, self, &ctx));
-                self.w(owner).stack.pop_frame(arena, guard);
+                let res = rebind!(arena, (*x)(arena, owner, atoms, this, &ctx));
+                this.w(owner).stack.pop_frame(arena, guard);
                 res
             }
             _ => todo!(),
@@ -1525,42 +1516,42 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
     }
 
     pub fn index_non_object<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-        key: Value<'gc, 'cell>,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+        value: Value<'_, 'own>,
+        key: Value<'gc, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         assert!(!value.is_object());
 
         let object = if value.is_string() {
-            self.borrow(owner).builtin.string_proto
+            this.borrow(owner).builtin.string_proto
         } else if value.is_number() {
-            self.borrow(owner).builtin.number_proto
+            this.borrow(owner).builtin.number_proto
         } else if value.is_bool() {
             todo!("index bool")
         } else if value.is_undefined() {
-            return Err(self.create_type_error(owner, arena, atoms, "undefined has no properties"));
+            return Err(this.create_type_error(owner, arena, atoms, "undefined has no properties"));
         } else if value.is_nullish() {
-            return Err(self.create_type_error(owner, arena, atoms, "null has no properties"));
+            return Err(this.create_type_error(owner, arena, atoms, "null has no properties"));
         } else {
             panic!("invalid value")
         };
 
-        let res = rebind_try!(arena, object.index_value(owner, arena, atoms, self, key));
+        let res = rebind_try!(arena, object.index_value(owner, arena, atoms, this. key));
 
         Ok(rebind!(arena, res))
     }
 
     pub fn to_integer_or_infinity<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root< 'own>,
         atoms: &Atoms,
-        value: Value<'_, 'cell>,
-    ) -> Result<f64, Value<'l, 'cell>> {
-        let number = rebind_try!(arena, self.to_number(owner, arena, atoms, value));
+        value: Value<'_, 'own>,
+    ) -> Result<f64, Value<'l, 'own>> {
+        let number = rebind_try!(arena, this.to_number(owner, arena, atoms, value));
         if let Some(x) = number.into_float() {
             if x.is_nan() {
                 return Ok(0.0);
@@ -1624,18 +1615,18 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[cold]
     pub fn create_type_error<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l Root< 'own>,
         atoms: &Atoms,
         message: impl Into<String>,
-    ) -> Value<'l, 'cell> {
+    ) -> Value<'l, 'own> {
         let message = arena.add(message.into());
         builtin::error::create(
             arena,
             owner,
             atoms,
-            self.borrow(owner).builtin.type_error_proto,
+            this.borrow(owner).builtin.type_error_proto,
             Some(message),
             None,
         )
@@ -1644,18 +1635,18 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[cold]
     pub fn create_syntax_error<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l Root< 'own>,
         atoms: &Atoms,
         message: impl Into<String>,
-    ) -> Value<'l, 'cell> {
+    ) -> Value<'l, 'own> {
         let message = arena.add(message.into());
         builtin::error::create(
             arena,
             owner,
             atoms,
-            self.borrow(owner).builtin.syntax_error_proto,
+            this.borrow(owner).builtin.syntax_error_proto,
             Some(message),
             None,
         )
@@ -1664,13 +1655,13 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
 
     #[cold]
     pub fn create_runtime_error<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l Arena<'_, 'cell>,
+        this: GcRealm<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l Root< 'own>,
         atoms: &Atoms,
         message: impl Into<String>,
-        context: Option<Value<'_, 'cell>>,
-    ) -> Value<'l, 'cell> {
+        context: Option<Value<'_, 'own>>,
+    ) -> Value<'l, 'own> {
         let ctx = if let Some(x) = context {
             format!("{:?}", x)
         } else {
@@ -1681,7 +1672,7 @@ impl<'gc, 'cell> GcRealm<'gc, 'cell> {
             arena,
             owner,
             atoms,
-            self.borrow(owner).builtin.runtime_error_proto,
+            this.borrow(owner).builtin.runtime_error_proto,
             Some(message),
             None,
         )

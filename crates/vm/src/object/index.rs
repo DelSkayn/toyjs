@@ -1,60 +1,60 @@
 use common::atom::{Atom, Atoms};
 
-use crate::{
-    cell::CellOwner, gc::Arena, realm::GcRealm, rebind, rebind_try, root, GcObject, Realm, Value,
-};
+use dreck::{Owner, Root, rebind, root};
+
+use crate::{GcObject, Object, Realm, Value, realm::GcRealm};
 
 use super::properties::{Accessor, Property, PropertyEntry, PropertyFlags, PropertyValue};
 
-impl<'gc, 'cell> GcObject<'gc, 'cell> {
+impl<'gc, 'own> Object<'gc, 'own> {
     #[inline]
-    pub fn index_value<'l, V: Into<Value<'gc, 'cell>>>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+    pub fn index_value<'l, V: Into<Value<'gc, 'own>>>(
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'gc, 'cell>,
+        realm: GcRealm<'gc, 'own>,
         key: V,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let v = key.into();
         if let Some(atom) = v.into_atom() {
-            self.index(owner, arena, atoms, realm, atom)
+            Object::index(this,owner, arena, atoms, realm, atom)
         } else {
-            let v = rebind_try!(arena, realm.to_primitive(owner, arena, atoms, v, true));
+            let v = rebind_try!(arena, Realm::to_primitive(realm,owner, arena, atoms, v, true));
             let atom = Realm::atomize_primitive(owner, atoms, v);
-            let res = self.index(owner, arena, atoms, realm, atom);
+            let res = Object::index(this,owner, arena, atoms, realm, atom);
             atoms.decrement(atom);
             res
         }
     }
 
     pub fn index<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'_, 'cell>,
+        realm: GcRealm<'_, 'own>,
         key: Atom,
-    ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-        let borrow = self.borrow_mut(owner, arena);
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
+        let borrow = this.borrow_mut(owner, arena);
         if let Some(idx) = key.into_idx() {
             if let Some(x) = borrow.elements.get(idx as usize) {
                 return Ok(rebind!(arena, x));
             } else if let Some(prototype) = borrow.prototype {
                 root!(arena, prototype);
-                return prototype.index(owner, arena, atoms, realm, key);
+                return Object::index(prototype,owner, arena, atoms, realm, key);
             } else {
                 return Ok(Value::empty());
             }
         }
 
-        let mut cur = self;
+        let mut cur = this;
         loop {
             if let Some(prop) = cur.borrow(owner).properties.get(key) {
                 match prop.as_value() {
                     PropertyValue::Value(x) => return Ok(rebind!(arena, x)),
                     PropertyValue::Accessor(Accessor { get: Some(get), .. }) => {
-                        return realm.method_call(owner, arena, atoms, get, self.into())
+                        return Realm::method_call(realm,owner, arena, atoms, get, this.into())
                     }
                     PropertyValue::Accessor(Accessor { get: None, .. }) => {
                         return Ok(Value::undefined())
@@ -71,40 +71,40 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
 
     #[inline]
     pub fn index_set_value<'k, 'v, 'l, K, V>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'_, 'cell>,
+        realm: GcRealm<'_, 'own>,
         key: K,
         value: V,
-    ) -> Result<(), Value<'l, 'cell>>
+    ) -> Result<(), Value<'l, 'own>>
     where
-        K: Into<Value<'k, 'cell>>,
-        V: Into<Value<'v, 'cell>>,
+        K: Into<Value<'k, 'own>>,
+        V: Into<Value<'v, 'own>>,
     {
         let v = key.into();
         if let Some(a) = v.into_atom() {
-            self.index_set(owner, arena, atoms, realm, a, value.into())?;
+            Object::index_set(this,owner, arena, atoms, realm, a, value.into())?;
         } else {
-            let v = rebind_try!(arena, realm.to_primitive(owner, arena, atoms, v, true));
+            let v = rebind_try!(arena, Realm::to_primitive(realm,owner, arena, atoms, v, true));
             let atom = Realm::atomize_primitive(owner, atoms, v);
-            self.index_set(owner, arena, atoms, realm, atom, value.into())?;
+            Object::index_set(this,owner, arena, atoms, realm, atom, value.into())?;
             atoms.decrement(atom);
         }
         Ok(())
     }
 
     pub fn index_set<'l>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &'l mut Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'_, 'cell>,
+        realm: GcRealm<'_, 'own>,
         key: Atom,
-        value: Value<'_, 'cell>,
-    ) -> Result<(), Value<'l, 'cell>> {
-        let borrow = self.borrow_mut(owner, arena);
+        value: Value<'_, 'own>,
+    ) -> Result<(), Value<'l, 'own>> {
+        let borrow = this.borrow_mut(owner, arena);
         if let Some(idx) = key.into_idx() {
             borrow.elements.set(idx as usize, value);
         }
@@ -120,7 +120,7 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
                 unsafe {
                     realm.borrow_mut(owner, arena).stack.push(value);
                 }
-                if let Err(e) = realm.method_call(owner, arena, atoms, set, self.into()) {
+                if let Err(e) = Realm::method_call(realm,owner, arena, atoms, set, this.into()) {
                     return Err(rebind!(arena, e));
                 }
             }
@@ -131,16 +131,17 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
 
     #[inline]
     pub fn raw_index_set<'a, V>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &Root<'own>,
         atoms: &Atoms,
         key: Atom,
         value: V,
     ) where
-        V: Into<Value<'a, 'cell>>,
+        V: Into<Value<'a, 'own>>,
     {
-        self.raw_index_set_prop(
+        Object::raw_index_set_prop(
+            this,
             owner,
             arena,
             atoms,
@@ -150,17 +151,18 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
 
     #[inline]
     pub fn raw_index_set_flags<'a, V>(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &Root<'own>,
         atoms: &Atoms,
         key: Atom,
         value: V,
         flags: PropertyFlags,
     ) where
-        V: Into<Value<'a, 'cell>>,
+        V: Into<Value<'a, 'own>>,
     {
-        self.raw_index_set_prop(
+        Object::raw_index_set_prop(
+            this,
             owner,
             arena,
             atoms,
@@ -169,13 +171,13 @@ impl<'gc, 'cell> GcObject<'gc, 'cell> {
     }
 
     pub fn raw_index_set_prop(
-        self,
-        owner: &mut CellOwner<'cell>,
-        arena: &Arena<'_, 'cell>,
+        this: GcObject<'gc,'own>,
+        owner: &mut Owner<'own>,
+        arena: &Root<'own>,
         atoms: &Atoms,
-        value: Property<'_, 'cell>,
+        value: Property<'_, 'own>,
     ) {
-        let borrow = self.borrow_mut(owner, arena);
+        let borrow = this.borrow_mut(owner, arena);
         let atom = value.atom();
         if borrow.properties.set(value).is_none() {
             atoms.increment(atom);

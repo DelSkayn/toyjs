@@ -11,12 +11,10 @@ use common::{
     collections::HashMap,
 };
 
-use crate::{
-    cell::CellOwner,
-    gc::{self, Arena, Rebind, Trace, Tracer},
-    realm::GcRealm,
-    rebind, rebind_try, root_clone, Value,
-};
+
+use dreck::{self, Bound, Owner, Root, Trace, Tracer, rebind};
+
+use crate::{Object, Realm, Value, realm::GcRealm};
 
 use super::GcObject;
 
@@ -88,36 +86,36 @@ impl BitOrAssign for PropertyFlags {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Accessor<'gc, 'cell> {
-    pub get: Option<GcObject<'gc, 'cell>>,
-    pub set: Option<GcObject<'gc, 'cell>>,
+#[derive(Clone, Copy)]
+pub struct Accessor<'gc, 'own> {
+    pub get: Option<GcObject<'gc, 'own>>,
+    pub set: Option<GcObject<'gc, 'own>>,
 }
 
 #[derive(Clone, Copy)]
-union PropertyUnion<'gc, 'cell> {
-    accessor: Accessor<'gc, 'cell>,
-    value: Value<'gc, 'cell>,
+union PropertyUnion<'gc, 'own> {
+    accessor: Accessor<'gc, 'own>,
+    value: Value<'gc, 'own>,
 }
 
-pub enum PropertyValue<'gc, 'cell> {
-    Accessor(Accessor<'gc, 'cell>),
-    Value(Value<'gc, 'cell>),
+pub enum PropertyValue<'gc, 'own> {
+    Accessor(Accessor<'gc, 'own>),
+    Value(Value<'gc, 'own>),
 }
 
 #[derive(Clone)]
-pub struct Property<'gc, 'cell> {
+pub struct Property<'gc, 'own> {
     flags: PropertyFlags,
     atom: Atom,
-    value: PropertyUnion<'gc, 'cell>,
+    value: PropertyUnion<'gc, 'own>,
 }
 
-impl<'gc, 'cell> fmt::Debug for Property<'gc, 'cell> {
+impl<'gc, 'own> fmt::Debug for Property<'gc, 'own> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             if self.flags.contains(PropertyFlags::ACCESSOR) {
                 f.debug_struct("Property::Accessor")
-                    .field("value", &self.value.accessor)
+                    //.field("value", &self.value.accessor)
                     .field("flags", &self.flags)
                     .field("atom", &self.atom)
                     .finish()
@@ -132,12 +130,12 @@ impl<'gc, 'cell> fmt::Debug for Property<'gc, 'cell> {
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Property<'gc, 'cell> {
-    type Output = Property<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for Property<'gc, 'own> {
+    type Rebound = Property<'a, 'own>;
 }
 
-impl<'gc, 'cell> Property<'gc, 'cell> {
-    pub fn accessor(accessor: Accessor<'gc, 'cell>, flags: PropertyFlags, atom: Atom) -> Self {
+impl<'gc, 'own> Property<'gc, 'own> {
+    pub fn accessor(accessor: Accessor<'gc, 'own>, flags: PropertyFlags, atom: Atom) -> Self {
         Property {
             flags: flags | PropertyFlags::ACCESSOR,
             atom,
@@ -145,7 +143,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
         }
     }
 
-    pub fn value(value: Value<'gc, 'cell>, flags: PropertyFlags, atom: Atom) -> Self {
+    pub fn value(value: Value<'gc, 'own>, flags: PropertyFlags, atom: Atom) -> Self {
         Property {
             flags,
             atom,
@@ -161,7 +159,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
         self.flags.contains(PropertyFlags::ENUMERABLE)
     }
 
-    pub fn as_value(&self) -> PropertyValue<'gc, 'cell> {
+    pub fn as_value(&self) -> PropertyValue<'gc, 'own> {
         unsafe {
             if self.flags.contains(PropertyFlags::ACCESSOR) {
                 PropertyValue::Accessor(self.value.accessor)
@@ -176,15 +174,16 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
     }
 
     pub fn from_value(
-        owner: &mut CellOwner<'cell>,
-        arena: &'gc mut Arena<'_, 'cell>,
+        owner: &mut Owner<'own>,
+        arena: &'gc mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'_, 'cell>,
-        value: Value<'_, 'cell>,
+        realm: GcRealm<'_, 'own>,
+        value: Value<'_, 'own>,
         atom: Atom,
-    ) -> Result<Self, Value<'gc, 'cell>> {
+    ) -> Result<Self, Value<'gc, 'own>> {
         let obj = value.into_object().ok_or_else(|| {
-            realm.create_type_error(
+            Realm::create_type_error(
+                realm,
                 owner,
                 arena,
                 atoms,
@@ -196,50 +195,48 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
     }
 
     pub fn from_object(
-        owner: &mut CellOwner<'cell>,
-        arena: &'gc mut Arena<'_, 'cell>,
+        owner: &mut Owner<'own>,
+        arena: &'gc mut Root<'own>,
         atoms: &Atoms,
-        realm: GcRealm<'_, 'cell>,
-        obj: GcObject<'_, 'cell>,
+        realm: GcRealm<'_, 'own>,
+        obj: GcObject<'_, 'own>,
         atom: Atom,
-    ) -> Result<Self, Value<'gc, 'cell>> {
+    ) -> Result<Self, Value<'gc, 'own>> {
         let mut flags = PropertyFlags::empty();
         let f = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::enumerable)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::enumerable)
         );
-        if !realm.is_falsish(owner, f) {
+        if !Realm::is_falsish(realm,owner, f) {
             flags |= PropertyFlags::ENUMERABLE
         }
         let f = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::configurable)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::configurable)
         );
-        if !realm.is_falsish(owner, f) {
+        if !Realm::is_falsish(realm,owner, f) {
             flags |= PropertyFlags::CONFIGURABLE
         }
 
         let value = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::value)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::value)
         );
 
         let value = if value.is_empty() { None } else { Some(value) };
-        root_clone!(arena, value);
 
         let f = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::writable)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::writable)
         );
-        if !realm.is_falsish(owner, f) {
+        if !Realm::is_falsish(realm,owner, f) {
             flags |= PropertyFlags::WRITABLE
         }
 
         let get = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::get)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::get)
         );
-        root_clone!(arena, get);
         let get = if get.is_empty() {
             None
         } else {
@@ -253,7 +250,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                     }
                 })
                 .ok_or_else(|| {
-                    realm.create_type_error(owner, arena, atoms, "getter is not a function")
+                    Realm::create_type_error(realm,owner, arena, atoms, "getter is not a function")
                 });
 
             Some(rebind_try!(arena, get))
@@ -261,7 +258,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
 
         let set = rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::set)
+            Object::index(obj,owner, arena, atoms, realm, atom::constant::set)
         );
         let set = rebind!(arena, set);
         let set = if set.is_empty() {
@@ -277,14 +274,15 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                     }
                 })
                 .ok_or_else(|| {
-                    realm.create_type_error(owner, arena, atoms, "setter is not a function")
+                    Realm::create_type_error(realm,owner, arena, atoms, "setter is not a function")
                 });
             Some(rebind_try!(arena, set))
         };
 
         if get.is_some() || set.is_some() {
             if value.is_some() {
-                return Err(realm.create_type_error(
+                return Err(Realm::create_type_error(
+                        realm,
                     owner,
                     arena,
                     atoms,
@@ -292,7 +290,8 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
                 ));
             }
             if flags.contains(PropertyFlags::WRITABLE) {
-                return Err(realm.create_type_error(
+                return Err(Realm::create_type_error(
+                        realm,
                     owner,
                     arena,
                     atoms,
@@ -313,7 +312,7 @@ impl<'gc, 'cell> Property<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for Property<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Property<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -321,7 +320,7 @@ unsafe impl<'gc, 'cell> Trace for Property<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         unsafe {
             if self.flags.contains(PropertyFlags::ACCESSOR) {
                 self.value.accessor.get.trace(trace);
@@ -334,12 +333,12 @@ unsafe impl<'gc, 'cell> Trace for Property<'gc, 'cell> {
 }
 
 #[derive(Clone)]
-pub struct Properties<'gc, 'cell> {
-    props: Vec<Property<'gc, 'cell>>,
+pub struct Properties<'gc, 'own> {
+    props: Vec<Property<'gc, 'own>>,
     map: HashMap<Atom, usize>,
 }
 
-unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Properties<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -347,7 +346,7 @@ unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         self.props.iter().for_each(|x| {
             x.trace(trace);
         })
@@ -355,17 +354,17 @@ unsafe impl<'gc, 'cell> Trace for Properties<'gc, 'cell> {
 }
 
 #[derive(Debug)]
-pub struct Vacant<'a, 'gc, 'cell> {
+pub struct Vacant<'a, 'gc, 'own> {
     entry: VacantEntry<'a, Atom, usize>,
-    props: &'a mut Vec<Property<'gc, 'cell>>,
+    props: &'a mut Vec<Property<'gc, 'own>>,
 }
 
-impl<'a, 'gc, 'cell> Vacant<'a, 'gc, 'cell> {
-    pub fn insert(self, value: Value<'_, 'cell>) {
+impl<'a, 'gc, 'own> Vacant<'a, 'gc, 'own> {
+    pub fn insert(self, value: Value<'_, 'own>) {
         let idx = self.props.len();
         let key = *self.entry.key();
         // Rebound to the lifetime of props. which are traced so this is safe
-        let value = unsafe { gc::rebind(value) };
+        let value = unsafe { dreck::rebind(value) };
         self.entry.insert(idx);
         self.props
             .push(Property::value(value, PropertyFlags::ordinary(), key));
@@ -373,24 +372,24 @@ impl<'a, 'gc, 'cell> Vacant<'a, 'gc, 'cell> {
 }
 
 #[derive(Debug)]
-pub struct Occupied<'a, 'gc, 'cell>(&'a mut Value<'gc, 'cell>);
+pub struct Occupied<'a, 'gc, 'own>(&'a mut Value<'gc, 'own>);
 
-impl<'a, 'gc, 'cell> Occupied<'a, 'gc, 'cell> {
-    pub fn set(&mut self, value: Value<'_, 'cell>) {
+impl<'a, 'gc, 'own> Occupied<'a, 'gc, 'own> {
+    pub fn set(&mut self, value: Value<'_, 'own>) {
         // Safe as the value from the reference will be kept alive for 'gc
-        *self.0 = unsafe { gc::rebind(value) };
+        *self.0 = unsafe { dreck::rebind(value) };
     }
 }
 
-#[derive(Debug)]
-pub enum PropertyEntry<'a, 'gc, 'cell> {
-    Occupied(Occupied<'a, 'gc, 'cell>),
-    Accessor(GcObject<'gc, 'cell>),
-    Vacant(Vacant<'a, 'gc, 'cell>),
+//#[derive(Debug)]
+pub enum PropertyEntry<'a, 'gc, 'own> {
+    Occupied(Occupied<'a, 'gc, 'own>),
+    Accessor(GcObject<'gc, 'own>),
+    Vacant(Vacant<'a, 'gc, 'own>),
     Unwritable,
 }
 
-impl<'gc, 'cell> Properties<'gc, 'cell> {
+impl<'gc, 'own> Properties<'gc, 'own> {
     pub fn new() -> Self {
         Properties {
             props: Vec::new(),
@@ -403,25 +402,25 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
         self.map.get(&atom).copied()
     }
 
-    pub fn clone_properties(&self) -> Vec<Property<'gc, 'cell>> {
+    pub fn clone_properties(&self) -> Vec<Property<'gc, 'own>> {
         self.props.clone()
     }
 
-    pub fn get(&self, atom: Atom) -> Option<&Property<'gc, 'cell>> {
+    pub fn get(&self, atom: Atom) -> Option<&Property<'gc, 'own>> {
         self.lookup_idx(atom).and_then(|idx| self.props.get(idx))
     }
 
-    pub fn get_idx(&self, idx: usize) -> Option<&Property<'gc, 'cell>> {
+    pub fn get_idx(&self, idx: usize) -> Option<&Property<'gc, 'own>> {
         self.props.get(idx)
     }
 
-    pub fn set_idx(&mut self, idx: usize, property: Property<'gc, 'cell>) {
+    pub fn set_idx(&mut self, idx: usize, property: Property<'gc, 'own>) {
         self.props[idx] = property;
     }
 
-    pub fn set(&mut self, property: Property<'_, 'cell>) -> Option<Property<'gc, 'cell>> {
+    pub fn set(&mut self, property: Property<'_, 'own>) -> Option<Property<'gc, 'own>> {
         // Safe because property will now be kept alive by properties.
-        let property = unsafe { gc::rebind(property) };
+        let property = unsafe { dreck::rebind(property) };
         match self.map.entry(property.atom) {
             Entry::Occupied(x) => Some(mem::replace(&mut self.props[*x.get()], property)),
             Entry::Vacant(x) => {
@@ -459,7 +458,7 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
             .all(|x| !x.flags.contains(PropertyFlags::CONFIGURABLE))
     }
 
-    pub fn entry<'a>(&'a mut self, atom: Atom) -> PropertyEntry<'a, 'gc, 'cell> {
+    pub fn entry<'a>(&'a mut self, atom: Atom) -> PropertyEntry<'a, 'gc, 'own> {
         match self.map.entry(atom) {
             Entry::Vacant(entry) => PropertyEntry::Vacant(Vacant {
                 entry,
@@ -483,7 +482,7 @@ impl<'gc, 'cell> Properties<'gc, 'cell> {
         }
     }
 
-    pub fn iter(&self) -> Iter<Property<'gc, 'cell>> {
+    pub fn iter(&self) -> Iter<Property<'gc, 'own>> {
         self.props.iter()
     }
 }

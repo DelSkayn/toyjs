@@ -5,34 +5,32 @@ use std::{
     thread,
 };
 
-use crate::{
-    gc::{self, Arena, Gc, Rebind, Trace, Tracer},
-    rebind, Value,
-};
+use dreck::{Bound, Gc, Root, Trace, Tracer, rebind};
+use crate::Value;
 
-pub type GcUpvalueObject<'gc, 'cell> = Gc<'gc, 'cell, UpvalueObject<'gc, 'cell>>;
+pub type GcUpvalueObject<'gc, 'own> = Gc<'gc, 'own, UpvalueObject<'gc, 'own>>;
 
-pub struct UpvalueObject<'gc, 'cell> {
-    location: *mut Value<'gc, 'cell>,
-    closed: Value<'gc, 'cell>,
+pub struct UpvalueObject<'gc, 'own> {
+    location: *mut Value<'gc, 'own>,
+    closed: Value<'gc, 'own>,
 }
 
-impl<'gc, 'cell> UpvalueObject<'gc, 'cell> {
+impl<'gc, 'own> UpvalueObject<'gc, 'own> {
     pub unsafe fn close(&mut self) {
         self.closed = self.location.read();
         self.location = &mut self.closed;
     }
 
-    pub fn read(&self) -> Value<'gc, 'cell> {
+    pub fn read(&self) -> Value<'gc, 'own> {
         unsafe { self.location.read() }
     }
 
-    pub fn write(&mut self, v: Value<'_, 'cell>) {
-        unsafe { self.location.write(gc::rebind(v)) }
+    pub fn write(&mut self, v: Value<'_, 'own>) {
+        unsafe { self.location.write(dreck::rebind(v)) }
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for UpvalueObject<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -40,35 +38,35 @@ unsafe impl<'gc, 'cell> Trace for UpvalueObject<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         self.closed.trace(trace);
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for UpvalueObject<'gc, 'cell> {
-    type Output = UpvalueObject<'a, 'cell>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for UpvalueObject<'gc, 'own> {
+    type Rebound = UpvalueObject<'a, 'own>;
 }
 
 /// The vm stack implementation.
-pub struct Stack<'gc, 'cell> {
+pub struct Stack<'gc, 'own> {
     /// Start of the stack array.
-    root: NonNull<Value<'gc, 'cell>>,
+    root: NonNull<Value<'gc, 'own>>,
     /// points to the start of the current frame i.e. the first register in use.
-    frame: *mut Value<'gc, 'cell>,
+    frame: *mut Value<'gc, 'own>,
     /// points one past the last value in use.
-    stack: *mut Value<'gc, 'cell>,
+    stack: *mut Value<'gc, 'own>,
 
     capacity: usize,
 
     pub registers: u32,
     /// Amount of values allocated for the stack
-    upvalues: Vec<GcUpvalueObject<'gc, 'cell>>,
+    upvalues: Vec<GcUpvalueObject<'gc, 'own>>,
     frame_upvalues: u16,
 
     depth: u16,
 }
 
-impl<'gc, 'cell> Drop for Stack<'gc, 'cell> {
+impl<'gc, 'own> Drop for Stack<'gc, 'own> {
     fn drop(&mut self) {
         if self.capacity != 0 {
             let layout = Layout::array::<Value>(self.capacity).unwrap();
@@ -79,7 +77,7 @@ impl<'gc, 'cell> Drop for Stack<'gc, 'cell> {
     }
 }
 
-unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Stack<'gc, 'own> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -87,7 +85,7 @@ unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
         // Upvalues dont need to be traced since all of them are open and contain no pointer
         // values.
         unsafe {
@@ -98,6 +96,10 @@ unsafe impl<'gc, 'cell> Trace for Stack<'gc, 'cell> {
             }
         }
     }
+}
+
+unsafe impl<'a, 'gc, 'own> Bound<'a> for Stack<'gc, 'own> {
+    type Rebound = Stack<'a, 'own>;
 }
 
 pub struct FrameGuard {
@@ -116,7 +118,7 @@ impl Drop for FrameGuard {
     }
 }
 
-impl<'gc, 'cell> Stack<'gc, 'cell> {
+impl<'gc, 'own> Stack<'gc, 'own> {
     const MIN_CAPACITY: usize = 8;
     // Rust has a long standing but where match blocks stack usages grows linearly with the amount
     // of matches
@@ -180,7 +182,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
     ///
     /// User must ensure that the guard is the same gaurd as the frame that was pushed at this
     /// depth
-    pub unsafe fn pop_frame(&mut self, arena: &Arena<'_, 'cell>, guard: FrameGuard) {
+    pub unsafe fn pop_frame(&mut self, arena: &Root< 'own>, guard: FrameGuard) {
         self.depth -= 1;
 
         #[cfg(debug_assertions)]
@@ -207,7 +209,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
     }
 
     #[inline(always)]
-    pub unsafe fn read_arg(&self, reg: u32) -> Option<Value<'gc, 'cell>> {
+    pub unsafe fn read_arg(&self, reg: u32) -> Option<Value<'gc, 'own>> {
         let ptr = self.frame.add(reg as usize);
         if ptr < self.stack {
             Some(ptr.read())
@@ -217,33 +219,33 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
     }
 
     #[inline(always)]
-    pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'cell> {
+    pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'own> {
         debug_assert!((reg as u32) < self.registers);
         self.frame.add(reg as usize).read()
     }
 
     #[inline(always)]
-    pub unsafe fn write(&mut self, reg: u8, v: Value<'_, 'cell>) {
+    pub unsafe fn write(&mut self, reg: u8, v: Value<'_, 'own>) {
         debug_assert!((reg as u32) < self.registers);
-        self.frame.add(reg as usize).write(gc::rebind(v))
+        self.frame.add(reg as usize).write(dreck::rebind(v))
     }
 
-    pub unsafe fn push(&mut self, v: Value<'_, 'cell>) {
+    pub unsafe fn push(&mut self, v: Value<'_, 'own>) {
         let new_size = self.stack.offset_from(self.root.as_ptr()) as usize + 1;
         if new_size > self.capacity {
             self.grow(new_size);
         }
 
-        self.stack.write(gc::rebind(v));
+        self.stack.write(dreck::rebind(v));
         self.stack = self.stack.add(1);
     }
 
     #[allow(unused_unsafe)]
     pub unsafe fn create_upvalue<'l>(
         &mut self,
-        arena: &'l Arena<'_, 'cell>,
+        arena: &'l Root< 'own>,
         reg: u8,
-    ) -> GcUpvalueObject<'l, 'cell> {
+    ) -> GcUpvalueObject<'l, 'own> {
         let location = self.frame.add(reg as usize);
 
         let start = self.upvalues.len() - self.frame_upvalues as usize;
@@ -258,7 +260,7 @@ impl<'gc, 'cell> Stack<'gc, 'cell> {
             closed: Value::empty(),
         };
         let res = arena.add(res);
-        self.upvalues.push(gc::rebind(res));
+        self.upvalues.push(dreck::rebind(res));
         self.frame_upvalues += 1;
         res
     }
