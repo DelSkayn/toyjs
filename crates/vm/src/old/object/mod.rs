@@ -2,17 +2,15 @@ use core::fmt;
 
 use dreck::{self, Bound, Gc, Root, Trace, Tracer};
 
-//mod elements;
+mod elements;
 mod function;
-use function::{StaticFn, VmFunction};
+mod index;
+mod properties;
 
-//mod index;
-//mod properties;
-
-//use elements::Elements;
-//pub use function::{FunctionKind, SharedFn, StaticFn, VmFunction};
-//use properties::Properties;
-//pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
+use elements::Elements;
+pub use function::{FunctionKind, SharedFn, StaticFn, VmFunction};
+use properties::Properties;
+pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
 
 bitflags::bitflags! {
     pub struct ObjectFlags: u8{
@@ -30,7 +28,7 @@ pub enum ObjectKind<'gc, 'own> {
     Array,
     Error,
     VmFn(VmFunction<'gc, 'own>),
-    //SharedFn(SharedFn),
+    SharedFn(SharedFn),
     StaticFn(StaticFn),
     Boolean(bool),
     Number(f64),
@@ -48,7 +46,7 @@ impl<'gc, 'own> fmt::Debug for ObjectKind<'gc, 'own> {
                 Self::Array => "Array",
                 Self::Error => "Error",
                 Self::VmFn(_) => "VmFn",
-                //Self::SharedFn(_) => "SharedFn",
+                Self::SharedFn(_) => "SharedFn",
                 Self::StaticFn(_) => "StaticFn",
                 Self::Boolean(_) => "Boolean",
                 Self::Number(_) => "Number",
@@ -72,9 +70,8 @@ unsafe impl<'gc, 'own> Trace<'own> for ObjectKind<'gc, 'own> {
             ObjectKind::Ordinary
             | ObjectKind::Array
             | ObjectKind::Error
-            //| ObjectKind::SharedFn(_)
-            | ObjectKind::StaticFn(_) 
-            => {}
+            | ObjectKind::SharedFn(_)
+            | ObjectKind::StaticFn(_) => {}
             ObjectKind::Boolean(_) => {}
             ObjectKind::Number(_) => {}
             ObjectKind::String(ref x) => {
@@ -95,8 +92,8 @@ pub struct Object<'gc, 'own> {
     flags: ObjectFlags,
     prototype: Option<GcObject<'gc, 'own>>,
     kind: ObjectKind<'gc, 'own>,
-    //pub(crate) properties: Properties<'gc, 'own>,
-    //pub(crate) elements: Elements<'gc, 'own>,
+    pub(crate) properties: Properties<'gc, 'own>,
+    pub(crate) elements: Elements<'gc, 'own>,
 }
 
 impl<'gc, 'own> Object<'gc, 'own> {
@@ -109,8 +106,8 @@ impl<'gc, 'own> Object<'gc, 'own> {
             flags,
             prototype,
             kind,
-            //properties: Properties::new(),
-            //elements: Elements::new(),
+            properties: Properties::new(),
+            elements: Elements::new(),
         }
     }
 
@@ -125,8 +122,8 @@ impl<'gc, 'own> Object<'gc, 'own> {
                 flags,
                 prototype: dreck::rebind(prototype),
                 kind: dreck::rebind(kind),
-                //properties: Properties::new(),
-                //elements: Elements::new(),
+                properties: Properties::new(),
+                elements: Elements::new(),
             })
         }
     }
@@ -157,8 +154,8 @@ unsafe impl<'gc, 'own> Trace<'own> for Object<'gc, 'own> {
     fn trace<'a>(&self, trace: Tracer<'a, 'own>) {
         self.prototype.trace(trace);
         self.kind.trace(trace);
-        //self.properties.trace(trace);
-        //self.elements.trace(trace);
+        self.properties.trace(trace);
+        self.elements.trace(trace);
     }
 }
 

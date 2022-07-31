@@ -1,26 +1,38 @@
-use dreck::{Bound, Owner, Trace, Tracer};
+
+use dreck::{Bound, Owner, Root, Trace, Tracer};
 
 use crate::{
-    exec::ExecutionContext, instructions::GcByteCode, realm::stack::GcUpvalueObject, value::Value,
+    instructions::GcByteCode,
+    realm::{ExecutionContext, GcRealm, GcUpvalueObject},
+    GcObject, Value,
 };
+use common::atom::Atoms;
 
-use super::{GcObject, Object, ObjectKind};
+use super::{Object, ObjectKind};
 
 pub enum FunctionKind<'gc, 'own, 'a> {
     None,
     VmFn(&'a VmFunction<'gc, 'own>),
-    //SharedFn(&'a SharedFn),
+    SharedFn(&'a SharedFn),
     StaticFn(StaticFn),
 }
 
 pub type SharedFn = Box<
-    dyn for<'gc, 'own> Fn(
-        &'gc mut ExecutionContext<'gc, 'gc, 'own>,
-    ) -> Result<Value<'gc, 'own>, Value<'gc, 'own>>,
+    dyn for<'l, 'own> Fn(
+        &'l mut Root<'own>,
+        &mut Owner<'own>,
+        &Atoms,
+        GcRealm<'_, 'own>,
+        &ExecutionContext<'_, 'own>,
+    ) -> Result<Value<'l, 'own>, Value<'l, 'own>>,
 >;
 
-pub type StaticFn = for<'l, 'gc, 'own> fn(
-    &mut ExecutionContext<'l, 'gc, 'own>,
+pub type StaticFn = for<'l, 'own> unsafe fn(
+    &'l mut Root<'own>,
+    &mut Owner<'own>,
+    &Atoms,
+    GcRealm<'_, 'own>,
+    &ExecutionContext<'_, 'own>,
 ) -> Result<Value<'l, 'own>, Value<'l, 'own>>;
 
 pub struct VmFunction<'gc, 'own> {
@@ -37,14 +49,14 @@ unsafe impl<'gc, 'own> Trace<'own> for VmFunction<'gc, 'own> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a, 'own>) {
+    fn trace<'a>(&self, ctx: Tracer<'a,'own>) {
         ctx.mark(self.bc);
         self.upvalues.iter().copied().for_each(|x| ctx.mark(x));
     }
 }
 
-unsafe impl<'from, 'to, 'own> Bound<'to> for VmFunction<'from, 'own> {
-    type Rebound = VmFunction<'to, 'own>;
+unsafe impl<'a, 'gc, 'own> Bound<'a> for VmFunction<'gc, 'own> {
+    type Rebound = VmFunction<'a, 'own>;
 }
 
 impl<'gc, 'own> Object<'gc, 'own> {
@@ -60,7 +72,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
     pub fn is_function(&self) -> bool {
         matches!(
             self.kind,
-            ObjectKind::VmFn(_) /*| ObjectKind::SharedFn(_) */ | ObjectKind::StaticFn(_)
+            ObjectKind::VmFn(_) | ObjectKind::SharedFn(_) | ObjectKind::StaticFn(_)
         )
     }
 }
@@ -68,7 +80,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
 impl<'gc, 'own> Object<'gc, 'own> {
     /// TODO: Safety is still kinda unsure.
     pub fn as_function_kind<'l>(
-        this: &'l GcObject<'gc, 'own>,
+        this: &'l GcObject<'gc,'own>,
         _owner: &Owner<'own>,
     ) -> FunctionKind<'gc, 'own, 'l> {
         todo!()

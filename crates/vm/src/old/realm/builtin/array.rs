@@ -1,12 +1,16 @@
 use common::atom::{self, Atoms};
-use dreck::{Owner, Root, rebind, root};
+use dreck::{rebind, root, Owner, Root};
 
-use crate::{GcObject, Object, Realm, Value, object::{Accessor, ObjectFlags, ObjectKind, Property, PropertyFlags}, realm::{ExecutionContext, GcRealm}};
+use crate::{
+    object::{Accessor, ObjectFlags, ObjectKind, Property, PropertyFlags},
+    realm::{ExecutionContext, GcRealm},
+    GcObject, Object, Realm, Value,
+};
 
 use super::new_func;
 
 fn construct<'l, 'own>(
-    arena: &'l mut Root< 'own>,
+    arena: &'l mut Root<'own>,
     owner: &mut Owner<'own>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'own>,
@@ -15,7 +19,14 @@ fn construct<'l, 'own>(
     let proto = if let Some(object) = ctx.new_target.into_object() {
         rebind_try!(
             arena,
-            Object::index(obj,owner, arena, atoms, realm, atom::constant::prototype)
+            Object::index(
+                object,
+                owner,
+                arena,
+                atoms,
+                realm,
+                atom::constant::prototype
+            )
         )
     } else {
         Value::undefined()
@@ -25,7 +36,7 @@ fn construct<'l, 'own>(
         .into_object()
         .unwrap_or(rebind!(arena, realm.borrow(owner).builtin.array_proto));
 
-    if Realm::argc(realm,owner) > 0 {
+    if Realm::argc(realm, owner) > 0 {
         let obj = Object::new_gc(arena, Some(proto), ObjectFlags::ORDINARY, ObjectKind::Array);
         define_length(
             owner,
@@ -34,11 +45,11 @@ fn construct<'l, 'own>(
             realm.borrow(owner).builtin.array_proto,
             obj,
         );
-        if Realm::argc(realm,owner) == 1 {
+        if Realm::argc(realm, owner) == 1 {
             root!(arena, obj);
-            let len = Realm::arg(realm,owner, 0).unwrap();
+            let len = Realm::arg(realm, owner, 0).unwrap();
             if len.is_number() {
-                let len = rebind_try!(arena, Realm::to_uint32(realm,owner, arena, atoms, len));
+                let len = rebind_try!(arena, Realm::to_uint32(realm, owner, arena, atoms, len));
                 // TODO SaveValueZero
                 unsafe {
                     // Safe because no new pointers are added into elements
@@ -51,7 +62,7 @@ fn construct<'l, 'own>(
         }
 
         unsafe {
-            let len = Realm::argc(realm,owner);
+            let len = Realm::argc(realm, owner);
             // Safe because no new pointers are added into elements
             obj.unsafe_borrow_mut(owner)
                 .elements
@@ -59,7 +70,7 @@ fn construct<'l, 'own>(
         }
 
         let mut i = 0;
-        while let Some(value) = Realm::arg(realm,owner, i) {
+        while let Some(value) = Realm::arg(realm, owner, i) {
             obj.borrow_mut(owner, arena)
                 .elements
                 .set(i.try_into().unwrap(), value);
@@ -75,7 +86,7 @@ fn construct<'l, 'own>(
 }
 
 fn get_length<'l, 'own>(
-    _arena: &'l mut Root< 'own>,
+    _arena: &'l mut Root<'own>,
     owner: &mut Owner<'own>,
     _atoms: &Atoms,
     _realm: GcRealm<'_, 'own>,
@@ -89,15 +100,15 @@ fn get_length<'l, 'own>(
 }
 
 fn set_length<'l, 'own>(
-    arena: &'l mut Root< 'own>,
+    arena: &'l mut Root<'own>,
     owner: &mut Owner<'own>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'own>,
     ctx: &ExecutionContext<'_, 'own>,
 ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
     if let Some(this) = ctx.this.into_object() {
-        let len = Realm::arg(realm,owner, 0).unwrap_or_else(Value::undefined);
-        let len = Realm::to_uint32(realm,owner, arena, atoms, len)?;
+        let len = Realm::arg(realm, owner, 0).unwrap_or_else(Value::undefined);
+        let len = Realm::to_uint32(realm, owner, arena, atoms, len)?;
         unsafe {
             // Safe because no new pointers are inserted into the object
             this.unsafe_borrow_mut(owner).elements.set_len(len as usize);
@@ -108,7 +119,7 @@ fn set_length<'l, 'own>(
 
 pub fn define_length<'l, 'own>(
     owner: &mut Owner<'own>,
-    arena: &'l Root< 'own>,
+    arena: &'l Root<'own>,
     atoms: &Atoms,
     fp: GcObject<'_, 'own>,
     object: GcObject<'_, 'own>,
@@ -123,19 +134,20 @@ pub fn define_length<'l, 'own>(
         PropertyFlags::WRITABLE,
         atom::constant::length,
     );
-    object.raw_index_set_prop(owner, arena, atoms, prop);
+    Object::raw_index_set_prop(object, owner, arena, atoms, prop);
 }
 
 pub fn init<'l, 'own>(
     owner: &mut Owner<'own>,
-    arena: &'l Root< 'own>,
+    arena: &'l Root<'own>,
     atoms: &Atoms,
     op: GcObject<'_, 'own>,
     fp: GcObject<'_, 'own>,
     global: GcObject<'_, 'own>,
 ) -> GcObject<'l, 'own> {
     let array_proto = Object::new_gc(arena, Some(op), ObjectFlags::empty(), ObjectKind::Array);
-    array_proto.raw_index_set_flags(
+    Object::raw_index_set_flags(
+        array_proto,
         owner,
         arena,
         atoms,
@@ -152,7 +164,8 @@ pub fn init<'l, 'own>(
         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
         ObjectKind::StaticFn(construct),
     );
-    array_constructor.raw_index_set_flags(
+    Object::raw_index_set_flags(
+        array_constructor,
         owner,
         arena,
         atoms,
@@ -161,7 +174,8 @@ pub fn init<'l, 'own>(
         PropertyFlags::BUILTIN,
     );
 
-    array_proto.raw_index_set_flags(
+    Object::raw_index_set_flags(
+        array_proto,
         owner,
         arena,
         atoms,
@@ -170,7 +184,8 @@ pub fn init<'l, 'own>(
         PropertyFlags::BUILTIN,
     );
 
-    global.raw_index_set_flags(
+    Object::raw_index_set_flags(
+        array_proto,
         owner,
         arena,
         atoms,

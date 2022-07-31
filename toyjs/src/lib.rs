@@ -9,11 +9,9 @@ use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
 use vm::{
-    cell::{CellOwner, Id},
-    gc::{Arena, OwnedGc, Roots},
+    dreck::{rebind, root},
     object::{ObjectFlags, ObjectKind, StaticFn, VmFunction},
     realm::GcRealm,
-    rebind,
 };
 
 mod lock;
@@ -211,7 +209,7 @@ impl<'js> Ctx<'js> {
         mem::drop(interner);
 
         let bc = arena.add(bc);
-        vm::root!(arena, bc);
+        root!(arena, bc);
 
         match unsafe {
             self.context
