@@ -25,9 +25,9 @@ mod macros;
 use std::{error::Error, fmt};
 
 //use common::atom::Atoms;
-use dreck::{Bound, Gc, Trace, Tracer};
+use dreck::{Gc, Bound, Trace, Tracer};
 
-use crate::value::Value;
+use crate:: value::Value;
 
 #[derive(Debug)]
 pub enum ValidationError {}
@@ -113,7 +113,7 @@ unsafe impl<'gc, 'own> Trace<'own> for ByteCode<'gc, 'own> {
         true
     }
 
-    fn trace<'a>(&self, ctx: Tracer<'a, 'own>) {
+    fn trace<'a>(&self, ctx: Tracer<'a,'own>) {
         self.constants.iter().for_each(|x| x.trace(ctx));
     }
 }

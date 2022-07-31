@@ -1,15 +1,18 @@
 #![allow(dead_code)]
-#![allow(clippy::new_without_default)]
-#![allow(clippy::missing_safety_doc)]
 
-
-#[macro_export]
-macro_rules! rebind_try {
-    ($arena:expr, $value:expr) => {
-        match $value {
-            Ok(x) => x,
-            Err(e) => return Err(dreck::rebind!($arena, e)),
+macro_rules! root_value {
+    ($root:expr, $value:ident) => {
+        let mut __guard = None;
+        unsafe {
+            if let Some(x) = $value.into_object() {
+                __guard = Some(dreck::Root::root_gc($root, x));
+            } else if let Some(x) = $value.into_string() {
+                __guard = Some(dreck::Root::root_gc($root, x));
+            } else {
+                debug_assert!($value.to_static().is_some())
+            }
         }
+        let $value = unsafe { dreck::rebind_to(&__guard, $value) };
     };
 }
 
@@ -18,7 +21,3 @@ pub mod instructions;
 pub mod object;
 pub mod realm;
 pub mod value;
-
-pub use object::{GcObject, Object};
-pub use realm::Realm;
-pub use value::Value;

@@ -1,23 +1,23 @@
 use common::atom::{self, Atoms};
-use dreck::{Owner, Root, rebind};
+use dreck::{rebind, Owner, Root};
 
 use crate::{
     object::{ObjectFlags, ObjectKind, Property, PropertyFlags},
     realm::{ExecutionContext, GcRealm},
-    GcObject, Object, Value,
+    GcObject, Object, Realm, Value,
 };
 
 use super::new_func;
 
 fn construct<'l, 'cell>(
-    arena: &'l mut Root< 'cell>,
+    arena: &'l mut Root<'cell>,
     owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
     ctx: &ExecutionContext<'_, 'cell>,
 ) -> Result<Value<'l, 'cell>, Value<'l, 'cell>> {
-    let value = if let Some(x) = realm.arg(owner, 0) {
-        realm.is_falsish(owner, x)
+    let value = if let Some(x) = Realm::arg(realm, owner, 0) {
+        Realm::is_falsish(realm, owner, x)
     } else {
         false
     };
@@ -28,7 +28,14 @@ fn construct<'l, 'cell>(
         let proto = if let Some(object) = ctx.new_target.into_object() {
             let res = rebind_try!(
                 arena,
-                object.index(owner, arena, atoms, realm, atom::constant::prototype)
+                Object::index(
+                    object,
+                    owner,
+                    arena,
+                    atoms,
+                    realm,
+                    atom::constant::prototype
+                )
             );
             if let Some(res) = res.into_object() {
                 rebind!(arena, res)
@@ -50,7 +57,7 @@ fn construct<'l, 'cell>(
 }
 
 fn bool_value<'l, 'cell>(
-    arena: &'l Root< 'cell>,
+    arena: &'l Root<'cell>,
     owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
@@ -63,7 +70,8 @@ fn bool_value<'l, 'cell>(
             return Ok(*x);
         }
     }
-    return Err(realm.create_type_error(
+    return Err(Realm::create_type_error(
+        realm,
         owner,
         arena,
         atoms,
@@ -72,7 +80,7 @@ fn bool_value<'l, 'cell>(
 }
 
 fn value_of<'l, 'cell>(
-    arena: &'l mut Root< 'cell>,
+    arena: &'l mut Root<'cell>,
     owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
@@ -82,7 +90,7 @@ fn value_of<'l, 'cell>(
 }
 
 fn to_string<'l, 'cell>(
-    arena: &'l mut Root< 'cell>,
+    arena: &'l mut Root<'cell>,
     owner: &mut Owner<'cell>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'cell>,
@@ -97,7 +105,7 @@ fn to_string<'l, 'cell>(
 
 pub fn init<'l, 'cell>(
     owner: &mut Owner<'cell>,
-    arena: &'l Root< 'cell>,
+    arena: &'l Root<'cell>,
     atoms: &Atoms,
     op: GcObject<'_, 'cell>,
     fp: GcObject<'_, 'cell>,
@@ -115,7 +123,8 @@ pub fn init<'l, 'cell>(
         ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
         ObjectKind::StaticFn(construct),
     );
-    construct.raw_index_set_prop(
+    Object::raw_index_set_prop(
+        construct,
         owner,
         arena,
         atoms,
@@ -125,13 +134,41 @@ pub fn init<'l, 'cell>(
             atom::constant::prototype,
         ),
     );
-    prototype.raw_index_set(owner, arena, atoms, atom::constant::constructor, construct);
-    global.raw_index_set(owner, arena, atoms, atom::constant::Boolean, construct);
+    Object::raw_index_set(
+        prototype,
+        owner,
+        arena,
+        atoms,
+        atom::constant::constructor,
+        construct,
+    );
+    Object::raw_index_set(
+        global,
+        owner,
+        arena,
+        atoms,
+        atom::constant::Boolean,
+        construct,
+    );
 
     let value_of = new_func(arena, owner, atoms, fp, value_of, 0);
-    prototype.raw_index_set(owner, arena, atoms, atom::constant::valueOf, value_of);
+    Object::raw_index_set(
+        prototype,
+        owner,
+        arena,
+        atoms,
+        atom::constant::valueOf,
+        value_of,
+    );
     let to_string = new_func(arena, owner, atoms, fp, to_string, 0);
-    prototype.raw_index_set(owner, arena, atoms, atom::constant::toString, to_string);
+    Object::raw_index_set(
+        prototype,
+        owner,
+        arena,
+        atoms,
+        atom::constant::toString,
+        to_string,
+    );
 
     prototype
 }

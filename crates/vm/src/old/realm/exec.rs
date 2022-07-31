@@ -1,5 +1,5 @@
 use common::atom::{self, Atoms};
-use dreck::{Gc, Owner, Root, rebind, root};
+use dreck::{rebind, root, Gc, Owner, Root};
 
 use crate::{
     instructions::{GcByteCode, Instruction, Upvalue},
@@ -7,7 +7,7 @@ use crate::{
     GcObject, Object, Realm, Value,
 };
 
-use super::{builtin, stack::Stack, ExecutionContext, GcRealm};
+use super::{stack::Stack, ExecutionContext, GcRealm};
 
 pub enum NumericOperator {
     Sub,
@@ -33,11 +33,7 @@ impl<'gc, 'own> InstructionReader<'gc, 'own> {
     /// `func` must be a smaller the amount of function present in the bytecode.
     /// `bc` must contain valid bytecode.
     ///
-    pub unsafe fn new_unsafe(
-        owner: &Owner<'own>,
-        bc: GcByteCode<'gc, 'own>,
-        func: u16,
-    ) -> Self {
+    pub unsafe fn new_unsafe(owner: &Owner<'own>, bc: GcByteCode<'gc, 'own>, func: u16) -> Self {
         debug_assert!(bc.borrow(owner).functions.len() > func as usize);
         let function = bc.borrow(owner).functions.get_unchecked(func as usize);
         let cur = bc
@@ -95,7 +91,7 @@ impl<'gc, 'own> InstructionReader<'gc, 'own> {
 
 impl<'gc, 'own> Realm<'gc, 'own> {
     // Shorthand for Gc::borrow
-    unsafe fn r<'a>(this: GcRealm<'gc,'own>, owner: &'a Owner<'own>) -> &'a Realm<'gc, 'own> {
+    unsafe fn r<'a>(this: GcRealm<'gc, 'own>, owner: &'a Owner<'own>) -> &'a Realm<'gc, 'own> {
         dreck::rebind(this.borrow(owner))
     }
 
@@ -103,219 +99,240 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     //
     // Should only be used as long as before each collection and return from the loop the a
     // write_barrier is done for the realm
-    unsafe fn w<'a>(this: GcRealm<'gc,'own>, owner: &'a mut Owner<'own>) -> &'a mut Realm<'gc, 'own> {
+    unsafe fn w<'a>(
+        this: GcRealm<'gc, 'own>,
+        owner: &'a mut Owner<'own>,
+    ) -> &'a mut Realm<'gc, 'own> {
         dreck::rebind(this.unsafe_borrow_mut(owner))
     }
 
     /// # Safety
     ///
     /// Instruction reader must read valid bytecode.
-    #[allow(unused_unsafe)]
-    pub unsafe fn run<'l>(
-        this: GcRealm<'gc,'own>,
-        arena: &'l mut Root< 'own>,
-        owner: &mut Owner<'own>,
-        atoms: &Atoms,
-        upper_instr: &mut InstructionReader<'_, 'own>,
-        ctx: &ExecutionContext<'_, 'own>,
-    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
-        let mut instr = *upper_instr;
-        loop {
-            match instr.next(owner) {
-                Instruction::LoadConst { dst, cons } => {
-                    let con = instr.constant(cons, owner);
-                    this.w(owner).stack.write(dst, con);
-                }
-                Instruction::LoadGlobal { dst } => {
-                    let global = this.r(owner).builtin.global;
-                    this.w(owner).stack.write(dst, global.into());
-                }
-                Instruction::LoadFunction { dst, func } => {
-                    arena.write_barrier(this);
-                    arena.collect(owner, atoms);
+    /*
+        #[allow(unused_unsafe)]
+        pub unsafe fn run<'l>(
+            this: GcRealm<'gc,'own>,
+            arena: &'l mut Root< 'own>,
+            owner: &mut Owner<'own>,
+            atoms: &Atoms,
+            upper_instr: &mut InstructionReader<'_, 'own>,
+            ctx: &ExecutionContext<'_, 'own>,
+        ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
+            let mut instr = *upper_instr;
+            loop {
+                match instr.next(owner) {
+                    Instruction::LoadConst { dst, cons } => {
+                        let con = instr.constant(cons, owner);
+                        this.w(owner).stack.write(dst, con);
+                    }
+                    Instruction::LoadGlobal { dst } => {
+                        let global = this.r(owner).builtin.global;
+                        this.w(owner).stack.write(dst, global.into());
+                    }
+                    Instruction::LoadFunction { dst, func } => {
+                        arena.write_barrier(this);
+                        arena.collect(owner, atoms);
 
-                    let fp = this.r(owner).builtin.function_proto;
-                    let func = this.construct_function(owner, arena, func, &instr, ctx.function);
-                    let func = Object::new_gc(
-                        arena,
-                        Some(fp),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::VmFn(func),
-                    );
-                    Self::w(this,owner).stack.write(dst, func.into());
-                }
-
-                Instruction::LoadConstructor { dst, func } => {
-                    arena.write_barrier(this);
-                    arena.collect(owner, atoms);
-
-                    let fp = this.r(owner).builtin.function_proto;
-                    let func = this.construct_function(owner, arena, func, &instr, ctx.function);
-                    let func = Object::new_gc(
-                        arena,
-                        Some(fp),
-                        ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
-                        ObjectKind::VmFn(func),
-                    );
-                    let op = this.r(owner).builtin.object_proto;
-                    let proto = Object::new_gc(
-                        arena,
-                        Some(op),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::Ordinary,
-                    );
-                    func.raw_index_set(owner, arena, atoms, atom::constant::prototype, proto);
-                    proto.raw_index_set(owner, arena, atoms, atom::constant::constructor, func);
-                    this.w(owner).stack.write(dst, func.into());
-                }
-
-                Instruction::LoadThis { dst } => {
-                    this.w(owner).stack.write(dst, ctx.this);
-                }
-                Instruction::LoadTarget { dst } => {
-                    this.w(owner).stack.write(dst, ctx.new_target);
-                }
-                Instruction::Move { dst, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    this.w(owner).stack.write(dst, src);
-                }
-                Instruction::CreateObject { dst } => {
-                    // Always retrace the current realm to allow ring without a write barrier
-                    // otherwise.
-                    arena.write_barrier(this);
-                    arena.collect(owner, atoms);
-                    let op = this.r(owner).builtin.object_proto;
-                    let object = arena.add(Object::new(
-                        Some(op),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::Ordinary,
-                    ));
-                    this.w(owner).stack.write(dst, object.into());
-                }
-                Instruction::CreateArray { dst } => {
-                    // Always retrace the current realm to allow ring without a write barrier
-                    // otherwise.
-                    arena.write_barrier(this);
-                    arena.collect(owner, atoms);
-
-                    let proto = this.borrow(owner).builtin.array_proto;
-                    let res = Object::new_gc(
-                        arena,
-                        Some(proto),
-                        ObjectFlags::ORDINARY,
-                        ObjectKind::Array,
-                    );
-                    let fp = this.borrow(owner).builtin.function_proto;
-                    builtin::array::define_length(owner, arena, atoms, fp, res);
-
-                    this.w(owner).stack.write(dst, res.into());
-                }
-                Instruction::Index { dst, obj, key } => {
-                    let key = this.r(owner).stack.read(key);
-                    let obj = this.r(owner).stack.read(obj);
-                    if let Some(obj) = obj.into_object() {
-                        let res =
-                            rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
-                        this.w(owner).stack.write(dst, res.empty_to_undefined());
-                    } else {
-                        let res = rebind_try!(
+                        let fp = this.r(owner).builtin.function_proto;
+                        let func = this.construct_function(owner, arena, func, &instr, ctx.function);
+                        let func = Object::new_gc(
                             arena,
-                            this.index_non_object(owner, arena, atoms, obj, key)
+                            Some(fp),
+                            ObjectFlags::ORDINARY,
+                            ObjectKind::VmFn(func),
                         );
+                        Self::w(this,owner).stack.write(dst, func.into());
+                    }
+
+                    Instruction::LoadConstructor { dst, func } => {
+                        arena.write_barrier(this);
+                        arena.collect(owner, atoms);
+
+                        let fp = this.r(owner).builtin.function_proto;
+                        let func = this.construct_function(owner, arena, func, &instr, ctx.function);
+                        let func = Object::new_gc(
+                            arena,
+                            Some(fp),
+                            ObjectFlags::ORDINARY | ObjectFlags::CONSTRUCTOR,
+                            ObjectKind::VmFn(func),
+                        );
+                        let op = this.r(owner).builtin.object_proto;
+                        let proto = Object::new_gc(
+                            arena,
+                            Some(op),
+                            ObjectFlags::ORDINARY,
+                            ObjectKind::Ordinary,
+                        );
+                        func.raw_index_set(owner, arena, atoms, atom::constant::prototype, proto);
+                        proto.raw_index_set(owner, arena, atoms, atom::constant::constructor, func);
+                        this.w(owner).stack.write(dst, func.into());
+                    }
+
+                    Instruction::LoadThis { dst } => {
+                        this.w(owner).stack.write(dst, ctx.this);
+                    }
+                    Instruction::LoadTarget { dst } => {
+                        this.w(owner).stack.write(dst, ctx.new_target);
+                    }
+                    Instruction::Move { dst, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        this.w(owner).stack.write(dst, src);
+                    }
+                    Instruction::CreateObject { dst } => {
+                        // Always retrace the current realm to allow ring without a write barrier
+                        // otherwise.
+                        arena.write_barrier(this);
+                        arena.collect(owner, atoms);
+                        let op = this.r(owner).builtin.object_proto;
+                        let object = arena.add(Object::new(
+                            Some(op),
+                            ObjectFlags::ORDINARY,
+                            ObjectKind::Ordinary,
+                        ));
+                        this.w(owner).stack.write(dst, object.into());
+                    }
+                    Instruction::CreateArray { dst } => {
+                        // Always retrace the current realm to allow ring without a write barrier
+                        // otherwise.
+                        arena.write_barrier(this);
+                        arena.collect(owner, atoms);
+
+                        let proto = this.borrow(owner).builtin.array_proto;
+                        let res = Object::new_gc(
+                            arena,
+                            Some(proto),
+                            ObjectFlags::ORDINARY,
+                            ObjectKind::Array,
+                        );
+                        let fp = this.borrow(owner).builtin.function_proto;
+                        builtin::array::define_length(owner, arena, atoms, fp, res);
+
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+                    Instruction::Index { dst, obj, key } => {
+                        let key = this.r(owner).stack.read(key);
+                        let obj = this.r(owner).stack.read(obj);
+                        if let Some(obj) = obj.into_object() {
+                            let res =
+                                rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
+                            this.w(owner).stack.write(dst, res.empty_to_undefined());
+                        } else {
+                            let res = rebind_try!(
+                                arena,
+                                this.index_non_object(owner, arena, atoms, obj, key)
+                            );
+                            this.w(owner).stack.write(dst, res.empty_to_undefined());
+                        }
+                    }
+                    Instruction::IndexAssign { obj, key, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        let key = this.r(owner).stack.read(key);
+                        let obj = this.r(owner).stack.read(obj);
+                        if let Some(obj) = obj.into_object() {
+                            rebind_try!(
+                                arena,
+                                obj.index_set_value(owner, arena, atoms, this. key, src)
+                            );
+                        } else if obj.is_undefined() {
+                            return Err(this.create_type_error(
+                                owner,
+                                arena,
+                                atoms,
+                                "undefined has no properties",
+                            ));
+                        } else if obj.is_null() {
+                            return Err(this.create_type_error(
+                                owner,
+                                arena,
+                                atoms,
+                                "null has no properties",
+                            ));
+                        } else {
+                        }
+                    }
+                    Instruction::GlobalIndex { dst, key } => {
+                        let key = this.r(owner).stack.read(key);
+                        let obj = this.r(owner).builtin.global;
+
+                        let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
                         this.w(owner).stack.write(dst, res.empty_to_undefined());
                     }
-                }
-                Instruction::IndexAssign { obj, key, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    let key = this.r(owner).stack.read(key);
-                    let obj = this.r(owner).stack.read(obj);
-                    if let Some(obj) = obj.into_object() {
+                    Instruction::GlobalAssign { key, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        let key = this.r(owner).stack.read(key);
+                        let obj = this.r(owner).builtin.global;
                         rebind_try!(
                             arena,
                             obj.index_set_value(owner, arena, atoms, this. key, src)
                         );
-                    } else if obj.is_undefined() {
-                        return Err(this.create_type_error(
-                            owner,
-                            arena,
-                            atoms,
-                            "undefined has no properties",
-                        ));
-                    } else if obj.is_null() {
-                        return Err(this.create_type_error(
-                            owner,
-                            arena,
-                            atoms,
-                            "null has no properties",
-                        ));
-                    } else {
                     }
-                }
-                Instruction::GlobalIndex { dst, key } => {
-                    let key = this.r(owner).stack.read(key);
-                    let obj = this.r(owner).builtin.global;
-
-                    let res = rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
-                    this.w(owner).stack.write(dst, res.empty_to_undefined());
-                }
-                Instruction::GlobalAssign { key, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    let key = this.r(owner).stack.read(key);
-                    let obj = this.r(owner).builtin.global;
-                    rebind_try!(
-                        arena,
-                        obj.index_set_value(owner, arena, atoms, this. key, src)
-                    );
-                }
-                Instruction::Upvalue { dst, slot } => {
-                    let upvalue =
-                        ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
-                    let res = upvalue.borrow(owner).read();
-                    this.w(owner).stack.write(dst, res);
-                }
-
-                Instruction::UpvalueAssign { src, slot } => {
-                    let src = this.r(owner).stack.read(src);
-                    let upvalue =
-                        ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
-                    upvalue.borrow_mut(owner, arena).write(src);
-                }
-
-                Instruction::TypeOf { dst, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    let res = this.type_of(owner, src);
-                    let res = arena.add(String::from(res));
-                    this.w(owner).stack.write(dst, res.into());
-                }
-
-                Instruction::InstanceOf { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-
-                    let res =
-                        rebind_try!(arena, this.instance_of(owner, arena, atoms, left, right));
-                    this.w(owner).stack.write(dst, res.into());
-                }
-
-                Instruction::Add { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-
-                    if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
-                        let res = Self::coerce_int(this,left as i64 + right as i64);
-                        this.w(owner).stack.write(dst, res);
-                    } else {
-                        let res = rebind_try!(arena, this.add(owner, arena, atoms, left, right));
+                    Instruction::Upvalue { dst, slot } => {
+                        let upvalue =
+                            ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
+                        let res = upvalue.borrow(owner).read();
                         this.w(owner).stack.write(dst, res);
                     }
-                }
-                Instruction::Sub { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
-                        let res = Self::coerce_int(this,left as i64 - right as i64);
-                        this.w(owner).stack.write(dst, res);
-                    } else {
+
+                    Instruction::UpvalueAssign { src, slot } => {
+                        let src = this.r(owner).stack.read(src);
+                        let upvalue =
+                            ctx.function.borrow(owner).as_vm_function().upvalues[slot as usize];
+                        upvalue.borrow_mut(owner, arena).write(src);
+                    }
+
+                    Instruction::TypeOf { dst, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        let res = this.type_of(owner, src);
+                        let res = arena.add(String::from(res));
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+
+                    Instruction::InstanceOf { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+
+                        let res =
+                            rebind_try!(arena, this.instance_of(owner, arena, atoms, left, right));
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+
+                    Instruction::Add { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+
+                        if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
+                            let res = Self::coerce_int(this,left as i64 + right as i64);
+                            this.w(owner).stack.write(dst, res);
+                        } else {
+                            let res = rebind_try!(arena, this.add(owner, arena, atoms, left, right));
+                            this.w(owner).stack.write(dst, res);
+                        }
+                    }
+                    Instruction::Sub { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        if let (Some(left), Some(right)) = (left.into_int(), right.into_int()) {
+                            let res = Self::coerce_int(this,left as i64 - right as i64);
+                            this.w(owner).stack.write(dst, res);
+                        } else {
+                            let res = rebind_try!(
+                                arena,
+                                this.numeric_operator(
+                                    owner,
+                                    arena,
+                                    atoms,
+                                    left,
+                                    right,
+                                    NumericOperator::Sub
+                                )
+                            );
+                            this.w(owner).stack.write(dst, res);
+                        }
+                    }
+                    Instruction::Mul { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
                         let res = rebind_try!(
                             arena,
                             this.numeric_operator(
@@ -324,342 +341,282 @@ impl<'gc, 'own> Realm<'gc, 'own> {
                                 atoms,
                                 left,
                                 right,
-                                NumericOperator::Sub
+                                NumericOperator::Mul
                             )
                         );
                         this.w(owner).stack.write(dst, res);
                     }
-                }
-                Instruction::Mul { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.numeric_operator(
-                            owner,
+                    Instruction::Div { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
                             arena,
-                            atoms,
-                            left,
-                            right,
-                            NumericOperator::Mul
-                        )
-                    );
-                    this.w(owner).stack.write(dst, res);
-                }
-                Instruction::Div { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.numeric_operator(
-                            owner,
-                            arena,
-                            atoms,
-                            left,
-                            right,
-                            NumericOperator::Div
-                        )
-                    );
-                    this.w(owner).stack.write(dst, res);
-                }
-                Instruction::Mod { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.numeric_operator(
-                            owner,
-                            arena,
-                            atoms,
-                            left,
-                            right,
-                            NumericOperator::Mod
-                        )
-                    );
-                    this.w(owner).stack.write(dst, res);
-                }
-                Instruction::Pow { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.numeric_operator(
-                            owner,
-                            arena,
-                            atoms,
-                            left,
-                            right,
-                            NumericOperator::Pow
-                        )
-                    );
-                    this.w(owner).stack.write(dst, res);
-                }
-                Instruction::BitwiseAnd { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
-                    let res = left & right;
-                    this.w(owner).stack.write(dst, res.into());
-                }
-                Instruction::BitwiseOr { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
-                    let res = left | right;
-                    this.w(owner).stack.write(dst, res.into());
-                }
-                Instruction::BitwiseXor { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
-                    let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
-                    let res = left ^ right;
-                    this.w(owner).stack.write(dst, res.into());
-                }
-                Instruction::BitwiseNot { dst, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    let src = rebind_try!(arena, this.to_int32(owner, arena, atoms, src));
-                    this.w(owner).stack.write(dst, (!src).into());
-                }
-                Instruction::ShiftLeft { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
-                    let right =
-                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
-                    this.w(owner).stack.write(dst, Value::from(left << right));
-                }
-                Instruction::ShiftRight { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
-                    let right =
-                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
-                    this.w(owner).stack.write(dst, Value::from(left >> right));
-                }
-                Instruction::ShiftUnsigned { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let left = rebind_try!(arena, this.to_uint32(owner, arena, atoms, left));
-                    let right =
-                        rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
-                    let v = left >> right;
-                    if v > i32::MAX as u32 {
-                        this.w(owner).stack.write(dst, Value::from(v as f64));
-                    } else {
-                        this.w(owner).stack.write(dst, Value::from(v as i32));
-                    }
-                }
-                Instruction::Equal { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
-                    this.w(owner).stack.write(dst, Value::from(res));
-                }
-                Instruction::NotEqual { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = !rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
-                    this.w(owner).stack.write(dst, Value::from(res));
-                }
-
-                Instruction::SEqual { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = this.strict_equal(owner, left, right);
-                    this.w(owner).stack.write(dst, Value::from(res));
-                }
-                Instruction::SNotEqual { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = !this.strict_equal(owner, left, right);
-                    this.w(owner).stack.write(dst, Value::from(res));
-                }
-
-                Instruction::Greater { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.less_then(owner, arena, atoms, left, right, true)
-                    );
-                    if res.is_undefined() {
-                        this.w(owner).stack.write(dst, false.into());
-                    } else {
-                        this.w(owner).stack.write(dst, res);
-                    }
-                }
-                Instruction::GreaterEq { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.less_then(owner, arena, atoms, left, right, false)
-                    );
-                    let res = res.is_false() && !res.is_undefined();
-                    this.w(owner).stack.write(dst, res.into());
-                }
-
-                Instruction::Less { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.less_then(owner, arena, atoms, left, right, false)
-                    );
-                    if res.is_undefined() {
-                        this.w(owner).stack.write(dst, false.into());
-                    } else {
-                        this.w(owner).stack.write(dst, res);
-                    }
-                }
-                Instruction::LessEq { dst, left, righ } => {
-                    let left = this.r(owner).stack.read(left);
-                    let right = this.r(owner).stack.read(righ);
-                    let res = rebind_try!(
-                        arena,
-                        this.less_then(owner, arena, atoms, left, right, true)
-                    );
-                    let res = res.is_false() && !res.is_undefined();
-                    this.w(owner).stack.write(dst, res.into());
-                }
-
-                Instruction::IsNullish { dst, op } => {
-                    let src = this.r(owner).stack.read(op);
-                    let nullish = this.is_nullish(src);
-                    this.w(owner).stack.write(dst, Value::from(nullish));
-                }
-                Instruction::Not { dst, src } => {
-                    let src = this.r(owner).stack.read(src);
-                    let falsish = this.is_falsish(owner, src);
-                    this.w(owner).stack.write(dst, Value::from(falsish));
-                }
-                Instruction::Negative { dst, op } => {
-                    let src = this.r(owner).stack.read(op);
-                    {
-                        let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
-                        if let Some(number) = number.into_int() {
-                            let number = -(number as i64);
-                            if number as i32 as i64 == number {
-                                this.w(owner).stack.write(dst, Value::from(number as i32))
-                            } else {
-                                this.w(owner).stack.write(dst, Value::from(number as f64))
-                            }
-                        } else if let Some(number) = number.into_float() {
-                            let number = -number;
-                            if number as i32 as f64 == number {
-                                this.w(owner).stack.write(dst, Value::from(number as i32));
-                            } else {
-                                this.w(owner).stack.write(dst, Value::from(number));
-                            }
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                }
-                Instruction::Positive { dst, op } => {
-                    let src = this.r(owner).stack.read(op);
-                    let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
-                    this.w(owner).stack.write(dst, number);
-                }
-
-                Instruction::Jump { tgt } => instr.jump(tgt),
-                Instruction::JumpFalse { cond, tgt } => {
-                    let cond = this.r(owner).stack.read(cond);
-                    if this.is_falsish(owner, cond) {
-                        instr.jump(tgt)
-                    }
-                }
-                Instruction::JumpTrue { cond, tgt } => {
-                    let cond = this.r(owner).stack.read(cond);
-                    if !this.is_falsish(owner, cond) {
-                        instr.jump(tgt)
-                    }
-                }
-
-                Instruction::Try { dst, tgt } => {
-                    match this.run(arena, owner, atoms, &mut instr, ctx) {
-                        Ok(_) => {
-                            this.w(owner).stack.write(dst, Value::empty());
-                        }
-                        Err(e) => {
-                            this.w(owner).stack.write(dst, e);
-                            instr.jump(tgt);
-                        }
-                    }
-                }
-
-                Instruction::Untry { dst: _ } => {
-                    *upper_instr = instr;
-                    return Ok(Value::empty());
-                }
-
-                Instruction::Throw { src } => {
-                    let src = this.r(owner).stack.read(src);
-                    if !src.is_empty() {
-                        return Err(rebind!(arena, src));
-                    }
-                }
-
-                Instruction::Push { src } => {
-                    let src = this.r(owner).stack.read(src);
-                    this.w(owner).stack.push(src);
-                }
-
-                Instruction::Call { dst, func } => {
-                    let func = this.r(owner).stack.read(func);
-                    if let Some(obj) = func.into_object() {
-                        let ctx = ExecutionContext {
-                            function: obj,
-                            this: obj.into(),
-                            new_target: Value::undefined(),
-                        };
-                        let res = rebind_try!(arena, this.vm_call(owner, arena, atoms, ctx));
-                        this.w(owner).stack.write(dst, res);
-                    } else {
-                        return Err(this.create_type_error(
-                            owner,
-                            arena,
-                            atoms,
-                            "tried to call non function value",
-                        ));
-                    }
-                }
-                Instruction::CallMethod { dst, key, obj } => {
-                    let key = this.r(owner).stack.read(key);
-                    let obj = this.r(owner).stack.read(obj);
-
-                    if let Some(obj) = obj.into_object() {
-                        let func =
-                            rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
-                        if let Some(function) = func.into_object() {
-                            root!(arena, function);
-                            let res = rebind_try!(
-                                arena,
-                                this.method_call(owner, arena, atoms, function, obj.into())
-                            );
-                            this.w(owner).stack.write(dst, res);
-                        } else {
-                            return Err(this.create_type_error(
+                            this.numeric_operator(
                                 owner,
                                 arena,
                                 atoms,
-                                "tried to call non function value",
-                            ));
-                        }
-                    } else {
-                        let func = rebind_try!(
-                            arena,
-                            this.index_non_object(owner, arena, atoms, obj, key)
+                                left,
+                                right,
+                                NumericOperator::Div
+                            )
                         );
-                        if let Some(function) = func.into_object() {
-                            root!(arena, function);
-                            let res = rebind_try!(
+                        this.w(owner).stack.write(dst, res);
+                    }
+                    Instruction::Mod { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.numeric_operator(
+                                owner,
                                 arena,
-                                this.method_call(owner, arena, atoms, function, obj)
-                            );
+                                atoms,
+                                left,
+                                right,
+                                NumericOperator::Mod
+                            )
+                        );
+                        this.w(owner).stack.write(dst, res);
+                    }
+                    Instruction::Pow { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.numeric_operator(
+                                owner,
+                                arena,
+                                atoms,
+                                left,
+                                right,
+                                NumericOperator::Pow
+                            )
+                        );
+                        this.w(owner).stack.write(dst, res);
+                    }
+                    Instruction::BitwiseAnd { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                        let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
+                        let res = left & right;
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+                    Instruction::BitwiseOr { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                        let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
+                        let res = left | right;
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+                    Instruction::BitwiseXor { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                        let right = rebind_try!(arena, this.to_int32(owner, arena, atoms, right));
+                        let res = left ^ right;
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+                    Instruction::BitwiseNot { dst, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        let src = rebind_try!(arena, this.to_int32(owner, arena, atoms, src));
+                        this.w(owner).stack.write(dst, (!src).into());
+                    }
+                    Instruction::ShiftLeft { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                        let right =
+                            rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                        this.w(owner).stack.write(dst, Value::from(left << right));
+                    }
+                    Instruction::ShiftRight { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_int32(owner, arena, atoms, left));
+                        let right =
+                            rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                        this.w(owner).stack.write(dst, Value::from(left >> right));
+                    }
+                    Instruction::ShiftUnsigned { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let left = rebind_try!(arena, this.to_uint32(owner, arena, atoms, left));
+                        let right =
+                            rebind_try!(arena, this.to_int32(owner, arena, atoms, right)) as u32 % 32;
+                        let v = left >> right;
+                        if v > i32::MAX as u32 {
+                            this.w(owner).stack.write(dst, Value::from(v as f64));
+                        } else {
+                            this.w(owner).stack.write(dst, Value::from(v as i32));
+                        }
+                    }
+                    Instruction::Equal { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
+                        this.w(owner).stack.write(dst, Value::from(res));
+                    }
+                    Instruction::NotEqual { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = !rebind_try!(arena, this.equal(owner, arena, atoms, left, right));
+                        this.w(owner).stack.write(dst, Value::from(res));
+                    }
+
+                    Instruction::SEqual { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = this.strict_equal(owner, left, right);
+                        this.w(owner).stack.write(dst, Value::from(res));
+                    }
+                    Instruction::SNotEqual { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = !this.strict_equal(owner, left, right);
+                        this.w(owner).stack.write(dst, Value::from(res));
+                    }
+
+                    Instruction::Greater { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.less_then(owner, arena, atoms, left, right, true)
+                        );
+                        if res.is_undefined() {
+                            this.w(owner).stack.write(dst, false.into());
+                        } else {
+                            this.w(owner).stack.write(dst, res);
+                        }
+                    }
+                    Instruction::GreaterEq { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.less_then(owner, arena, atoms, left, right, false)
+                        );
+                        let res = res.is_false() && !res.is_undefined();
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+
+                    Instruction::Less { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.less_then(owner, arena, atoms, left, right, false)
+                        );
+                        if res.is_undefined() {
+                            this.w(owner).stack.write(dst, false.into());
+                        } else {
+                            this.w(owner).stack.write(dst, res);
+                        }
+                    }
+                    Instruction::LessEq { dst, left, righ } => {
+                        let left = this.r(owner).stack.read(left);
+                        let right = this.r(owner).stack.read(righ);
+                        let res = rebind_try!(
+                            arena,
+                            this.less_then(owner, arena, atoms, left, right, true)
+                        );
+                        let res = res.is_false() && !res.is_undefined();
+                        this.w(owner).stack.write(dst, res.into());
+                    }
+
+                    Instruction::IsNullish { dst, op } => {
+                        let src = this.r(owner).stack.read(op);
+                        let nullish = this.is_nullish(src);
+                        this.w(owner).stack.write(dst, Value::from(nullish));
+                    }
+                    Instruction::Not { dst, src } => {
+                        let src = this.r(owner).stack.read(src);
+                        let falsish = this.is_falsish(owner, src);
+                        this.w(owner).stack.write(dst, Value::from(falsish));
+                    }
+                    Instruction::Negative { dst, op } => {
+                        let src = this.r(owner).stack.read(op);
+                        {
+                            let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
+                            if let Some(number) = number.into_int() {
+                                let number = -(number as i64);
+                                if number as i32 as i64 == number {
+                                    this.w(owner).stack.write(dst, Value::from(number as i32))
+                                } else {
+                                    this.w(owner).stack.write(dst, Value::from(number as f64))
+                                }
+                            } else if let Some(number) = number.into_float() {
+                                let number = -number;
+                                if number as i32 as f64 == number {
+                                    this.w(owner).stack.write(dst, Value::from(number as i32));
+                                } else {
+                                    this.w(owner).stack.write(dst, Value::from(number));
+                                }
+                            } else {
+                                unreachable!()
+                            }
+                        }
+                    }
+                    Instruction::Positive { dst, op } => {
+                        let src = this.r(owner).stack.read(op);
+                        let number = rebind_try!(arena, this.to_number(owner, arena, atoms, src));
+                        this.w(owner).stack.write(dst, number);
+                    }
+
+                    Instruction::Jump { tgt } => instr.jump(tgt),
+                    Instruction::JumpFalse { cond, tgt } => {
+                        let cond = this.r(owner).stack.read(cond);
+                        if this.is_falsish(owner, cond) {
+                            instr.jump(tgt)
+                        }
+                    }
+                    Instruction::JumpTrue { cond, tgt } => {
+                        let cond = this.r(owner).stack.read(cond);
+                        if !this.is_falsish(owner, cond) {
+                            instr.jump(tgt)
+                        }
+                    }
+
+                    Instruction::Try { dst, tgt } => {
+                        match this.run(arena, owner, atoms, &mut instr, ctx) {
+                            Ok(_) => {
+                                this.w(owner).stack.write(dst, Value::empty());
+                            }
+                            Err(e) => {
+                                this.w(owner).stack.write(dst, e);
+                                instr.jump(tgt);
+                            }
+                        }
+                    }
+
+                    Instruction::Untry { dst: _ } => {
+                        *upper_instr = instr;
+                        return Ok(Value::empty());
+                    }
+
+                    Instruction::Throw { src } => {
+                        let src = this.r(owner).stack.read(src);
+                        if !src.is_empty() {
+                            return Err(rebind!(arena, src));
+                        }
+                    }
+
+                    Instruction::Push { src } => {
+                        let src = this.r(owner).stack.read(src);
+                        this.w(owner).stack.push(src);
+                    }
+
+                    Instruction::Call { dst, func } => {
+                        let func = this.r(owner).stack.read(func);
+                        if let Some(obj) = func.into_object() {
+                            let ctx = ExecutionContext {
+                                function: obj,
+                                this: obj.into(),
+                                new_target: Value::undefined(),
+                            };
+                            let res = rebind_try!(arena, this.vm_call(owner, arena, atoms, ctx));
                             this.w(owner).stack.write(dst, res);
                         } else {
                             return Err(this.create_type_error(
@@ -670,53 +627,101 @@ impl<'gc, 'own> Realm<'gc, 'own> {
                             ));
                         }
                     }
-                }
-                Instruction::CallConstruct { dst, func, obj } => {
-                    let func = this.r(owner).stack.read(func);
-                    let obj = this.r(owner).stack.read(obj);
+                    Instruction::CallMethod { dst, key, obj } => {
+                        let key = this.r(owner).stack.read(key);
+                        let obj = this.r(owner).stack.read(obj);
 
-                    if let Some(func) = func.into_object() {
                         if let Some(obj) = obj.into_object() {
-                            let res = rebind_try!(
+                            let func =
+                                rebind_try!(arena, obj.index_value(owner, arena, atoms, this. key));
+                            if let Some(function) = func.into_object() {
+                                root!(arena, function);
+                                let res = rebind_try!(
+                                    arena,
+                                    this.method_call(owner, arena, atoms, function, obj.into())
+                                );
+                                this.w(owner).stack.write(dst, res);
+                            } else {
+                                return Err(this.create_type_error(
+                                    owner,
+                                    arena,
+                                    atoms,
+                                    "tried to call non function value",
+                                ));
+                            }
+                        } else {
+                            let func = rebind_try!(
                                 arena,
-                                this.construct_call(owner, arena, atoms, func, obj)
+                                this.index_non_object(owner, arena, atoms, obj, key)
                             );
-                            this.w(owner).stack.write(dst, res);
+                            if let Some(function) = func.into_object() {
+                                root!(arena, function);
+                                let res = rebind_try!(
+                                    arena,
+                                    this.method_call(owner, arena, atoms, function, obj)
+                                );
+                                this.w(owner).stack.write(dst, res);
+                            } else {
+                                return Err(this.create_type_error(
+                                    owner,
+                                    arena,
+                                    atoms,
+                                    "tried to call non function value",
+                                ));
+                            }
                         }
-                    } else {
-                        return Err(this.create_type_error(
+                    }
+                    Instruction::CallConstruct { dst, func, obj } => {
+                        let func = this.r(owner).stack.read(func);
+                        let obj = this.r(owner).stack.read(obj);
+
+                        if let Some(func) = func.into_object() {
+                            if let Some(obj) = obj.into_object() {
+                                let res = rebind_try!(
+                                    arena,
+                                    this.construct_call(owner, arena, atoms, func, obj)
+                                );
+                                this.w(owner).stack.write(dst, res);
+                            }
+                        } else {
+                            return Err(this.create_type_error(
+                                owner,
+                                arena,
+                                atoms,
+                                "tried to call non function value",
+                            ));
+                        }
+                    }
+
+                    Instruction::Return { ret } => {
+                        let res = this.r(owner).stack.read(ret);
+                        arena.write_barrier(this);
+                        return Ok(rebind!(arena, res));
+                    }
+                    Instruction::ReturnUndefined { _ignore } => {
+                        arena.write_barrier(this);
+                        return Ok(Value::undefined());
+                    }
+                    _ => {
+                        return Err(this.create_runtime_error(
                             owner,
                             arena,
                             atoms,
-                            "tried to call non function value",
-                        ));
+                            "invalid instruction",
+                            None,
+                        ))
                     }
-                }
-
-                Instruction::Return { ret } => {
-                    let res = this.r(owner).stack.read(ret);
-                    arena.write_barrier(this);
-                    return Ok(rebind!(arena, res));
-                }
-                Instruction::ReturnUndefined { _ignore } => {
-                    arena.write_barrier(this);
-                    return Ok(Value::undefined());
-                }
-                _ => {
-                    return Err(this.create_runtime_error(
-                        owner,
-                        arena,
-                        atoms,
-                        "invalid instruction",
-                        None,
-                    ))
                 }
             }
         }
-    }
+    */
 
     /// Returns wether a value is falsish.
-    pub fn is_falsish<'l>(this: GcRealm<'gc,'own>, owner: &Owner<'own>, value: Value<'l, 'own>) -> bool {
+    pub fn is_falsish<'l>(
+        this: GcRealm<'gc, 'own>,
+        owner: &Owner<'own>,
+        value: Value<'l, 'own>,
+    ) -> bool {
         if let Some(v) = value.into_int() {
             v == 0
         } else if let Some(v) = value.into_float() {
@@ -729,21 +734,21 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     }
 
     /// Returns wether a values is like null, i.e. null or undefined
-    pub fn is_nullish<'l>(this: GcRealm<'gc,'own>, value: Value<'l, 'own>) -> bool {
+    pub fn is_nullish<'l>(this: GcRealm<'gc, 'own>, value: Value<'l, 'own>) -> bool {
         value.is_null() || value.is_undefined()
     }
 
     /// Coerces a value to a string.
     pub fn to_string<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<Gc<'l, 'own, String>, Value<'l, 'own>> {
         let primitive = rebind_try!(arena, this.to_primitive(owner, arena, atoms, value, true));
         let primitive = rebind!(arena, primitive);
-        let res = Self::to_string_primitive(this,arena, atoms, primitive)
+        let res = Self::to_string_primitive(this, arena, atoms, primitive)
             .expect("to_primitive returned an object");
 
         Ok(rebind!(arena, res))
@@ -751,8 +756,8 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Coerces a value which is already a primitive to a string.
     pub fn to_string_primitive<'l>(
-        this: GcRealm<'gc,'own>,
-        arena: &'l Root< 'own>,
+        this: GcRealm<'gc, 'own>,
+        arena: &'l Root<'own>,
         _atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Option<Gc<'l, 'own, String>> {
@@ -779,9 +784,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Coerces a value to a object.
     pub fn to_object<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<GcObject<'l, 'own>, Value<'l, 'own>> {
@@ -844,21 +849,21 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Coerces a value to a number.
     pub fn to_number<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<Value<'static, 'own>, Value<'l, 'own>> {
         let prim = rebind_try!(arena, this.to_primitive(owner, arena, atoms, value, false));
-        let res = Self::to_number_primitive(this,owner, prim)
-            .expect("to primitive returned an object");
+        let res =
+            Self::to_number_primitive(this, owner, prim).expect("to primitive returned an object");
         Ok(res)
     }
 
     /// Coerces a value which is already a primitive to a number.
     pub fn to_number_primitive(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &Owner<'own>,
         value: Value<'_, 'own>,
     ) -> Option<Value<'static, 'own>> {
@@ -889,9 +894,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Implements type conversion [`ToInt32`](https://tc39.es/ecma262/#sec-toint32)
     pub fn to_int32<'l>(
-        &this: GcRealm<'gc,'own>,
+        &this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<i32, Value<'l, 'own>> {
@@ -916,9 +921,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Implements type conversion [`ToUint32`](https://tc39.es/ecma262/#sec-touint32)
     pub fn to_uint32<'l>(
-        &this: GcRealm<'gc,'own>,
+        &this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<u32, Value<'l, 'own>> {
@@ -938,9 +943,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Coerces a value to a primitive.
     pub fn to_primitive<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
         prefer_string: bool,
@@ -957,8 +962,8 @@ impl<'gc, 'own> Realm<'gc, 'own> {
                 PREFER_VALUE
             };
             for &k in keys {
-                let func = rebind_try!(arena, obj.index(owner, arena, atoms, this. k))
-                    .empty_to_undefined();
+                let func =
+                    rebind_try!(arena, obj.index(owner, arena, atoms, this.k)).empty_to_undefined();
 
                 #[allow(unused_unsafe)]
                 if let Some(func) = func.into_object() {
@@ -986,7 +991,7 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Returns wether to values are strictly equal.
     pub fn strict_equal(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &Owner<'own>,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1035,9 +1040,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Returns wether to values are considered equal.
     pub fn equal<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1054,7 +1059,8 @@ impl<'gc, 'own> Realm<'gc, 'own> {
         }
         if left.is_number() && right.is_string() {
             // Should not return error and always a number
-            let right = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
+            let right =
+                unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
             debug_assert!(right.is_number());
             return this.equal(owner, arena, atoms, left, right);
         }
@@ -1072,7 +1078,8 @@ impl<'gc, 'own> Realm<'gc, 'own> {
         }
         if right.is_bool() {
             // Should not return error and always a number
-            let right = unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
+            let right =
+                unsafe { dreck::rebind(this.to_number(owner, arena, atoms, right).unwrap()) };
             debug_assert!(right.is_number());
             return this.equal(owner, arena, atoms, left, right);
         }
@@ -1091,9 +1098,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     ///
     /// Swap changes the order of evaluation.
     pub fn less_then<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1172,9 +1179,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     /// Add to values together
     pub fn add<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1214,9 +1221,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[inline]
     pub fn numeric_operator<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1256,7 +1263,11 @@ impl<'gc, 'own> Realm<'gc, 'own> {
         }
     }
 
-    pub fn type_of<'l>(this: GcRealm<'gc,'own>, owner: &Owner<'own>, v: Value<'l, 'own>) -> &'l str {
+    pub fn type_of<'l>(
+        this: GcRealm<'gc, 'own>,
+        owner: &Owner<'own>,
+        v: Value<'l, 'own>,
+    ) -> &'l str {
         if v.is_undefined() {
             "undefined"
         } else if v.is_null() {
@@ -1279,9 +1290,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     }
 
     pub fn instance_of<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
@@ -1347,9 +1358,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[allow(unused_unsafe)]
     pub unsafe fn construct_function<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         function_id: u16,
         read: &InstructionReader<'_, 'own>,
         function: GcObject<'_, 'own>,
@@ -1378,9 +1389,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     }
 
     pub fn method_call<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         function: GcObject<'_, 'own>,
         obj: Value<'_, 'own>,
@@ -1401,9 +1412,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     }
 
     pub fn construct_call<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         function: GcObject<'_, 'own>,
         target_obj: GcObject<'_, 'own>,
@@ -1447,9 +1458,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[allow(unused_unsafe)]
     pub unsafe fn vm_call<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         ctx: ExecutionContext<'_, 'own>,
     ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
@@ -1516,9 +1527,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
     }
 
     pub fn index_non_object<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
         key: Value<'gc, 'own>,
@@ -1539,15 +1550,15 @@ impl<'gc, 'own> Realm<'gc, 'own> {
             panic!("invalid value")
         };
 
-        let res = rebind_try!(arena, object.index_value(owner, arena, atoms, this. key));
+        let res = rebind_try!(arena, object.index_value(owner, arena, atoms, this.key));
 
         Ok(rebind!(arena, res))
     }
 
     pub fn to_integer_or_infinity<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l mut Root< 'own>,
+        arena: &'l mut Root<'own>,
         atoms: &Atoms,
         value: Value<'_, 'own>,
     ) -> Result<f64, Value<'l, 'own>> {
@@ -1615,9 +1626,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[cold]
     pub fn create_type_error<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         atoms: &Atoms,
         message: impl Into<String>,
     ) -> Value<'l, 'own> {
@@ -1635,9 +1646,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[cold]
     pub fn create_syntax_error<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         atoms: &Atoms,
         message: impl Into<String>,
     ) -> Value<'l, 'own> {
@@ -1655,9 +1666,9 @@ impl<'gc, 'own> Realm<'gc, 'own> {
 
     #[cold]
     pub fn create_runtime_error<'l>(
-        this: GcRealm<'gc,'own>,
+        this: GcRealm<'gc, 'own>,
         owner: &mut Owner<'own>,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         atoms: &Atoms,
         message: impl Into<String>,
         context: Option<Value<'_, 'own>>,

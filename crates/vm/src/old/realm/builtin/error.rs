@@ -1,5 +1,5 @@
 use common::atom::{self, Atoms};
-use dreck::{Gc, Owner, Root, rebind, root};
+use dreck::{rebind, root, Gc, Owner, Root};
 
 use crate::{
     object::{ObjectFlags, ObjectKind},
@@ -15,7 +15,7 @@ pub enum ErrorType {
 }
 
 pub fn construct<'l, 'own, const KIND: u8>(
-    arena: &'l mut Root< 'own>,
+    arena: &'l mut Root<'own>,
     owner: &mut Owner<'own>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'own>,
@@ -30,7 +30,7 @@ pub fn construct<'l, 'own, const KIND: u8>(
     let proto = if let Some(obj) = new_target.into_object() {
         rebind_try!(
             arena,
-            obj.index(owner, arena, atoms, realm, atom::constant::prototype)
+            obj.index(obj, owner, arena, atoms, realm, atom::constant::prototype)
         )
         .empty_to_undefined()
     } else {
@@ -53,7 +53,7 @@ pub fn construct<'l, 'own, const KIND: u8>(
     };
     root!(arena, proto);
 
-    let (message, cause) = if let Some(message) = realm.arg(owner, 0) {
+    let (message, cause) = if let Some(message) = realm.arg(realm, owner, 0) {
         let message = rebind_try!(arena, realm.to_string(owner, arena, atoms, message));
         let message = rebind!(arena, message);
         if let Some(options) = realm.arg(owner, 1).and_then(|x| x.into_object()) {
@@ -81,7 +81,7 @@ pub fn construct<'l, 'own, const KIND: u8>(
 }
 
 pub fn create<'l, 'own>(
-    arena: &'l Root< 'own>,
+    arena: &'l Root<'own>,
     owner: &mut Owner<'own>,
     atoms: &Atoms,
     prototype: GcObject<'_, 'own>,
@@ -104,7 +104,7 @@ pub fn create<'l, 'own>(
 }
 
 pub fn to_string<'l, 'own>(
-    arena: &'l mut Root< 'own>,
+    arena: &'l mut Root<'own>,
     owner: &mut Owner<'own>,
     atoms: &Atoms,
     realm: GcRealm<'_, 'own>,
@@ -150,7 +150,7 @@ pub fn to_string<'l, 'own>(
 
 pub fn init<'gc, 'own, const KIND: u8>(
     owner: &mut Owner<'own>,
-    arena: &'gc Root< 'own>,
+    arena: &'gc Root<'own>,
     atoms: &Atoms,
     name: Gc<'_, 'own, String>,
     construct_proto: GcObject<'_, 'own>,

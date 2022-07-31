@@ -5,8 +5,8 @@ use std::{
     thread,
 };
 
-use dreck::{Bound, Gc, Root, Trace, Tracer, rebind};
 use crate::Value;
+use dreck::{rebind, Bound, Gc, Root, Trace, Tracer};
 
 pub type GcUpvalueObject<'gc, 'own> = Gc<'gc, 'own, UpvalueObject<'gc, 'own>>;
 
@@ -38,7 +38,7 @@ unsafe impl<'gc, 'own> Trace<'own> for UpvalueObject<'gc, 'own> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'own>) {
         self.closed.trace(trace);
     }
 }
@@ -85,7 +85,7 @@ unsafe impl<'gc, 'own> Trace<'own> for Stack<'gc, 'own> {
         true
     }
 
-    fn trace<'a>(&self, trace: Tracer<'a,'own>) {
+    fn trace<'a>(&self, trace: Tracer<'a, 'own>) {
         // Upvalues dont need to be traced since all of them are open and contain no pointer
         // values.
         unsafe {
@@ -182,7 +182,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     ///
     /// User must ensure that the guard is the same gaurd as the frame that was pushed at this
     /// depth
-    pub unsafe fn pop_frame(&mut self, arena: &Root< 'own>, guard: FrameGuard) {
+    pub unsafe fn pop_frame(&mut self, arena: &Root<'own>, guard: FrameGuard) {
         self.depth -= 1;
 
         #[cfg(debug_assertions)]
@@ -243,7 +243,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     #[allow(unused_unsafe)]
     pub unsafe fn create_upvalue<'l>(
         &mut self,
-        arena: &'l Root< 'own>,
+        arena: &'l Root<'own>,
         reg: u8,
     ) -> GcUpvalueObject<'l, 'own> {
         let location = self.frame.add(reg as usize);

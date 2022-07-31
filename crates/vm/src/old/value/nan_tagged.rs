@@ -1,8 +1,11 @@
-//use common::atom::Atom;
+use common::atom::Atom;
 
-use dreck::{marker::Invariant, Bound, Gc, Trace, Tracer};
 
-use crate::object::{GcObject, Object};
+use dreck::{Bound, Gc, Trace, Tracer, marker::Invariant};
+
+use crate::{
+    GcObject, Object,
+};
 
 //TODO rediscover implementation and document.
 
@@ -158,7 +161,9 @@ impl<'gc, 'own> Value<'gc, 'own> {
     /// Is this value a number type.
     #[inline]
     pub fn is_number(self) -> bool {
-        unsafe { self.value.bits >= MIN_NUMBER }
+        unsafe {
+            self.value.bits >= MIN_NUMBER
+        }
     }
 
     /// Is this value a number integer.
@@ -224,12 +229,14 @@ impl<'gc, 'own> Value<'gc, 'own> {
 
     #[inline]
     pub fn ensure_float(v: f64) -> Self {
-        Value {
-            value: ValueUnion {
-                bits: v.to_bits() + MIN_FLOAT,
-            },
-            marker: PhantomData,
-            id: Invariant::new(),
+        unsafe {
+            Value {
+                value: ValueUnion {
+                    bits: v.to_bits() + MIN_FLOAT,
+                },
+                marker: PhantomData,
+                id: Invariant::new(),
+            }
         }
     }
 
@@ -287,7 +294,6 @@ impl<'gc, 'own> Value<'gc, 'own> {
         }
     }
 
-    /*
     #[inline]
     pub fn into_atom(self) -> Option<Atom> {
         if self.is_atom() {
@@ -296,7 +302,6 @@ impl<'gc, 'own> Value<'gc, 'own> {
             None
         }
     }
-    */
 }
 
 impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
@@ -337,7 +342,7 @@ impl<'gc, 'own> From<Gc<'gc, 'own, String>> for Value<'gc, 'own> {
     fn from(v: Gc<String>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_STRING | Gc::as_raw(v) as u64,
+                bits: TAG_STRING | Gc::into_raw(v) as u64,
             })
         }
     }
@@ -345,16 +350,15 @@ impl<'gc, 'own> From<Gc<'gc, 'own, String>> for Value<'gc, 'own> {
 
 impl<'gc, 'own> From<GcObject<'gc, 'own>> for Value<'gc, 'own> {
     #[inline]
-    fn from(v: GcObject<'gc, 'own>) -> Self {
+    fn from(v: GcObject<'gc,'own>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_OBJECT | Gc::as_raw(v) as u64,
+                bits: TAG_OBJECT | Gc::into_raw(v) as u64,
             })
         }
     }
 }
 
-/*
 impl<'gc, 'own> From<Atom> for Value<'gc, 'own> {
     #[inline]
     fn from(v: Atom) -> Self {
@@ -365,7 +369,6 @@ impl<'gc, 'own> From<Atom> for Value<'gc, 'own> {
         }
     }
 }
-*/
 
 unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
     fn needs_trace() -> bool
@@ -375,13 +378,10 @@ unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
         true
     }
 
-    fn trace<'a>(&self, tracer: Tracer<'a, 'own>) {
-        /*
+    fn trace<'a>(&self, tracer: Tracer<'a,'own>) {
         if let Some(obj) = self.into_object() {
             tracer.mark(obj);
-
-        } else */
-        if let Some(s) = self.into_string() {
+        } else if let Some(s) = self.into_string() {
             tracer.mark(s);
         }
     }
@@ -407,12 +407,10 @@ impl<'gc, 'own> fmt::Debug for Value<'gc, 'own> {
                 TAG_STRING => f.debug_tuple("JSValue::String").finish(),
                 TAG_OBJECT => f.debug_tuple("JSValue::Object").finish(),
                 TAG_BIGINT => todo!("big int"),
-                /*
                 TAG_ATOM => f
                     .debug_tuple("JSValue::ATOM")
                     .field(&self.into_atom().unwrap())
                     .finish(),
-                    */
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
                     .field(&self.into_int().unwrap())
