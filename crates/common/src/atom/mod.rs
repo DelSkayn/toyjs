@@ -1,270 +1,197 @@
-use std::{
-    cell::{Cell, UnsafeCell},
-    fmt, mem,
-};
+use std::{collections::HashMap, hash::Hash, marker::PhantomData};
 
-use crate::collections::HashMap;
+use dreck::{Bound, Gc, Root, Trace, WeakGc, rebind};
 
-pub mod constant;
+pub mod constants;
 
-pub type AtomInt = u32;
+pub struct AtomData(String);
 
-pub const ATOM_MAX: AtomInt = (u32::MAX >> 1) as AtomInt;
-pub const STRING_FLAG: AtomInt = !(u32::MAX >> 1) as AtomInt;
+unsafe impl<'own> Trace<'own> for AtomData{
+    fn needs_trace() -> bool
+    where
+            Self: Sized {
+        false
+    }
 
-#[derive(Clone, Copy, Hash, Eq, PartialEq)]
-pub struct Atom(AtomInt);
-
-impl fmt::Debug for Atom {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(x) = self.into_idx() {
-            f.debug_tuple("Atom::Int").field(&x).finish()
-        } else {
-            f.debug_tuple("Atom::String")
-                .field(&(self.0 & !STRING_FLAG))
-                .finish()
-        }
+    fn trace<'a>(&self, _: dreck::Tracer<'a, 'own>) {
     }
 }
 
-impl Atom {
-    pub const fn into_raw(self) -> AtomInt {
-        self.0
-    }
+unsafe impl<'to> Bound<'to> for AtomData{
+    type Rebound = Self;
+}
 
-    pub const fn from_raw(v: AtomInt) -> Self {
-        Atom(v)
-    }
+#[derive(Clone,Copy)]
+pub struct Atom<'gc,'own>{
+    ptr: *const AtomData,
+    marker: PhantomData<Gc<'gc,'own,AtomData>>,
+}
 
-    const fn from_int(v: AtomInt) -> Self {
-        Atom(v)
-    }
-
-    const fn from_string_idx(v: AtomInt) -> Self {
-        Atom(v | STRING_FLAG)
-    }
-
-    const fn to_str_idx(self) -> u32 {
-        self.0 & !STRING_FLAG
-    }
-
-    pub const fn into_idx(self) -> Option<u32> {
-        if self.0 & STRING_FLAG == 0 {
-            Some(self.0)
-        } else {
-            None
-        }
+impl<'gc,'own> Hash for Atom<'gc,'own>{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (self.ptr as usize).hash(state)
     }
 }
 
-#[derive(Debug)]
-enum AtomEntry {
-    Filled { text: Box<str>, count: usize },
-    Empty { next: Option<AtomInt> },
+impl<'gc,'own> PartialEq for Atom<'gc,'own>{
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr as usize == other.ptr as usize
+    }
+}
+impl<'gc,'own> Eq for Atom<'gc,'own>{}
+
+
+unsafe impl<'from,'to,'own> Bound<'to> for Atom<'from,'own>{
+    type Rebound = Atom<'to,'own>;
 }
 
-pub struct Atoms {
-    map: UnsafeCell<HashMap<Box<str>, AtomInt>>,
-    entries: UnsafeCell<Vec<AtomEntry>>,
-    empty: Cell<Option<AtomInt>>,
-}
+unsafe impl<'gc,'own> Trace<'own> for Atom<'gc,'own>{
+    fn needs_trace() -> bool
+    where
+            Self: Sized {
+        true
+    }
 
-impl fmt::Debug for Atoms {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unsafe {
-            f.debug_struct("Atoms")
-                .field("map", &(*self.map.get()))
-                .field("entries", &(*self.entries.get()))
-                .field("empty", &self.empty)
-                .finish()
-        }
+    fn trace<'a>(&self, tracer: dreck::Tracer<'a, 'own>) {
+        self.into_pointer().trace(tracer);
     }
 }
 
-impl fmt::Display for Atoms {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let entries = unsafe { &(*self.entries.get()) };
-        writeln!(f, "> ATOMS")?;
-        for (idx, e) in entries.iter().enumerate() {
-            if let AtomEntry::Filled { ref text, count } = e {
-                writeln!(f, "{:>5}:[{:<5}] {}", idx, count, text)?;
-            }
-        }
-        Ok(())
-    }
-}
+impl<'gc,'own> Atom<'gc,'own>{
+    const TAG_MASK: usize = 0b01;
 
-impl Atoms {
-    pub fn new() -> Self {
-        let mut res = Atoms {
-            entries: UnsafeCell::new(Vec::new()),
-            map: UnsafeCell::new(HashMap::default()),
-            empty: Cell::new(None),
-        };
-        constant::init_constants(&mut res);
-        res
+    const TAG_PTR: usize = 0b00;
+    const TAG_INTEGER: usize = 0b01;
+    const TAG_CONSTANT: usize = 0b10;
+
+    const MAX_INTEGER: usize = (u32::MAX >> 2) as usize;
+
+    pub fn is_integer(self) -> bool{
+        (self.ptr as usize) & Self::TAG_MASK == Self::TAG_INTEGER
     }
 
-    fn into_integer_string(s: &str) -> Option<u32> {
-        if s.is_empty() {
-            return None;
-        }
-        let mut res = 0u32;
-        for b in s.bytes() {
-            if !(b'0'..=b'9').contains(&b) {
-                return None;
-            }
-            let value = (b - b'0') as u32;
-            res = res.checked_mul(10)?;
-            res = res.checked_add(value)?;
-        }
-        if res < ATOM_MAX {
-            Some(res)
-        } else {
+    pub fn into_integer(self) -> Option<usize>{
+        if self.is_integer(){
+            Some((self.ptr as usize) >> 2)
+        }else{
             None
         }
     }
 
-    pub fn lookup(&self, atom: Atom) -> Option<String> {
-        unsafe {
-            if atom.into_idx().is_some() {
-                None
-            } else {
-                (*self.entries.get())
-                    .get(atom.to_str_idx() as usize)
-                    .and_then(|x| match x {
-                        AtomEntry::Filled { text, .. } => Some(text.to_string()),
-                        _ => None,
-                    })
+    pub fn is_pointer(self) -> bool{
+        (self.ptr as usize) & Self::TAG_MASK == Self::TAG_PTR
+    }
+
+    pub fn into_pointer(self) -> Option<Gc<'gc,'own, AtomData>>{
+        if self.is_pointer(){
+            unsafe {
+                Some(Gc::from_raw(self.ptr))
             }
+        }else{
+            None
         }
     }
 
-    pub fn atomize_string(&self, text: &str) -> Atom {
-        unsafe {
-            if let Some(x) = Self::into_integer_string(text) {
-                return Atom::from_int(x);
-            }
-
-            if let Some(x) = (*self.map.get()).get(text).copied() {
-                if let AtomEntry::Filled { ref mut count, .. } = (*self.entries.get())[x as usize] {
-                    *count += 1;
-                } else {
-                    unreachable!();
-                }
-                return Atom::from_string_idx(x);
-            }
-
-            let owned = text.to_string().into_boxed_str();
-
-            if let Some(x) = self.empty.get() {
-                let empty = mem::replace(
-                    &mut (*self.entries.get())[x as usize],
-                    AtomEntry::Filled {
-                        text: owned.clone(),
-                        count: 1,
-                    },
-                );
-                if let AtomEntry::Empty { next } = empty {
-                    self.empty.set(next);
-                } else {
-                    unreachable!();
-                }
-                (*self.map.get()).insert(owned, x);
-                return Atom::from_string_idx(x);
-            }
-
-            let idx = (*self.entries.get())
-                .len()
-                .try_into()
-                .expect("too many atoms");
-            assert!(idx <= ATOM_MAX, "too many atoms");
-            (*self.map.get()).insert(owned.clone(), idx);
-            (*self.entries.get()).push(AtomEntry::Filled {
-                text: owned,
-                count: 1,
-            });
-            Atom::from_string_idx(idx)
+    pub fn from_ptr(ptr: Gc<'gc,'own, AtomData>) -> Self{
+        Self{
+            ptr: Gc::as_raw(ptr),
+            marker: PhantomData
         }
     }
 
-    pub fn try_atomize_int(int: i32) -> Option<Atom> {
-        if int > 0 && (int as u32) < ATOM_MAX {
-            return Some(Atom::from_int(int as u32));
-        }
-        None
-    }
+}
 
-    pub fn increment(&self, atom: Atom) {
-        unsafe {
-            if atom.0 & STRING_FLAG == 0 {
-                return;
-            }
-
-            if let AtomEntry::Filled { ref mut count, .. } =
-                (*self.entries.get())[(atom.0 & !STRING_FLAG) as usize]
-            {
-                *count = count.checked_add(1).unwrap();
-            } else {
-                panic!("tried to increment deallocated atom")
-            }
+impl<'own> Atom<'static,'own>{
+    pub unsafe fn from_integer(value: usize) -> Self{
+        debug_assert!(value < Self::MAX_INTEGER);
+        Self{
+            ptr: (value << 2 | Self::TAG_PTR) as *mut AtomData,
+            marker: PhantomData
         }
     }
 
-    pub fn decrement(&self, atom: Atom) {
-        unsafe {
-            if atom.0 & STRING_FLAG == 0 {
-                return;
-            }
-
-            let idx = atom.0 & !STRING_FLAG;
-            if let AtomEntry::Filled {
-                ref mut count,
-                ref text,
-            } = (*self.entries.get())[idx as usize]
-            {
-                if *count == 1 {
-                    (*self.map.get()).remove(text);
-                    (*self.entries.get())[idx as usize] = AtomEntry::Empty {
-                        next: self.empty.get(),
-                    };
-                    self.empty.set(Some(idx));
-                } else {
-                    *count -= 1;
-                }
-            } else {
-                panic!("tried to decrement deallocated atom")
-            }
+    const fn from_constant_id(id: usize) -> Self{
+        Self{
+            ptr: (id << 2 | Self::TAG_CONSTANT) as *mut AtomData,
+            marker: PhantomData
         }
     }
 }
 
-pub struct Interner<'a> {
-    pub atoms: &'a Atoms,
-    used: HashMap<String, Atom>,
+pub enum AtomKind<'gc,'own>{
+    Allocated(WeakGc<'gc,'own, AtomData>),
+    Constant(Atom<'static,'own>)
 }
 
-impl<'a> Interner<'a> {
-    pub fn new(atoms: &'a Atoms) -> Self {
-        Interner {
-            atoms,
-            used: HashMap::default(),
+pub struct Atoms<'gc,'own>(
+    HashMap<String,AtomKind<'gc,'own>>,
+);
+
+impl<'gc,'own> Atoms<'gc,'own>{
+    pub fn new() -> Self{
+        let mut hash_map = HashMap::new();
+        for (idx,s) in constants::STRINGS.iter().enumerate(){
+            hash_map.insert(s.to_string(),AtomKind::Constant(Atom::from_constant_id(idx)));
+        }
+        Atoms(hash_map)
+    }
+
+    pub fn clean(&mut self){
+        self.0.retain(|_,v| if let AtomKind::Allocated(ref x) = *v{
+            !x.is_removed()
+        }else{
+            true
+        });
+    }
+
+    fn is_integer_string(s: &str) -> Option<usize>{
+        let mut accum = 0usize;
+        for c in s.chars(){
+            let c = c.to_digit(10)?;
+            accum = accum.checked_mul(10)?;
+            accum = accum.checked_add(c as usize)?;
+        }
+        if accum <= Atom::MAX_INTEGER {
+            Some(accum)
+        }else{
+            None
         }
     }
 
-    pub fn intern(&mut self, string: &str) -> Atom {
-        if let Some(&x) = self.used.get(string) {
-            return x;
+
+    fn atomize_string_ensured<'l>(&mut self,root: &'l Root<'own>, s: String) -> Atom<'l,'own>{
+        let value = self.0.entry(s.to_string()).or_insert_with(||{
+            let root = root.add(AtomData(s.to_string()));
+            unsafe{ AtomKind::Allocated(dreck::rebind(WeakGc::new(root))) }
+        });
+
+        match *value{
+            AtomKind::Allocated(ref x) => if let Ok(x) = WeakGc::upgrade(*x){
+                return rebind!(root,Atom::from_ptr(x))
+            }
+            AtomKind::Constant(x) => return x
         }
 
-        let atom = self.atoms.atomize_string(string);
-        self.used.insert(string.to_owned(), atom);
-        atom
+        let root = root.add(AtomData(s.to_string()));
+        *value = AtomKind::Allocated(unsafe { dreck::rebind(WeakGc::new(root)) });
+
+        Atom::from_ptr(root)
+    }
+
+    pub fn atomize_integer<'l>(&mut self,root: &'l Root<'own>,integer: i32) -> Atom<'l, 'own>{
+        if integer > 0 && integer as usize <= Atom::MAX_INTEGER{
+            return unsafe{ Atom::from_integer(integer as usize) }
+        }
+
+        self.atomize_string_ensured(root,format!("{integer}"))
+    }
+
+    pub fn atomize_string<'l>(&mut self,root: &'l Root<'own>, s: &str) -> Atom<'l,'own>{
+        if let Some(x) = Self::is_integer_string(s){
+            return unsafe{ Atom::from_integer(x) }
+        }
+
+        self.atomize_string_ensured(root,s.to_string())
     }
 }
 
-impl<'a> Drop for Interner<'a> {
-    fn drop(&mut self) {
-        self.used.values().for_each(|&x| self.atoms.decrement(x));
-    }
-}

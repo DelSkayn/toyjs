@@ -6,6 +6,8 @@ pub use stack::GcStack;
 mod reader;
 pub use reader::InstructionReader;
 
+mod builtin;
+
 use crate::object::{GcObject, Object, ObjectFlags};
 
 use self::stack::Stack;
