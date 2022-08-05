@@ -112,7 +112,7 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         left: Value<'_, 'own>,
         right: Value<'_, 'own>,
         swap: bool,
-    ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
+    ) -> Result<Value<'static, 'own>, Value<'r, 'own>> {
         let (left, right) = if swap {
             let r = rebind_try!(self.root, self.to_primitive(left, false));
             root_value!(self.root, r);

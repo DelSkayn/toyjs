@@ -3,7 +3,7 @@ use ast::{
     ArrowBody, AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator,
     PrimeExpr, SymbolId,
 };
-use common::{interner::StringId};
+use common::interner::StringId;
 use vm::instructions::Instruction;
 
 use crate::{register::Register, Compiler, InstructionId};
@@ -46,7 +46,7 @@ pub enum AssignmentTarget {
 impl AssignmentTarget {
     /// Create the assignment target from an assignment expression.
     pub fn from_expr<'gc, 'own, A: Allocator + Clone>(
-        this: &mut Compiler< 'gc, 'own, A>,
+        this: &mut Compiler<'gc, 'own, A>,
         assign: &'gc Expr<A>,
     ) -> Self {
         match assign {
@@ -197,7 +197,7 @@ macro_rules! match_binary_instruction{
     };
 }
 
-impl<'gc,'own, A: Allocator + Clone> Compiler<'gc,'own, A> {
+impl<'gc, 'own, A: Allocator + Clone> Compiler<'gc, 'own, A> {
     pub(crate) fn compile_expressions(
         &mut self,
         placment: Option<Register>,
@@ -531,7 +531,7 @@ impl<'gc,'own, A: Allocator + Clone> Compiler<'gc,'own, A> {
                 self.compile_expr(Some(dst), left).eval(self);
                 let tmp = self.builder.alloc_temp();
                 self.builder.push(Instruction::IsNullish {
-                    op: dst.0,
+                    src: dst.0,
                     dst: tmp.0,
                 });
                 self.builder.free_temp(tmp);
@@ -918,7 +918,11 @@ impl<'gc,'own, A: Allocator + Clone> Compiler<'gc,'own, A> {
 
     /// Compile the use of a literal expression
     /// Will put result of expression in given placement register if there is one.
-    pub(crate) fn compile_atom(&mut self, placement: Option<Register>, ident: StringId) -> Register {
+    pub(crate) fn compile_atom(
+        &mut self,
+        placement: Option<Register>,
+        ident: StringId,
+    ) -> Register {
         let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
         let constant = self.constants.push_atom(ident);
         if constant.0 < u16::MAX as u32 {
