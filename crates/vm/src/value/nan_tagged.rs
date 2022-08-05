@@ -2,7 +2,10 @@
 
 use dreck::{marker::Invariant, Bound, Gc, Trace, Tracer};
 
-use crate::object::{GcObject, Object};
+use crate::{
+    atom::Atom,
+    object::{GcObject, Object},
+};
 
 //TODO rediscover implementation and document.
 
@@ -37,6 +40,7 @@ pub union ValueUnion {
     float: f64,
     int: i32,
     pub bits: u64,
+    ptr: *mut u8,
 }
 
 impl cmp::Eq for ValueUnion {}
@@ -287,16 +291,14 @@ impl<'gc, 'own> Value<'gc, 'own> {
         }
     }
 
-    /*
     #[inline]
-    pub fn into_atom(self) -> Option<Atom> {
+    pub fn into_atom(self) -> Option<Atom<'gc, 'own>> {
         if self.is_atom() {
-            unsafe { Some(Atom::from_raw(self.value.int as u32)) }
+            unsafe { Some(Atom::from_raw(self.value.ptr.cast())) }
         } else {
             None
         }
     }
-    */
 }
 
 impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
@@ -354,10 +356,9 @@ impl<'gc, 'own> From<GcObject<'gc, 'own>> for Value<'gc, 'own> {
     }
 }
 
-/*
-impl<'gc, 'own> From<Atom> for Value<'gc, 'own> {
+impl<'gc, 'own> From<Atom<'gc, 'own>> for Value<'gc, 'own> {
     #[inline]
-    fn from(v: Atom) -> Self {
+    fn from(v: Atom<'gc, 'own>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
                 bits: TAG_ATOM | v.into_raw() as u32 as u64,
@@ -365,7 +366,6 @@ impl<'gc, 'own> From<Atom> for Value<'gc, 'own> {
         }
     }
 }
-*/
 
 unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
     fn needs_trace() -> bool

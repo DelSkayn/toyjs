@@ -3,7 +3,7 @@ use ast::{
     ArrowBody, AssignOperator, BinaryOperator, Expr, Literal, PostfixOperator, PrefixOperator,
     PrimeExpr, SymbolId,
 };
-use common::atom::Atom;
+use common::{interner::StringId};
 use vm::instructions::Instruction;
 
 use crate::{register::Register, Compiler, InstructionId};
@@ -39,15 +39,15 @@ impl<A: Allocator + Clone> ExprValue<A> {
 
 pub enum AssignmentTarget {
     Variable(SymbolId),
-    Dot(Register, Atom),
+    Dot(Register, StringId),
     Index(Register, Register),
 }
 
 impl AssignmentTarget {
     /// Create the assignment target from an assignment expression.
-    pub fn from_expr<'a, 'rt, 'cell, A: Allocator + Clone>(
-        this: &mut Compiler<'a, 'rt, 'cell, A>,
-        assign: &'a Expr<A>,
+    pub fn from_expr<'gc, 'own, A: Allocator + Clone>(
+        this: &mut Compiler< 'gc, 'own, A>,
+        assign: &'gc Expr<A>,
     ) -> Self {
         match assign {
             Expr::Prime(PrimeExpr::Variable(symbol)) => {
@@ -197,11 +197,11 @@ macro_rules! match_binary_instruction{
     };
 }
 
-impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
+impl<'gc,'own, A: Allocator + Clone> Compiler<'gc,'own, A> {
     pub(crate) fn compile_expressions(
         &mut self,
         placment: Option<Register>,
-        expr: &'a [Expr<A>],
+        expr: &'gc [Expr<A>],
     ) -> ExprValue<A> {
         for e in expr[..expr.len() - 1].iter() {
             let expr = self.compile_expr(None, e).eval(self);
@@ -219,7 +219,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub(crate) fn compile_expr(
         &mut self,
         placement: Option<Register>,
-        expr: &'a Expr<A>,
+        expr: &'gc Expr<A>,
     ) -> ExprValue<A> {
         match expr {
             Expr::Prime(x) => self.compile_prime(placement, x),
@@ -469,9 +469,9 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_binary_expr(
         &mut self,
         placement: Option<Register>,
-        left: &'a Expr<A>,
-        op: &'a BinaryOperator<A>,
-        right: &'a Expr<A>,
+        left: &'gc Expr<A>,
+        op: &'gc BinaryOperator<A>,
+        right: &'gc Expr<A>,
     ) -> ExprValue<A> {
         match op {
             BinaryOperator::And => {
@@ -615,9 +615,9 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_assignment(
         &mut self,
         placement: Option<Register>,
-        assign: &'a Expr<A>,
-        op: &'a AssignOperator,
-        value: &'a Expr<A>,
+        assign: &'gc Expr<A>,
+        op: &'gc AssignOperator,
+        value: &'gc Expr<A>,
     ) -> Register {
         let assign_target = AssignmentTarget::from_expr(self, assign);
         let assign_place = assign_target.placement(self);
@@ -745,7 +745,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_prime(
         &mut self,
         placement: Option<Register>,
-        expr: &'a PrimeExpr<A>,
+        expr: &'gc PrimeExpr<A>,
     ) -> ExprValue<A> {
         match expr {
             PrimeExpr::Variable(symbol) => ExprValue::new_in(
@@ -918,7 +918,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     /// Compile the use of a literal expression
     /// Will put result of expression in given placement register if there is one.
-    pub(crate) fn compile_atom(&mut self, placement: Option<Register>, ident: Atom) -> Register {
+    pub(crate) fn compile_atom(&mut self, placement: Option<Register>, ident: StringId) -> Register {
         let register = placement.unwrap_or_else(|| self.builder.alloc_temp());
         let constant = self.constants.push_atom(ident);
         if constant.0 < u16::MAX as u32 {
@@ -951,7 +951,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_object_literal(
         &mut self,
         placement: Option<Register>,
-        bindings: &'a Vec<(Atom, Expr<A>), A>,
+        bindings: &'gc Vec<(StringId, Expr<A>), A>,
     ) -> Register {
         let mut object = None;
         for (name, value) in bindings {
@@ -981,7 +981,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_array_literal(
         &mut self,
         placement: Option<Register>,
-        bindings: &'a [Expr<A>],
+        bindings: &'gc [Expr<A>],
     ) -> Register {
         let mut array = None;
         for (idx, value) in bindings.iter().enumerate() {
@@ -1008,7 +1008,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         array.unwrap()
     }
 
-    fn compile_new(&mut self, placement: Option<Register>, rhs: &'a Expr<A>) -> Register {
+    fn compile_new(&mut self, placement: Option<Register>, rhs: &'gc Expr<A>) -> Register {
         let func = if let Expr::UnaryPostfix(expr, PostfixOperator::Call(args)) = rhs {
             let func = self.compile_expr(None, expr).eval(self);
             for (idx, arg) in args.iter().enumerate() {
@@ -1036,8 +1036,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     fn compile_function_call(
         &mut self,
         placement: Option<Register>,
-        lhs: &'a Expr<A>,
-        args: &'a [Expr<A>],
+        lhs: &'gc Expr<A>,
+        args: &'gc [Expr<A>],
     ) -> Register {
         enum CallType {
             Method { obj: Register, key: Register },

@@ -1,7 +1,4 @@
-use common::{
-    atom::Atoms,
-    source::{Source, Span},
-};
+use common::{interner::Interner, source::{Source, Span}};
 use lexer::{Error as LexerError, ErrorKind as LexerErrorKind};
 use std::fmt;
 use token::Token;
@@ -30,11 +27,11 @@ pub struct Error {
 }
 
 impl Error {
-    pub fn format<'a>(self, source: &'a Source, atoms: &'a Atoms) -> FormattedError<'a> {
+    pub fn format<'a>(self, source: &'a Source, interner: &'a Interner) -> FormattedError<'a> {
         FormattedError {
             error: self,
             source,
-            atoms,
+            interner,
         }
     }
 }
@@ -52,7 +49,7 @@ impl From<LexerError> for Error {
 pub struct FormattedError<'a> {
     error: Error,
     source: &'a Source,
-    atoms: &'a Atoms,
+    interner: &'a Interner,
 }
 
 impl fmt::Display for FormattedError<'_> {
@@ -114,7 +111,7 @@ impl FormattedError<'_> {
             } => {
                 write!(w, "unexpected token")?;
                 if let Some(x) = found {
-                    write!(w, ": found '{}'", x.kind.format(self.atoms))?;
+                    write!(w, ": found '{}'", x.kind.format(self.interner))?;
                 }
                 match expected.len() {
                     0 => {}

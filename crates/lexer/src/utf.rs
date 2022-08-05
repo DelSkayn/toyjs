@@ -6,7 +6,7 @@ use unicode_xid::UnicodeXID;
 
 const CONTINUE_BYTE_MASK: u8 = 0b0011_1111;
 
-impl<'a, 'b> Lexer<'a, 'b> {
+impl Lexer<'_, '_> {
     /// Returns the next byte which has a utf-8 continue marker.
     fn next_continue_byte(&mut self) -> LexResult<u8> {
         let peek = self.peek_byte().ok_or(ErrorKind::InvalidUnicodeSequence)?;

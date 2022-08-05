@@ -15,7 +15,7 @@ fn from_ascii_digit(digit: u8) -> u8 {
     panic!("invalid digit");
 }
 
-impl<'a, 'b> Lexer<'a, 'b> {
+impl Lexer<'_, '_> {
     /// Lex a string token.
     pub(super) fn lex_string(&mut self, start: u8) -> LexResult<Token> {
         self.buffer.clear();

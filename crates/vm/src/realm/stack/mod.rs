@@ -148,27 +148,23 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             let new_capacity = new_capacity.next_power_of_two();
             let layout = Layout::array::<Value>(capacity).unwrap();
             let size = Layout::array::<Value>(new_capacity).unwrap().size();
-            let ptr: *mut Value =
-                alloc::realloc(this_bor.root.as_ptr().cast(), layout, size).cast();
+            let ptr = alloc::realloc(this_bor.root.as_ptr().cast(), layout, size);
             if ptr.is_null() {
                 alloc::handle_alloc_error(layout);
             }
             let root_ptr = this_bor.root.as_ptr();
-            if ptr != root_ptr {
-                let original = this_bor.root.as_ptr();
-                this_bor.stack = Self::rebase(original, ptr, this_bor.stack);
-                this_bor.frame = Self::rebase(original, ptr, this_bor.frame);
+            if ptr.cast() != root_ptr {
+                let original: *mut u8 = this_bor.root.as_ptr().cast();
+                this_bor.stack = Self::rebase(original.cast(), ptr.cast(), this_bor.stack);
+                this_bor.frame = Self::rebase(original.cast(), ptr.cast(), this_bor.frame);
                 // Stack has unique accesso
                 // TODO find a better way to do this within dreck
-                this_bor.root = NonNull::new_unchecked(ptr);
+                this_bor.root = NonNull::new_unchecked(ptr.cast());
                 for idx in 0..this.borrow(owner).upvalues.len() {
-                    // Safe because upvalues only need to be traced once the are closed.
-                    let up = this.borrow(owner).upvalues[idx];
-                    let up_ptr = up.unsafe_borrow_mut(owner);
-                    let loc = up_ptr.location;
-                    let loc = Self::rebase(original, ptr, loc);
-                    // Safe no new pointer is added to the upvalue
-                    (*up_ptr).location = loc;
+                    let up: Gc<UpvalueObject> = this.borrow(owner).upvalues[idx];
+                    let loc: *mut u8 = up.borrow(owner).location.cast();
+                    let loc = Self::rebase(original.cast(), ptr.cast(), loc);
+                    up.unsafe_borrow_mut(owner).location = loc.cast();
                 }
             }
         }
@@ -263,6 +259,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     this_borrow.frame_upvalues = upvalues;
                     for _ in 0..new_closed_upvalues {
                         let upvalue = this.unsafe_borrow_mut(owner).upvalues.pop().unwrap();
+                        let upvalue = rebind!(root,upvalue);
                         upvalue.borrow_mut(owner, root).close();
                     }
 

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use common::{
-    atom::Atom,
+    interner::StringId,
     collections::HashMap,
     newtype_key,
     slotmap::{SlotKey, SlotVec},
@@ -46,7 +46,7 @@ pub struct Symbol {
     /// The id of the scope this symbol was declared in.
     pub decl_scope: ScopeId,
     /// The identifier with which this identifier was declared.
-    pub ident: Atom,
+    pub ident: StringId,
 }
 
 newtype_key! {
@@ -132,7 +132,7 @@ pub struct SymbolTable<A: Allocator> {
     scopes: Scopes<A>,
     symbols: Symbols<A>,
     /// Used for symbol lookup.
-    symbols_by_ident: HashMap<Atom, Vec<(ScopeId, SymbolId)>>,
+    symbols_by_ident: HashMap<StringId, Vec<(ScopeId, SymbolId)>>,
     alloc: A,
 }
 
@@ -290,7 +290,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
 
     /// Looks up a symbol in current and parent scopes by the symbol's name.
     /// Returns None if no symbol with the given name was found in the current and parent scopes.
-    fn lookup_symbol(&self, name: Atom) -> Option<SymbolId> {
+    fn lookup_symbol(&self, name: StringId) -> Option<SymbolId> {
         let mut cur_scope = self.current_scope;
         loop {
             if let Some(x) = self.table.symbols_by_ident.get(&name) {
@@ -308,7 +308,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
         }
     }
 
-    pub fn define(&mut self, name: Atom, kind: DeclType) -> Option<SymbolId> {
+    pub fn define(&mut self, name: StringId, kind: DeclType) -> Option<SymbolId> {
         match kind {
             DeclType::Let | DeclType::Const | DeclType::Argument => {
                 if self
@@ -467,7 +467,7 @@ impl<'a, A: Allocator + Clone> SymbolTableBuilder<'a, A> {
 
     /// Use a symbol,
     /// Implicitly declares a variable if it was not yet declared.
-    pub fn use_symbol(&mut self, name: Atom) -> SymbolId {
+    pub fn use_symbol(&mut self, name: StringId) -> SymbolId {
         if let Some(x) = self.lookup_symbol(name) {
             let symbol = &self.table.symbols[x];
             if symbol.decl_type != DeclType::Implicit || symbol.decl_scope == self.current_function

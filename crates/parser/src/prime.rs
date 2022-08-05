@@ -5,7 +5,7 @@ use ast::{
 };
 use token::t;
 
-impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
+impl<A: Allocator + Clone> Parser<'_, '_, A> {
     pub(crate) fn parse_prime_expr(&mut self) -> Result<PrimeExpr<A>> {
         let peek = match self.peek_kind()? {
             Some(x) => x,
@@ -57,12 +57,6 @@ impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
             }
             TokenKind::Ident(x) => {
                 self.next()?;
-
-                if x == common::atom::constant::eval {
-                    if let Some(x) = self.try_parse_eval()? {
-                        return Ok(x);
-                    }
-                }
 
                 let var = self.symbol_table.use_symbol(x);
                 Ok(PrimeExpr::Variable(var))

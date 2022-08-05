@@ -1,6 +1,7 @@
 use dreck::{rebind, Owner, Root};
 
 use crate::{
+    atom::Atoms,
     object::{GcObject, ObjectKind},
     realm::{
         stack::{FrameType, Stack},
@@ -21,6 +22,8 @@ pub struct ExecutionContext<'l, 'gc, 'own> {
     pub realm: GcRealm<'gc, 'own>,
     pub stack: GcStack<'gc, 'own>,
 
+    pub atoms: &'l mut Atoms<'gc, 'own>,
+
     /// The value this in the current context
     pub this: Value<'gc, 'own>,
     /// The current new_target
@@ -36,6 +39,7 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         owner: &'l mut Owner<'own>,
         realm: GcRealm<'gc, 'own>,
         stack: GcStack<'gc, 'own>,
+        atoms: &'l mut Atoms<'gc, 'own>,
         this: Value<'gc, 'own>,
         function: GcObject<'gc, 'own>,
     ) -> Self {
@@ -44,6 +48,7 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
             owner,
             realm,
             stack,
+            atoms,
             this,
             new_target: Value::undefined(),
             function,
@@ -69,5 +74,9 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
             ObjectKind::StaticFn(x) => rebind!(self.root, x(self)),
             _ => panic!("invalid function object kind"),
         }
+    }
+
+    pub fn arg(&self, idx: usize) -> Option<Value<'gc, 'own>> {
+        todo!()
     }
 }

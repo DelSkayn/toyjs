@@ -1,6 +1,9 @@
 use dreck::{rebind, rebind_try, Gc, Owner, Root};
 
-use crate::value::Value;
+use crate::{
+    atom::{self, Atom, Atoms},
+    value::Value,
+};
 
 use super::ExecutionContext;
 
@@ -152,5 +155,30 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         _prefer_string: bool,
     ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
         todo!()
+    }
+
+    pub fn atomize_primitive(
+        owner: &'r Owner<'own>,
+        root: &'r Root<'own>,
+        atoms: &mut Atoms<'gc, 'own>,
+        value: Value<'r, 'own>,
+    ) -> Atom<'r, 'own> {
+        if let Some(x) = value.into_int() {
+            atoms.atomize_integer(root, x)
+        } else if let Some(x) = value.into_string() {
+            atoms.atomize_string(root, &x.borrow(owner))
+        } else if let Some(x) = value.into_bool() {
+            if x {
+                atom::constants::r#true()
+            } else {
+                atom::constants::r#false()
+            }
+        } else if let Some(x) = value.into_atom() {
+            unsafe { dreck::rebind(x) }
+        } else if let Some(x) = value.into_float() {
+            atoms.atomize_string(root, &format!("{x}"))
+        } else {
+            panic!("atomize primitive was called on a non primitive: {value:?}")
+        }
     }
 }

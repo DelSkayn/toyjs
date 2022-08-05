@@ -9,8 +9,8 @@ use crate::{
 };
 use std::alloc::Allocator;
 
-impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
-    pub(crate) fn compile_stmt(&mut self, stmt: &'a Stmt<A>) -> Option<Register> {
+impl<'gc,'own, A: Allocator + Clone> Compiler<'gc,'own, A> {
+    pub(crate) fn compile_stmt(&mut self, stmt: &'gc Stmt<A>) -> Option<Register> {
         match stmt {
             Stmt::Empty => None,
             Stmt::Expr(x) => {
@@ -165,9 +165,9 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     pub fn compile_if(
         &mut self,
-        cond: &'a [Expr<A>],
-        r#if: &'a Stmt<A>,
-        r#else: &'a Option<Box<Stmt<A>, A>>,
+        cond: &'gc [Expr<A>],
+        r#if: &'gc Stmt<A>,
+        r#else: &'gc Option<Box<Stmt<A>, A>>,
     ) {
         let expr = self.compile_expressions(None, cond);
 
@@ -209,9 +209,9 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     pub fn compile_switch(
         &mut self,
-        cond: &'a [Expr<A>],
-        cases: &'a [Case<A>],
-        r#default: Option<&'a [Stmt<A>]>,
+        cond: &'gc [Expr<A>],
+        cases: &'gc [Case<A>],
+        r#default: Option<&'gc [Stmt<A>]>,
     ) {
         let cond = self.compile_expressions(None, cond).eval(self);
         // Compile condition jumps
@@ -254,7 +254,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         }
     }
 
-    pub fn compile_while(&mut self, cond: &'a [Expr<A>], block: &'a Stmt<A>) {
+    pub fn compile_while(&mut self, cond: &'gc [Expr<A>], block: &'gc Stmt<A>) {
         let before_cond = self.builder.next_instruction_id();
         let expr = self.compile_expressions(None, cond);
         let patch_while = self.builder.push(Instruction::JumpFalse {
@@ -295,7 +295,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         });
     }
 
-    pub fn compile_do_while(&mut self, block: &'a Stmt<A>, cond: &'a [Expr<A>]) {
+    pub fn compile_do_while(&mut self, block: &'gc Stmt<A>, cond: &'gc [Expr<A>]) {
         let before_stmt = self.builder.next_instruction_id();
 
         self.builder.push_flow_scope();
@@ -331,8 +331,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub fn compile_function_decl(
         &mut self,
         scope: ScopeId,
-        params: &'a Params<A>,
-        block: &'a [Stmt<A>],
+        params: &'gc Params<A>,
+        block: &'gc [Stmt<A>],
     ) -> FunctionId {
         let id = self.builder.push_function(scope, params);
         for s in block.iter() {
@@ -355,8 +355,8 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
     pub fn compile_arrow_function_decl(
         &mut self,
         scope: ScopeId,
-        params: &'a Params<A>,
-        body: &'a ArrowBody<A>,
+        params: &'gc Params<A>,
+        body: &'gc ArrowBody<A>,
     ) -> FunctionId {
         let id = self.builder.push_function(scope, params);
         match body {
@@ -387,10 +387,10 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
 
     pub fn compile_for(
         &mut self,
-        decl: &'a Option<ForDecl<A>>,
-        cond: Option<&'a [Expr<A>]>,
-        post: Option<&'a [Expr<A>]>,
-        block: &'a Stmt<A>,
+        decl: &'gc Option<ForDecl<A>>,
+        cond: Option<&'gc [Expr<A>]>,
+        post: Option<&'gc [Expr<A>]>,
+        block: &'gc Stmt<A>,
     ) {
         if let Some(decl) = decl {
             match decl {
@@ -452,7 +452,7 @@ impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
         }
     }
 
-    pub fn compile_for_in(&mut self, decl: SymbolId, expr: &'a [Expr<A>], stmt: &'a Stmt<A>) {
+    pub fn compile_for_in(&mut self, decl: SymbolId, expr: &'gc [Expr<A>], stmt: &'gc Stmt<A>) {
         let decl = self.builder.symbol_table.resolve_symbol(decl);
         let tgt = AssignmentTarget::from_symbol(decl);
         let res = self.compile_expressions(None, expr).eval(self);

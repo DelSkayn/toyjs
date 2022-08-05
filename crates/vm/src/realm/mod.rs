@@ -1,4 +1,4 @@
-use dreck::{Bound, Gc, Root, Trace};
+use dreck::{Bound, Gc, Owner, Root, Trace};
 
 pub mod stack;
 pub use stack::GcStack;
@@ -8,19 +8,30 @@ pub use reader::InstructionReader;
 
 mod builtin;
 
-use crate::object::{GcObject, Object, ObjectFlags};
+use crate::{
+    atom::Atoms,
+    object::{GcObject, Object, ObjectFlags},
+};
 
-use self::stack::Stack;
+use self::{
+    builtin::{Builtin, BuiltinBuilder},
+    stack::Stack,
+};
 
 pub type GcRealm<'gc, 'own> = Gc<'gc, 'own, Realm<'gc, 'own>>;
 
 pub struct Realm<'gc, 'own> {
     pub(crate) global: GcObject<'gc, 'own>,
     pub(crate) stack: GcStack<'gc, 'own>,
+    pub(crate) builtin: Builtin<'gc, 'own>,
 }
 
 impl<'gc, 'own> Realm<'gc, 'own> {
-    pub fn new(root: &'gc Root<'own>) -> Self {
+    pub fn new(
+        owner: &'gc mut Owner<'own>,
+        root: &'gc Root<'own>,
+        atoms: &'gc mut Atoms<'gc, 'own>,
+    ) -> Self {
         let stack = Stack::new();
         let stack = root.add(stack);
         let global = Object::new_gc(
@@ -29,7 +40,13 @@ impl<'gc, 'own> Realm<'gc, 'own> {
             ObjectFlags::ORDINARY,
             crate::object::ObjectKind::Ordinary,
         );
-        Realm { stack, global }
+
+        let builtin = BuiltinBuilder { owner, root, atoms }.build();
+        Realm {
+            stack,
+            global,
+            builtin,
+        }
     }
 }
 

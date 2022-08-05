@@ -1,5 +1,4 @@
-
-#![allow(non_upper_case_globals)]
+#![allow(non_snake_case)]
 use super::Atom;
 
 macro_rules! define_atom{
@@ -11,19 +10,31 @@ macro_rules! define_atom{
             $(stringify!($name),)*
         ];
 
-        pub const empty : Atom = Atom::from_constant_id(0);
-        pub const r#false: Atom = Atom::from_constant_id(1);
-        pub const r#true: Atom = Atom::from_constant_id(2);
+        pub const fn empty<'a>() -> Atom<'static,'a>{
+            Atom::from_constant_id(0)
+        }
+
+        pub const fn r#false<'a>() -> Atom<'static,'a>{
+            Atom::from_constant_id(1)
+        }
+
+        pub const fn r#true<'a>() -> Atom<'static,'a>{
+            Atom::from_constant_id(2)
+        }
 
         define_atom!(@cons 3 => ($($name),*));
 
     };
     (@cons $v:expr => ($head:ident,$($rem:tt)*)) => {
-        pub const $head: Atom = Atom::from_constant_id($v);
+        pub const fn $head<'a>() -> Atom<'static,'a>{
+            Atom::from_constant_id($v)
+        }
         define_atom!(@cons $v + 1 => ($($rem)*));
     };
     (@cons $v:expr => ($head:ident))=> {
-        pub const $head: Atom = Atom::from_constant_id($v);
+        pub const fn $head<'a>() -> Atom<'static,'a>{
+            Atom::from_constant_id($v)
+        }
     };
     (@init $v:expr => ($($name:ident),*)) => {
         $($v.atomize_string(stringify!($name));)*

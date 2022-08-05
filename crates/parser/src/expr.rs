@@ -60,7 +60,7 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
     }
 }
 
-impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
+impl<A: Allocator + Clone> Parser<'_, '_, A> {
     pub(crate) fn parse_expr(&mut self) -> Result<Vec<Expr<A>, A>> {
         let mut res = Vec::new_in(self.alloc.clone());
         loop {

@@ -19,9 +19,9 @@ pub type SharedFn = Box<
     ) -> Result<Value<'gc, 'own>, Value<'gc, 'own>>,
 >;
 
-pub type StaticFn = for<'l, 'gc, 'own> fn(
-    &mut ExecutionContext<'l, 'gc, 'own>,
-) -> Result<Value<'l, 'own>, Value<'l, 'own>>;
+pub type StaticFn = for<'r, 'l, 'own> fn(
+    &'r mut ExecutionContext<'l, '_, 'own>,
+) -> Result<Value<'r, 'own>, Value<'r, 'own>>;
 
 pub struct VmFunction<'gc, 'own> {
     pub bc: GcByteCode<'gc, 'own>,

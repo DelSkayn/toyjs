@@ -23,19 +23,19 @@ tagged-union = ["vm/tagged-union"]
 gc-dump-trace = ["vm/gc-dump-trace"]
 gc-force-collect-full = ["vm/gc-force-collect-full"]
 
-[[bench]]
-name = "startup"
-harness = false
+#[[bench]]
+#name = "startup"
+#harness = false
 
-[[bench]]
-name = "expr"
-harness = false
+#[[bench]]
+#name = "expr"
+#harness = false
 
-[[bench]]
-name = "scripts"
-harness = false
+#[[bench]]
+#name = "scripts"
+#harness = false
 
 
-[[bin]]
-name = "cli"
+#[[bin]]
+#name = "cli"
 
