@@ -1,4 +1,4 @@
-// Module containing the instruction information
+// Module containing the instrucop: srcon information
 //
 // Instructions come in two different formats.
 // 1. The simple to use enum representation in [`Instruction`]
@@ -233,10 +233,10 @@ define_instructions! {
         Less{dst: u8, left: u8, righ:u8},
         LessEq{dst: u8, left: u8, righ:u8},
 
-        Negative{dst: u8, op: u8},
-        Positive{dst: u8, op: u8},
+        Negative{dst: u8, src: u8},
+        Positive{dst: u8, src: u8},
 
-        IsNullish{dst: u8, op: u8},
+        IsNullish{dst: u8, src: u8},
         Not{ dst: u8, src: u8},
 
         IterHead{dst: u8, obj: u8},

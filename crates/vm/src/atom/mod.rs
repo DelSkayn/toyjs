@@ -266,10 +266,6 @@ impl<'gc, 'own> Atoms<'gc, 'own> {
     }
 
     fn atomize_string_ensured<'l>(&mut self, root: &'l Root<'own>, s: String) -> Atom<'l, 'own> {
-        if s.is_empty() {
-            return constants::empty();
-        }
-
         let value = self.0.entry(s.to_string()).or_insert_with(|| {
             let root = root.add(AtomData(s.to_string()));
             unsafe { AtomKind::Allocated(dreck::rebind(WeakGc::new(root))) }
