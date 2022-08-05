@@ -1,6 +1,6 @@
-use dreck::{rebind, rebind_try, Owner};
+use dreck::{rebind, rebind_try, root, Gc, Owner};
 
-use crate::value::Value;
+use crate::{atom, object::Object, value::Value};
 
 use super::ExecutionContext;
 
@@ -123,21 +123,14 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
 
     pub fn instance_of(
         &'r mut self,
-        _left: Value<'_, 'own>,
-        _right: Value<'_, 'own>,
-    ) -> Result<bool, Value<'l, 'own>> {
-        todo!()
-        /*
+        left: Value<'_, 'own>,
+        right: Value<'_, 'own>,
+    ) -> Result<bool, Value<'r, 'own>> {
         let right = rebind_try!(
             self.root,
-            right.into_object().ok_or_else(||
-                this.create_type_error(
-                self.owner,
-                self.root,
-                atoms,
-                "invalid `instanceof` operand"
-            )
-                todo!())
+            right
+                .into_object()
+                .ok_or_else(|| self.type_error("invalid `instanceof` operand"))
         );
 
         let left = if let Some(x) = left.into_object() {
@@ -148,34 +141,29 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
 
         // TODO implement @@hasInstance method
         if right.borrow(self.owner).is_function() {
-            todo!()
-            return Err(this.create_type_error(
-                owner,
+            return Err(rebind!(
                 self.root,
-                atoms,
-                "right hand instanceof operand is not a function",
+                self.type_error("right hand instanceof operand is not a function")
             ));
         }
 
-        todo!()
-        let tgt_proto = right.index(owner, self.root, atoms, this, atom::constant::prototype);
+        root!(self.root, right);
+        let tgt_proto = Object::index(right, self, atom::constants::prototype());
         let tgt_proto = rebind_try!(self.root, tgt_proto).empty_to_undefined();
         let tgt_proto = rebind!(self.root, tgt_proto);
-        let tgt_proto = tgt_proto.into_object().ok_or_else(|| {
-            todo!()
-            this.create_type_error(owner, self.root, atoms, "object prototype is not an object")
-        });
-
-        let tgt_proto = rebind_try!(self.root, tgt_proto);
+        let tgt_proto = if let Some(x) = tgt_proto.into_object() {
+            x
+        } else {
+            return Err(self.type_error("object prototype is not an object"));
+        };
 
         let mut cur = rebind!(self.root, left);
         while let Some(proto) = cur.borrow(self.owner).prototype() {
-            if Gc::ptr_eq(proto,tgt_proto) {
+            if Gc::ptr_eq(proto, tgt_proto) {
                 return Ok(true);
             }
             cur = proto;
         }
         Ok(false)
-            */
     }
 }

@@ -114,9 +114,11 @@ pub fn to_string<'r, 'l, 'own>(
     exec: &'r mut ExecutionContext<'l, '_, 'own>,
 ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
     let this = exec.this;
-    let this = this.into_object().expect("TODO");
-    //.ok_or_else(|| realm.create_type_error(owner, exec.root, atoms, "this is not an object"));
-    //let this = rebind_try!(exec.root, this);
+    let this = if let Some(this) = this.into_object() {
+        this
+    } else {
+        return Err(exec.type_error("this is not an object"));
+    };
 
     let name = rebind_try!(
         exec.root,

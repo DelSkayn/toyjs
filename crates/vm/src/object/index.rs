@@ -14,11 +14,11 @@ use super::{properties::PropertyEntry, GcObject};
 
 impl<'gc, 'own> Object<'gc, 'own> {
     #[inline]
-    pub fn index_value<'l, V: Into<Value<'gc, 'own>>>(
+    pub fn index_value<'r, V: Into<Value<'gc, 'own>>>(
         this: GcObject<'_, 'own>,
-        exec: &'l mut ExecutionContext<'l, 'gc, 'own>,
+        exec: &'r mut ExecutionContext<'_, 'gc, 'own>,
         key: V,
-    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
+    ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
         let v = key.into();
         if let Some(atom) = v.into_atom() {
             Object::index(this, exec, atom)
@@ -71,12 +71,12 @@ impl<'gc, 'own> Object<'gc, 'own> {
     }
 
     #[inline]
-    pub fn index_set_value<'k, 'v, 'l, K, V>(
+    pub fn index_set_value<'k, 'v, 'r, 'l, K, V>(
         this: GcObject<'_, 'own>,
-        exec: &'l mut ExecutionContext<'l, 'gc, 'own>,
+        exec: &'r mut ExecutionContext<'l, 'gc, 'own>,
         key: K,
         value: V,
-    ) -> Result<(), Value<'l, 'own>>
+    ) -> Result<(), Value<'r, 'own>>
     where
         K: Into<Value<'k, 'own>>,
         V: Into<Value<'v, 'own>>,

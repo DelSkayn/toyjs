@@ -4,6 +4,7 @@ use crate::{
     atom::Atoms,
     object::{GcObject, ObjectKind},
     realm::{
+        self,
         stack::{FrameType, Stack},
         GcRealm, GcStack, InstructionReader,
     },
@@ -74,6 +75,24 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
             ObjectKind::StaticFn(x) => rebind!(self.root, x(self)),
             _ => panic!("invalid function object kind"),
         }
+    }
+
+    pub fn error(&'r mut self, msg: impl Into<String>) -> Value<'r, 'own> {
+        let msg = self.root.add(msg.into());
+        let proto = self.realm.borrow(self.owner).builtin.error_proto;
+        realm::builtin::error::create(self.owner, self.root, proto, Some(msg), None).into()
+    }
+
+    pub fn syntax_error(&'r mut self, msg: impl Into<String>) -> Value<'r, 'own> {
+        let msg = self.root.add(msg.into());
+        let proto = self.realm.borrow(self.owner).builtin.syntax_error_proto;
+        realm::builtin::error::create(self.owner, self.root, proto, Some(msg), None).into()
+    }
+
+    pub fn type_error(&'r mut self, msg: impl Into<String>) -> Value<'r, 'own> {
+        let msg = self.root.add(msg.into());
+        let proto = self.realm.borrow(self.owner).builtin.type_error_proto;
+        realm::builtin::error::create(self.owner, self.root, proto, Some(msg), None).into()
     }
 
     pub fn arg(&self, idx: usize) -> Option<Value<'gc, 'own>> {
