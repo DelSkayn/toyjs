@@ -32,8 +32,8 @@ pub struct State {
 }
 
 /// The toyjs parser. Takes a set of tokens and produces an AST
-pub struct Parser<'source, 'atoms, A: Allocator> {
-    lexer: Lexer<'source, 'atoms>,
+pub struct Parser<'source, 'interner, A: Allocator> {
+    lexer: Lexer<'source, 'interner>,
     peek: Option<Token>,
     peek_lt: Option<Token>,
     last_span: Span,
@@ -42,9 +42,9 @@ pub struct Parser<'source, 'atoms, A: Allocator> {
     alloc: A,
 }
 
-impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
+impl<'source, 'interner, A: Allocator + Clone> Parser<'source, 'interner, A> {
     pub fn parse_script(
-        lexer: Lexer<'source, 'atoms>,
+        lexer: Lexer<'source, 'interner>,
         symbol_table: &'source mut SymbolTable<A>,
         alloc: A,
     ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
@@ -65,7 +65,7 @@ impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
     }
 
     pub fn parse_module(
-        lexer: Lexer<'source, 'atoms>,
+        lexer: Lexer<'source, 'interner>,
         symbol_table: &'source mut SymbolTable<A>,
         alloc: A,
     ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {

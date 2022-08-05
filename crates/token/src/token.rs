@@ -1,14 +1,11 @@
-use common::{
-    atom::{Atom, Atoms},
-    source::Span,
-};
+use common::{interner::{Interner, StringId}, source::Span};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Number {
     Integer(i32),
     Float(f64),
-    Big(Atom),
+    Big(StringId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,7 +20,7 @@ pub enum Delim {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Literal {
-    String(Atom),
+    String(StringId),
     Number(Number),
 }
 
@@ -166,7 +163,7 @@ pub enum AssignOperator {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum TokenKind {
-    Ident(Atom),
+    Ident(StringId),
     Literal(Literal),
     Keyword(Keyword),
     /// `;`
@@ -201,8 +198,8 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
-    pub fn format(self, atoms: &Atoms) -> FormatedTokenKind {
-        FormatedTokenKind { kind: self, atoms }
+    pub fn format(self, atoms: &Interner) -> FormatedTokenKind {
+        FormatedTokenKind { kind: self, interner: atoms }
     }
 }
 
@@ -322,7 +319,7 @@ impl fmt::Display for AssignOperator {
 }
 
 pub struct FormatedTokenKind<'a> {
-    atoms: &'a Atoms,
+    interner: &'a Interner,
     kind: TokenKind,
 }
 
@@ -333,9 +330,8 @@ impl fmt::Display for FormatedTokenKind<'_> {
                 f,
                 "{}",
                 &self
-                    .atoms
+                    .interner
                     .lookup(x)
-                    .unwrap_or_else(|| "missing ident from interner!".to_string())
             ),
             TokenKind::Literal(x) => match x {
                 Literal::String(_) => write!(f, "string"),

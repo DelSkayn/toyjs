@@ -4,7 +4,7 @@ use derivative::Derivative;
 use std::{alloc::Allocator, hash::Hash, mem};
 
 //pub use common::bump_list::List as Vec;
-use common::atom::Atom;
+use common::interner::StringId;
 use std::cmp::PartialEq;
 
 pub mod symbol_table;
@@ -151,7 +151,7 @@ pub enum PrefixOperator {
 pub enum PostfixOperator<A: Allocator> {
     AddOne,
     SubtractOne,
-    Dot(Atom),
+    Dot(StringId),
     Index(Box<Expr<A>, A>),
     Call(Vec<Expr<A>, A>),
 }
@@ -211,7 +211,7 @@ pub enum PrimeExpr<A: Allocator> {
     Variable(SymbolId),
     Covered(Vec<Expr<A>, A>),
     ArrowArgs(Params<A>),
-    Object(Vec<(Atom, Expr<A>), A>),
+    Object(Vec<(StringId, Expr<A>), A>),
     Array(Vec<Expr<A>, A>),
     Function(ScopeId, Option<SymbolId>, Params<A>, Vec<Stmt<A>, A>),
     ArrowFunction(ScopeId, Params<A>, ArrowBody<A>),
@@ -226,7 +226,7 @@ pub enum PrimeExpr<A: Allocator> {
 pub enum Literal {
     Null,
     Undefined,
-    String(Atom),
+    String(StringId),
     Integer(i32),
     Float(f64),
     Boolean(bool),

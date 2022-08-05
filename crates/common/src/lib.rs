@@ -3,8 +3,8 @@
 
 #[macro_use]
 pub mod slotmap;
-pub mod atom;
 pub mod cell_vec;
+pub mod interner;
 pub mod source;
 
 pub mod collections {

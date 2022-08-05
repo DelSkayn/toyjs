@@ -6,8 +6,13 @@ use dreck::{self, Bound, Gc, Root, Trace, Tracer};
 mod function;
 use function::{StaticFn, VmFunction};
 
-//mod index;
-//mod properties;
+use self::{elements::Elements, properties::Properties};
+
+mod index;
+mod properties;
+mod elements;
+
+pub(crate) use properties::{Property, PropertyFlags};
 
 //use elements::Elements;
 //pub use function::{FunctionKind, SharedFn, StaticFn, VmFunction};
@@ -95,8 +100,8 @@ pub struct Object<'gc, 'own> {
     flags: ObjectFlags,
     prototype: Option<GcObject<'gc, 'own>>,
     kind: ObjectKind<'gc, 'own>,
-    //pub(crate) properties: Properties<'gc, 'own>,
-    //pub(crate) elements: Elements<'gc, 'own>,
+    pub properties: Properties<'gc, 'own>,
+    pub elements: Elements<'gc, 'own>,
 }
 
 impl<'gc, 'own> Object<'gc, 'own> {
@@ -109,8 +114,8 @@ impl<'gc, 'own> Object<'gc, 'own> {
             flags,
             prototype,
             kind,
-            //properties: Properties::new(),
-            //elements: Elements::new(),
+            properties: Properties::new(),
+            elements: Elements::new(),
         }
     }
 
@@ -125,8 +130,8 @@ impl<'gc, 'own> Object<'gc, 'own> {
                 flags,
                 prototype: dreck::rebind(prototype),
                 kind: dreck::rebind(kind),
-                //properties: Properties::new(),
-                //elements: Elements::new(),
+                properties: Properties::new(),
+                elements: Elements::new(),
             })
         }
     }
@@ -157,8 +162,8 @@ unsafe impl<'gc, 'own> Trace<'own> for Object<'gc, 'own> {
     fn trace<'a>(&self, trace: Tracer<'a, 'own>) {
         self.prototype.trace(trace);
         self.kind.trace(trace);
-        //self.properties.trace(trace);
-        //self.elements.trace(trace);
+        self.properties.trace(trace);
+        self.elements.trace(trace);
     }
 }
 

@@ -3,14 +3,15 @@
 
 use ast::{Params, ScopeId, Script, Stmt, SymbolId, SymbolTable, SymbolTableBuilder};
 use common::{
-    atom::Atoms,
+    interner::Interner,
     newtype_key,
     slotmap::{SlotKey, SlotStack},
 };
+use dreck::Root;
 //use constants::Constants;
 //use lexical_info::LexicalInfo;
 use vm::{
-    gc,
+    atom::Atoms,
     instructions::{ByteCode, ByteFunction, Instruction},
 };
 
@@ -30,35 +31,37 @@ use builder::ScriptBuilder;
 mod expr;
 mod stmt;
 
-pub struct Compiler<'a, 'rt, 'cell, A: Allocator + Clone> {
+pub struct Compiler<'gc, 'own, A: Allocator + Clone> {
     alloc: A,
-    constants: Constants<'a, 'rt, 'cell, Global>,
-    builder: ScriptBuilder<'a, A>,
+    constants: Constants<'gc, 'own, Global>,
+    builder: ScriptBuilder<'gc, A>,
 }
 
-impl<'a, 'rt, 'cell, A: Allocator + Clone> Compiler<'a, 'rt, 'cell, A> {
+impl<'gc, 'own, A: Allocator + Clone> Compiler<'gc, 'own, A> {
     fn new(
-        symbol_table: SymbolTableBuilder<'a, A>,
-        atoms: &'a Atoms,
-        gc: &'a gc::Arena<'rt, 'cell>,
+        symbol_table: SymbolTableBuilder<'gc, A>,
+        gc: &'gc Root<'own>,
+        atoms: &'gc mut Atoms<'gc, 'own>,
+        interner: &'gc mut Interner,
         root: ScopeId,
         alloc: A,
     ) -> Self {
         Compiler {
-            constants: Constants::new_in(atoms, gc, Global),
+            constants: Constants::new_in(gc, atoms, interner, Global),
             builder: ScriptBuilder::new_in(alloc.clone(), symbol_table, root),
             alloc,
         }
     }
 
     pub fn compile_script(
-        script: &'a Script<A>,
-        symbol_table: SymbolTableBuilder<'a, A>,
-        atoms: &'a Atoms,
-        gc: &'a gc::Arena<'rt, 'cell>,
+        script: &'gc Script<A>,
+        symbol_table: SymbolTableBuilder<'gc, A>,
+        gc: &'gc Root<'own>,
+        atoms: &'gc mut Atoms<'gc, 'own>,
+        interner: &'gc mut Interner,
         alloc: A,
-    ) -> ByteCode<'a, 'cell> {
-        let mut this = Compiler::new(symbol_table, atoms, gc, ScopeId::root(), alloc);
+    ) -> ByteCode<'gc, 'own> {
+        let mut this = Compiler::new(symbol_table, gc, atoms, interner, ScopeId::root(), alloc);
 
         let res = script
             .0

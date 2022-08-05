@@ -1,7 +1,7 @@
 use super::{is_radix, ErrorKind, LexResult, Lexer, Token};
 use token::{Literal, Number, TokenKind};
 
-impl<'a, 'b> Lexer<'a, 'b> {
+impl Lexer<'_, '_> {
     fn token_num(&mut self, kind: Number) -> Token {
         self.token(TokenKind::Literal(Literal::Number(kind)))
     }

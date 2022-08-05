@@ -2,10 +2,7 @@
 use std::alloc::Global;
 
 use ast::SymbolTable;
-use common::{
-    atom::{Atoms, Interner},
-    source::Source,
-};
+use common::{interner::Interner, source::Source};
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
 use toyjs_parser::Parser;
 
@@ -16,12 +13,10 @@ pub fn benchmark(c: &mut Criterion) {
         b.iter_batched(
             || {
                 let source = Source::from_string(EXPRESSION.to_string());
-                let atoms = Atoms::new();
-                (source, atoms)
+                source
             },
-            |x| {
-                let (source, atoms) = x;
-                let mut interner = Interner::new(&atoms);
+            |source| {
+                let mut interner = Interner::new();
                 let lexer = lexer::Lexer::new(&source, &mut interner);
                 let mut symbol_table = SymbolTable::new();
                 black_box(Parser::parse_script(lexer, &mut symbol_table, Global).unwrap());

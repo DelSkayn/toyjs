@@ -1,7 +1,4 @@
-use common::{
-    atom::{Atoms, Interner},
-    source::Source,
-};
+use common::{interner::Interner, source::Source};
 use std::{
     env,
     fs::File,
@@ -22,8 +19,7 @@ fn main() -> Result<(), io::Error> {
     let mut buffer = String::new();
     read.read_to_string(&mut buffer)?;
     let source = Source::from_string(buffer);
-    let atoms = Atoms::new();
-    let mut interner = Interner::new(&atoms);
+    let mut interner = Interner::new();
     let mut tokens = Vec::new();
     let mut error = None;
     {
@@ -44,7 +40,7 @@ fn main() -> Result<(), io::Error> {
         }
     }
     for t in &tokens {
-        println!("{}\t{:?}", t.kind.format(&atoms), t);
+        println!("{}\t{:?}", t.kind.format(&interner), t);
     }
 
     if let Some(e) = error {
