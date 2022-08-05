@@ -6,7 +6,7 @@ pub use stack::GcStack;
 mod reader;
 pub use reader::InstructionReader;
 
-mod builtin;
+pub mod builtin;
 
 use crate::{
     atom::Atoms,

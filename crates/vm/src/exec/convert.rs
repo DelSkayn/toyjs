@@ -63,20 +63,7 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         &'r mut self,
         value: Value<'_, 'own>,
     ) -> Result<Value<'static, 'own>, Value<'r, 'own>> {
-        //let prim = rebind_try!(self.root, self.to_primitive(value, false));
-        let prim = unsafe {
-            match self.to_primitive(value, false) {
-                Ok(x) => {
-                    let x = dreck::rebind(x);
-                    self.root.rebind_to(x)
-                }
-                Err(e) => {
-                    let e = dreck::rebind(e);
-                    let e = self.root.rebind_to(e);
-                    return Err(e.into());
-                }
-            }
-        };
+        let prim = rebind_try!(self.root, self.to_primitive(value, false));
         let res =
             Self::to_number_primitive(self.owner, prim).expect("to primitive returned an object");
         Ok(res)

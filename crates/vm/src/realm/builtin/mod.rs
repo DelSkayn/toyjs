@@ -10,7 +10,7 @@ use builder::{ObjectBuilder, PropBuilder};
 
 use self::error::ErrorType;
 
-mod error;
+pub mod error;
 
 pub struct Builtin<'gc, 'own> {
     pub global: GcObject<'gc, 'own>,
