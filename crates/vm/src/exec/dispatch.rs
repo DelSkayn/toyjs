@@ -1,9 +1,12 @@
-use dreck::rebind;
+use dreck::{rebind, root};
 
 use crate::{
     instructions::Instruction,
     object::{Object, ObjectFlags, ObjectKind},
-    realm::InstructionReader,
+    realm::{
+        stack::{FrameType, Stack},
+        InstructionReader,
+    },
     value::Value,
 };
 
@@ -13,10 +16,11 @@ use super::{operator::NumericOperator, ExecutionContext};
 // used when ExecutionContext::w leads to lifetime conflict.
 macro_rules! w {
     ($self:expr,$reg:expr,$value:expr) => {
+        let _value = rebind!($self.root, $value);
         $self
             .stack
             .unsafe_borrow_mut($self.owner)
-            .write($reg, $value.into())
+            .write($reg, _value.into())
     };
 }
 
@@ -25,14 +29,23 @@ macro_rules! dtry {
     ($self:expr,$value:expr) => {
         match $value {
             Ok(x) => x,
-            Err(_) => todo!(),
+            Err(e) => {
+                dthrow!($self, e);
+            }
         }
     };
 }
 
-impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
+macro_rules! dthrow {
+    ($self:expr,$value:expr) => {
+        let _tmp = $value;
+        todo!()
+    };
+}
+
+impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
     #[inline]
-    unsafe fn r(&'l self, reg: u8) -> Value<'gc, 'own> {
+    pub(super) unsafe fn r(&'l self, reg: u8) -> Value<'gc, 'own> {
         self.stack.borrow(self.owner).read(reg)
     }
 
@@ -41,7 +54,7 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
     // Should only be used as long as before each collection and return from the loop the a
     // write_barrier is done for the realm
     #[inline]
-    unsafe fn w<'a>(&mut self, reg: u8, value: impl Into<Value<'a, 'own>>) {
+    pub(super) unsafe fn w<'a>(&mut self, reg: u8, value: impl Into<Value<'a, 'own>>) {
         self.stack
             .unsafe_borrow_mut(self.owner)
             .write(reg, value.into())
@@ -85,8 +98,10 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                     let value = self.r(src);
                     if let Some(obj) = obj.into_object() {
                         dtry!(self, Object::index_set_value(obj, self, key, value))
-                    } else {
-                        todo!()
+                    } else if obj.is_undefined() {
+                        dthrow!(self, self.type_error("undefined has no properties"));
+                    } else if obj.is_null() {
+                        dthrow!(self, self.type_error("null has no properties"));
                     }
                 }
                 Instruction::Index { dst, obj, key } => {
@@ -94,10 +109,7 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                     let key = self.r(key);
                     if let Some(obj) = obj.into_object() {
                         let v = dtry!(self, Object::index_value(obj, self, key));
-                        let v = rebind!(self.root, v);
                         w!(self, dst, v);
-                    } else {
-                        todo!()
                     }
                 }
                 Instruction::GlobalAssign { key, src } => {
@@ -110,7 +122,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                     let obj = self.realm.borrow(self.owner).global;
                     let key = self.r(key);
                     let v = dtry!(self, Object::index_value(obj, self, key));
-                    let v = rebind!(self.root, v);
                     w!(self, dst, v);
                 }
                 Instruction::InstanceOf { dst, left, righ } => {
@@ -137,7 +148,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                     }
 
                     let res = dtry!(self, self.add(left, right));
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
                 Instruction::Sub { dst, left, righ } => {
@@ -155,7 +165,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                         self,
                         self.numeric_operator(left, right, NumericOperator::Sub)
                     );
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
                 Instruction::Mul { dst, left, righ } => {
@@ -173,7 +182,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                         self,
                         self.numeric_operator(left, right, NumericOperator::Mul)
                     );
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
                 Instruction::Div { dst, left, righ } => {
@@ -184,7 +192,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                         self,
                         self.numeric_operator(left, right, NumericOperator::Div)
                     );
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
                 Instruction::Pow { dst, left, righ } => {
@@ -195,7 +202,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                         self,
                         self.numeric_operator(left, right, NumericOperator::Pow)
                     );
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
                 Instruction::Mod { dst, left, righ } => {
@@ -206,7 +212,6 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                         self,
                         self.numeric_operator(left, right, NumericOperator::Mod)
                     );
-                    let res = rebind!(self.root, res);
                     w!(self, dst, res);
                 }
 
@@ -387,6 +392,72 @@ impl<'l, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
                     let cond = self.r(cond);
                     if !Self::is_falsish(self.owner, cond) {
                         reader.jump(tgt);
+                    }
+                }
+
+                Instruction::Push { src } => {
+                    let src = self.r(src);
+                    Stack::push(self.stack, self.owner, src);
+                }
+                Instruction::Call { dst, func } => {
+                    let func = self.r(func);
+                    if let Some(obj) = func.into_object() {
+                        dtry!(self, self.internal_call(&mut reader, dst, obj));
+                    } else {
+                        dtry!(
+                            self,
+                            Err(self.type_error("tried to call a non function object"))
+                        );
+                    }
+                }
+                Instruction::CallMethod { dst, obj, key } => {
+                    let obj = self.r(obj);
+                    let key = self.r(key);
+                    if let Some(obj) = obj.into_object() {
+                        let func = dtry!(self, Object::index_value(obj, self, key));
+                        if let Some(func) = func.into_object() {
+                            root!(self.root, func);
+                            dtry!(self, self.internal_call(&mut reader, dst, func));
+                        } else {
+                            dtry!(
+                                self,
+                                Err(self.type_error("tried to call a non function object"))
+                            );
+                        }
+                    } else {
+                        todo!()
+                    }
+                }
+
+                Instruction::Return { ret } => {
+                    let ret = self.r(ret);
+                    match Stack::pop_frame(self.stack, self.owner, self.root) {
+                        FrameType::Internal {
+                            reader: new_reader,
+                            function,
+                            dst,
+                            ..
+                        } => {
+                            reader = dreck::rebind(new_reader);
+                            self.function = dreck::rebind(function);
+                            w!(self, dst, ret);
+                        }
+                        FrameType::Entry { .. } => return Ok(ret),
+                    }
+                }
+                Instruction::ReturnUndefined { .. } => {
+                    match Stack::pop_frame(self.stack, self.owner, self.root) {
+                        FrameType::Internal {
+                            reader: new_reader,
+                            function,
+                            dst,
+                            ..
+                        } => {
+                            reader = dreck::rebind(new_reader);
+                            self.function = dreck::rebind(function);
+                            w!(self, dst, Value::undefined());
+                        }
+                        FrameType::Entry { .. } => return Ok(Value::undefined()),
                     }
                 }
 
