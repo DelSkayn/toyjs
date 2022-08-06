@@ -5,6 +5,7 @@ use crate::{
     value::Value,
 };
 
+#[derive(Clone, Copy)]
 pub struct InstructionReader<'gc, 'own> {
     bc: GcByteCode<'gc, 'own>,
     cur: *const Instruction,

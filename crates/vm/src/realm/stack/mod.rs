@@ -17,6 +17,10 @@ pub enum FrameType<'gc, 'own> {
         /// The size of the new frame
         size: usize,
     },
+
+    Try {
+        reader: InstructionReader<'gc, 'own>,
+    },
     /// A frame from a vm function to a vm function,
     Internal {
         ///The current instruction reader.
@@ -48,6 +52,9 @@ unsafe impl<'gc, 'own> Trace<'own> for FrameType<'gc, 'own> {
                 reader.trace(tracer);
                 tracer.mark(function);
             }
+            Self::Try { ref reader } => {
+                reader.trace(tracer);
+            }
             Self::Entry { .. } => {}
         }
     }
@@ -60,6 +67,9 @@ unsafe impl<'from, 'to, 'own> Bound<'to> for FrameType<'from, 'own> {
 enum Frame<'gc, 'own> {
     Entry {
         size: usize,
+    },
+    Try {
+        reader: InstructionReader<'gc, 'own>,
     },
     Internal {
         reader: InstructionReader<'gc, 'own>,
@@ -87,6 +97,9 @@ unsafe impl<'gc, 'own> Trace<'own> for Frame<'gc, 'own> {
             } => {
                 reader.trace(tracer);
                 tracer.mark(function);
+            }
+            Self::Try { ref reader } => {
+                reader.trace(tracer);
             }
             Self::Entry { .. } => {}
         }
@@ -239,6 +252,12 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                         }));
                     size as usize
                 }
+                FrameType::Try { reader } => {
+                    this.borrow_mut(owner, root)
+                        .frames
+                        .push(dreck::rebind(Frame::Try { reader }));
+                    return;
+                }
             };
             let this = this.unsafe_borrow_mut(owner);
             this.frame = this.frame.add(this.register_amount);
@@ -302,6 +321,10 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     this_borrow.frame = this_borrow.frame.sub(size);
                     this_borrow.register_amount = size;
                     res
+                }
+                Frame::Try { reader } => {
+                    let reader = rebind!(root, reader);
+                    FrameType::Try { reader }
                 }
             }
         }

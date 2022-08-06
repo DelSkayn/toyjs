@@ -431,21 +431,25 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                 Instruction::Return { ret } => {
                     let ret = self.r(ret);
-                    match Stack::pop_frame(self.stack, self.owner, self.root) {
-                        FrameType::Internal {
-                            reader: new_reader,
-                            function,
-                            dst,
-                            ..
-                        } => {
-                            reader = dreck::rebind(new_reader);
-                            self.function = dreck::rebind(function);
-                            w!(self, dst, ret);
+                    loop {
+                        match Stack::pop_frame(self.stack, self.owner, self.root) {
+                            FrameType::Internal {
+                                reader: new_reader,
+                                function,
+                                dst,
+                                ..
+                            } => {
+                                reader = dreck::rebind(new_reader);
+                                self.function = dreck::rebind(function);
+                                w!(self, dst, ret);
+                                break;
+                            }
+                            FrameType::Entry { .. } => return Ok(ret),
+                            FrameType::Try { .. } => {}
                         }
-                        FrameType::Entry { .. } => return Ok(ret),
                     }
                 }
-                Instruction::ReturnUndefined { .. } => {
+                Instruction::ReturnUndefined { .. } => loop {
                     match Stack::pop_frame(self.stack, self.owner, self.root) {
                         FrameType::Internal {
                             reader: new_reader,
@@ -456,10 +460,12 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                             reader = dreck::rebind(new_reader);
                             self.function = dreck::rebind(function);
                             w!(self, dst, Value::undefined());
+                            break;
                         }
                         FrameType::Entry { .. } => return Ok(Value::undefined()),
+                        FrameType::Try { .. } => {}
                     }
-                }
+                },
 
                 x => todo!("{x:?}"),
             }
