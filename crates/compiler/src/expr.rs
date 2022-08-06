@@ -347,7 +347,7 @@ impl<'gc, 'own, A: Allocator + Clone> Compiler<'gc, 'own, A> {
                     self.builder.free_temp(expr);
                     self.builder.push(Instruction::Negative {
                         dst: dst.0,
-                        op: expr.0,
+                        src: expr.0,
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }
@@ -357,7 +357,7 @@ impl<'gc, 'own, A: Allocator + Clone> Compiler<'gc, 'own, A> {
                     self.builder.free_temp(expr);
                     self.builder.push(Instruction::Positive {
                         dst: dst.0,
-                        op: expr.0,
+                        src: expr.0,
                     });
                     ExprValue::new_in(dst, self.alloc.clone())
                 }

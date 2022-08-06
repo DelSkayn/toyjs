@@ -13,6 +13,7 @@ use crate::{
 
 mod convert;
 mod dispatch;
+mod function;
 mod operator;
 mod relation;
 
@@ -56,27 +57,6 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         }
     }
 
-    /// Run the current execution context
-    pub fn eval(&'r mut self) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
-        match unsafe { self.function.borrow(self.owner).kind() } {
-            ObjectKind::VmFn(x) => {
-                let size = x.bc.borrow(self.owner).functions[x.function as usize].size as usize;
-                debug_assert!(x.bc.borrow(self.owner).functions[x.function as usize]
-                    .upvalues
-                    .is_empty());
-                let bc = x.bc;
-                let function = x.function;
-                Stack::push_frame(self.stack, self.owner, self.root, FrameType::Entry { size });
-                let reader = InstructionReader::new(self.owner, bc, function);
-                let res = unsafe { self.dispatch(reader) };
-                Stack::pop_frame(self.stack, self.owner, self.root);
-                res
-            }
-            ObjectKind::StaticFn(x) => rebind!(self.root, x(self)),
-            _ => panic!("invalid function object kind"),
-        }
-    }
-
     pub fn error(&'r mut self, msg: impl Into<String>) -> Value<'r, 'own> {
         let msg = self.root.add(msg.into());
         let proto = self.realm.borrow(self.owner).builtin.error_proto;
@@ -95,7 +75,7 @@ impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
         realm::builtin::error::create(self.owner, self.root, proto, Some(msg), None).into()
     }
 
-    pub fn arg(&self, idx: usize) -> Option<Value<'gc, 'own>> {
-        todo!()
+    pub fn arg(&self, idx: u32) -> Option<Value<'gc, 'own>> {
+        unsafe { self.stack.borrow(self.owner).read_arg(idx) }
     }
 }

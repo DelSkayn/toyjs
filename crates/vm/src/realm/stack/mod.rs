@@ -7,7 +7,7 @@ use std::{
 use dreck::{rebind, Bound, Gc, Owner, Root, Trace, Tracer};
 pub use upvalue::{GcUpvalueObject, UpvalueObject};
 
-use crate::value::Value;
+use crate::{object::GcObject, value::Value};
 
 use super::InstructionReader;
 
@@ -21,8 +21,12 @@ pub enum FrameType<'gc, 'own> {
     Internal {
         ///The current instruction reader.
         reader: InstructionReader<'gc, 'own>,
+        /// The function object
+        function: GcObject<'gc, 'own>,
         /// The size of the new frame
         size: u8,
+        /// The register to store the result into
+        dst: u8,
     },
 }
 
@@ -36,8 +40,13 @@ unsafe impl<'gc, 'own> Trace<'own> for FrameType<'gc, 'own> {
 
     fn trace<'a>(&self, tracer: Tracer<'a, 'own>) {
         match *self {
-            Self::Internal { ref reader, .. } => {
+            Self::Internal {
+                ref reader,
+                function,
+                ..
+            } => {
                 reader.trace(tracer);
+                tracer.mark(function);
             }
             Self::Entry { .. } => {}
         }
@@ -54,8 +63,10 @@ enum Frame<'gc, 'own> {
     },
     Internal {
         reader: InstructionReader<'gc, 'own>,
+        function: GcObject<'gc, 'own>,
         size: usize,
         upvalues: u16,
+        dst: u8,
     },
 }
 
@@ -69,8 +80,13 @@ unsafe impl<'gc, 'own> Trace<'own> for Frame<'gc, 'own> {
 
     fn trace<'a>(&self, tracer: Tracer<'a, 'own>) {
         match *self {
-            Self::Internal { ref reader, .. } => {
+            Self::Internal {
+                ref reader,
+                function,
+                ..
+            } => {
                 reader.trace(tracer);
+                tracer.mark(function);
             }
             Self::Entry { .. } => {}
         }
@@ -190,7 +206,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         this: GcStack<'gc, 'own>,
         owner: &mut Owner<'own>,
         root: &Root<'own>,
-        frame: FrameType<'gc, 'own>,
+        frame: FrameType<'_, 'own>,
     ) {
         unsafe {
             let size = match frame {
@@ -202,16 +218,25 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     });
                     size
                 }
-                FrameType::Internal { size, reader } => {
+                FrameType::Internal {
+                    size,
+                    reader,
+                    function,
+                    dst,
+                } => {
                     Stack::reserve_additional(this, owner, size as usize);
                     let register_amount = this.borrow(owner).register_amount;
                     let frame_upvalues = this.borrow(owner).frame_upvalues;
                     // Possibly added a new pointer so borrowing unsafe is not allowed here.
-                    this.borrow_mut(owner, root).frames.push(Frame::Internal {
-                        reader,
-                        size: register_amount,
-                        upvalues: frame_upvalues,
-                    });
+                    this.borrow_mut(owner, root)
+                        .frames
+                        .push(dreck::rebind(Frame::Internal {
+                            dst,
+                            function,
+                            reader,
+                            size: register_amount,
+                            upvalues: frame_upvalues,
+                        }));
                     size as usize
                 }
             };
@@ -243,11 +268,15 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     reader,
                     size,
                     upvalues,
+                    function,
+                    dst,
                 } => {
                     let res = rebind!(
                         root,
                         FrameType::Internal {
                             reader,
+                            dst,
+                            function,
                             size: this_borrow.register_amount as u8,
                         }
                     );
@@ -259,7 +288,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     this_borrow.frame_upvalues = upvalues;
                     for _ in 0..new_closed_upvalues {
                         let upvalue = this.unsafe_borrow_mut(owner).upvalues.pop().unwrap();
-                        let upvalue = rebind!(root,upvalue);
+                        let upvalue = rebind!(root, upvalue);
                         upvalue.borrow_mut(owner, root).close();
                     }
 
@@ -279,6 +308,16 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     }
 
     #[inline(always)]
+    pub unsafe fn read_arg(&self, reg: u32) -> Option<Value<'gc, 'own>> {
+        let ptr = self.frame.add(reg as usize);
+        if ptr < self.stack {
+            Some(ptr.read())
+        } else {
+            None
+        }
+    }
+
+    #[inline(always)]
     pub unsafe fn read(&self, reg: u8) -> Value<'gc, 'own> {
         debug_assert!((reg as usize) < self.register_amount);
         self.frame.add(reg as usize).read()
@@ -288,6 +327,13 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     pub unsafe fn write<'l>(&mut self, reg: u8, v: Value<'l, 'own>) {
         debug_assert!((reg as usize) < self.register_amount);
         self.frame.add(reg as usize).write(dreck::rebind(v));
+    }
+
+    pub unsafe fn push<'l>(this: GcStack<'gc, 'own>, owner: &mut Owner<'own>, v: Value<'l, 'own>) {
+        Self::reserve_additional(this, owner, 1);
+        let this = this.unsafe_borrow_mut(owner);
+        this.stack.write(v);
+        this.stack = this.stack.add(1);
     }
 }
 
