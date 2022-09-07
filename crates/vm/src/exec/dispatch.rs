@@ -1,8 +1,8 @@
-use dreck::{rebind, root};
+use dreck::{rebind, root, Bound};
 
 use crate::{
     instructions::Instruction,
-    object::{Object, ObjectFlags, ObjectKind},
+    object::{Object, ObjectFlags, ObjectKind, GcObject},
     realm::{
         stack::{FrameType, Stack},
         InstructionReader,
@@ -26,26 +26,55 @@ macro_rules! w {
 
 // dispatch try. will unwind the stack if an error is thrown.
 macro_rules! dtry {
-    ($self:expr,$value:expr) => {
+    ($self:expr,$reader:ident,$value:expr) => {
         match $value {
             Ok(x) => x,
             Err(e) => {
-                dthrow!($self, e);
+                dthrow!($self, $reader, e);
             }
         }
     };
 }
 
 macro_rules! dthrow {
-    ($self:expr,$value:expr) => {
+    ($self:expr,$reader:ident,$value:expr) => {
+        /*
+        loop {
+            match Stack::pop_frame($self.stack, $self.owner, $self.root) {
+                FrameType::Try { reader, dst } => {
+                    w!($self, dst, $value);
+                    $reader = dreck::rebind(reader);
+                    break;
+                }
+                FrameType::Entry { .. } => return Err(rebind!($self.root, $value)),
+                FrameType::Internal {
+                    reader: new_reader,
+                    function,
+                    ..
+                } => {
+                    $reader = dreck::rebind(new_reader);
+                    $self.function = dreck::rebind(function);
+                }
+            }
+        }
         let _tmp = $value;
+        */
         todo!()
     };
 }
 
-impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
+pub struct LocalCtx<'gc,'own>{
+    reader: InstructionReader<'gc,'own>,
+    function: GcObject<'gc,'own>,
+}
+
+impl<'from,'to,'own> Bound<'from> for LocalCtx<'from,'own>{
+    type Rebound = LocalCtx<'to,'own>;
+}
+
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     #[inline]
-    pub(super) unsafe fn r(&'l self, reg: u8) -> Value<'gc, 'own> {
+    pub(super) unsafe fn r(&'r self, reg: u8) -> Value<'gc, 'own> {
         self.stack.borrow(self.owner).read(reg)
     }
 
@@ -61,9 +90,11 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
     }
 
     pub(super) unsafe fn dispatch(
-        &mut self,
+        &'r mut self,
         mut reader: InstructionReader<'gc, 'own>,
-    ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
+    ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
+        loop {
+
         loop {
             match reader.next(self.owner) {
                 Instruction::LoadConst { dst, cons } => {
@@ -97,18 +128,18 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let key = self.r(key);
                     let value = self.r(src);
                     if let Some(obj) = obj.into_object() {
-                        dtry!(self, Object::index_set_value(obj, self, key, value))
+                        dtry!(self, reader, Object::index_set_value(obj, self, key, value))
                     } else if obj.is_undefined() {
-                        dthrow!(self, self.type_error("undefined has no properties"));
+                        dthrow!(self, reader, self.type_error("undefined has no properties"));
                     } else if obj.is_null() {
-                        dthrow!(self, self.type_error("null has no properties"));
+                        dthrow!(self, reader, self.type_error("null has no properties"));
                     }
                 }
                 Instruction::Index { dst, obj, key } => {
                     let obj = self.r(obj);
                     let key = self.r(key);
                     if let Some(obj) = obj.into_object() {
-                        let v = dtry!(self, Object::index_value(obj, self, key));
+                        let v = dtry!(self, reader, Object::index_value(obj, self, key));
                         w!(self, dst, v);
                     }
                 }
@@ -116,18 +147,18 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let obj = self.realm.borrow(self.owner).global;
                     let key = self.r(key);
                     let value = self.r(src);
-                    dtry!(self, Object::index_set_value(obj, self, key, value));
+                    dtry!(self, reader, Object::index_set_value(obj, self, key, value));
                 }
                 Instruction::GlobalIndex { dst, key } => {
                     let obj = self.realm.borrow(self.owner).global;
                     let key = self.r(key);
-                    let v = dtry!(self, Object::index_value(obj, self, key));
+                    let v = dtry!(self, reader, Object::index_value(obj, self, key));
                     w!(self, dst, v);
                 }
                 Instruction::InstanceOf { dst, left, righ } => {
                     let left = self.r(left);
                     let right = self.r(righ);
-                    let res = dtry!(self, self.instance_of(left, right));
+                    let res = dtry!(self, reader, self.instance_of(left, right));
                     self.w(dst, res)
                 }
                 Instruction::TypeOf { dst, src } => {
@@ -147,7 +178,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                         }
                     }
 
-                    let res = dtry!(self, self.add(left, right));
+                    let res = dtry!(self, reader, self.add(left, right));
                     w!(self, dst, res);
                 }
                 Instruction::Sub { dst, left, righ } => {
@@ -163,6 +194,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                     let res = dtry!(
                         self,
+                        reader,
                         self.numeric_operator(left, right, NumericOperator::Sub)
                     );
                     w!(self, dst, res);
@@ -180,6 +212,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                     let res = dtry!(
                         self,
+                        reader,
                         self.numeric_operator(left, right, NumericOperator::Mul)
                     );
                     w!(self, dst, res);
@@ -190,6 +223,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                     let res = dtry!(
                         self,
+                        reader,
                         self.numeric_operator(left, right, NumericOperator::Div)
                     );
                     w!(self, dst, res);
@@ -200,6 +234,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                     let res = dtry!(
                         self,
+                        reader,
                         self.numeric_operator(left, right, NumericOperator::Pow)
                     );
                     w!(self, dst, res);
@@ -210,6 +245,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                     let res = dtry!(
                         self,
+                        reader,
                         self.numeric_operator(left, right, NumericOperator::Mod)
                     );
                     w!(self, dst, res);
@@ -219,8 +255,8 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_int32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_int32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left & right;
                     self.w(dst, res)
@@ -229,8 +265,8 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_int32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_int32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left | right;
                     self.w(dst, res)
@@ -239,15 +275,15 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_int32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_int32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left ^ right;
                     self.w(dst, res);
                 }
                 Instruction::BitwiseNot { dst, src } => {
                     let src = self.r(src);
-                    let src = dtry!(self, self.to_int32(src));
+                    let src = dtry!(self, reader, self.to_int32(src));
 
                     let res = !src;
                     self.w(dst, res);
@@ -257,8 +293,8 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_int32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_int32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left << (right % 32);
                     self.w(dst, res);
@@ -267,8 +303,8 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_int32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_int32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left >> (right % 32);
                     self.w(dst, res);
@@ -277,8 +313,8 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let left = dtry!(self, self.to_uint32(left));
-                    let right = dtry!(self, self.to_int32(right));
+                    let left = dtry!(self, reader, self.to_uint32(left));
+                    let right = dtry!(self, reader, self.to_int32(right));
 
                     let res = left >> (right % 32) as u32;
                     self.w(dst, res as f64);
@@ -288,14 +324,14 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = dtry!(self, self.equal(left, right));
+                    let res = dtry!(self, reader, self.equal(left, right));
                     self.w(dst, res)
                 }
                 Instruction::NotEqual { dst, left, righ } => {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = !dtry!(self, self.equal(left, right));
+                    let res = !dtry!(self, reader, self.equal(left, right));
                     self.w(dst, res)
                 }
                 Instruction::SEqual { dst, left, righ } => {
@@ -316,7 +352,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = dtry!(self, self.less_then(left, right, true));
+                    let res = dtry!(self, reader, self.less_then(left, right, true));
 
                     if res.is_undefined() {
                         self.w(dst, false);
@@ -328,7 +364,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = dtry!(self, self.less_then(left, right, false));
+                    let res = dtry!(self, reader, self.less_then(left, right, false));
 
                     let res = res.is_false() || !res.is_undefined();
                     self.w(dst, res);
@@ -337,7 +373,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = dtry!(self, self.less_then(left, right, false));
+                    let res = dtry!(self, reader, self.less_then(left, right, false));
 
                     if res.is_undefined() {
                         self.w(dst, false);
@@ -349,7 +385,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let left = self.r(left);
                     let right = self.r(righ);
 
-                    let res = dtry!(self, self.less_then(left, right, true));
+                    let res = dtry!(self, reader, self.less_then(left, right, true));
 
                     let res = res.is_false() || !res.is_undefined();
                     self.w(dst, res);
@@ -365,7 +401,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
 
                 Instruction::Negative { dst, src } => {
                     let src = self.r(src);
-                    let number = dtry!(self, self.to_number(src));
+                    let number = dtry!(self, reader, self.to_number(src));
                     let number = number
                         .into_float()
                         .or_else(|| number.into_int().map(|x| x as f64))
@@ -375,7 +411,7 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                 }
                 Instruction::Positive { dst, src } => {
                     let src = self.r(src);
-                    let number = dtry!(self, self.to_number(src));
+                    let number = dtry!(self, reader, self.to_number(src));
                     self.w(dst, number);
                 }
 
@@ -395,6 +431,24 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     }
                 }
 
+                Instruction::Try { dst, tgt } => {
+                    self.w(dst, Value::empty());
+                    let mut new_reader = reader;
+                    new_reader.jump(tgt);
+                    Stack::push_frame(
+                        self.stack,
+                        self.owner,
+                        self.root,
+                        FrameType::Try { reader, dst },
+                    )
+                }
+                Instruction::Untry { dst } => {
+                    debug_assert!(matches!(
+                        Stack::pop_frame(self.stack, self.owner, self.root,),
+                        FrameType::Try { .. }
+                    ));
+                }
+
                 Instruction::Push { src } => {
                     let src = self.r(src);
                     Stack::push(self.stack, self.owner, src);
@@ -402,10 +456,11 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                 Instruction::Call { dst, func } => {
                     let func = self.r(func);
                     if let Some(obj) = func.into_object() {
-                        dtry!(self, self.internal_call(&mut reader, dst, obj));
+                        dtry!(self, reader, self.internal_call(&mut reader, dst, obj));
                     } else {
                         dtry!(
                             self,
+                            reader,
                             Err(self.type_error("tried to call a non function object"))
                         );
                     }
@@ -414,18 +469,43 @@ impl<'l, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
                     let obj = self.r(obj);
                     let key = self.r(key);
                     if let Some(obj) = obj.into_object() {
-                        let func = dtry!(self, Object::index_value(obj, self, key));
+                        let func = dtry!(self, reader, Object::index_value(obj, self, key));
                         if let Some(func) = func.into_object() {
                             root!(self.root, func);
-                            dtry!(self, self.internal_call(&mut reader, dst, func));
+                            dtry!(self, reader, self.internal_call(&mut reader, dst, func));
                         } else {
                             dtry!(
                                 self,
+                                reader,
                                 Err(self.type_error("tried to call a non function object"))
                             );
                         }
                     } else {
                         todo!()
+                    }
+                }
+
+                Instruction::Throw { src } => {
+                    let e = self.r(src);
+                    match Stack::pop_frame(self.stack, self.owner, self.root) {
+                        FrameType::Try {
+                            reader: new_reader,
+                            dst,
+                        } => {
+                            reader = dreck::rebind(new_reader);
+                            self.w(dst, e);
+                        }
+                        FrameType::Entry { .. } => return Err(e),
+                        FrameType::Internal {
+                            reader: new_reader,
+                            function,
+                            ..
+                        } => {
+                            // Is this rebind correct?
+                            // For this rebind to be correct reader must be traced.
+                            reader = dreck::rebind(new_reader);
+                            self.function = dreck::rebind(function);
+                        }
                     }
                 }
 

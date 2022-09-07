@@ -12,7 +12,7 @@ pub enum NumericOperator {
     Pow,
 }
 
-impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     /// Add to values together
     pub fn add(
         &'r mut self,

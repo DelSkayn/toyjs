@@ -17,14 +17,14 @@ mod function;
 mod operator;
 mod relation;
 
-pub struct ExecutionContext<'l, 'gc, 'own> {
-    pub root: &'l mut Root<'own>,
-    pub owner: &'l mut Owner<'own>,
+pub struct ExecutionContext<'gc, 'own> {
+    pub root: &'gc mut Root<'own>,
+    pub owner: &'gc mut Owner<'own>,
 
     pub realm: GcRealm<'gc, 'own>,
     pub stack: GcStack<'gc, 'own>,
 
-    pub atoms: &'l mut Atoms<'gc, 'own>,
+    pub atoms: &'gc mut Atoms<'gc, 'own>,
 
     /// The value this in the current context
     pub this: Value<'gc, 'own>,
@@ -34,14 +34,14 @@ pub struct ExecutionContext<'l, 'gc, 'own> {
     pub function: GcObject<'gc, 'own>,
 }
 
-impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     /// Create an exeuction context for entering into the vm.
     pub fn new(
-        root: &'l mut Root<'own>,
-        owner: &'l mut Owner<'own>,
+        root: &'gc mut Root<'own>,
+        owner: &'gc mut Owner<'own>,
         realm: GcRealm<'gc, 'own>,
         stack: GcStack<'gc, 'own>,
-        atoms: &'l mut Atoms<'gc, 'own>,
+        atoms: &'gc mut Atoms<'gc, 'own>,
         this: Value<'gc, 'own>,
         function: GcObject<'gc, 'own>,
     ) -> Self {

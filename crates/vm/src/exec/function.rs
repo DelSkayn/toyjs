@@ -13,7 +13,7 @@ use crate::{
 
 use super::ExecutionContext;
 
-impl<'r, 'l: 'r, 'gc, 'own: 'gc> ExecutionContext<'l, 'gc, 'own> {
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     pub fn internal_call(
         &'r mut self,
         reader: &mut InstructionReader<'gc, 'own>,

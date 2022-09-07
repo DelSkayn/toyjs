@@ -94,11 +94,22 @@ impl<'gc, 'own> InstructionReader<'gc, 'own> {
         self.cur = self.cur.offset(offset.into());
     }
 
+    pub unsafe fn absolute_jump(&mut self, owner: &Owner<'own>, offset: u32) {
+        let start = self.bc.borrow(owner).instructions.as_ptr();
+        self.cur = start.add(offset as usize);
+    }
+
     /// # Safety
     ///
     /// `idx` must be smaller or equal to the amount of constants in the containted bytecode.
     pub unsafe fn constant(&self, idx: u16, owner: &Owner<'own>) -> Value<'gc, 'own> {
         debug_assert!(self.bc.borrow(owner).constants.len() > idx as usize);
         *self.bc.borrow(owner).constants.get_unchecked(idx as usize)
+    }
+
+    pub fn absolute_offset(&self, owner: &Owner<'own>, offset: i16) -> u32 {
+        let tgt = unsafe { self.cur.offset((offset - 1).into()) };
+        let start = self.bc.borrow(owner).instructions.as_ptr();
+        unsafe { tgt.offset_from(start) as u32 }
     }
 }
