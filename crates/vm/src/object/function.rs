@@ -14,13 +14,13 @@ pub enum FunctionKind<'gc, 'own, 'a> {
 }
 
 pub type SharedFn = Box<
-    dyn for<'gc, 'own> Fn(
-        &'gc mut ExecutionContext<'gc, 'gc, 'own>,
-    ) -> Result<Value<'gc, 'own>, Value<'gc, 'own>>,
+    dyn for<'r, 'gc, 'own> Fn(
+        &'r mut ExecutionContext<'gc, 'own>,
+    ) -> Result<Value<'r, 'own>, Value<'r, 'own>>,
 >;
 
-pub type StaticFn = for<'r, 'l, 'own> fn(
-    &'r mut ExecutionContext<'l, '_, 'own>,
+pub type StaticFn = for<'r, 'gc, 'own> fn(
+    &'r mut ExecutionContext<'gc, 'own>,
 ) -> Result<Value<'r, 'own>, Value<'r, 'own>>;
 
 pub struct VmFunction<'gc, 'own> {

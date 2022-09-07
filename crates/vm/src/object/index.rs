@@ -16,7 +16,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
     #[inline]
     pub fn index_value<'r, V: Into<Value<'gc, 'own>>>(
         this: GcObject<'_, 'own>,
-        exec: &'r mut ExecutionContext<'_, 'gc, 'own>,
+        exec: &'r mut ExecutionContext<'gc, 'own>,
         key: V,
     ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
         let v = key.into();
@@ -33,7 +33,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
 
     pub fn index<'l>(
         this: GcObject<'_, 'own>,
-        exec: &'l mut ExecutionContext<'_, 'gc, 'own>,
+        exec: &'l mut ExecutionContext<'gc, 'own>,
         key: Atom<'_, 'own>,
     ) -> Result<Value<'l, 'own>, Value<'l, 'own>> {
         let borrow = this.borrow_mut(exec.owner, exec.root);
@@ -73,7 +73,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
     #[inline]
     pub fn index_set_value<'k, 'v, 'r, 'l, K, V>(
         this: GcObject<'_, 'own>,
-        exec: &'r mut ExecutionContext<'l, 'gc, 'own>,
+        exec: &'r mut ExecutionContext<'gc, 'own>,
         key: K,
         value: V,
     ) -> Result<(), Value<'r, 'own>>
@@ -95,7 +95,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
 
     pub fn index_set<'l>(
         this: GcObject<'_, 'own>,
-        exec: &mut ExecutionContext<'l, 'gc, 'own>,
+        exec: &mut ExecutionContext<'gc, 'own>,
         key: Atom<'_, 'own>,
         value: Value<'_, 'own>,
     ) -> Result<(), Value<'l, 'own>> {

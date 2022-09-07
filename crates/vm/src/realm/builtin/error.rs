@@ -17,7 +17,7 @@ pub enum ErrorType {
 }
 
 pub fn construct<'r, 'l, 'own, const KIND: u8>(
-    exec: &'r mut ExecutionContext<'l, '_, 'own>,
+    exec: &'r mut ExecutionContext<'_, 'own>,
 ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
     let new_target = if exec.new_target.is_undefined() {
         exec.function.into()
@@ -111,7 +111,7 @@ pub fn create<'l, 'own>(
 }
 
 pub fn to_string<'r, 'l, 'own>(
-    exec: &'r mut ExecutionContext<'l, '_, 'own>,
+    exec: &'r mut ExecutionContext<'_, 'own>,
 ) -> Result<Value<'r, 'own>, Value<'r, 'own>> {
     let this = exec.this;
     let this = if let Some(this) = this.into_object() {

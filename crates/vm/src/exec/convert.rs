@@ -7,7 +7,7 @@ use crate::{
 
 use super::ExecutionContext;
 
-impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     pub fn is_falsish(owner: &Owner<'own>, value: Value<'gc, 'own>) -> bool {
         if let Some(v) = value.into_int() {
             v == 0

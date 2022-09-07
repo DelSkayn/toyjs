@@ -20,6 +20,7 @@ pub enum FrameType<'gc, 'own> {
 
     Try {
         reader: InstructionReader<'gc, 'own>,
+        dst: u8,
     },
     /// A frame from a vm function to a vm function,
     Internal {
@@ -52,7 +53,7 @@ unsafe impl<'gc, 'own> Trace<'own> for FrameType<'gc, 'own> {
                 reader.trace(tracer);
                 tracer.mark(function);
             }
-            Self::Try { ref reader } => {
+            Self::Try { ref reader, .. } => {
                 reader.trace(tracer);
             }
             Self::Entry { .. } => {}
@@ -70,6 +71,7 @@ enum Frame<'gc, 'own> {
     },
     Try {
         reader: InstructionReader<'gc, 'own>,
+        dst: u8,
     },
     Internal {
         reader: InstructionReader<'gc, 'own>,
@@ -98,7 +100,7 @@ unsafe impl<'gc, 'own> Trace<'own> for Frame<'gc, 'own> {
                 reader.trace(tracer);
                 tracer.mark(function);
             }
-            Self::Try { ref reader } => {
+            Self::Try { ref reader, .. } => {
                 reader.trace(tracer);
             }
             Self::Entry { .. } => {}
@@ -252,10 +254,10 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                         }));
                     size as usize
                 }
-                FrameType::Try { reader } => {
+                FrameType::Try { reader, dst } => {
                     this.borrow_mut(owner, root)
                         .frames
-                        .push(dreck::rebind(Frame::Try { reader }));
+                        .push(dreck::rebind(Frame::Try { reader, dst }));
                     return;
                 }
             };
@@ -322,9 +324,9 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     this_borrow.register_amount = size;
                     res
                 }
-                Frame::Try { reader } => {
+                Frame::Try { reader, dst } => {
                     let reader = rebind!(root, reader);
-                    FrameType::Try { reader }
+                    FrameType::Try { reader, dst }
                 }
             }
         }

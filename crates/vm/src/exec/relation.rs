@@ -4,7 +4,7 @@ use crate::value::Value;
 
 use super::ExecutionContext;
 
-impl<'r, 'l: 'r, 'gc, 'own> ExecutionContext<'l, 'gc, 'own> {
+impl<'r, 'gc: 'r, 'own> ExecutionContext<'gc, 'own> {
     /// Returns wether to values are strictly equal.
     pub fn strict_equal(
         owner: &Owner<'own>,
