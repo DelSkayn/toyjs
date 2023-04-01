@@ -1,13 +1,12 @@
 [workspace]
 members = [
     "crates/*",
-    "toyjs",
-    "toyjs_test",
-    "toyjs_web",
+    #"toyjs",
+    #"toyjs_test",
+    #"toyjs_web",
 ]
 
-#[profile.release]
-#debug = true
+[profile.release]
+lto = true
+incremental = false
 
-[profile.test]
-opt-level=3
