@@ -13,6 +13,8 @@ const UTF16: usize = 1 << ((std::mem::size_of::<usize>() * 8) - 1);
 /// A mask of both flags.
 const LEN_FLAGS: usize = ON_HEAP | UTF16;
 
+// This enum is portable since the value is also dependent on the size of usize
+#[allow(clippy::enum_clike_unportable_variant)]
 #[repr(usize)]
 pub enum PtrFlag {
     Heap = 1 << ((std::mem::size_of::<usize>() * 8) - 2),

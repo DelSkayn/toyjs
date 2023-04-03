@@ -1,5 +1,7 @@
 //! Span's and span related accessories
 
+//TODO: allocate pointer for spans which don't fit into 32 bit size/offset.
+
 /// A span containing range information mostly used for tokens.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub struct Span {

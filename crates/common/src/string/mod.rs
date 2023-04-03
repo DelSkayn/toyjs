@@ -110,13 +110,13 @@ impl<'a> Iterator for Chars<'a> {
             CodeUnits::Utf16(ref mut x) => {
                 let (first, rest) = x.split_first()?;
                 // Is it a surrogate
-                if first.utf16_surrogate() {
+                if first.is_utf16_surrogate() {
                     let (second, rest) = rest
                         .split_first()
                         .expect("orphan utf16 surrogate in string");
                     *x = rest;
 
-                    let c = first.utf16_extend(*second);
+                    let c = first.is_utf16_extend(*second);
                     Some(unsafe { char::from_u32_unchecked(c) })
                 } else {
                     *x = rest;
