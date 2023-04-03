@@ -5,7 +5,7 @@
 /// A span containing range information mostly used for tokens.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub struct Span {
-    /// The offset into a byte range.
+    /// The offset into a code unit range.
     offset: u32,
     /// The size of the span from the offset.
     size: u32,

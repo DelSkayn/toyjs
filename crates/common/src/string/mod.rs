@@ -1,28 +1,51 @@
 //! Implementation of immutable utf16 with optimization for short strings.
 
-use std::{
-    borrow::Cow,
-    fmt::{self, Write},
-};
-
-use crate::unicode::Utf16Ext;
+use std::{borrow::Cow, fmt};
 
 mod repr;
-pub use repr::CodeUnits;
 use repr::{PtrFlag, Repr, TaggedPtr};
+
+mod code_units;
+pub use code_units::{Ascii, AsciiChars, Chars, CodeUnits, Utf16, Utf16Chars};
 
 /// An immutable string data type for a utf-16 string.
 /// Can store strings as ascii if they don't contain non ascii code points.
 /// Will store small strings inline, without allocating.
-/// Small size of only 2 pointer widths.
+/// Small size of equivalent to 2 pointers.
+#[derive(Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct String(Repr);
 
 impl String {
-    /// Returns the empty string
-    /// Doesn't allocate
+    /// Returns the empty string.
     pub fn empty() -> Self {
         String(Repr::empty())
+    }
+
+    pub fn from_std_str(s: &str) -> Self {
+        if s.is_ascii() {
+            let ascii = unsafe { Ascii::from_slice_unchecked(s.as_bytes()) };
+            String(Repr::from_ascii(ascii))
+        } else {
+            unsafe {
+                let len = s.chars().map(|x| x.len_utf16()).sum();
+
+                let ptr = TaggedPtr::<u16>::alloc(len, PtrFlag::Utf16 | PtrFlag::Heap);
+
+                for (idx, code_point) in s.encode_utf16().enumerate() {
+                    ptr.ptr.as_ptr().add(idx).write(code_point);
+                }
+
+                String(Repr::from_tagged_ptr_utf16(ptr))
+            }
+        }
+    }
+
+    pub fn new(units: CodeUnits) -> Self {
+        match units {
+            CodeUnits::Ascii(x) => Self(Repr::from_ascii(x)),
+            CodeUnits::Utf16(x) => Self(Repr::from_utf16(x)),
+        }
     }
 
     /// Creates a new inline string from an existing string.
@@ -75,7 +98,10 @@ impl String {
 
     /// Returns an iterator over the chars of the string
     pub fn chars(&self) -> Chars {
-        Chars(self.code_units())
+        match self.code_units() {
+            CodeUnits::Ascii(x) => Chars::Ascii(x.chars()),
+            CodeUnits::Utf16(x) => Chars::Utf16(x.chars()),
+        }
     }
 
     /// Convert the string into a rust string,
@@ -83,45 +109,10 @@ impl String {
     /// represented as utf16.
     pub fn as_str(&self) -> Cow<str> {
         match self.code_units() {
-            CodeUnits::Ascii(x) => {
-                let str = unsafe { std::str::from_utf8_unchecked(x) };
-                Cow::Borrowed(str)
-            }
+            CodeUnits::Ascii(x) => Cow::Borrowed(x.as_str()),
             CodeUnits::Utf16(x) => {
-                let str = Chars(CodeUnits::Utf16(x)).collect::<std::string::String>();
+                let str = x.chars().collect::<std::string::String>();
                 Cow::Owned(str)
-            }
-        }
-    }
-}
-
-pub struct Chars<'a>(CodeUnits<'a>);
-
-impl<'a> Iterator for Chars<'a> {
-    type Item = char;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.0 {
-            CodeUnits::Ascii(ref mut x) => {
-                let (ch, rest) = x.split_first()?;
-                *x = rest;
-                Some(*ch as char)
-            }
-            CodeUnits::Utf16(ref mut x) => {
-                let (first, rest) = x.split_first()?;
-                // Is it a surrogate
-                if first.is_utf16_surrogate() {
-                    let (second, rest) = rest
-                        .split_first()
-                        .expect("orphan utf16 surrogate in string");
-                    *x = rest;
-
-                    let c = first.is_utf16_extend(*second);
-                    Some(unsafe { char::from_u32_unchecked(c) })
-                } else {
-                    *x = rest;
-                    Some(unsafe { char::from_u32_unchecked(*first as u32) })
-                }
             }
         }
     }
@@ -129,32 +120,39 @@ impl<'a> Iterator for Chars<'a> {
 
 impl fmt::Display for String {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.chars().try_for_each(|x| f.write_char(x))
+        self.code_units().fmt(f)
     }
 }
 
 impl From<std::string::String> for String {
     fn from(value: std::string::String) -> Self {
-        Self::from(value.as_str())
+        String::from_std_str(value.as_str())
     }
 }
 
 impl From<&str> for String {
     fn from(value: &str) -> Self {
-        if value.is_ascii() {
-            String(unsafe { Repr::from_ascii(value.as_bytes()) })
-        } else {
-            unsafe {
-                let len = value.chars().map(|x| x.len_utf16()).sum();
+        String::from_std_str(value)
+    }
+}
 
-                let ptr = TaggedPtr::<u16>::alloc(len, PtrFlag::Utf16 | PtrFlag::Heap);
+impl<'a> From<Ascii<'a>> for String {
+    fn from(value: Ascii<'a>) -> Self {
+        Self(Repr::from_ascii(value))
+    }
+}
 
-                for (idx, code_point) in value.encode_utf16().enumerate() {
-                    ptr.ptr.add(idx).write(code_point);
-                }
+impl<'a> From<Utf16<'a>> for String {
+    fn from(value: Utf16<'a>) -> Self {
+        Self(Repr::from_utf16(value))
+    }
+}
 
-                String(Repr::from_tagged_ptr_utf16(ptr))
-            }
+impl<'a> From<CodeUnits<'a>> for String {
+    fn from(value: CodeUnits<'a>) -> Self {
+        match value {
+            CodeUnits::Ascii(x) => x.into(),
+            CodeUnits::Utf16(x) => x.into(),
         }
     }
 }

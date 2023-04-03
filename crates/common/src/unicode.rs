@@ -38,6 +38,10 @@ pub mod char {
 pub trait Utf16Ext {
     fn is_utf16_surrogate(&self) -> bool;
 
+    fn is_utf16_leading_surrogate(&self) -> bool;
+
+    fn is_utf16_trailing_surrogate(&self) -> bool;
+
     fn is_utf16_extend(&self, other: Self) -> u32;
 
     fn is_ascii(&self) -> bool;
@@ -47,6 +51,16 @@ impl Utf16Ext for u16 {
     #[inline]
     fn is_utf16_surrogate(&self) -> bool {
         matches!(self, 0xD800..=0xDFFF)
+    }
+
+    #[inline]
+    fn is_utf16_leading_surrogate(&self) -> bool {
+        matches!(self, 0xD800..=0xDBFF)
+    }
+
+    #[inline]
+    fn is_utf16_trailing_surrogate(&self) -> bool {
+        matches!(self, 0xDC00..=0xDFFF)
     }
 
     #[inline]

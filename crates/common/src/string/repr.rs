@@ -1,8 +1,12 @@
+use core::fmt;
 use std::{
     alloc::Layout,
     mem::{ManuallyDrop, MaybeUninit},
     ops::BitOr,
+    ptr::NonNull,
 };
+
+use super::code_units::{Ascii, CodeUnits, Utf16};
 
 /// TODO: 32bit platforms.
 
@@ -56,7 +60,7 @@ const INLINE_SIZE: usize = std::mem::size_of::<TaggedPtr<u8>>();
 
 #[repr(C)]
 pub struct TaggedPtr<T: Copy> {
-    pub ptr: *mut T,
+    pub ptr: NonNull<T>,
     pub len: usize,
 }
 
@@ -66,7 +70,7 @@ impl<T: Copy> TaggedPtr<T> {
 
         unsafe {
             // SAFETY: ptr is just allocated to size len so is non overlapping.
-            std::ptr::copy_nonoverlapping(slice.as_ptr(), this.ptr, slice.len());
+            std::ptr::copy_nonoverlapping(slice.as_ptr(), this.ptr.as_ptr(), slice.len());
         }
         this
     }
@@ -80,7 +84,7 @@ impl<T: Copy> TaggedPtr<T> {
         let layout = std::alloc::Layout::array::<u8>(len).unwrap();
         unsafe {
             let ptr = std::alloc::alloc(layout).cast::<T>();
-            assert_ne!(ptr, std::ptr::null_mut(), "allocation failed");
+            let ptr = NonNull::new(ptr).expect("allocation failed");
 
             Self {
                 ptr,
@@ -102,7 +106,7 @@ impl<T: Copy> Drop for TaggedPtr<T> {
     fn drop(&mut self) {
         let layout = Layout::array::<T>(self.len & !LEN_FLAGS).unwrap();
         unsafe {
-            std::alloc::dealloc(self.ptr.cast(), layout);
+            std::alloc::dealloc(self.ptr.as_ptr().cast(), layout);
         }
     }
 }
@@ -112,18 +116,23 @@ impl<T: Copy> Clone for TaggedPtr<T> {
         let layout = std::alloc::Layout::array::<u8>(self.len()).unwrap();
         let ptr = unsafe {
             let ptr = std::alloc::alloc(layout).cast::<T>();
-            assert_ne!(ptr, std::ptr::null_mut(), "allocation failed");
-            std::ptr::copy_nonoverlapping(self.ptr, ptr, self.len());
+            let ptr = NonNull::new(ptr).expect("allocation failed");
+            std::ptr::copy_nonoverlapping(self.ptr.as_ptr(), ptr.as_ptr(), self.len());
             ptr
         };
         Self { ptr, len: self.len }
     }
 }
 
-pub enum CodeUnits<'a> {
-    Ascii(&'a [u8]),
-    Utf16(&'a [u16]),
+impl PartialEq for Repr {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            self.ascii.len == other.ascii.len && self.as_code_units() == other.as_code_units()
+        }
+    }
 }
+
+impl Eq for Repr {}
 
 pub union Repr {
     inline: [u8; INLINE_SIZE],
@@ -132,12 +141,9 @@ pub union Repr {
 }
 
 impl Repr {
-    pub fn empty() -> Self {
-        let mut inline = [MaybeUninit::uninit(); INLINE_SIZE];
-        inline[INLINE_SIZE - 1].write(0u8);
-        let inline = unsafe {
-            std::mem::transmute::<[MaybeUninit<u8>; INLINE_SIZE], [u8; INLINE_SIZE]>(inline)
-        };
+    pub const fn empty() -> Self {
+        let mut inline = [0u8; INLINE_SIZE];
+        inline[0] = 1;
         Self { inline }
     }
 
@@ -146,6 +152,9 @@ impl Repr {
     /// points.
     pub const fn new_const(s: &str) -> Self {
         // Store inline
+        if s.is_empty() {
+            return Self::empty();
+        }
         let mut inline = [0u8; INLINE_SIZE];
         let bytes = s.as_bytes();
         if bytes.len() >= INLINE_SIZE {
@@ -189,7 +198,8 @@ impl Repr {
         unsafe { self.ascii.len & !LEN_FLAGS }
     }
 
-    pub unsafe fn from_ascii(ascii: &[u8]) -> Self {
+    pub fn from_ascii(ascii: Ascii) -> Self {
+        let ascii = ascii.units();
         if ascii.len() < INLINE_SIZE {
             let mut inline = [MaybeUninit::<u8>::uninit(); INLINE_SIZE];
             unsafe {
@@ -211,15 +221,25 @@ impl Repr {
         }
     }
 
+    pub fn from_utf16(utf16: Utf16) -> Self {
+        let ascii = TaggedPtr::from_slice(utf16.units(), PtrFlag::Heap | PtrFlag::Utf16);
+        Repr {
+            utf16: ManuallyDrop::new(ascii),
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         unsafe {
             if self.is_inline() {
                 let len = self.inline_len() as usize;
                 std::slice::from_raw_parts(self.inline.as_ptr(), len)
             } else if self.is_utf16() {
-                std::slice::from_raw_parts(self.utf16.ptr.cast::<u8>(), self.heap_len() * 2)
+                std::slice::from_raw_parts(
+                    self.utf16.ptr.as_ptr().cast::<u8>(),
+                    self.heap_len() * 2,
+                )
             } else {
-                std::slice::from_raw_parts(self.ascii.ptr, self.heap_len())
+                std::slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len())
             }
         }
     }
@@ -229,14 +249,36 @@ impl Repr {
             let len = self.inline_len() as usize;
             unsafe {
                 let slice = std::slice::from_raw_parts(self.inline.as_ptr(), len);
-                CodeUnits::Ascii(slice)
+                let ascii = Ascii::from_slice_unchecked(slice);
+                CodeUnits::Ascii(ascii)
             }
         } else if self.is_utf16() {
-            let slice = unsafe { std::slice::from_raw_parts(self.utf16.ptr, self.heap_len()) };
-            CodeUnits::Utf16(slice)
+            unsafe {
+                let slice = std::slice::from_raw_parts(self.utf16.ptr.as_ptr(), self.heap_len());
+                let utf16 = Utf16::from_slice_unchecked(slice);
+                CodeUnits::Utf16(utf16)
+            }
         } else {
-            let slice = unsafe { std::slice::from_raw_parts(self.ascii.ptr, self.heap_len()) };
-            CodeUnits::Ascii(slice)
+            unsafe {
+                let slice = std::slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len());
+                let ascii = Ascii::from_slice_unchecked(slice);
+                CodeUnits::Ascii(ascii)
+            }
+        }
+    }
+}
+
+impl fmt::Debug for Repr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_inline() {
+            f.debug_tuple("Repr::Inline")
+                .field(unsafe { &self.inline })
+                .finish()
+        } else {
+            match self.as_code_units() {
+                CodeUnits::Ascii(ref x) => f.debug_tuple("Repr::Ascii").field(x).finish(),
+                CodeUnits::Utf16(ref x) => f.debug_tuple("Repr::Utf16").field(x).finish(),
+            }
         }
     }
 }
