@@ -24,7 +24,7 @@ impl std::fmt::Debug for TokenKindData {
 impl TokenKindData {
     pub fn new(kind: TokenKind, data_id: Option<u32>) -> Self {
         let data_id = if let Some(x) = data_id {
-            (x as u64 & (1 << 32)) << 16
+            (x as u64 | (1 << 32)) << 16
         } else {
             0
         };
@@ -57,8 +57,7 @@ const CHECK_TOKEN_KIND_SIZE: [u8; 2] = [0u8; std::mem::size_of::<TokenKind>()];
 pub enum TokenKind {
     Ident,
     String,
-    Integer,
-    Float,
+    Number,
     BigInt,
     Template(Template),
     Regex,
@@ -92,6 +91,8 @@ pub enum TokenKind {
     Comma,
     /// `\n`
     LineTerminator,
+    Comment,
+    Whitespace,
     Unknown,
 }
 

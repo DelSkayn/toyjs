@@ -12,6 +12,10 @@ dependencies = [
 [[package]]
 name = "toyjs_lexer"
 version = "0.1.0"
+dependencies = [
+ "toyjs_common",
+ "toyjs_token",
+]
 
 [[package]]
 name = "toyjs_token"

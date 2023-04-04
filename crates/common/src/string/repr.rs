@@ -6,7 +6,7 @@ use std::{
     ptr::NonNull,
 };
 
-use super::code_units::{Ascii, CodeUnits, Utf16};
+use super::encoding::{Ascii, Encoding, Utf16};
 
 /// TODO: 32bit platforms.
 
@@ -198,7 +198,7 @@ impl Repr {
         unsafe { self.ascii.len & !LEN_FLAGS }
     }
 
-    pub fn from_ascii(ascii: Ascii) -> Self {
+    pub fn from_ascii(ascii: &Ascii) -> Self {
         let ascii = ascii.units();
         if ascii.len() < INLINE_SIZE {
             let mut inline = [MaybeUninit::<u8>::uninit(); INLINE_SIZE];
@@ -221,7 +221,7 @@ impl Repr {
         }
     }
 
-    pub fn from_utf16(utf16: Utf16) -> Self {
+    pub fn from_utf16(utf16: &Utf16) -> Self {
         let ascii = TaggedPtr::from_slice(utf16.units(), PtrFlag::Heap | PtrFlag::Utf16);
         Repr {
             utf16: ManuallyDrop::new(ascii),
@@ -244,25 +244,25 @@ impl Repr {
         }
     }
 
-    pub fn as_code_units(&self) -> CodeUnits {
+    pub fn as_code_units(&self) -> Encoding {
         if self.is_inline() {
             let len = self.inline_len() as usize;
             unsafe {
                 let slice = std::slice::from_raw_parts(self.inline.as_ptr(), len);
                 let ascii = Ascii::from_slice_unchecked(slice);
-                CodeUnits::Ascii(ascii)
+                Encoding::Ascii(ascii)
             }
         } else if self.is_utf16() {
             unsafe {
                 let slice = std::slice::from_raw_parts(self.utf16.ptr.as_ptr(), self.heap_len());
                 let utf16 = Utf16::from_slice_unchecked(slice);
-                CodeUnits::Utf16(utf16)
+                Encoding::Utf16(utf16)
             }
         } else {
             unsafe {
                 let slice = std::slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len());
                 let ascii = Ascii::from_slice_unchecked(slice);
-                CodeUnits::Ascii(ascii)
+                Encoding::Ascii(ascii)
             }
         }
     }
@@ -276,8 +276,8 @@ impl fmt::Debug for Repr {
                 .finish()
         } else {
             match self.as_code_units() {
-                CodeUnits::Ascii(ref x) => f.debug_tuple("Repr::Ascii").field(x).finish(),
-                CodeUnits::Utf16(ref x) => f.debug_tuple("Repr::Utf16").field(x).finish(),
+                Encoding::Ascii(ref x) => f.debug_tuple("Repr::Ascii").field(x).finish(),
+                Encoding::Utf16(ref x) => f.debug_tuple("Repr::Utf16").field(x).finish(),
             }
         }
     }

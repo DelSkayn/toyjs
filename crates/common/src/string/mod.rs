@@ -5,8 +5,8 @@ use std::{borrow::Cow, fmt};
 mod repr;
 use repr::{PtrFlag, Repr, TaggedPtr};
 
-mod code_units;
-pub use code_units::{Ascii, AsciiChars, Chars, CodeUnits, Utf16, Utf16Chars};
+mod encoding;
+pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Utf16, Utf16Chars};
 
 /// An immutable string data type for a utf-16 string.
 /// Can store strings as ascii if they don't contain non ascii code points.
@@ -41,10 +41,10 @@ impl String {
         }
     }
 
-    pub fn new(units: CodeUnits) -> Self {
+    pub fn new(units: Encoding) -> Self {
         match units {
-            CodeUnits::Ascii(x) => Self(Repr::from_ascii(x)),
-            CodeUnits::Utf16(x) => Self(Repr::from_utf16(x)),
+            Encoding::Ascii(x) => Self(Repr::from_ascii(x)),
+            Encoding::Utf16(x) => Self(Repr::from_utf16(x)),
         }
     }
 
@@ -92,15 +92,15 @@ impl String {
         self.len() == 0
     }
 
-    pub fn code_units(&self) -> CodeUnits {
+    pub fn encoding(&self) -> Encoding {
         self.0.as_code_units()
     }
 
     /// Returns an iterator over the chars of the string
     pub fn chars(&self) -> Chars {
-        match self.code_units() {
-            CodeUnits::Ascii(x) => Chars::Ascii(x.chars()),
-            CodeUnits::Utf16(x) => Chars::Utf16(x.chars()),
+        match self.encoding() {
+            Encoding::Ascii(x) => Chars::Ascii(x.chars()),
+            Encoding::Utf16(x) => Chars::Utf16(x.chars()),
         }
     }
 
@@ -108,9 +108,9 @@ impl String {
     /// This is O(1) when the string is ascii but allocates and is O(n) when the string is
     /// represented as utf16.
     pub fn as_str(&self) -> Cow<str> {
-        match self.code_units() {
-            CodeUnits::Ascii(x) => Cow::Borrowed(x.as_str()),
-            CodeUnits::Utf16(x) => {
+        match self.encoding() {
+            Encoding::Ascii(x) => Cow::Borrowed(x.as_str()),
+            Encoding::Utf16(x) => {
                 let str = x.chars().collect::<std::string::String>();
                 Cow::Owned(str)
             }
@@ -120,7 +120,7 @@ impl String {
 
 impl fmt::Display for String {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.code_units().fmt(f)
+        self.encoding().fmt(f)
     }
 }
 
@@ -136,23 +136,23 @@ impl From<&str> for String {
     }
 }
 
-impl<'a> From<Ascii<'a>> for String {
-    fn from(value: Ascii<'a>) -> Self {
+impl From<&Ascii> for String {
+    fn from(value: &Ascii) -> Self {
         Self(Repr::from_ascii(value))
     }
 }
 
-impl<'a> From<Utf16<'a>> for String {
-    fn from(value: Utf16<'a>) -> Self {
+impl From<&Utf16> for String {
+    fn from(value: &Utf16) -> Self {
         Self(Repr::from_utf16(value))
     }
 }
 
-impl<'a> From<CodeUnits<'a>> for String {
-    fn from(value: CodeUnits<'a>) -> Self {
+impl<'a> From<Encoding<'a>> for String {
+    fn from(value: Encoding<'a>) -> Self {
         match value {
-            CodeUnits::Ascii(x) => x.into(),
-            CodeUnits::Utf16(x) => x.into(),
+            Encoding::Ascii(x) => x.into(),
+            Encoding::Utf16(x) => x.into(),
         }
     }
 }

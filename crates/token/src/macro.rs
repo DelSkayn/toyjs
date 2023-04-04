@@ -7,11 +7,8 @@ macro_rules! t {
     ("string") => {
         $crate::TokenKind::String
     };
-    ("int") => {
-        $crate::TokenKind::Integer
-    };
-    ("float") => {
-        $crate::TokenKind::Float
+    ("num") => {
+        $crate::TokenKind::Number
     };
     ("big int") => {
         $crate::TokenKind::BigInt
@@ -130,9 +127,6 @@ macro_rules! t {
     ("/=") => {
         $crate::TokenKind::AssignOperator($crate::AssignOperator::Div)
     };
-    ("//=") => {
-        $crate::TokenKind::AssignOperator($crate::AssignOperator::IntegerDiv)
-    };
     ("%=") => {
         $crate::TokenKind::AssignOperator($crate::AssignOperator::Remainder)
     };
@@ -168,9 +162,6 @@ macro_rules! t {
     };
     ("/") => {
         $crate::TokenKind::Operator($crate::Operator::Div)
-    };
-    ("//") => {
-        $crate::TokenKind::Operator($crate::Operator::IntegerDiv)
     };
     ("%") => {
         $crate::TokenKind::Operator($crate::Operator::Remainder)
@@ -358,5 +349,11 @@ macro_rules! t {
     };
     ("target") => {
         $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Target)
+    };
+    ("//") => {
+        $crate::TokenKind::Comment
+    };
+    (" ") => {
+        $crate::TokenKind::Whitespace
     };
 }

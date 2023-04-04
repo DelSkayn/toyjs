@@ -2,6 +2,8 @@
 
 //TODO: allocate pointer for spans which don't fit into 32 bit size/offset.
 
+use std::ops::Range;
+
 /// A span containing range information mostly used for tokens.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub struct Span {
@@ -19,8 +21,8 @@ impl Span {
         Span { offset, size }
     }
 
-    pub fn from_range(from: usize, until: usize) -> Span {
-        Self::new(from, until - from)
+    pub fn from_range(range: Range<usize>) -> Span {
+        Self::new(range.start, range.end - range.start)
     }
 
     pub fn offset(self) -> usize {
