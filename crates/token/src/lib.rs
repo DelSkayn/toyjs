@@ -2,7 +2,7 @@ use common::span::Span;
 
 mod r#macro;
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Token {
     pub kind_and_data: TokenKindData,
     pub span: Span,
@@ -65,9 +65,9 @@ pub enum TokenKind {
     Keyword(Keyword),
     /// `;`
     SemiColon,
-    /// `(, [ or {,`
+    /// `(` or `[` or `{`
     DelimOpen(Delim),
-    /// `), ] or },`
+    /// `)` or `]` or `}`
     DelimClose(Delim),
     Operator(Operator),
     AssignOperator(AssignOperator),
@@ -91,6 +91,7 @@ pub enum TokenKind {
     Comma,
     /// `\n`
     LineTerminator,
+    /// `// comment ` or `/* comment */`
     Comment,
     Whitespace,
     Unknown,
@@ -98,21 +99,22 @@ pub enum TokenKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Template {
-    /// `\` bla till ${`
+    /// `` ` bla till ${``
     Start,
     /// `} till ${`
     Middle,
-    /// `} \``
+    /// ``} till ` ``
     End,
+    NoSubstitute,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delim {
     /// `( or )`
     Paren,
-    /// `\[ or \]`
+    /// `\[` or `\]`
     Bracket,
-    /// `{ or }`
+    /// `{` or `}`
     Brace,
 }
 
@@ -249,7 +251,7 @@ pub enum Operator {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AssignOperator {
-    /// '='
+    /// `=`
     Assign,
     /// `-`
     Minus,

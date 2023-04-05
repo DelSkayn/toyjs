@@ -91,6 +91,21 @@ impl LexBuffer {
             res
         }
     }
+
+    pub fn clear(&mut self) {
+        if self.is_ascii {
+            self.ascii.clear()
+        } else {
+            self.is_ascii = true;
+            self.utf16.clear()
+        }
+    }
+}
+
+impl Default for LexBuffer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Lexer<'a> {
@@ -127,30 +142,33 @@ impl<'a> Lexer<'a> {
     }
 
     /// Push a new state into the lexer.
+    #[inline]
     pub fn push_state(&mut self, state: State) {
         self.states.push(state)
     }
 
     /// Pop the current state from the lexer.
     /// You can't pop the last state, trying to do so will result in a panic.
+    #[inline]
     pub fn pop_state(&mut self) -> State {
         assert!(self.states.len() > 1, "tried to pop last state in lexer");
         self.states.pop().unwrap()
     }
 
     /// The current state of the lexer
+    #[inline]
     pub fn state(&self) -> State {
         *self.states.last().unwrap()
     }
 
     /// Pop the next code from the list
-    pub fn next_unit(&mut self) -> Option<u16> {
+    fn next_unit(&mut self) -> Option<u16> {
         self.end += 1;
         self.peek.take().or_else(|| self.units.next_unit())
     }
 
     /// Peek the next code on the list without consuming it.
-    pub fn peek_unit(&mut self) -> Option<u16> {
+    fn peek_unit(&mut self) -> Option<u16> {
         if let Some(x) = self.peek {
             Some(x)
         } else {
@@ -160,13 +178,13 @@ impl<'a> Lexer<'a> {
     }
 
     /// Peek the next code on the list without consuming it.
-    pub fn peek_byte(&mut self) -> Option<u8> {
+    fn peek_byte(&mut self) -> Option<u8> {
         self.peek_unit().and_then(|x| x.try_into().ok())
     }
 
     /// Wrap a token kind in a span and update set the next token to start at the end of the
     /// current.
-    pub fn finish_token(&mut self, kind: TokenKind, id: Option<u32>) -> Token {
+    fn finish_token(&mut self, kind: TokenKind, id: Option<u32>) -> Token {
         let span = Span::from_range(self.start..self.end);
         self.start = self.end;
 
@@ -178,7 +196,7 @@ impl<'a> Lexer<'a> {
 
     /// Finish the string in the string buffer and push it into the strings data.
     /// Returns the id of the strings data.
-    pub fn finish_string(&mut self) -> u32 {
+    fn finish_string(&mut self) -> u32 {
         let result = self.buffer.take();
         let id = self
             .data
@@ -190,7 +208,7 @@ impl<'a> Lexer<'a> {
         id
     }
 
-    pub fn finish_number(&mut self, number: f64) -> u32 {
+    fn finish_number(&mut self, number: f64) -> u32 {
         let id = self
             .data
             .numbers
@@ -260,6 +278,7 @@ impl<'a> Lexer<'a> {
         }
         self.finish_token(t!("//"), None)
     }
+
     fn lex_multiline_comment(&mut self) -> Token {
         const STAR: u16 = b'*' as u16;
         const SLASH: u16 = b'/' as u16;
@@ -303,10 +322,6 @@ impl<'a> Lexer<'a> {
                 Some(b'?') => {
                     self.next_unit();
                     t!("??")
-                }
-                Some(b'.') => {
-                    self.next_unit();
-                    todo!("token ?.")
                 }
                 _ => t!("?"),
             },
@@ -471,18 +486,19 @@ impl<'a> Lexer<'a> {
                         _ => t!(".."),
                     }
                 }
-                Some(x) if x.is_ascii_digit() => todo!(),
+                Some(x) if x.is_ascii_digit() => return self.lex_number(&[b'.', x]),
                 _ => t!("."),
             },
             // These characters are not offical identifier starters according to unicode
             // but are specified by ecmascript as such.
             b'$' => return self.lex_ident('$'),
             b'_' => return self.lex_ident('_'),
-            b'\\' => todo!("token \\ "),
+            b'\\' => return self.lex_ident('\\'),
             b'\'' => return self.lex_string(b'\'' as u16),
             b'\"' => return self.lex_string(b'\"' as u16),
+            b'`' => return self.lex_template(true),
 
-            x if x.is_ascii_digit() => return self.lex_number(x),
+            x if x.is_ascii_digit() => return self.lex_number(&[x]),
             x if x.is_ascii_alphabetic() => {
                 return self.lex_ident(char::from_u32(x as u32).unwrap())
             }
@@ -520,6 +536,7 @@ impl<'a> Lexer<'a> {
         self.finish_token(kind, None)
     }
 
+    #[inline]
     pub fn next_token(&mut self) -> Option<Token> {
         let unit = self.overread.take().or(self.next_unit())?;
         let res = if unit.is_ascii() {
@@ -546,7 +563,8 @@ impl<'a> Lexer<'a> {
 impl Iterator for Lexer<'_> {
     type Item = Token;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        (*self).next_token()
+        self.next_token()
     }
 }

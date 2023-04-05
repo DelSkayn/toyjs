@@ -81,7 +81,7 @@ impl<T: Copy> TaggedPtr<T> {
         assert!(len < LEN_FLAGS, "string size exceeded maximum size");
         // Should not be able to overflow isize::MAX since it is derived from an existing
         // allocation
-        let layout = std::alloc::Layout::array::<u8>(len).unwrap();
+        let layout = std::alloc::Layout::array::<T>(len).unwrap();
         unsafe {
             let ptr = std::alloc::alloc(layout).cast::<T>();
             let ptr = NonNull::new(ptr).expect("allocation failed");

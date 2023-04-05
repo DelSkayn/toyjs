@@ -3,8 +3,9 @@ use std::{
     env,
     fs::File,
     io::{self, Read},
+    time::Instant,
 };
-use token::t;
+use token::{t, TokenKind};
 use toyjs_lexer::Lexer;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
@@ -22,11 +23,13 @@ fn main() -> Result<(), io::Error> {
     let source = String::from_std_str(&buffer);
     let mut lexer = Lexer::new(source.encoding());
     let mut tokens = Vec::new();
+    let time = Instant::now();
     for t in lexer.by_ref() {
         tokens.push(t);
     }
+    let elapsed = time.elapsed();
     for t in &tokens {
-        let span = t.span;
+        let span = t.span.clone();
         let kind = t.kind_and_data.kind();
         let data = t.kind_and_data.data_id();
         let kind_name = format!("{:?}", kind);
@@ -38,13 +41,22 @@ fn main() -> Result<(), io::Error> {
         );
         if kind == t!("ident") {
             println!(" = '{}'", lexer.data.strings[data.unwrap() as usize]);
+        } else if kind == t!("string") {
+            println!(" = \"{}\"", lexer.data.strings[data.unwrap() as usize]);
         } else if kind == t!("num") {
             println!(" = {}", lexer.data.numbers[data.unwrap() as usize]);
         } else if kind == t!("big int") {
             println!(" = {}n", lexer.data.strings[data.unwrap() as usize]);
+        } else if let TokenKind::Template(_) = kind {
+            println!(" = `{}`", lexer.data.strings[data.unwrap() as usize]);
         } else {
             println!()
         }
     }
+    println!(
+        "> lexed {} tokens in {:.4} seconds",
+        tokens.len(),
+        elapsed.as_secs_f64()
+    );
     Ok(())
 }

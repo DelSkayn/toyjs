@@ -9,4 +9,4 @@ members = [
 [profile.release]
 lto = true
 incremental = false
-
+panic = "abort"

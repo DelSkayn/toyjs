@@ -48,6 +48,7 @@ impl<'a> Lexer<'a> {
         true
     }
 
+    /// Lex the exponent or `e-34` parr for number `12e-34`
     fn lex_exponent(&mut self) -> bool {
         let Some(first) = self.peek_byte() else {
             // A exponent must have atleast a single digit.
@@ -57,6 +58,8 @@ impl<'a> Lexer<'a> {
         if first != b'-' && first != b'+' && first.is_ascii_digit() {
             return false;
         }
+
+        self.next_unit();
 
         while self
             .peek_byte()
@@ -68,8 +71,10 @@ impl<'a> Lexer<'a> {
         true
     }
 
-    fn lex_bigint(&mut self, start: u8, mut iter: Unit) -> Token {
-        self.buffer.ascii.push(start);
+    fn lex_bigint(&mut self, start: &[u8], mut iter: Unit) -> Token {
+        for s in start {
+            self.buffer.ascii.push(*s);
+        }
         while let Some(c) = iter.next_unit() {
             let c = c as u8;
             if c == b'n' {
@@ -81,25 +86,31 @@ impl<'a> Lexer<'a> {
         self.finish_token(t!("big int"), Some(id))
     }
 
-    fn parse_number(&mut self, start: u8, mut iter: Unit) -> Token {
+    fn parse_number(&mut self, start: &[u8], mut iter: Unit) -> Token {
         let len = self.end - self.start;
-        self.buffer.ascii.push(start);
-        for _ in 0..len - 1 {
+        assert!(self.buffer.ascii.is_empty());
+        for s in start {
+            self.buffer.ascii.push(*s);
+        }
+        let buf_len = self.buffer.ascii.len();
+        for _ in buf_len..len {
             self.buffer.ascii.push(iter.next_unit().unwrap() as u8)
         }
         let str = unsafe { std::str::from_utf8_unchecked(&self.buffer.ascii) };
         // Should always succeed since we alread parse the number.
-        let number = str.parse().unwrap();
+        let Ok(number) = str.parse() else {
+            panic!("invalid number: {} at {}",str,self.end);
+        };
         self.buffer.ascii.clear();
         let id = self.finish_number(number);
         self.finish_token(t!("num"), Some(id))
     }
 
-    pub(super) fn lex_number(&mut self, start: u8) -> Token {
+    pub(super) fn lex_number(&mut self, start: &[u8]) -> Token {
         // used for reparsing bigints.
         let iter = self.units.clone();
 
-        if start == b'0' {
+        if start[0] == b'0' {
             match self.peek_byte() {
                 None => {
                     let id = self.finish_number(0.0);
@@ -127,7 +138,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let success = if start == b'.' {
+        let success = if start[0] == b'.' {
             self.lex_mantissa()
         } else {
             //TODO: figure out if parsing numbers like this can lead to precision problems

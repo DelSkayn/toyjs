@@ -5,7 +5,9 @@
 use std::ops::Range;
 
 /// A span containing range information mostly used for tokens.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+///
+// Not marked as copy for future proving.
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Span {
     /// The offset into a code unit range.
     offset: u32,
@@ -25,23 +27,23 @@ impl Span {
         Self::new(range.start, range.end - range.start)
     }
 
-    pub fn offset(self) -> usize {
+    pub fn offset(&self) -> usize {
         self.offset as usize
     }
 
-    pub fn size(self) -> usize {
+    pub fn size(&self) -> usize {
         self.size as usize
     }
 
     /// Checks whether a span contains an other span.
-    pub fn contains(self, other: Self) -> bool {
+    pub fn contains(&self, other: &Self) -> bool {
         self.offset <= other.offset
             && (self.offset as usize + self.size as usize)
                 >= (other.offset as usize + other.size as usize)
     }
 
     /// Create a span that covers both spans..
-    pub fn covers(self, other: Self) -> Self {
+    pub fn covers(&self, other: &Self) -> Self {
         if self.offset < other.offset {
             let diff = other.offset - self.offset;
             let size = (diff + other.size).max(self.size);

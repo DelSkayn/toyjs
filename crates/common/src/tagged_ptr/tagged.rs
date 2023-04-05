@@ -15,7 +15,7 @@ impl<T> TaggedPtr<T> {
     /// Returns the amount of bits within which the tag must fit.
     pub const fn tag_bits() -> u8 {
         let align = std::mem::align_of::<T>();
-        let res = ((std::mem::size_of::<*mut T>() as usize * 8) - align.leading_zeros() as usize)
+        let res = ((std::mem::size_of::<*mut T>() * 8) - align.leading_zeros() as usize)
             .saturating_sub(1);
         res as u8
     }
@@ -29,7 +29,7 @@ impl<T> TaggedPtr<T> {
     ///
     /// The tag must fit in the amount of bits returned by [`TaggedPtr::tag_bits`].
     #[inline]
-    pub unsafe fn new(ptr: NonNull<T>, tag: u8) {
+    pub unsafe fn new(ptr: NonNull<T>, tag: u8) -> Self {
         let value = ptr.as_ptr() as usize;
         // Guard against NonNull::dangeling().
         // A dangeling pointer can be less then mask.
@@ -41,7 +41,7 @@ impl<T> TaggedPtr<T> {
         // SAFETY: Above guarentees that pointer is never zero
         let ptr = NonNull::new_unchecked(ptr);
 
-        TaggedPtr(ptr);
+        TaggedPtr(ptr)
     }
 
     #[inline]
