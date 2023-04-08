@@ -6,7 +6,7 @@ mod repr;
 use repr::{PtrFlag, Repr, TaggedPtr};
 
 mod encoding;
-pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Utf16, Utf16Chars};
+pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Units, Utf16, Utf16Chars};
 
 /// An immutable string data type for a utf-16 string.
 /// Can store strings as ascii if they don't contain non ascii code points.

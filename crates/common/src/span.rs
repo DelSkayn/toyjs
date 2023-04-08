@@ -16,6 +16,10 @@ pub struct Span {
 }
 
 impl Span {
+    pub const fn empty() -> Self {
+        Span { offset: 0, size: 0 }
+    }
+
     pub fn new(offset: usize, size: usize) -> Span {
         let offset = offset.try_into().expect("offset did not fit into u32");
         let size = size.try_into().expect("size did not fit into u32");

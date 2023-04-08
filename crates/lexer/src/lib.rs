@@ -1,10 +1,8 @@
 #![allow(dead_code)]
 
-use std::slice::Iter;
-
 use common::{
     span::Span,
-    string::{Ascii, Encoding, String, Utf16},
+    string::{Ascii, Encoding, String, Units, Utf16},
     unicode::{byte, chars, units, CharExt, Utf16Ext},
 };
 use token::{t, Token, TokenKind, TokenKindData};
@@ -25,21 +23,6 @@ pub enum State {
     Base,
     Regex,
     Template,
-}
-
-#[derive(Clone)]
-enum Unit<'a> {
-    Ascii(Iter<'a, u8>),
-    Utf(Iter<'a, u16>),
-}
-
-impl Unit<'_> {
-    pub fn next_unit(&mut self) -> Option<u16> {
-        match self {
-            Unit::Ascii(ref mut x) => x.next().copied().map(|x| x as u16),
-            Unit::Utf(ref mut x) => x.next().copied(),
-        }
-    }
 }
 
 pub struct LexingData {
@@ -109,7 +92,7 @@ impl Default for LexBuffer {
 }
 
 pub struct Lexer<'a> {
-    units: Unit<'a>,
+    units: Units<'a>,
     start: usize,
     end: usize,
     states: Vec<State>,
@@ -121,10 +104,7 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(units: Encoding<'a>) -> Self {
-        let units = match units {
-            Encoding::Ascii(x) => Unit::Ascii(x.units().iter()),
-            Encoding::Utf16(x) => Unit::Utf(x.units().iter()),
-        };
+        let units = units.units();
 
         Self {
             units,
@@ -164,7 +144,7 @@ impl<'a> Lexer<'a> {
     /// Pop the next code from the list
     fn next_unit(&mut self) -> Option<u16> {
         self.end += 1;
-        self.peek.take().or_else(|| self.units.next_unit())
+        self.peek.take().or_else(|| self.units.next())
     }
 
     /// Peek the next code on the list without consuming it.
@@ -172,7 +152,7 @@ impl<'a> Lexer<'a> {
         if let Some(x) = self.peek {
             Some(x)
         } else {
-            self.peek = self.units.next_unit();
+            self.peek = self.units.next();
             self.peek
         }
     }

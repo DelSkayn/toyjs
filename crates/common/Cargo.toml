@@ -10,4 +10,5 @@ untagged = []
 
 
 [dependencies]
+bytemuck = { version = "1.13.1", features = ["derive"] }
 unicode-ident = "1.0.8"

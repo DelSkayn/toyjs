@@ -1,6 +1,7 @@
+use common::string::Units;
 use token::{t, Token, TokenKind};
 
-use crate::{Lexer, Unit};
+use crate::Lexer;
 
 impl<'a> Lexer<'a> {
     fn lex_radix(&mut self, radix: u8) -> Token {
@@ -71,11 +72,11 @@ impl<'a> Lexer<'a> {
         true
     }
 
-    fn lex_bigint(&mut self, start: &[u8], mut iter: Unit) -> Token {
+    fn lex_bigint(&mut self, start: &[u8], mut iter: Units) -> Token {
         for s in start {
             self.buffer.ascii.push(*s);
         }
-        while let Some(c) = iter.next_unit() {
+        while let Some(c) = iter.next() {
             let c = c as u8;
             if c == b'n' {
                 break;
@@ -86,7 +87,7 @@ impl<'a> Lexer<'a> {
         self.finish_token(t!("big int"), Some(id))
     }
 
-    fn parse_number(&mut self, start: &[u8], mut iter: Unit) -> Token {
+    fn parse_number(&mut self, start: &[u8], mut iter: Units) -> Token {
         let len = self.end - self.start;
         assert!(self.buffer.ascii.is_empty());
         for s in start {
@@ -94,7 +95,7 @@ impl<'a> Lexer<'a> {
         }
         let buf_len = self.buffer.ascii.len();
         for _ in buf_len..len {
-            self.buffer.ascii.push(iter.next_unit().unwrap() as u8)
+            self.buffer.ascii.push(iter.next().unwrap() as u8)
         }
         let str = unsafe { std::str::from_utf8_unchecked(&self.buffer.ascii) };
         // Should always succeed since we alread parse the number.
