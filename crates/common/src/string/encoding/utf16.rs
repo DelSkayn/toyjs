@@ -8,7 +8,7 @@ use crate::{span::Span, unicode::Utf16Ext};
 use super::Utf16Error;
 
 /// A string of utf16 characters encoded as u16 guarenteed to be a valid utf16 sequence
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct Utf16([u16]);
 
@@ -55,6 +55,7 @@ impl Utf16 {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Returns a iterator over the characters in this string.
     pub fn chars(&self) -> Utf16Chars {
         Utf16Chars(self)
     }

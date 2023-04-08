@@ -12,7 +12,7 @@ pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Units, Utf16, Utf16Chars}
 /// Can store strings as ascii if they don't contain non ascii code points.
 /// Will store small strings inline, without allocating.
 /// Small size of equivalent to 2 pointers.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct String(Repr);
 

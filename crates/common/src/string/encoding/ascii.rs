@@ -6,7 +6,7 @@ use crate::span::Span;
 use super::Utf16Error;
 
 /// A string of ascii characters encoded as u8.
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct Ascii([u8]);
 
@@ -40,6 +40,7 @@ impl Ascii {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Returns a iterator over the characters in this string.
     #[inline]
     pub fn chars(&self) -> AsciiChars {
         AsciiChars(self)

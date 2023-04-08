@@ -356,4 +356,16 @@ macro_rules! t {
     (" ") => {
         $crate::TokenKind::Whitespace
     };
+    ("``") => {
+        $crate::TokenKind::Template($crate::Template::NoSubstitute)
+    };
+    ("` ${") => {
+        $crate::TokenKind::Template($crate::Template::Start)
+    };
+    ("} ${") => {
+        $crate::TokenKind::Template($crate::Template::Middle)
+    };
+    ("} `") => {
+        $crate::TokenKind::Template($crate::Template::End)
+    };
 }

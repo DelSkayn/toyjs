@@ -1,0 +1,11 @@
+[package]
+name = "toyjs_parser"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ast = { version = "0.1.0", path = "../ast", package = "toyjs_ast" }
+common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
+lexer = { version = "0.1.0", path = "../lexer", package = "toyjs_lexer" }

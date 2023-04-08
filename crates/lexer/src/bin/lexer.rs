@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 use token::{t, TokenKind};
-use toyjs_lexer::Lexer;
+use toyjs_lexer::{Lexer, State};
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().nth(1) {
@@ -24,7 +24,15 @@ fn main() -> Result<(), io::Error> {
     let mut lexer = Lexer::new(source.encoding());
     let mut tokens = Vec::new();
     let time = Instant::now();
-    for t in lexer.by_ref() {
+    while let Some(t) = lexer.next() {
+        // Simplified template substitute matching, won't always work but should handle most code.
+        match t.kind_and_data.kind() {
+            t!("` ${") => lexer.push_state(State::Template),
+            t!("} `") => {
+                lexer.pop_state();
+            }
+            _ => {}
+        }
         tokens.push(t);
     }
     let elapsed = time.elapsed();

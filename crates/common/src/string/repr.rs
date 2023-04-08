@@ -1,6 +1,7 @@
 use core::fmt;
 use std::{
     alloc::Layout,
+    hash::{Hash, Hasher},
     mem::{ManuallyDrop, MaybeUninit},
     ops::BitOr,
     ptr::NonNull,
@@ -133,6 +134,12 @@ impl PartialEq for Repr {
 }
 
 impl Eq for Repr {}
+
+impl Hash for Repr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write(self.as_bytes())
+    }
+}
 
 pub union Repr {
     inline: [u8; INLINE_SIZE],

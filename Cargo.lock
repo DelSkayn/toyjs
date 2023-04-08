@@ -3,6 +3,26 @@
 version = 3
 
 [[package]]
+name = "bytemuck"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17febce684fd15d89027105661fec94afb475cb995fbc59d2865198446ba2eea"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aca418a974d83d40a0c1f0c5cba6ff4bc28d8df099109ca459a2118d40b6322"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "phf"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -95,9 +115,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "toyjs_ast"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "toyjs_common",
+ "toyjs_token",
+]
+
+[[package]]
 name = "toyjs_common"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "unicode-ident",
 ]
 
@@ -108,6 +138,15 @@ dependencies = [
  "phf",
  "toyjs_common",
  "toyjs_token",
+]
+
+[[package]]
+name = "toyjs_parser"
+version = "0.1.0"
+dependencies = [
+ "toyjs_ast",
+ "toyjs_common",
+ "toyjs_lexer",
 ]
 
 [[package]]

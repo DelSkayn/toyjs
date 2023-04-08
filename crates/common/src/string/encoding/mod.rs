@@ -11,7 +11,7 @@ pub struct Utf16Error {
 }
 
 /// A enum with either ascii or utf16 code units
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Encoding<'a> {
     Ascii(&'a Ascii),
     Utf16(&'a Utf16),
