@@ -1,6 +1,11 @@
+#![allow(dead_code)]
+
 use ast::{Ast, Root};
 use common::span::Span;
 use lexer::Lexer;
+
+mod constants;
+mod expr;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,

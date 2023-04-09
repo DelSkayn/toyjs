@@ -2,12 +2,14 @@ use common::span::Span;
 
 mod r#macro;
 
+/// A token produced by the lexer.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Token {
     pub kind_and_data: TokenKindData,
     pub span: Span,
 }
 
+/// A packed data struct.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct TokenKindData(u64);
 
@@ -52,6 +54,7 @@ impl TokenKindData {
 #[allow(dead_code)]
 const CHECK_TOKEN_KIND_SIZE: [u8; 2] = [0u8; std::mem::size_of::<TokenKind>()];
 
+/// A possible javascript tokens.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u8)]
 pub enum TokenKind {
@@ -97,6 +100,7 @@ pub enum TokenKind {
     Unknown,
 }
 
+/// A template token
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Template {
     /// `` ` bla till ${``
@@ -108,6 +112,7 @@ pub enum Template {
     NoSubstitute,
 }
 
+// A delimitor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Delim {
     /// `( or )`
@@ -185,6 +190,7 @@ pub enum UnreservedKeyword {
     Target,
 }
 
+/// An javascript operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operator {
     /// `-`
@@ -249,6 +255,7 @@ pub enum Operator {
     Dot,
 }
 
+/// Javascript assignment operators
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AssignOperator {
     /// `=`

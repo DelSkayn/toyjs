@@ -4,7 +4,10 @@ use std::{iter::FusedIterator, ops::Index, slice::Iter};
 mod ascii;
 pub use ascii::{Ascii, AsciiChars};
 mod utf16;
+use hashbrown::Equivalent;
 pub use utf16::{Utf16, Utf16Chars};
+
+use super::String;
 
 pub struct Utf16Error {
     valid_up_to: usize,
@@ -30,6 +33,13 @@ impl<'a> Encoding<'a> {
         }
     }
 
+    pub fn len(self) -> usize {
+        match self {
+            Self::Ascii(x) => x.len(),
+            Self::Utf16(x) => x.len(),
+        }
+    }
+
     pub fn chars(self) -> Chars<'a> {
         match self {
             Self::Ascii(x) => Chars::Ascii(x.chars()),
@@ -42,6 +52,12 @@ impl<'a> Encoding<'a> {
             Self::Ascii(x) => Units::Ascii(x.units().iter()),
             Self::Utf16(x) => Units::Utf16(x.units().iter()),
         }
+    }
+}
+
+impl<'a> Equivalent<String> for Encoding<'a> {
+    fn equivalent(&self, key: &String) -> bool {
+        key.encoding() == *self
     }
 }
 

@@ -1,10 +1,11 @@
 use core::fmt;
 use std::{
-    alloc::Layout,
+    alloc::{self, Layout},
     hash::{Hash, Hasher},
     mem::{ManuallyDrop, MaybeUninit},
     ops::BitOr,
     ptr::NonNull,
+    slice,
 };
 
 use super::encoding::{Ascii, Encoding, Utf16};
@@ -82,9 +83,9 @@ impl<T: Copy> TaggedPtr<T> {
         assert!(len < LEN_FLAGS, "string size exceeded maximum size");
         // Should not be able to overflow isize::MAX since it is derived from an existing
         // allocation
-        let layout = std::alloc::Layout::array::<T>(len).unwrap();
+        let layout = alloc::Layout::array::<T>(len).unwrap();
         unsafe {
-            let ptr = std::alloc::alloc(layout).cast::<T>();
+            let ptr = alloc::alloc(layout).cast::<T>();
             let ptr = NonNull::new(ptr).expect("allocation failed");
 
             Self {
@@ -92,6 +93,10 @@ impl<T: Copy> TaggedPtr<T> {
                 len: len | flags.0,
             }
         }
+    }
+
+    unsafe fn as_slice(&self) -> &[T] {
+        slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len())
     }
 
     fn len(&self) -> usize {
@@ -107,16 +112,16 @@ impl<T: Copy> Drop for TaggedPtr<T> {
     fn drop(&mut self) {
         let layout = Layout::array::<T>(self.len & !LEN_FLAGS).unwrap();
         unsafe {
-            std::alloc::dealloc(self.ptr.as_ptr().cast(), layout);
+            alloc::dealloc(self.ptr.as_ptr().cast(), layout);
         }
     }
 }
 
 impl<T: Copy> Clone for TaggedPtr<T> {
     fn clone(&self) -> Self {
-        let layout = std::alloc::Layout::array::<u8>(self.len()).unwrap();
+        let layout = alloc::Layout::array::<u8>(self.len()).unwrap();
         let ptr = unsafe {
-            let ptr = std::alloc::alloc(layout).cast::<T>();
+            let ptr = alloc::alloc(layout).cast::<T>();
             let ptr = NonNull::new(ptr).expect("allocation failed");
             std::ptr::copy_nonoverlapping(self.ptr.as_ptr(), ptr.as_ptr(), self.len());
             ptr
@@ -137,7 +142,7 @@ impl Eq for Repr {}
 
 impl Hash for Repr {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write(self.as_bytes())
+        self.as_code_units().hash(state);
     }
 }
 
@@ -239,14 +244,11 @@ impl Repr {
         unsafe {
             if self.is_inline() {
                 let len = self.inline_len() as usize;
-                std::slice::from_raw_parts(self.inline.as_ptr(), len)
+                slice::from_raw_parts(self.inline.as_ptr(), len)
             } else if self.is_utf16() {
-                std::slice::from_raw_parts(
-                    self.utf16.ptr.as_ptr().cast::<u8>(),
-                    self.heap_len() * 2,
-                )
+                slice::from_raw_parts(self.utf16.ptr.as_ptr().cast::<u8>(), self.heap_len() * 2)
             } else {
-                std::slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len())
+                slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len())
             }
         }
     }
@@ -255,20 +257,18 @@ impl Repr {
         if self.is_inline() {
             let len = self.inline_len() as usize;
             unsafe {
-                let slice = std::slice::from_raw_parts(self.inline.as_ptr(), len);
+                let slice = slice::from_raw_parts(self.inline.as_ptr(), len);
                 let ascii = Ascii::from_slice_unchecked(slice);
                 Encoding::Ascii(ascii)
             }
         } else if self.is_utf16() {
             unsafe {
-                let slice = std::slice::from_raw_parts(self.utf16.ptr.as_ptr(), self.heap_len());
-                let utf16 = Utf16::from_slice_unchecked(slice);
+                let utf16 = Utf16::from_slice_unchecked(self.utf16.as_slice());
                 Encoding::Utf16(utf16)
             }
         } else {
             unsafe {
-                let slice = std::slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len());
-                let ascii = Ascii::from_slice_unchecked(slice);
+                let ascii = Ascii::from_slice_unchecked(self.ascii.as_slice());
                 Encoding::Ascii(ascii)
             }
         }

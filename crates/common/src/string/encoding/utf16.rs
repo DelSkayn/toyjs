@@ -13,6 +13,7 @@ use super::Utf16Error;
 pub struct Utf16([u16]);
 
 impl Utf16 {
+    /// Create utf16 slice, returns an error if the slice does not contain valid utf16.
     pub fn from_slice(slice: &[u16]) -> Result<&Self, Utf16Error> {
         let mut iter = slice.iter().enumerate();
 
@@ -44,12 +45,13 @@ impl Utf16 {
     ///
     /// # Safety
     /// All values in the given slice must be valid utf16 and the slice must not start with a
-    /// trailing surrogate.
+    /// trailing surrogate or end with a leading surrogate.
     pub unsafe fn from_slice_unchecked(slice: &[u16]) -> &Self {
         // SAFETY: safe since Utf16 is repr transparent.
         std::mem::transmute(slice)
     }
 
+    /// Returns a slice over the code units of the utf16 string.
     pub fn units(&self) -> &[u16] {
         // SAFETY: safe since Utf16 is repr transparent.
         unsafe { std::mem::transmute(self) }

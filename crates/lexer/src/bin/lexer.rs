@@ -48,15 +48,15 @@ fn main() -> Result<(), io::Error> {
             kind_name
         );
         if kind == t!("ident") {
-            println!(" = '{}'", lexer.data.strings[data.unwrap() as usize]);
+            println!(" = '{}'", lexer.data.strings.get(data.unwrap()).unwrap());
         } else if kind == t!("string") {
-            println!(" = \"{}\"", lexer.data.strings[data.unwrap() as usize]);
+            println!(" = \"{}\"", lexer.data.strings.get(data.unwrap()).unwrap());
         } else if kind == t!("num") {
             println!(" = {}", lexer.data.numbers[data.unwrap() as usize]);
         } else if kind == t!("big int") {
-            println!(" = {}n", lexer.data.strings[data.unwrap() as usize]);
+            println!(" = {}n", lexer.data.strings.get(data.unwrap()).unwrap());
         } else if let TokenKind::Template(_) = kind {
-            println!(" = `{}`", lexer.data.strings[data.unwrap() as usize]);
+            println!(" = `{}`", lexer.data.strings.get(data.unwrap()).unwrap());
         } else {
             println!()
         }
@@ -65,6 +65,11 @@ fn main() -> Result<(), io::Error> {
         "> lexed {} tokens in {:.4} seconds",
         tokens.len(),
         elapsed.as_secs_f64()
+    );
+    println!(
+        "> strings {}, numbers {}",
+        lexer.data.strings.len(),
+        lexer.data.numbers.len()
     );
     Ok(())
 }

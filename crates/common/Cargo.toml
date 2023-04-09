@@ -11,4 +11,5 @@ untagged = []
 
 [dependencies]
 bytemuck = { version = "1.13.1", features = ["derive"] }
+hashbrown = "0.13.2"
 unicode-ident = "1.0.8"

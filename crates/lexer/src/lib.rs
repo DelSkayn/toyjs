@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use common::{
+    interner::Interner,
     span::Span,
     string::{Ascii, Encoding, String, Units, Utf16},
     unicode::{byte, chars, units, CharExt, Utf16Ext},
@@ -15,22 +16,44 @@ mod string;
 ///
 /// Javascript syntax can't be parsed by a stateless lexer as there are a few tokens who's prefix
 /// are the same and are only parsed in certain context. The first is the character `/` as this is
-/// both division as well as start of a regex definition. The second is `}` as this can be a
-/// delimitator as well as the end of a expression in a template. This enum defines how the lexer
-/// will lex tokens.
+/// the division operator, start of a line comment, as well as start of a regex definition. The
+/// second is `}` as this can be a delimitator as well as the end of a expression in a template.
+/// This enum defines how the lexer will lex tokens.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum State {
+    /// Normal parsing state.
     Base,
+    /// Parse the next `/` as a regex.
     Regex,
+    /// Parse the next `}` as the end of a template substitute
     Template,
 }
 
+/// Additional data produced during lexing which is not present in the produced token.
 pub struct LexingData {
-    pub strings: Vec<String>,
+    pub strings: Interner<String, u32>,
     pub numbers: Vec<f64>,
 }
 
-pub struct LexBuffer {
+impl LexingData {
+    pub fn new() -> Self {
+        LexingData {
+            strings: Interner::new(),
+            numbers: Vec::new(),
+        }
+    }
+
+    pub fn push_string(&mut self, encoding: Encoding) -> u32 {
+        // Don't bother for large strings, they are unlikely to be repeated in source code.
+        if encoding.len() > 32 {
+            self.strings.skip_push(encoding)
+        } else {
+            self.strings.intern(&encoding)
+        }
+    }
+}
+
+struct LexBuffer {
     ascii: Vec<u8>,
     utf16: Vec<u16>,
     is_ascii: bool,
@@ -75,6 +98,16 @@ impl LexBuffer {
         }
     }
 
+    pub fn encoding(&self) -> Encoding {
+        unsafe {
+            if self.is_ascii {
+                Encoding::Ascii(Ascii::from_slice_unchecked(&self.ascii))
+            } else {
+                Encoding::Utf16(Utf16::from_slice_unchecked(&self.utf16))
+            }
+        }
+    }
+
     pub fn clear(&mut self) {
         if self.is_ascii {
             self.ascii.clear()
@@ -91,6 +124,7 @@ impl Default for LexBuffer {
     }
 }
 
+/// The toyjs lexer, produces tokens from a source string.
 pub struct Lexer<'a> {
     units: Units<'a>,
     start: usize,
@@ -114,10 +148,7 @@ impl<'a> Lexer<'a> {
             peek: None,
             overread: None,
             buffer: LexBuffer::new(),
-            data: LexingData {
-                strings: Vec::new(),
-                numbers: Vec::new(),
-            },
+            data: LexingData::new(),
         }
     }
 
@@ -177,14 +208,9 @@ impl<'a> Lexer<'a> {
     /// Finish the string in the string buffer and push it into the strings data.
     /// Returns the id of the strings data.
     fn finish_string(&mut self) -> u32 {
-        let result = self.buffer.take();
-        let id = self
-            .data
-            .strings
-            .len()
-            .try_into()
-            .expect("too many string during lexing");
-        self.data.strings.push(result);
+        let result = self.buffer.encoding();
+        let id = self.data.push_string(result);
+        self.buffer.clear();
         id
     }
 

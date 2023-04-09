@@ -125,35 +125,47 @@ impl fmt::Display for String {
 }
 
 impl From<std::string::String> for String {
+    #[inline]
     fn from(value: std::string::String) -> Self {
         String::from_std_str(value.as_str())
     }
 }
 
 impl From<&str> for String {
+    #[inline]
     fn from(value: &str) -> Self {
         String::from_std_str(value)
     }
 }
 
 impl From<&Ascii> for String {
+    #[inline]
     fn from(value: &Ascii) -> Self {
         Self(Repr::from_ascii(value))
     }
 }
 
 impl From<&Utf16> for String {
+    #[inline]
     fn from(value: &Utf16) -> Self {
         Self(Repr::from_utf16(value))
     }
 }
 
 impl<'a> From<Encoding<'a>> for String {
+    #[inline]
     fn from(value: Encoding<'a>) -> Self {
         match value {
             Encoding::Ascii(x) => x.into(),
             Encoding::Utf16(x) => x.into(),
         }
+    }
+}
+
+impl<'a> From<&'a Encoding<'a>> for String {
+    #[inline]
+    fn from(value: &Encoding<'a>) -> Self {
+        Self::from(*value)
     }
 }
 
