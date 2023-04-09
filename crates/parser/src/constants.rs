@@ -1,5 +1,7 @@
 use core::hash::{Hash, Hasher};
 
+use common::interner::Interner;
+
 #[derive(Clone)]
 pub enum Constant {
     Number(f64),

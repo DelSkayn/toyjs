@@ -2,6 +2,7 @@
 
 use core::hash::Hash;
 use hashbrown::{Equivalent, HashMap};
+use std::ops::Index;
 
 pub struct Interner<K: Hash + Eq, I> {
     map: HashMap<K, I>,
@@ -9,6 +10,7 @@ pub struct Interner<K: Hash + Eq, I> {
 }
 
 impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
+    /// Create a new iterner
     #[inline]
     pub fn new() -> Self {
         Interner {
@@ -65,5 +67,20 @@ impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
     #[inline]
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+}
+
+impl<K, I> Index<I> for Interner<K, I>
+where
+    K: Hash + Eq,
+    I: TryInto<usize>,
+{
+    type Output = K;
+
+    fn index(&self, index: I) -> &Self::Output {
+        let Ok(idx) = index.try_into() else{
+            panic!("failed to convert id to interner index");
+        };
+        &self.items[idx]
     }
 }

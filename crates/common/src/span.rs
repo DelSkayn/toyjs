@@ -46,6 +46,10 @@ impl Span {
                 >= (other.offset as usize + other.size as usize)
     }
 
+    pub fn contains_offset(&self, offset: usize) -> bool {
+        self.offset as usize <= offset && (self.offset as usize + self.size as usize) > offset
+    }
+
     /// Create a span that covers both spans..
     pub fn covers(&self, other: &Self) -> Self {
         if self.offset < other.offset {
@@ -80,5 +84,11 @@ impl Span {
                 size: at as u32,
             },
         )
+    }
+}
+
+impl From<Range<usize>> for Span {
+    fn from(value: Range<usize>) -> Self {
+        Span::from_range(value)
     }
 }
