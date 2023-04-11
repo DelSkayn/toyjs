@@ -134,27 +134,27 @@ impl<'a> Lexer<'a> {
         loop {
             let Some(unit) = self.next_unit() else {
                 self.buffer.clear();
-                return self.finish_token(TokenKind::Unknown,None)
+                return self.finish_token(TokenKind::Unknown)
             };
 
             if unit == start {
                 let id = self.finish_string();
-                return self.finish_token(t!("string"), Some(id));
+                return self.finish_token_string(t!("string"), Some(id));
             }
 
             match unit {
                 units::CR => {
                     self.buffer.clear();
-                    return self.finish_token(TokenKind::Unknown, None);
+                    return self.finish_token(TokenKind::Unknown);
                 }
                 units::LF => {
                     self.buffer.clear();
-                    return self.finish_token(TokenKind::Unknown, None);
+                    return self.finish_token(TokenKind::Unknown);
                 }
                 ESCAPE => {
                     if !self.lex_escape() {
                         self.buffer.clear();
-                        return self.finish_token(TokenKind::Unknown, None);
+                        return self.finish_token(TokenKind::Unknown);
                     }
                 }
                 x => self.buffer.push(x),
@@ -179,7 +179,7 @@ impl<'a> Lexer<'a> {
                             Template::Middle
                         };
                         let id = self.finish_string();
-                        return self.finish_token(TokenKind::Template(template), Some(id));
+                        return self.finish_token_string(TokenKind::Template(template), Some(id));
                     } else {
                         self.buffer.push(x);
                     }
@@ -191,16 +191,16 @@ impl<'a> Lexer<'a> {
                         Template::End
                     };
                     let id = self.finish_string();
-                    return self.finish_token(TokenKind::Template(template), Some(id));
+                    return self.finish_token_string(TokenKind::Template(template), Some(id));
                 }
                 ESCAPE => {
                     if !self.lex_escape() {
-                        return self.finish_token(TokenKind::Unknown, None);
+                        return self.finish_token(TokenKind::Unknown);
                     }
                 }
                 x => self.buffer.push(x),
             }
         }
-        self.finish_token(TokenKind::Unknown, None)
+        self.finish_token(TokenKind::Unknown)
     }
 }

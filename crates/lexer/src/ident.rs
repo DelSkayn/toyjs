@@ -86,7 +86,7 @@ impl<'a> Lexer<'a> {
         if start == '\\' {
             if !self.lex_ident_escape() {
                 self.buffer.clear();
-                return self.finish_token(TokenKind::Unknown, None);
+                return self.finish_token(TokenKind::Unknown);
             }
             has_escape_code = true;
         } else {
@@ -101,7 +101,7 @@ impl<'a> Lexer<'a> {
             if x == b'\\' as u16 {
                 if !self.lex_ident_escape() {
                     self.buffer.clear();
-                    return self.finish_token(TokenKind::Unknown, None);
+                    return self.finish_token(TokenKind::Unknown);
                 }
                 has_escape_code = true;
             } else {
@@ -126,12 +126,12 @@ impl<'a> Lexer<'a> {
         if let Some(x) = self.is_keyword() {
             self.buffer.ascii.clear();
             if has_escape_code {
-                self.finish_token(TokenKind::Unknown, None);
+                self.finish_token(TokenKind::Unknown);
             }
-            return self.finish_token(x, None);
+            return self.finish_token(x);
         }
 
         let id = self.finish_string();
-        self.finish_token(t!("ident"), Some(id))
+        self.finish_token_string(t!("ident"), Some(id))
     }
 }

@@ -84,3 +84,31 @@ where
         &self.items[idx]
     }
 }
+
+/// A macro which implements a newtype index.
+#[macro_export]
+macro_rules! id {
+    ($v:vis struct $name:ident($data:ty)) => {
+        #[derive(Clone, Copy, Eq, PartialEq, Hash, bytemuck::Pod, bytemuck::Zeroable)]
+        #[repr(transparent)]
+        $v struct $name($data);
+
+        impl TryFrom<usize> for $name {
+            type Error = <$data as TryFrom<usize>>::Error;
+
+            #[inline]
+            fn try_from(value: usize) -> Result<Self, Self::Error> {
+                Ok($name(value.try_into()?))
+            }
+        }
+
+        impl TryFrom<$name> for usize {
+            type Error = <usize as TryFrom<u32>>::Error;
+
+            #[inline]
+            fn try_from(value: $name) -> Result<Self, Self::Error> {
+                value.0.try_into()
+            }
+        }
+    };
+}

@@ -6,6 +6,7 @@ use lexer::Lexer;
 
 mod constants;
 mod expr;
+mod prime;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,

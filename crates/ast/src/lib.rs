@@ -2,6 +2,7 @@
 
 mod ast;
 pub use ast::{Ast, NodeId};
+use token::{NumberId, StringId};
 mod r#macro;
 
 pub trait Node {
@@ -53,7 +54,7 @@ pub enum VariableKind {
 
 pub enum Binding {
     Ident {
-        label: (),
+        label: StringId,
         initializer: Option<NodeId<Expr>>,
     },
     Object {},
@@ -100,10 +101,10 @@ pub enum Stmt {
         finally: Option<NodeId<List<Stmt>>>,
     },
     Break {
-        label: Option<()>,
+        label: Option<StringId>,
     },
     Continue {
-        label: Option<()>,
+        label: Option<StringId>,
     },
     Throw {
         expr: NodeId<Expr>,
@@ -112,7 +113,7 @@ pub enum Stmt {
         expr: Option<NodeId<Expr>>,
     },
     Labeled {
-        label: (),
+        label: StringId,
         stmt: NodeId<Stmt>,
     },
     Debugger,
@@ -167,8 +168,11 @@ pub enum Expr {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PrimeExpr {
+    Number(NumberId),
+    String(StringId),
+    Ident(StringId),
     Boolean(bool),
-    Number(()),
-    String(()),
     Null,
+    Object,
+    Array,
 }

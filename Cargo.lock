@@ -168,6 +168,7 @@ dependencies = [
 name = "toyjs_lexer"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "phf",
  "toyjs_common",
  "toyjs_token",
@@ -177,15 +178,18 @@ dependencies = [
 name = "toyjs_parser"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "toyjs_ast",
  "toyjs_common",
  "toyjs_lexer",
+ "toyjs_token",
 ]
 
 [[package]]
 name = "toyjs_token"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "toyjs_common",
 ]
 

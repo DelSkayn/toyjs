@@ -1,6 +1,10 @@
-use common::span::Span;
+use bytemuck::{AnyBitPattern, NoUninit};
+use common::{id, span::Span};
 
 mod r#macro;
+
+id!(pub struct StringId(u32));
+id!(pub struct NumberId(u32));
 
 /// A token produced by the lexer.
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -17,14 +21,20 @@ impl std::fmt::Debug for TokenKindData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenKindData")
             .field("kind", &self.kind())
-            .field("data_id", &self.data_id())
+            .field("data_id", &self.data_id::<u32>())
             .finish()
     }
 }
 
 /// The token kind and possible data id packed into 8 bytes
 impl TokenKindData {
-    pub fn new(kind: TokenKind, data_id: Option<u32>) -> Self {
+    #[inline]
+    pub fn new<D: NoUninit>(kind: TokenKind, data_id: Option<D>) -> Self {
+        Self::new_inner(kind, data_id.map(bytemuck::cast))
+    }
+
+    #[inline]
+    fn new_inner(kind: TokenKind, data_id: Option<u32>) -> Self {
         let data_id = if let Some(x) = data_id {
             (x as u64 | (1 << 32)) << 16
         } else {
@@ -36,11 +46,18 @@ impl TokenKindData {
         Self(data_id | (kind as u64))
     }
 
+    #[inline]
     pub fn kind(self) -> TokenKind {
         unsafe { std::mem::transmute(self.0 as u16) }
     }
 
-    pub fn data_id(self) -> Option<u32> {
+    #[inline]
+    pub fn data_id<D: AnyBitPattern>(self) -> Option<D> {
+        self.data_id_inner().map(bytemuck::cast)
+    }
+
+    #[inline]
+    fn data_id_inner(self) -> Option<u32> {
         let data = self.0 >> 16;
         if data & (1 << 32) == 0 {
             None
