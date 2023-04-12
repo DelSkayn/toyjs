@@ -6,8 +6,8 @@ use token::{NumberId, StringId};
 mod r#macro;
 
 pub trait Node {
-    fn from_node<'a>(node: &'a AstNode) -> &'a Self;
-    fn from_node_mut<'a>(node: &'a mut AstNode) -> &'a mut Self;
+    fn from_node(node: &AstNode) -> &Self;
+    fn from_node_mut(node: &mut AstNode) -> &mut Self;
     fn into_node(self) -> AstNode;
 }
 
@@ -20,6 +20,9 @@ ast_node!(
         StmtList(List<Stmt>),
         Binding(Binding),
         CaseList(CaseList),
+        PropertyDefinition(PropertyDefinition),
+        ObjectLiteral(ObjectLiteral),
+        ObjectLiteralItem(List<PropertyDefinition>),
     }
 );
 const SIZE_ASSERT: [u8; 16] = [0u8; std::mem::size_of::<AstNode>()];
@@ -33,8 +36,14 @@ pub enum Root {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct List<T> {
-    stmt: NodeId<T>,
-    next: Option<NodeId<List<T>>>,
+    pub item: NodeId<T>,
+    pub next: Option<NodeId<List<T>>>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct InlineList<T> {
+    pub item: T,
+    pub next: Option<NodeId<List<T>>>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -170,9 +179,41 @@ pub enum Expr {
 pub enum PrimeExpr {
     Number(NumberId),
     String(StringId),
+    Regex(StringId),
     Ident(StringId),
     Boolean(bool),
     Null,
-    Object,
+    Object(ObjectLiteral),
     Array,
+    This,
+    Covered(NodeId<Expr>),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum PropertyDefinition {
+    Ident(StringId),
+    Covered {
+        ident: StringId,
+        initializer: NodeId<Expr>,
+    },
+    Define {
+        property: PropertyName,
+        expr: NodeId<Expr>,
+    },
+    Method {},
+    Rest(NodeId<Expr>),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum PropertyName {
+    Ident(StringId),
+    String(StringId),
+    Number(NumberId),
+    Computed(NodeId<Expr>),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ObjectLiteral {
+    Empty,
+    Item(NodeId<List<PropertyDefinition>>),
 }

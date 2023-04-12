@@ -4,7 +4,6 @@ use std::hash::{Hash, Hasher};
 
 use bytemuck::Pod;
 use common::{
-    id,
     interner::Interner,
     span::Span,
     string::{Ascii, Encoding, String, Units, Utf16},

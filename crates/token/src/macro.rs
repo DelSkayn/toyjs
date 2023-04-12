@@ -296,59 +296,62 @@ macro_rules! t {
         $crate::TokenKind::Keyword($crate::Keyword::With)
     };
     ("await") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Await)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Await)
     };
     ("yield") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Yield)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Yield)
     };
     ("let") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Let)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Let)
     };
     ("static") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Static)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Static)
     };
     ("implements") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Implements)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Implements)
     };
     ("interface") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Interface)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Interface)
     };
     ("package") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Package)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Package)
     };
     ("private") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Private)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Private)
     };
     ("protected") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Protected)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Protected)
     };
     ("public") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Public)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Public)
     };
     // Always allowed as identifiers
     ("as") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::As)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::As)
     };
     ("async") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Async)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Async)
     };
     ("from") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::From)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::From)
     };
     ("get") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Get)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Get)
     };
     ("meta") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Meta)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Meta)
     };
     ("of") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Of)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Of)
     };
     ("set") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Set)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Set)
     };
     ("target") => {
-        $crate::TokenKind::ReservedKeyword($crate::ReservedKeyword::Target)
+        $crate::TokenKind::UnreservedKeyword($crate::UnreservedKeyword::Target)
+    };
+    ("regex") => {
+        $crate::TokenKind::Regex
     };
     ("//") => {
         $crate::TokenKind::Comment

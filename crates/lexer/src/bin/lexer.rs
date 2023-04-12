@@ -54,7 +54,7 @@ fn main() -> Result<(), io::Error> {
             println!(" = \"{}\"", lexer.data.strings.get(data.unwrap()).unwrap());
         } else if kind == t!("num") {
             let data = t.kind_and_data.data_id::<NumberId>();
-            println!(" = {}", lexer.data.numbers[data.unwrap()].0);
+            println!(" = {:e}", lexer.data.numbers[data.unwrap()].0);
         } else if kind == t!("big int") {
             let data = t.kind_and_data.data_id();
             println!(" = {}n", lexer.data.strings.get(data.unwrap()).unwrap());

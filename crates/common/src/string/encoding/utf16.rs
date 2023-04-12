@@ -41,6 +41,11 @@ impl Utf16 {
         self.0.len()
     }
 
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Create utf16 slice from a slice of u16 values.
     ///
     /// # Safety

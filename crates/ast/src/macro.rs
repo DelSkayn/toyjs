@@ -7,7 +7,7 @@ macro_rules! ast_node {
 
         $(
         impl Node for $ty{
-            fn from_node<'a>(node: &'a AstNode) -> &'a $ty{
+            fn from_node(node: &AstNode) -> &$ty{
                 if let AstNode::$tag(ref node) = node {
                     node
                 }else{
@@ -15,7 +15,7 @@ macro_rules! ast_node {
                 }
             }
 
-            fn from_node_mut<'a>(node: &'a mut AstNode) -> &'a mut $ty{
+            fn from_node_mut(node: &mut AstNode) -> &mut $ty{
                 if let AstNode::$tag(ref mut node) = node {
                     node
                 }else{

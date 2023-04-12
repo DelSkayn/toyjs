@@ -3,7 +3,7 @@ use token::{t, Token, TokenKind};
 
 use crate::Lexer;
 
-/**
+/*
 ```
 // Parsing integers with radix 2, 4, 8, 16, 32. Assumes current != end.
 template <int radix_log_2, class Iterator, class EndMark>
@@ -109,8 +109,17 @@ double InternalStringToIntDouble(Iterator current, EndMark end, bool negative,
 
 impl<'a> Lexer<'a> {
     fn lex_radix(&mut self, radix: u8) -> Token {
-        //TODO This implementation is wrong for big numbers.
-        let mut num = 0f64;
+        // Implementation derived from node.
+        while let Some(x) = self.peek_byte() {
+            if x != b'0' {
+                break;
+            }
+            self.next_unit();
+        }
+
+        let mut number: u64 = 0;
+        let mut exponent: u32 = 0;
+
         while let Some(x) = self
             .peek_byte()
             .and_then(|x| {
@@ -123,12 +132,63 @@ impl<'a> Lexer<'a> {
             .and_then(|x| x.to_digit(radix as u32))
         {
             self.next_unit();
-            num *= radix as f64;
-            num += x as f64
+            number = number * (radix as u64) + (x as u64);
+            let mut overflow = number >> 53;
+            if overflow > 0 {
+                let mut overflow_bits = 1i32;
+                while overflow > 1 {
+                    overflow_bits += 1;
+                    overflow >>= 1;
+                }
+
+                let dropped_bits_mask = (1 << overflow_bits) - 1;
+                let dropped_bits = (number as i32) & dropped_bits_mask;
+                number >>= overflow_bits;
+                exponent = overflow_bits as u32;
+
+                let mut zero_tail = true;
+                while let Some(x) = self
+                    .peek_byte()
+                    .and_then(|x| {
+                        if x.is_ascii() {
+                            char::from_u32(x as u32)
+                        } else {
+                            None
+                        }
+                    })
+                    .and_then(|x| x.to_digit(radix as u32))
+                {
+                    self.next_unit();
+                    zero_tail = zero_tail && x == 0;
+                    exponent += radix.ilog2();
+                }
+
+                let middle_value = 1 << (overflow_bits - 1);
+                if dropped_bits > middle_value
+                    || dropped_bits == middle_value && ((number & 1) != 0 || !zero_tail)
+                {
+                    number += 1;
+                }
+
+                if number & (1u64 << 53) != 0 {
+                    exponent += 1;
+                    number >>= 1;
+                }
+                break;
+            }
         }
 
-        let id = self.finish_number(num);
-        self.finish_token_number(t!("num"), Some(id))
+        debug_assert!(number < 1u64 << 53);
+        debug_assert!(number as f64 as u64 == number);
+
+        if exponent == 0 {
+            let id = self.finish_number(number as f64);
+            self.finish_token_number(t!("num"), Some(id))
+        } else {
+            let number = (number as f64) * 2f64.powi(exponent as i32);
+            let id = self.finish_number(number);
+            self.finish_token_number(t!("num"), Some(id))
+        }
     }
 
     /// Lex the mantissa or the '.345' part of number '12.345'
@@ -176,11 +236,11 @@ impl<'a> Lexer<'a> {
         true
     }
 
-    fn lex_bigint(&mut self, start: &[u8], mut iter: Units) -> Token {
+    fn lex_bigint(&mut self, start: &[u8], iter: Units) -> Token {
         for s in start {
             self.buffer.ascii.push(*s);
         }
-        while let Some(c) = iter.next() {
+        for c in iter {
             let c = c as u8;
             if c == b'n' {
                 break;

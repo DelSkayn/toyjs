@@ -13,6 +13,18 @@ pub struct Token {
     pub span: Span,
 }
 
+impl Token {
+    #[inline]
+    pub fn kind(&self) -> TokenKind {
+        self.kind_and_data.kind()
+    }
+
+    #[inline]
+    pub fn data_id<D: AnyBitPattern>(&self) -> Option<D> {
+        self.kind_and_data.data_id()
+    }
+}
+
 /// A packed data struct.
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct TokenKindData(u64);

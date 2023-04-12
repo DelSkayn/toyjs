@@ -20,16 +20,36 @@ impl Ascii {
         }
     }
 
+    pub const fn const_from_slice(slice: &[u8]) -> &Self {
+        let mut i = 0;
+        while i < slice.len() {
+            if !slice[i].is_ascii() {
+                panic!("byte slice was not utf8")
+            }
+            i += 1;
+        }
+        unsafe { Self::from_slice_unchecked(slice) }
+    }
+
+    pub const fn const_from_str(slice: &str) -> &Self {
+        Self::const_from_slice(slice.as_bytes())
+    }
+
     /// Returns the number of code units in the string.
     /// Equivalent to the number of characters for ascii.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// # Safety
     /// slice must contain only valid ascii characters
     #[inline]
-    pub unsafe fn from_slice_unchecked(slice: &[u8]) -> &Self {
+    pub const unsafe fn from_slice_unchecked(slice: &[u8]) -> &Self {
         // SAFETY: safe since ascii is repr transparent.
         std::mem::transmute(slice)
     }

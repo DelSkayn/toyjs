@@ -40,6 +40,11 @@ impl<'a> Encoding<'a> {
         }
     }
 
+    #[must_use]
+    pub fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+
     pub fn chars(self) -> Chars<'a> {
         match self {
             Self::Ascii(x) => Chars::Ascii(x.chars()),
