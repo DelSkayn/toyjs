@@ -1,4 +1,6 @@
-use ast::{Expr, List, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName};
+use ast::{
+    ArrayLiteral, Expr, List, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
+};
 use common::{
     span::Span,
     string::{Ascii, Encoding},
@@ -70,7 +72,12 @@ impl<'a> Parser<'a> {
                         .ast
                         .push_node(PrimeExpr::Object(id), token.span.covers(this.last_span())))
                 }),
-                t!("[") => this.with_lexer_state(State::Base, |this| this.parse_array_literal()),
+                t!("[") => this.with_lexer_state(State::Base, |this| {
+                    let array = this.parse_array_literal()?;
+                    Ok(this
+                        .ast
+                        .push_node(PrimeExpr::Array(array), token.span.covers(this.last_span())))
+                }),
                 t!("function") => {
                     todo!("function expression")
                 }
@@ -104,8 +111,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_object_literal(&mut self) -> Result<ObjectLiteral> {
-        let token = next_expect!(self);
+        let token = peek_expect!(self);
         if let t!("}") = token.kind() {
+            self.next();
             return Ok(ObjectLiteral::Empty);
         }
         let property = self.parse_property_definition()?;
@@ -118,10 +126,14 @@ impl<'a> Parser<'a> {
         );
         let res = ObjectLiteral::Item(last);
         loop {
-            let token = next_expect!(self, ",", "}");
+            let token = peek_expect!(self, ",", "}");
             match token.kind() {
-                t!("}") => break,
+                t!("}") => {
+                    self.next();
+                    break;
+                }
                 t!(",") => {
+                    self.next();
                     if let Some(t!("}")) = self.peek_kind() {
                         break;
                     }
@@ -210,7 +222,7 @@ impl<'a> Parser<'a> {
 
     fn parse_property_name(&mut self) -> Result<PropertyName> {
         let token = next_expect!(self, "ident", "[", "string", "num");
-        match token.kind() {
+        match dbg!(token.kind()) {
             t!("ident") => Ok(PropertyName::Ident(token.data_id().unwrap())),
             t!("string") => Ok(PropertyName::String(token.data_id().unwrap())),
             t!("num") => Ok(PropertyName::Number(token.data_id().unwrap())),
@@ -225,8 +237,81 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_literal(&mut self) -> Result<NodeId<PrimeExpr>> {
-        todo!()
+    fn parse_array_literal(&mut self) -> Result<ArrayLiteral> {
+        let mut res = ArrayLiteral {
+            expr: None,
+            is_spread: false,
+            next: None,
+        };
+
+        let token = peek_expect!(self);
+        if let t!("]") = token.kind() {
+            return Ok(res);
+        } else if let t!("...") = token.kind() {
+            res.expr = Some(self.parse_assignment_expr()?);
+            res.is_spread = true;
+        } else if t!(",") != token.kind() {
+            res.expr = Some(self.parse_assignment_expr()?);
+        }
+
+        let mut item = self.ast.push_node(
+            ArrayLiteral {
+                expr: None,
+                is_spread: false,
+                next: None,
+            },
+            Span::empty(),
+        );
+        res.next = Some(item);
+        loop {
+            let token = next_expect!(self);
+            match token.kind() {
+                t!("]") => return Ok(res),
+                t!(",") => {
+                    let new = self.ast.push_node(
+                        ArrayLiteral {
+                            expr: None,
+                            is_spread: false,
+                            next: None,
+                        },
+                        Span::empty(),
+                    );
+                    self.ast[item].next = Some(new);
+                    item = new;
+                }
+                t!("...") => {
+                    let expr = self.parse_assignment_expr()?;
+                    let new = self.ast.push_node(
+                        ArrayLiteral {
+                            expr: None,
+                            is_spread: false,
+                            next: None,
+                        },
+                        Span::empty(),
+                    );
+                    let node = &mut self.ast[item];
+                    node.expr = Some(expr);
+                    node.is_spread = true;
+                    node.next = Some(new);
+                    item = new;
+                }
+                _ => {
+                    let expr = self.parse_assignment_expr()?;
+                    let new = self.ast.push_node(
+                        ArrayLiteral {
+                            expr: None,
+                            is_spread: false,
+                            next: None,
+                        },
+                        Span::empty(),
+                    );
+                    let node = &mut self.ast[item];
+                    node.expr = Some(expr);
+                    node.next = Some(new);
+                    item = new;
+                }
+            }
+        }
     }
 
     fn reparse_arrow_function(&mut self, _expr: NodeId<Expr>) -> Result<NodeId<PrimeExpr>> {
@@ -236,6 +321,8 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod test {
+    use ast::{ObjectLiteral, PrimeExpr, PropertyDefinition};
+
     use crate::create_test_parser;
 
     #[test]
@@ -270,6 +357,52 @@ mod test {
         match parser.parse_prime() {
             Ok(x) => {
                 assert!(matches!(parser.ast[x], ast::PrimeExpr::Ident(_)))
+            }
+            Err(_) => {
+                panic!()
+            }
+        }
+    }
+
+    #[test]
+    fn basic_object() {
+        create_test_parser!("{}", parser);
+        match parser.parse_prime() {
+            Ok(x) => {
+                assert!(matches!(
+                    parser.ast[x],
+                    ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
+                ))
+            }
+            Err(_) => {
+                panic!()
+            }
+        }
+    }
+
+    #[test]
+    fn object_with_identifier() {
+        create_test_parser!("{ hello }", parser);
+        match parser.parse_prime() {
+            Ok(x) => {
+                let PrimeExpr::Object(ObjectLiteral::Item(node)) = parser.ast[x] else {
+                    panic!("not object");
+                };
+                let item = parser.ast[node].item;
+                assert!(matches!(parser.ast[item], PropertyDefinition::Ident(_)));
+            }
+            Err(_) => {
+                panic!()
+            }
+        }
+    }
+
+    #[test]
+    fn basic_array() {
+        create_test_parser!("[]", parser);
+        match parser.parse_prime() {
+            Ok(x) => {
+                assert!(matches!(parser.ast[x], ast::PrimeExpr::Array(_)))
             }
             Err(_) => {
                 panic!()

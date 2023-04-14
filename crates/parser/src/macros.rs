@@ -1,6 +1,6 @@
 #[macro_export]
 macro_rules! peek_expect {
-    ($parser:expr$(,$($expect:literal),*$(,)?)?) => {
+    ($parser:expr$(,$($expect:tt),*$(,)?)?) => {
         {
             let Some(token) = $parser.peek() else{
                 return Err($crate::error::Error{

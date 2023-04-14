@@ -21,8 +21,8 @@ ast_node!(
         Binding(Binding),
         CaseList(CaseList),
         PropertyDefinition(PropertyDefinition),
-        ObjectLiteral(ObjectLiteral),
         ObjectLiteralItem(List<PropertyDefinition>),
+        ArrayLiteralItem(ArrayLiteral),
     }
 );
 const SIZE_ASSERT: [u8; 16] = [0u8; std::mem::size_of::<AstNode>()];
@@ -184,7 +184,7 @@ pub enum PrimeExpr {
     Boolean(bool),
     Null,
     Object(ObjectLiteral),
-    Array,
+    Array(ArrayLiteral),
     This,
     Covered(NodeId<Expr>),
 }
@@ -216,4 +216,11 @@ pub enum PropertyName {
 pub enum ObjectLiteral {
     Empty,
     Item(NodeId<List<PropertyDefinition>>),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct ArrayLiteral {
+    pub expr: Option<NodeId<Expr>>,
+    pub is_spread: bool,
+    pub next: Option<NodeId<ArrayLiteral>>,
 }
