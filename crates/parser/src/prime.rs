@@ -314,7 +314,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn reparse_arrow_function(&mut self, _expr: NodeId<Expr>) -> Result<NodeId<PrimeExpr>> {
+    fn reparse_arrow_function(&mut self, _expr: NodeId<List<Expr>>) -> Result<NodeId<PrimeExpr>> {
         todo!()
     }
 }

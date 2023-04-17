@@ -221,6 +221,13 @@ pub enum UnreservedKeyword {
 
 /// An javascript operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperatorKind {
+    Base(Operator),
+    Assign(Operator),
+}
+
+/// An javascript operator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Operator {
     /// `-`
     Minus,

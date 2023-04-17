@@ -15,6 +15,7 @@ ast_node!(
     pub enum AstNode {
         Root(Root),
         Expr(Expr),
+        ExprList(List<Expr>),
         PrimeExpr(PrimeExpr),
         Stmt(Stmt),
         StmtList(List<Stmt>),
@@ -129,16 +130,62 @@ pub enum Stmt {
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub enum BinaryOp {
+pub enum BaseOp {
+    NullCoalessing,
+    TenaryNull,
+    Or,
+    And,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
     Add,
     Sub,
+    Mul,
+    Div,
+    Mod,
+    Exp,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    ShiftLeft,
+    ShiftRight,
+    ShiftRightUnsigned,
+    InstanceOf,
+    In,
+    Equal,
+    StrictEqual,
+    NotEqual,
+    StrictNotEqual,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum AssignOp {
+    Assign,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Exp,
+    ShiftLeft,
+    ShiftRight,
+    ShiftRightUnsigned,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum BinaryOp {
+    Base(BaseOp),
+    Assign(AssignOp),
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum PostfixOp {
     AddOne,
     SubOne,
-    Index,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -148,7 +195,8 @@ pub enum PrefixOp {
     Plus,
     Minus,
     Not,
-    BinaryNot,
+    BitwiseNot,
+    New,
     Delete,
     Void,
     TypeOf,
@@ -167,7 +215,18 @@ pub enum Expr {
     },
     Postfix {
         op: PostfixOp,
-        index: Option<NodeId<Expr>>,
+        expr: NodeId<Expr>,
+    },
+    Index {
+        index: NodeId<Expr>,
+        expr: NodeId<Expr>,
+    },
+    Dot {
+        ident: StringId,
+        expr: NodeId<Expr>,
+    },
+    Call {
+        params: NodeId<List<Expr>>,
         expr: NodeId<Expr>,
     },
     Prime {
@@ -186,7 +245,7 @@ pub enum PrimeExpr {
     Object(ObjectLiteral),
     Array(ArrayLiteral),
     This,
-    Covered(NodeId<Expr>),
+    Covered(NodeId<List<Expr>>),
 }
 
 #[derive(Clone, Copy, PartialEq)]

@@ -33,6 +33,7 @@ pub enum State {
 }
 
 /// A wrapper around f64 which implements bitwise equility and hashing.
+#[derive(Clone, Copy, Debug)]
 pub struct Number(pub f64);
 impl From<&Number> for Number {
     fn from(value: &Number) -> Self {
