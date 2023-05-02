@@ -1,4 +1,4 @@
-use common::unicode::{CharExt, Utf16Ext};
+use common::unicode::{chars, CharExt, Utf16Ext};
 use token::{t, Keyword, Token, TokenKind, UnreservedKeyword};
 
 use phf::phf_map;
@@ -107,7 +107,11 @@ impl<'a> Lexer<'a> {
             } else {
                 debug_assert!(self.peek.is_none());
                 let char = x.decode_utf16_with(|| self.next_unit().expect("invalid utf16"));
-                if !char.is_xid_continue() {
+                if !char.is_xid_continue()
+                    && char != '$'
+                    && char != chars::ZWNJ
+                    && char != chars::ZWJ
+                {
                     // We read a unit to much so put it back for the next token.
                     if let (lead, Some(trail)) = char.encode_utf16_code_point() {
                         self.overread = Some(lead);

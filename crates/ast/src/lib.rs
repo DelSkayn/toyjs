@@ -5,7 +5,7 @@ pub use ast::{Ast as GenAst, List, ListId, NodeId};
 use token::{NumberId, StringId};
 mod r#macro;
 
-pub type AstStorage = (Vec<Expr>, Vec<PrimeExpr>);
+pub type AstStorage = (Vec<Expr>, Vec<PrimeExpr>, Vec<PropertyDefinition>);
 
 pub type Ast = GenAst<AstStorage>;
 

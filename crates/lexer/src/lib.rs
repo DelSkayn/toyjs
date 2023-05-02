@@ -13,6 +13,7 @@ use token::{t, NumberId, StringId, Token, TokenKind, TokenKindData};
 
 mod ident;
 mod number;
+mod regex;
 mod string;
 
 /// Lexer state.
@@ -263,10 +264,6 @@ impl<'a> Lexer<'a> {
 
     fn finish_number(&mut self, number: f64) -> NumberId {
         self.data.numbers.intern(&Number(number))
-    }
-
-    fn lex_regex(&mut self) -> Token {
-        todo!()
     }
 
     fn lex_slash(&mut self) -> Token {
