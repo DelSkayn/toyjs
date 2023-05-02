@@ -60,6 +60,11 @@ pub struct List<T> {
     pub next: Option<ListId<T>>,
 }
 
+pub struct NodeList<T> {
+    pub data: T,
+    pub next: Option<NodeId<NodeList<T>>>,
+}
+
 impl<T> List<T> {
     fn cast<V>(self) -> List<V> {
         // SAFETY: NodeId and ListId are transparent wrappers over u32.
@@ -92,6 +97,7 @@ impl<S: AnyVec> Ast<S> {
         }
     }
 
+    /// Pushes a new node into the ast. Returns the id of the new node.
     pub fn push_node<N: Any>(&mut self, node: N) -> NodeId<N> {
         let Some(len) = self.storage.any_len::<N>() else {
             panic_no_storage::<N>()
@@ -139,6 +145,23 @@ impl<S: AnyVec> Ast<S> {
             id,
             marker: PhantomData,
         };
+
+        if let Some(x) = previous {
+            self[x].next = Some(id);
+        }
+
+        id
+    }
+
+    pub fn append_node_list<N: Any>(
+        &mut self,
+        item: N,
+        previous: Option<NodeId<NodeList<N>>>,
+    ) -> NodeId<NodeList<N>> {
+        let id = self.push_node(NodeList {
+            data: item,
+            next: None,
+        });
 
         if let Some(x) = previous {
             self[x].next = Some(id);

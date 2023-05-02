@@ -1,6 +1,6 @@
 use std::any::{Any, TypeId};
 
-pub fn downcast_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
+pub fn coerce_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
     if TypeId::of::<F>() == TypeId::of::<T>() {
         Some(unsafe { std::mem::transmute::<&F, &T>(f) })
     } else {
@@ -8,7 +8,7 @@ pub fn downcast_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
     }
 }
 
-pub fn downcast_mut<F: Any, T: Any>(f: &mut F) -> Option<&mut T> {
+pub fn coerce_mut<F: Any, T: Any>(f: &mut F) -> Option<&mut T> {
     if TypeId::of::<F>() == TypeId::of::<T>() {
         Some(unsafe { std::mem::transmute::<&mut F, &mut T>(f) })
     } else {
@@ -27,33 +27,33 @@ pub trait AnyIndex<Idx> {
 impl<T: Any> AnyIndex<usize> for Vec<T> {
     #[inline]
     fn any_get<V: Any>(&self, idx: usize) -> Option<Option<&V>> {
-        downcast_ref::<_, Vec<V>>(self).map(|x| x.get(idx))
+        coerce_ref::<_, Vec<V>>(self).map(|x| x.get(idx))
     }
 
     #[inline]
     fn any_get_mut<V: Any>(&mut self, idx: usize) -> Option<Option<&mut V>> {
-        downcast_mut::<_, Vec<V>>(self).map(|x| x.get_mut(idx))
+        coerce_mut::<_, Vec<V>>(self).map(|x| x.get_mut(idx))
     }
 
     fn any_len<V: Any>(&self) -> Option<usize> {
-        downcast_ref::<_, Vec<V>>(self).map(|x| x.len())
+        coerce_ref::<_, Vec<V>>(self).map(|x| x.len())
     }
 }
 
 impl<T: Any, const S: usize> AnyIndex<usize> for [T; S] {
     #[inline]
     fn any_get<V: Any>(&self, idx: usize) -> Option<Option<&V>> {
-        downcast_ref::<_, [V; S]>(self).map(|x| x.get(idx))
+        coerce_ref::<_, [V; S]>(self).map(|x| x.get(idx))
     }
 
     #[inline]
     fn any_get_mut<V: Any>(&mut self, idx: usize) -> Option<Option<&mut V>> {
-        downcast_mut::<_, [V; S]>(self).map(|x| x.get_mut(idx))
+        coerce_mut::<_, [V; S]>(self).map(|x| x.get_mut(idx))
     }
 
     #[inline]
     fn any_len<V: Any>(&self) -> Option<usize> {
-        downcast_ref::<_, Vec<V>>(self).map(|x| x.len())
+        coerce_ref::<_, Vec<V>>(self).map(|x| x.len())
     }
 }
 
@@ -66,7 +66,7 @@ pub trait AnyVec: AnyIndex<usize> {
 impl<T: Any> AnyVec for Vec<T> {
     #[inline]
     fn any_push<V: Any>(&mut self, value: V) -> Option<V> {
-        let Some(this) = downcast_mut::<_, Vec<V>>(self) else {
+        let Some(this) = coerce_mut::<_, Vec<V>>(self) else {
             return Some(value)
         };
         this.push(value);
@@ -75,20 +75,20 @@ impl<T: Any> AnyVec for Vec<T> {
 
     #[inline]
     fn any_pop<V: Any>(&mut self) -> Option<Option<V>> {
-        downcast_mut::<_, Vec<V>>(self).map(|this| this.pop())
+        coerce_mut::<_, Vec<V>>(self).map(|this| this.pop())
     }
 }
 
 macro_rules! impl_tuple {
     ($($n:ident),*$(,)?) => {
-        impl_tuple!(@sub $($n,)*);
+        impl_tuple!(@sub @mark, $($n,)*);
     };
-    (@sub $head:ident,$($rest:ident,)*) => {
-        impl_tuple!(@impl $head,$($rest,)*);
-        impl_tuple!(@sub $($rest,)*);
+    (@sub $($lead:ident,)* @mark, $head:ident,$($rest:ident,)*) => {
+        impl_tuple!(@impl $($lead,)*);
+        impl_tuple!(@sub $($lead,)* $head, @mark, $($rest,)*);
     };
-    (@sub) => {
-        impl_tuple!(@impl );
+    (@sub $($lead:ident,)* @mark,) => {
+        impl_tuple!(@impl $($lead,)*);
     };
     (@impl $($n:ident,)*) => {
         #[allow(non_snake_case)]

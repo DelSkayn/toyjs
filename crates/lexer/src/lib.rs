@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-use std::hash::{Hash, Hasher};
-
 use bytemuck::Pod;
 use common::{
     interner::Interner,
@@ -9,7 +7,7 @@ use common::{
     string::{Ascii, Encoding, String, Units, Utf16},
     unicode::{byte, chars, units, CharExt, Utf16Ext},
 };
-use token::{t, NumberId, StringId, Token, TokenKind, TokenKindData};
+use token::{t, Number, NumberId, StringId, Token, TokenKind, TokenKindData};
 
 mod ident;
 mod number;
@@ -31,27 +29,6 @@ pub enum State {
     Regex,
     /// Parse the next `}` as the end of a template substitute
     Template,
-}
-
-/// A wrapper around f64 which implements bitwise equility and hashing.
-#[derive(Clone, Copy, Debug)]
-pub struct Number(pub f64);
-impl From<&Number> for Number {
-    fn from(value: &Number) -> Self {
-        Number(value.0)
-    }
-}
-
-impl Hash for Number {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.to_bits().hash(state)
-    }
-}
-impl Eq for Number {}
-impl PartialEq for Number {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
 }
 
 /// Additional data produced during lexing which is not present in the produced token.
