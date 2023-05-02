@@ -15,7 +15,7 @@ impl<'a> Parser<'a> {
         self.with_lexer_state(lexer::State::Regex, |this| {
             let token = next_expect!(
                 this, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
-                "("
+                "(", "function"
             );
 
             match token.kind() {
@@ -83,7 +83,7 @@ impl<'a> Parser<'a> {
                 x => {
                     unexpected!(
                         this, x, "ident", "num", "string", "true", "false", "regex", "null",
-                        "this", "{", "[", "("
+                        "this", "{", "[", "(", "function"
                     )
                 }
             }

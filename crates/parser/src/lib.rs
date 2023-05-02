@@ -18,9 +18,9 @@ pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Parser<'a> {
-    lexer: Lexer<'a>,
+    pub lexer: Lexer<'a>,
     peek: Option<Token>,
-    ast: Ast,
+    pub ast: Ast,
     last_span: Span,
     state: ParserState,
 }

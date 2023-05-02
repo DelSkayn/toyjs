@@ -58,7 +58,7 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn parse_expr(&mut self) -> Result<ListId<Expr>> {
+    pub fn parse_expr(&mut self) -> Result<ListId<Expr>> {
         let item = self.parse_assignment_expr()?;
         let res = self.ast.append_list(item, None);
         let mut expr = res;

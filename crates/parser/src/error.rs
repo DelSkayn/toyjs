@@ -14,6 +14,7 @@ pub enum ErrorKind {
     InvalidToken,
 }
 
+#[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
     pub origin: Span,
