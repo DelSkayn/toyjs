@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use ast::{Ast, Node, NodeId, Root};
+use std::any::Any;
+
+use ast::{Ast, AstStorage, NodeId};
 use common::span::Span;
 use lexer::{Lexer, State};
 use token::{t, Token, TokenKind};
@@ -18,7 +20,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     peek: Option<Token>,
-    ast: Ast<Root>,
+    ast: Ast,
     last_span: Span,
     state: ParserState,
 }
@@ -35,7 +37,7 @@ impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Parser {
             lexer,
-            ast: Ast::new(Root::Undetermined, Span::empty()),
+            ast: Ast::new(AstStorage::default()),
             peek: None,
             last_span: Span::empty(),
             state: ParserState {
@@ -119,7 +121,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn push<N: Node>(&mut self, node: N, span: Span) -> NodeId<N> {
-        self.ast.push_node(node, span)
+    pub fn push<N: Any>(&mut self, node: N) -> NodeId<N> {
+        self.ast.push_node(node)
     }
 }

@@ -1,10 +1,7 @@
 use ast::{
-    ArrayLiteral, Expr, List, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
+    ArrayLiteral, Expr, ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
 };
-use common::{
-    span::Span,
-    string::{Ascii, Encoding},
-};
+use common::string::{Ascii, Encoding};
 use lexer::State;
 use token::t;
 
@@ -23,81 +20,64 @@ impl<'a> Parser<'a> {
 
             match token.kind() {
                 t!("ident") => {
-                    let id = this.push(
-                        PrimeExpr::Ident(token.kind_and_data.data_id().unwrap()),
-                        token.span,
-                    );
+                    let id = this.push(PrimeExpr::Ident(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("num") => {
-                    let id = this.push(
-                        PrimeExpr::Number(token.kind_and_data.data_id().unwrap()),
-                        token.span,
-                    );
+                    let id = this.push(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("string") | t!("``") => {
-                    let id = this.push(
-                        PrimeExpr::String(token.kind_and_data.data_id().unwrap()),
-                        token.span,
-                    );
+                    let id = this.push(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("true") => {
-                    let id = this.push(PrimeExpr::Boolean(true), token.span);
+                    let id = this.push(PrimeExpr::Boolean(true));
                     Ok(id)
                 }
                 t!("false") => {
-                    let id = this.push(PrimeExpr::Boolean(false), token.span);
+                    let id = this.push(PrimeExpr::Boolean(false));
                     Ok(id)
                 }
                 t!("regex") => {
-                    let id = this.push(
-                        PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()),
-                        token.span,
-                    );
+                    let id = this.push(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("null") => {
-                    let id = this.push(PrimeExpr::Null, token.span);
+                    let id = this.push(PrimeExpr::Null);
                     Ok(id)
                 }
                 t!("this") => {
-                    let id = this.push(PrimeExpr::This, token.span);
+                    let id = this.push(PrimeExpr::This);
                     Ok(id)
                 }
                 t!("{") => this.with_lexer_state(State::Base, |this| {
                     let id = this.parse_object_literal()?;
-                    Ok(this
-                        .ast
-                        .push_node(PrimeExpr::Object(id), token.span.covers(this.last_span())))
+                    Ok(this.ast.push_node(PrimeExpr::Object(id)))
                 }),
                 t!("[") => this.with_lexer_state(State::Base, |this| {
                     let array = this.parse_array_literal()?;
-                    Ok(this
-                        .ast
-                        .push_node(PrimeExpr::Array(array), token.span.covers(this.last_span())))
+                    Ok(this.ast.push_node(PrimeExpr::Array(array)))
                 }),
                 t!("function") => {
                     todo!("function expression")
                 }
                 t!("(") => {
                     let expression = this.parse_expr()?;
-                    let span = token.span.covers(this.last_span());
                     if let Some(t!("=>")) = this.peek_kind() {
                         return this.reparse_arrow_function(expression);
                     }
-                    let id = this.push(PrimeExpr::Covered(expression), span);
+                    let id = this.push(PrimeExpr::Covered(expression));
                     Ok(id)
                 }
                 t!("yield") if this.state.yield_ident => {
                     let str = this.lexer.data.push_string(Encoding::Ascii(YIELD_STR));
-                    let id = this.push(PrimeExpr::Ident(str), token.span);
+                    let id = this.push(PrimeExpr::Ident(str));
                     Ok(id)
                 }
                 t!("await") if this.state.await_ident => {
                     let str = this.lexer.data.push_string(Encoding::Ascii(AWAIT_STR));
-                    let id = this.push(PrimeExpr::Ident(str), token.span);
+                    let id = this.push(PrimeExpr::Ident(str));
                     Ok(id)
                 }
                 x => {
@@ -117,13 +97,7 @@ impl<'a> Parser<'a> {
             return Ok(ObjectLiteral::Empty);
         }
         let property = self.parse_property_definition()?;
-        let mut last = self.ast.push_node(
-            List {
-                item: property,
-                next: None,
-            },
-            Span::empty(),
-        );
+        let mut last = self.ast.append_list(property, None);
         let res = ObjectLiteral::Item(last);
         loop {
             let token = peek_expect!(self, ",", "}");
@@ -138,15 +112,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     let property = self.parse_property_definition()?;
-                    let new = self.ast.push_node(
-                        List {
-                            item: property,
-                            next: None,
-                        },
-                        Span::empty(),
-                    );
-                    self.ast[last].next = Some(new);
-                    last = new;
+                    last = self.ast.append_list(property, Some(last));
                 }
                 x => {
                     unexpected!(self, x, ",", "}")
@@ -161,8 +127,7 @@ impl<'a> Parser<'a> {
         let name = match token.kind() {
             t!("...") => {
                 let expr = self.parse_assignment_expr()?;
-                let span = token.span.covers(self.last_span());
-                let id = self.ast.push_node(PropertyDefinition::Rest(expr), span);
+                let id = self.ast.push_node(PropertyDefinition::Rest(expr));
                 return Ok(id);
             }
             t!("*") => {
@@ -175,28 +140,20 @@ impl<'a> Parser<'a> {
             Some(t!(":")) => {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
-                let span = token.span.covers(self.last_span());
-                let id = self.ast.push_node(
-                    PropertyDefinition::Define {
-                        property: name,
-                        expr,
-                    },
-                    span,
-                );
+                let id = self.ast.push_node(PropertyDefinition::Define {
+                    property: name,
+                    expr,
+                });
                 Ok(id)
             }
             Some(t!("=")) => {
                 if let PropertyName::Ident(x) = name {
                     self.next();
                     let expr = self.parse_assignment_expr()?;
-                    let span = token.span.covers(self.last_span());
-                    let id = self.ast.push_node(
-                        PropertyDefinition::Covered {
-                            ident: x,
-                            initializer: expr,
-                        },
-                        span,
-                    );
+                    let id = self.ast.push_node(PropertyDefinition::Covered {
+                        ident: x,
+                        initializer: expr,
+                    });
                     Ok(id)
                 } else {
                     unexpected!(self, t!("="), ":")
@@ -204,7 +161,7 @@ impl<'a> Parser<'a> {
             }
             x => {
                 if let PropertyName::Ident(x) = name {
-                    let id = self.ast.push_node(PropertyDefinition::Ident(x), token.span);
+                    let id = self.ast.push_node(PropertyDefinition::Ident(x));
                     Ok(id)
                 } else if let Some(x) = x {
                     unexpected!(self, x, ":")
@@ -254,41 +211,32 @@ impl<'a> Parser<'a> {
             res.expr = Some(self.parse_assignment_expr()?);
         }
 
-        let mut item = self.ast.push_node(
-            ArrayLiteral {
-                expr: None,
-                is_spread: false,
-                next: None,
-            },
-            Span::empty(),
-        );
+        let mut item = self.ast.push_node(ArrayLiteral {
+            expr: None,
+            is_spread: false,
+            next: None,
+        });
         res.next = Some(item);
         loop {
             let token = next_expect!(self);
             match token.kind() {
                 t!("]") => return Ok(res),
                 t!(",") => {
-                    let new = self.ast.push_node(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                            next: None,
-                        },
-                        Span::empty(),
-                    );
+                    let new = self.ast.push_node(ArrayLiteral {
+                        expr: None,
+                        is_spread: false,
+                        next: None,
+                    });
                     self.ast[item].next = Some(new);
                     item = new;
                 }
                 t!("...") => {
                     let expr = self.parse_assignment_expr()?;
-                    let new = self.ast.push_node(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                            next: None,
-                        },
-                        Span::empty(),
-                    );
+                    let new = self.ast.push_node(ArrayLiteral {
+                        expr: None,
+                        is_spread: false,
+                        next: None,
+                    });
                     let node = &mut self.ast[item];
                     node.expr = Some(expr);
                     node.is_spread = true;
@@ -297,14 +245,11 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     let expr = self.parse_assignment_expr()?;
-                    let new = self.ast.push_node(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                            next: None,
-                        },
-                        Span::empty(),
-                    );
+                    let new = self.ast.push_node(ArrayLiteral {
+                        expr: None,
+                        is_spread: false,
+                        next: None,
+                    });
                     let node = &mut self.ast[item];
                     node.expr = Some(expr);
                     node.next = Some(new);
@@ -314,7 +259,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn reparse_arrow_function(&mut self, _expr: NodeId<List<Expr>>) -> Result<NodeId<PrimeExpr>> {
+    fn reparse_arrow_function(&mut self, _expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {
         todo!()
     }
 }

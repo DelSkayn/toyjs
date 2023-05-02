@@ -4,6 +4,7 @@
 
 pub use hashbrown as hashmap;
 
+pub mod any_vec;
 pub mod interner;
 pub mod source;
 pub mod span;

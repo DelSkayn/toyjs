@@ -68,6 +68,17 @@ impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
     pub fn len(&self) -> usize {
         self.items.len()
     }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Default for Interner<K, I> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<K, I> Index<I> for Interner<K, I>

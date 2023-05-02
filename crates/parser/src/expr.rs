@@ -1,4 +1,4 @@
-use ast::{AssignOp, BaseOp, BinaryOp, Expr, List, NodeId, PostfixOp, PrefixOp};
+use ast::{AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, PostfixOp, PrefixOp};
 use token::{t, TokenKind};
 
 use crate::{error::ErrorKind, expect, next_expect, Parser, Result};
@@ -58,18 +58,13 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
 }
 
 impl<'a> Parser<'a> {
-    pub(crate) fn parse_expr(&mut self) -> Result<NodeId<List<Expr>>> {
-        let span = self.last_span().clone();
+    pub(crate) fn parse_expr(&mut self) -> Result<ListId<Expr>> {
         let item = self.parse_assignment_expr()?;
-        let res = self.ast.push_node(List { item, next: None }, span.clone());
+        let res = self.ast.append_list(item, None);
         let mut expr = res;
         while self.eat(t!(",")) {
             let item = self.parse_assignment_expr()?;
-            let item = self
-                .ast
-                .push_node(List { item, next: None }, span.covers(self.last_span()));
-            self.ast[expr].next = Some(item);
-            expr = item;
+            expr = self.ast.append_list(item, Some(expr));
         }
         Ok(res)
     }
@@ -83,7 +78,6 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_prefix_op(&mut self, r_bp: u8) -> Result<NodeId<Expr>> {
-        let span = self.last_span().clone();
         let token = self
             .next()
             .expect("`parse_prefix_op` should only be called if next token is present");
@@ -110,14 +104,10 @@ impl<'a> Parser<'a> {
         };
 
         let expr = self.pratt_parse_expr(r_bp)?;
-        let span = span.covers(self.last_span());
-        Ok(self
-            .ast
-            .push_node(Expr::Prefix { op: operator, expr }, span))
+        Ok(self.ast.push_node(Expr::Prefix { op: operator, expr }))
     }
 
     fn parse_postfix_op(&mut self, _l_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
-        let span = self.last_span().clone();
         let token = self
             .next()
             .expect("`parse_postfix_op` should only be called if next token is present");
@@ -128,8 +118,7 @@ impl<'a> Parser<'a> {
             t!("[") => {
                 let index = self.parse_assignment_expr()?;
                 expect!(self, "]");
-                let span = span.covers(self.last_span());
-                return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }, span));
+                return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }));
             }
             t!(".") => {
                 let ident = next_expect!(self, "ident");
@@ -143,24 +132,20 @@ impl<'a> Parser<'a> {
                     });
                 }
                 let ident = ident.data_id().unwrap();
-                let span = span.covers(self.last_span());
-                return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }, span));
+                return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
                 let params = self.parse_expr()?;
                 expect!(self, ")");
-                let span = span.covers(self.last_span());
-                return Ok(self.ast.push_node(Expr::Call { params, expr: lhs }, span));
+                return Ok(self.ast.push_node(Expr::Call { params, expr: lhs }));
             }
             _ => panic!("`parse_postfix_op` called with not a token"),
         };
 
-        let span = span.covers(self.last_span());
-        Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }, span))
+        Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }))
     }
 
     fn parse_infix_op(&mut self, r_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
-        let span = self.following_span();
         let token = self
             .next()
             .expect("`parse_postfix_op` should only be called if next token is present");
@@ -212,15 +197,11 @@ impl<'a> Parser<'a> {
         };
 
         let right = self.pratt_parse_expr(r_bp)?;
-        let span = span.covers(&self.following_span());
-        Ok(self.ast.push_node(
-            Expr::Binary {
-                op,
-                left: lhs,
-                right,
-            },
-            span,
-        ))
+        Ok(self.ast.push_node(Expr::Binary {
+            op,
+            left: lhs,
+            right,
+        }))
     }
 
     fn pratt_parse_expr(&mut self, min_bp: u8) -> Result<NodeId<Expr>> {
@@ -228,8 +209,7 @@ impl<'a> Parser<'a> {
             self.parse_prefix_op(r_bp)?
         } else {
             let expr = self.parse_prime()?;
-            let span = self.ast.span(expr).clone();
-            self.ast.push_node(Expr::Prime { expr }, span)
+            self.ast.push_node(Expr::Prime { expr })
         };
 
         while let Some(op) = self.peek_kind() {

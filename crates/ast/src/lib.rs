@@ -1,57 +1,19 @@
 #![allow(dead_code)]
 
 mod ast;
-pub use ast::{Ast, NodeId};
+pub use ast::{Ast as GenAst, List, ListId, NodeId};
 use token::{NumberId, StringId};
 mod r#macro;
 
-pub trait Node {
-    fn from_node(node: &AstNode) -> &Self;
-    fn from_node_mut(node: &mut AstNode) -> &mut Self;
-    fn into_node(self) -> AstNode;
-}
+pub type AstStorage = (Vec<Expr>, Vec<PrimeExpr>);
 
-ast_node!(
-    pub enum AstNode {
-        Root(Root),
-        Expr(Expr),
-        ExprList(List<Expr>),
-        PrimeExpr(PrimeExpr),
-        Stmt(Stmt),
-        StmtList(List<Stmt>),
-        Binding(Binding),
-        CaseList(CaseList),
-        PropertyDefinition(PropertyDefinition),
-        ObjectLiteralItem(List<PropertyDefinition>),
-        ArrayLiteralItem(ArrayLiteral),
-    }
-);
-const SIZE_ASSERT: [u8; 16] = [0u8; std::mem::size_of::<AstNode>()];
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum Root {
-    Undetermined,
-    Script { statements: NodeId<List<Stmt>> },
-    Module { statements: NodeId<List<Stmt>> },
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct List<T> {
-    pub item: NodeId<T>,
-    pub next: Option<NodeId<List<T>>>,
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct InlineList<T> {
-    pub item: T,
-    pub next: Option<NodeId<List<T>>>,
-}
+pub type Ast = GenAst<AstStorage>;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct CaseList {
     /// Case expression, it is the default case if there is no expression.
     expr: Option<NodeId<Expr>>,
-    body: Option<NodeId<List<Stmt>>>,
+    body: Option<ListId<Stmt>>,
     next: Option<NodeId<CaseList>>,
 }
 
@@ -74,11 +36,11 @@ pub enum Binding {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Stmt {
     Block {
-        list: NodeId<List<Stmt>>,
+        list: ListId<Stmt>,
     },
     VariableDecl {
         kind: VariableKind,
-        decl: NodeId<List<Binding>>,
+        decl: ListId<Binding>,
     },
     Empty,
     Expr {
@@ -103,12 +65,12 @@ pub enum Stmt {
     },
     Switch {
         cond: NodeId<Expr>,
-        cased: NodeId<List<CaseList>>,
+        //cased: NodeId<CaseS>,
     },
     Try {
-        block: NodeId<List<Stmt>>,
+        block: ListId<Stmt>,
         catch: Option<NodeId<Expr>>,
-        finally: Option<NodeId<List<Stmt>>>,
+        finally: Option<ListId<Stmt>>,
     },
     Break {
         label: Option<StringId>,
@@ -217,6 +179,8 @@ pub enum Expr {
         op: PostfixOp,
         expr: NodeId<Expr>,
     },
+    // Postfix like operators with internal values
+    // Are inlined into Expr in order to keep the Expr size smaller.
     Index {
         index: NodeId<Expr>,
         expr: NodeId<Expr>,
@@ -226,7 +190,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Call {
-        params: NodeId<List<Expr>>,
+        params: ListId<Expr>,
         expr: NodeId<Expr>,
     },
     Prime {
@@ -245,7 +209,7 @@ pub enum PrimeExpr {
     Object(ObjectLiteral),
     Array(ArrayLiteral),
     This,
-    Covered(NodeId<List<Expr>>),
+    Covered(ListId<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -274,7 +238,7 @@ pub enum PropertyName {
 #[derive(Clone, Copy, PartialEq)]
 pub enum ObjectLiteral {
     Empty,
-    Item(NodeId<List<PropertyDefinition>>),
+    Item(ListId<PropertyDefinition>),
 }
 
 #[derive(Clone, Copy, PartialEq)]

@@ -60,6 +60,7 @@ pub struct LexingData {
 }
 
 impl LexingData {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         LexingData {
             strings: Interner::new(),
