@@ -1,7 +1,7 @@
-use ast::{AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, PostfixOp, PrefixOp};
+use ast::{AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, PostfixOp, PrefixOp, PrimeExpr};
 use token::{t, TokenKind};
 
-use crate::{error::ErrorKind, expect, next_expect, Parser, Result};
+use crate::{error::ErrorKind, expect, next_expect, peek_expect, unexpected, Parser, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -88,7 +88,13 @@ impl<'a> Parser<'a> {
             t!("typeof") => PrefixOp::TypeOf,
             t!("new") => {
                 if self.eat(t!(".")) {
-                    todo!("new.target")
+                    let token = next_expect!(self, "target");
+                    if token.kind() != t!("target") {
+                        unexpected!(self, token.kind(), "target");
+                    }
+                    let expr = self.ast.push_node(PrimeExpr::NewTarget);
+                    let expr = self.ast.push_node(Expr::Prime { expr });
+                    return Ok(expr);
                 }
                 PrefixOp::New
             }
@@ -121,12 +127,13 @@ impl<'a> Parser<'a> {
                 return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }));
             }
             t!(".") => {
-                let ident = next_expect!(self, "ident");
+                let ident = peek_expect!(self, "ident");
                 if TokenKind::Ident != ident.kind() {
                     return Err(crate::Error {
                         kind: ErrorKind::Unexpected {
                             expected: vec![t!("ident")],
                             found: ident.kind(),
+                            message: Some(String::from("expected member identifier")),
                         },
                         origin: ident.span,
                     });

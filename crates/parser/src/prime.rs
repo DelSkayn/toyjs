@@ -176,6 +176,7 @@ impl<'a> Parser<'a> {
                     return Err(crate::Error {
                         kind: crate::error::ErrorKind::UnexpectedEnd {
                             expected: vec![t!(":")],
+                            message: None,
                         },
                         origin: token.span,
                     });

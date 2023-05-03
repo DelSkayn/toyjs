@@ -13,6 +13,7 @@ mod constants;
 mod error;
 mod expr;
 mod prime;
+mod stmt;
 
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;

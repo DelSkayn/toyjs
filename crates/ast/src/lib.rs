@@ -376,6 +376,7 @@ pub enum PrimeExpr {
     Object(ObjectLiteral),
     Array(NodeId<NodeList<ArrayLiteral>>),
     This,
+    NewTarget,
     Covered(NodeId<Expr>),
 }
 
@@ -408,6 +409,7 @@ impl RenderAst for PrimeExpr {
                 .finish(),
             PrimeExpr::Null => ctx.render_struct("PrimeExpr::Null", w)?.finish(),
             PrimeExpr::This => ctx.render_struct("PrimeExpr::This", w)?.finish(),
+            PrimeExpr::NewTarget => ctx.render_struct("PrimeExpr::NewTarget", w)?.finish(),
             PrimeExpr::Object(ObjectLiteral::Empty) => {
                 ctx.render_struct("PrimeExpr::Object", w)?.finish()
             }
