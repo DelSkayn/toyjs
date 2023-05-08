@@ -25,9 +25,10 @@ fn main() -> Result<(), io::Error> {
     let lexer = Lexer::new(source.encoding());
     let before = Instant::now();
     let mut parser = Parser::new(lexer);
+    let res = parser.parse_stmt();
     let elapsed = before.elapsed();
     println!("parsed in {:.4} seconds", elapsed.as_secs_f64());
-    match parser.parse_expr() {
+    match res {
         Ok(x) => {
             let ctx = RenderCtx::new(
                 &parser.ast,

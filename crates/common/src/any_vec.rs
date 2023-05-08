@@ -61,6 +61,10 @@ pub trait AnyVec: AnyIndex<usize> {
     fn any_push<T: Any>(&mut self, value: T) -> Option<T>;
 
     fn any_pop<T: Any>(&mut self) -> Option<Option<T>>;
+
+    fn any_clear<T: Any>(&mut self);
+
+    fn all_clear(&mut self);
 }
 
 impl<T: Any> AnyVec for Vec<T> {
@@ -76,6 +80,17 @@ impl<T: Any> AnyVec for Vec<T> {
     #[inline]
     fn any_pop<V: Any>(&mut self) -> Option<Option<V>> {
         coerce_mut::<_, Vec<V>>(self).map(|this| this.pop())
+    }
+
+    #[inline]
+    fn any_clear<V: Any>(&mut self) {
+        if TypeId::of::<V>() == TypeId::of::<T>() {
+            self.clear();
+        }
+    }
+
+    fn all_clear(&mut self) {
+        self.clear();
     }
 }
 
@@ -151,6 +166,22 @@ macro_rules! impl_tuple {
                     }
                 )*
                 None
+            }
+
+            #[inline]
+            fn any_clear<V: Any>(&mut self){
+                let ($(ref mut $n,)*) = self;
+                $(
+                    $n.any_clear::<V>();
+                )*
+            }
+
+            #[inline]
+            fn all_clear(&mut self){
+                let ($(ref mut $n,)*) = self;
+                $(
+                    $n.all_clear();
+                )*
             }
         }
     };

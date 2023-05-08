@@ -138,6 +138,7 @@ impl<'a> Parser<'a> {
                         origin: ident.span,
                     });
                 }
+                self.next();
                 let ident = ident.data_id().unwrap();
                 return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }

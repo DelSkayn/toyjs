@@ -13,6 +13,10 @@ pub enum ErrorKind {
         found: TokenKind,
         message: Option<String>,
     },
+    DisallowedToken {
+        found: TokenKind,
+        message: Option<String>,
+    },
     InvalidToken,
 }
 

@@ -1,27 +1,20 @@
 #![allow(dead_code)]
 
 mod ast;
-pub use ast::{Ast as GenAst, List, ListId, NodeId, NodeList};
+pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList};
 pub use render::{RenderAst, RenderCtx};
 use token::{NumberId, StringId};
 mod r#macro;
 mod render;
 
 pub type AstStorage = (
+    (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>),
     Vec<Expr>,
     Vec<PrimeExpr>,
     Vec<PropertyDefinition>,
     Vec<NodeList<ArrayLiteral>>,
 );
 pub type Ast = GenAst<AstStorage>;
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct CaseList {
-    /// Case expression, it is the default case if there is no expression.
-    expr: Option<NodeId<Expr>>,
-    body: Option<ListId<Stmt>>,
-    next: Option<NodeId<CaseList>>,
-}
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum VariableKind {
@@ -61,7 +54,7 @@ impl RenderAst for Binding {
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum Stmt {
     Block {
-        list: ListId<Stmt>,
+        list: ListHead<Stmt>,
     },
     VariableDecl {
         kind: VariableKind,
@@ -69,19 +62,19 @@ pub enum Stmt {
     },
     Empty,
     Expr {
-        expr: NodeId<Expr>,
+        expr: ListId<Expr>,
     },
     DoWhile {
         body: NodeId<Stmt>,
-        expr: NodeId<Expr>,
+        cond: ListId<Expr>,
     },
     If {
-        cond: NodeId<Expr>,
+        cond: ListId<Expr>,
         body: NodeId<Stmt>,
         r#else: Option<NodeId<Stmt>>,
     },
     While {
-        cond: NodeId<Expr>,
+        cond: ListId<Expr>,
         body: NodeId<Stmt>,
     },
     For {
@@ -89,13 +82,21 @@ pub enum Stmt {
         body: NodeId<Stmt>,
     },
     Switch {
-        cond: NodeId<Expr>,
-        //cased: NodeId<CaseS>,
+        cond: ListId<Expr>,
+        cases: ListHead<CaseItem>,
+        default: Option<ListHead<Stmt>>,
+    },
+    Throw {
+        expr: ListId<Expr>,
     },
     Try {
-        block: ListId<Stmt>,
-        catch: Option<NodeId<Expr>>,
-        finally: Option<ListId<Stmt>>,
+        block: ListHead<Stmt>,
+        catch: Option<NodeId<CatchStmt>>,
+        finally: Option<ListHead<Stmt>>,
+    },
+    With {
+        expr: ListId<Expr>,
+        stmt: NodeId<Stmt>,
     },
     Break {
         label: Option<StringId>,
@@ -103,11 +104,8 @@ pub enum Stmt {
     Continue {
         label: Option<StringId>,
     },
-    Throw {
-        expr: NodeId<Expr>,
-    },
     Return {
-        expr: Option<NodeId<Expr>>,
+        expr: Option<ListId<Expr>>,
     },
     Labeled {
         label: StringId,
@@ -133,10 +131,10 @@ impl RenderAst for Stmt {
                 .render_struct("Stmt::Expr", w)?
                 .field("expr", expr)?
                 .finish(),
-            Stmt::DoWhile { ref body, ref expr } => ctx
+            Stmt::DoWhile { ref body, ref cond } => ctx
                 .render_struct("Stmt::DoWhile", w)?
                 .field("body", body)?
-                .field("expr", expr)?
+                .field("cond", cond)?
                 .finish(),
             Stmt::If {
                 ref cond,
@@ -158,9 +156,15 @@ impl RenderAst for Stmt {
                 .field("head", head)?
                 .field("body", body)?
                 .finish(),
-            Stmt::Switch { ref cond } => ctx
+            Stmt::Switch {
+                ref cond,
+                ref cases,
+                ref default,
+            } => ctx
                 .render_struct("Stmt::Switch", w)?
                 .field("cond", cond)?
+                .field("cases", cases)?
+                .field("default", default)?
                 .finish(),
             Stmt::Try {
                 ref block,
@@ -171,6 +175,11 @@ impl RenderAst for Stmt {
                 .field("block", block)?
                 .field("catch", catch)?
                 .field("finally", finally)?
+                .finish(),
+            Stmt::With { ref expr, ref stmt } => ctx
+                .render_struct("Stmt::With", w)?
+                .field("expr", expr)?
+                .field("stmt", stmt)?
                 .finish(),
             Stmt::Break { ref label } => ctx
                 .render_struct("Stmt::Break", w)?
@@ -198,6 +207,37 @@ impl RenderAst for Stmt {
                 .finish(),
             Stmt::Debugger => ctx.render_struct("Stmt::Debugger", w)?.finish(),
         }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct CaseItem {
+    pub expr: ListId<Expr>,
+    pub stmts: ListHead<Stmt>,
+}
+
+impl RenderAst for CaseItem {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("CaseItem", w)?
+            .field("expr", &self.expr)?
+            .field("stmts", &self.stmts)?
+            .finish();
+        Ok(())
+    }
+}
+
+pub struct CatchStmt {
+    pub expr: Option<ListId<Expr>>,
+    pub block: ListHead<Stmt>,
+}
+
+impl RenderAst for CatchStmt {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("CatchStmt", w)?
+            .field("expr", &self.expr)?
+            .field("block", &self.block)?
+            .finish();
         Ok(())
     }
 }

@@ -55,6 +55,44 @@ impl<T> Clone for ListId<T> {
     }
 }
 
+/// Basically `Option<ListId<T>>` but specifically meant to indicate wether a list is empty instead of
+/// just not present. Use it when a list of nodes can be empty.
+pub enum ListHead<T> {
+    Empty,
+    Present(ListId<T>),
+}
+
+impl<T> ListHead<T> {
+    pub fn or(self, other: Self) -> Self {
+        match self {
+            Self::Present(x) => Self::Present(x),
+            Self::Empty => other,
+        }
+    }
+}
+
+impl<T> From<Option<ListId<T>>> for ListHead<T> {
+    fn from(value: Option<ListId<T>>) -> Self {
+        match value {
+            None => ListHead::Empty,
+            Some(x) => ListHead::Present(x),
+        }
+    }
+}
+
+impl<T> Eq for ListHead<T> {}
+impl<T> PartialEq for ListHead<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+impl<T> Copy for ListHead<T> {}
+impl<T> Clone for ListHead<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
 pub struct List<T> {
     pub item: NodeId<T>,
     pub next: Option<ListId<T>>,
@@ -84,6 +122,7 @@ impl<T> List<T> {
     }
 }
 
+#[derive(Default)]
 pub struct Ast<Storage: AnyVec> {
     storage: Storage,
     lists: Vec<List<()>>,
@@ -168,6 +207,10 @@ impl<S: AnyVec> Ast<S> {
         }
 
         id
+    }
+
+    pub fn clear(&mut self) {
+        self.storage.all_clear();
     }
 }
 

@@ -21,35 +21,43 @@ impl<'a> Parser<'a> {
 
             match token.kind() {
                 t!("ident") => {
-                    let id = this.push(PrimeExpr::Ident(token.kind_and_data.data_id().unwrap()));
+                    let id = this
+                        .ast
+                        .push_node(PrimeExpr::Ident(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("num") => {
-                    let id = this.push(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
+                    let id = this
+                        .ast
+                        .push_node(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("string") | t!("``") => {
-                    let id = this.push(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
+                    let id = this
+                        .ast
+                        .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("true") => {
-                    let id = this.push(PrimeExpr::Boolean(true));
+                    let id = this.ast.push_node(PrimeExpr::Boolean(true));
                     Ok(id)
                 }
                 t!("false") => {
-                    let id = this.push(PrimeExpr::Boolean(false));
+                    let id = this.ast.push_node(PrimeExpr::Boolean(false));
                     Ok(id)
                 }
                 t!("regex") => {
-                    let id = this.push(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
+                    let id = this
+                        .ast
+                        .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("null") => {
-                    let id = this.push(PrimeExpr::Null);
+                    let id = this.ast.push_node(PrimeExpr::Null);
                     Ok(id)
                 }
                 t!("this") => {
-                    let id = this.push(PrimeExpr::This);
+                    let id = this.ast.push_node(PrimeExpr::This);
                     Ok(id)
                 }
                 t!("{") => this.with_lexer_state(State::Base, |this| {
@@ -73,18 +81,18 @@ impl<'a> Parser<'a> {
                         this.reparse_arrow_function(expression)
                     } else {
                         let expr = this.ast[expression].item;
-                        let id = this.push(PrimeExpr::Covered(expr));
+                        let id = this.ast.push_node(PrimeExpr::Covered(expr));
                         Ok(id)
                     }
                 }
                 t!("yield") if this.state.yield_ident => {
                     let str = this.lexer.data.push_string(Encoding::Ascii(YIELD_STR));
-                    let id = this.push(PrimeExpr::Ident(str));
+                    let id = this.ast.push_node(PrimeExpr::Ident(str));
                     Ok(id)
                 }
                 t!("await") if this.state.await_ident => {
                     let str = this.lexer.data.push_string(Encoding::Ascii(AWAIT_STR));
-                    let id = this.push(PrimeExpr::Ident(str));
+                    let id = this.ast.push_node(PrimeExpr::Ident(str));
                     Ok(id)
                 }
                 x => {

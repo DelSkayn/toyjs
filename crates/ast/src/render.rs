@@ -8,7 +8,10 @@ use std::{
 use common::{interner::Interner, string::String};
 use token::{Number, NumberId, StringId};
 
-use crate::{ast::NodeList, Ast, ListId, NodeId};
+use crate::{
+    ast::{ListHead, NodeList},
+    Ast, ListId, NodeId,
+};
 
 pub struct RenderCtx<'a> {
     pub tree: &'a Ast,
@@ -31,6 +34,14 @@ impl<'a> RenderCtx<'a> {
         }
     }
 
+    pub fn push_indent(&self) {
+        self.indent.set(self.indent.get() + 1);
+    }
+
+    pub fn pop_indent(&self) {
+        self.indent.set(self.indent.get() - 1);
+    }
+
     pub fn indent<W: Write>(&self, w: &mut W) -> Result<()> {
         for _ in 0..self.indent.get() {
             write!(w, "  ")?
@@ -45,7 +56,7 @@ impl<'a> RenderCtx<'a> {
     ) -> Result<StructRender<'b, W>> {
         writeln!(w, "{}:", name)?;
 
-        self.indent.set(self.indent.get() + 1);
+        self.push_indent();
 
         Ok(StructRender {
             ctx: self,
@@ -74,7 +85,7 @@ impl<'a, W: Write> StructRender<'a, W> {
     }
 
     pub fn finish(self) {
-        self.ctx.indent.set(self.ctx.indent.get() - 1);
+        self.ctx.pop_indent();
     }
 }
 
@@ -103,15 +114,30 @@ impl<T: RenderAst + Any> RenderAst for NodeId<T> {
 impl<T: RenderAst + Any> RenderAst for Option<T> {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         if let Some(ref x) = *self {
+            write!(w, "+")?;
             x.render(ctx, w)?
+        } else {
+            writeln!(w, "-")?;
         }
         Ok(())
+    }
+}
+
+impl<T: RenderAst + Any> RenderAst for ListHead<T> {
+    fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        match *self {
+            ListHead::Empty => {
+                writeln!(w, "empty")
+            }
+            ListHead::Present(x) => x.render(ctx, w),
+        }
     }
 }
 
 impl<T: RenderAst + Any> RenderAst for ListId<T> {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         let mut cur = *self;
+        ctx.push_indent();
         loop {
             writeln!(w,)?;
             ctx.indent(w)?;
@@ -122,6 +148,7 @@ impl<T: RenderAst + Any> RenderAst for ListId<T> {
             if let Some(x) = list.next {
                 cur = x;
             } else {
+                ctx.pop_indent();
                 return Ok(());
             }
         }
@@ -131,9 +158,11 @@ impl<T: RenderAst + Any> RenderAst for ListId<T> {
 impl<T: RenderAst + Any> RenderAst for NodeId<NodeList<T>> {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         let mut cur = *self;
+        ctx.push_indent();
         loop {
             writeln!(w,)?;
             ctx.indent(w)?;
+
             write!(w, "- ",)?;
 
             let list = &ctx.tree[cur];
@@ -141,6 +170,7 @@ impl<T: RenderAst + Any> RenderAst for NodeId<NodeList<T>> {
             if let Some(x) = list.next {
                 cur = x;
             } else {
+                ctx.pop_indent();
                 return Ok(());
             }
         }
