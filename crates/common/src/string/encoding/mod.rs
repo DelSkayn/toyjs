@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{iter::FusedIterator, ops::Index, slice::Iter};
+use std::{borrow::Cow, iter::FusedIterator, ops::Index, slice::Iter};
 
 mod ascii;
 pub use ascii::{Ascii, AsciiChars};
@@ -56,6 +56,13 @@ impl<'a> Encoding<'a> {
         match self {
             Self::Ascii(x) => Units::Ascii(x.units().iter()),
             Self::Utf16(x) => Units::Utf16(x.units().iter()),
+        }
+    }
+
+    pub fn as_str(self) -> Cow<'a, str> {
+        match self {
+            Self::Ascii(x) => x.as_str().into(),
+            Self::Utf16(x) => x.to_string().into(),
         }
     }
 }

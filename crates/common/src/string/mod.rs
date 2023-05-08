@@ -8,11 +8,14 @@ use repr::{PtrFlag, Repr, TaggedPtr};
 mod encoding;
 pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Units, Utf16, Utf16Chars};
 
+mod builder;
+pub use builder::StringBuilder;
+
 /// An immutable string data type for a utf-16 string.
 /// Can store strings as ascii if they don't contain non ascii code points.
 /// Will store small strings inline, without allocating.
 /// Small size of equivalent to 2 pointers.
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash, Clone)]
 #[repr(transparent)]
 pub struct String(Repr);
 
@@ -195,6 +198,7 @@ mod test {
         assert_eq!(string.bytes().len(), 15);
         assert_eq!(format!("{}", string), "hello world!!!!");
         assert_eq!(string.as_str(), "hello world!!!!");
+        assert_eq!(string, String::from_std_str("hello world!!!!"));
     }
 
     #[test]
@@ -207,6 +211,7 @@ mod test {
         assert_eq!(string.bytes().len(), 23);
         assert_eq!(format!("{}", string), "helloooo worlddddd!!!!!");
         assert_eq!(string.as_str(), "helloooo worlddddd!!!!!");
+        assert_eq!(string, String::from_std_str("helloooo worlddddd!!!!!"));
     }
 
     #[test]
@@ -219,6 +224,7 @@ mod test {
         assert_eq!(string.bytes().len(), 16);
         assert_eq!(format!("{}", string), "❤️❤️❤️❤️");
         assert_eq!(string.as_str(), "❤️❤️❤️❤️");
+        assert_eq!(string, String::from_std_str("❤️❤️❤️❤️"));
     }
 
     #[test]
@@ -231,5 +237,6 @@ mod test {
         assert_eq!(STRING.bytes().len(), 15);
         assert_eq!(format!("{}", STRING), "hello world!!!!");
         assert_eq!(STRING.as_str(), "hello world!!!!");
+        assert_eq!(STRING, String::from_std_str("hello world!!!!"));
     }
 }

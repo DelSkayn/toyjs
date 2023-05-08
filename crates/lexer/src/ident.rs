@@ -74,8 +74,8 @@ impl<'a> Lexer<'a> {
     }
 
     fn is_keyword(&mut self) -> Option<TokenKind> {
-        if self.buffer.is_ascii {
-            KEYWORDS.get(&self.buffer.ascii).cloned()
+        if self.builder.is_ascii() {
+            KEYWORDS.get(&self.builder.ascii).cloned()
         } else {
             None
         }
@@ -85,22 +85,22 @@ impl<'a> Lexer<'a> {
         let mut has_escape_code = false;
         if start == '\\' {
             if !self.lex_ident_escape() {
-                self.buffer.clear();
+                self.builder.clear();
                 return self.finish_token(TokenKind::Unknown);
             }
             has_escape_code = true;
         } else {
             let (lead, trail) = start.encode_utf16_code_point();
-            self.buffer.push(lead);
+            self.builder.push(lead);
             if let Some(x) = trail {
-                self.buffer.push(x);
+                self.builder.push(x);
             }
         }
 
         while let Some(x) = self.next_unit() {
             if x == b'\\' as u16 {
                 if !self.lex_ident_escape() {
-                    self.buffer.clear();
+                    self.builder.clear();
                     return self.finish_token(TokenKind::Unknown);
                 }
                 has_escape_code = true;
@@ -123,12 +123,12 @@ impl<'a> Lexer<'a> {
                     }
                     break;
                 }
-                self.buffer.push(x);
+                self.builder.push(x);
             }
         }
 
         if let Some(x) = self.is_keyword() {
-            self.buffer.ascii.clear();
+            self.builder.ascii.clear();
             if has_escape_code {
                 self.finish_token(TokenKind::Unknown);
             }

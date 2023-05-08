@@ -24,7 +24,7 @@ impl<'a> Lexer<'a> {
                     return self.finish_token(TokenKind::Unknown);
                 }
                 DASH => {
-                    self.buffer.push(DASH);
+                    self.builder.push(DASH);
                     break;
                 }
                 units::LF | units::CR | units::LS | units::PS => {
@@ -41,12 +41,12 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 _ => {
-                    self.buffer.push(unit);
+                    self.builder.push(unit);
                     if unit.is_utf16_leading_surrogate() {
                         let Some(unit) = self.next_unit() else {
                             return self.finish_token(TokenKind::Unknown);
                         };
-                        self.buffer.push(unit);
+                        self.builder.push(unit);
                     }
                 }
             }
@@ -71,9 +71,9 @@ impl<'a> Lexer<'a> {
                 break;
             }
             let (lead, trail) = char.encode_utf16_code_point();
-            self.buffer.push(lead);
+            self.builder.push(lead);
             if let Some(trail) = trail {
-                self.buffer.push(trail);
+                self.builder.push(trail);
             }
         }
 
@@ -82,7 +82,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_regex_class(&mut self) -> bool {
-        self.buffer.push(BRACKET);
+        self.builder.push(BRACKET);
         loop {
             let Some(unit) = self.next_unit() else {
                 return false;
@@ -96,12 +96,12 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 _ => {
-                    self.buffer.push(unit);
+                    self.builder.push(unit);
                     if unit.is_utf16_leading_surrogate() {
                         let Some(unit) = self.next_unit() else {
                             return false;
                         };
-                        self.buffer.push(unit);
+                        self.builder.push(unit);
                     }
                 }
             }
@@ -109,19 +109,19 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_regex_backslash(&mut self) -> bool {
-        self.buffer.push(SLASH);
+        self.builder.push(SLASH);
         let Some(unit) = self.next_unit() else {
             return false;
         };
         match unit {
             units::LF | units::CR | units::LS | units::PS => return false,
             _ => {
-                self.buffer.push(unit);
+                self.builder.push(unit);
                 if unit.is_utf16_leading_surrogate() {
                     let Some(unit) = self.next_unit() else {
                         return false;
                     };
-                    self.buffer.push(unit);
+                    self.builder.push(unit);
                 }
             }
         }

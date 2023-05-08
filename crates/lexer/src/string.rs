@@ -37,9 +37,9 @@ impl<'a> Lexer<'a> {
                 return false
             };
             let (lead, trail) = char.encode_utf16_code_point();
-            self.buffer.push(lead);
+            self.builder.push(lead);
             if let Some(trail) = trail {
-                self.buffer.push(trail);
+                self.builder.push(trail);
             }
             true
         } else {
@@ -65,9 +65,9 @@ impl<'a> Lexer<'a> {
             let fourth = fourth as u32;
             if let Some(x) = char::from_u32(first << 12 | second << 8 | third << 4 | fourth) {
                 let (lead, trail) = x.encode_utf16_code_point();
-                self.buffer.push(lead);
+                self.builder.push(lead);
                 if let Some(trail) = trail {
-                    self.buffer.push(trail);
+                    self.builder.push(trail);
                 }
                 true
             } else {
@@ -87,7 +87,7 @@ impl<'a> Lexer<'a> {
         self.next_unit();
         let first = first as u16;
         let last = last as u16;
-        self.buffer.push(first << 4 | last);
+        self.builder.push(first << 4 | last);
         true
     }
 
@@ -109,19 +109,19 @@ impl<'a> Lexer<'a> {
         };
         match unit {
             units::LF | units::CR | units::LS | units::PS => return true,
-            SINGLE => self.buffer.push(SINGLE),
-            DOUBLE => self.buffer.push(DOUBLE),
-            SLASH => self.buffer.push(SLASH),
-            B => self.buffer.push(0x8),
-            T => self.buffer.push(units::TAB),
-            N => self.buffer.push(units::LF),
-            V => self.buffer.push(units::VT),
-            F => self.buffer.push(units::FF),
-            R => self.buffer.push(units::CR),
+            SINGLE => self.builder.push(SINGLE),
+            DOUBLE => self.builder.push(DOUBLE),
+            SLASH => self.builder.push(SLASH),
+            B => self.builder.push(0x8),
+            T => self.builder.push(units::TAB),
+            N => self.builder.push(units::LF),
+            V => self.builder.push(units::VT),
+            F => self.builder.push(units::FF),
+            R => self.builder.push(units::CR),
             X => return self.lex_escape_hex(),
             U => return self.lex_escape_hex(),
             x => {
-                self.buffer.push(x);
+                self.builder.push(x);
                 return true;
             }
         }
@@ -133,7 +133,7 @@ impl<'a> Lexer<'a> {
 
         loop {
             let Some(unit) = self.next_unit() else {
-                self.buffer.clear();
+                self.builder.clear();
                 return self.finish_token(TokenKind::Unknown)
             };
 
@@ -144,20 +144,20 @@ impl<'a> Lexer<'a> {
 
             match unit {
                 units::CR => {
-                    self.buffer.clear();
+                    self.builder.clear();
                     return self.finish_token(TokenKind::Unknown);
                 }
                 units::LF => {
-                    self.buffer.clear();
+                    self.builder.clear();
                     return self.finish_token(TokenKind::Unknown);
                 }
                 ESCAPE => {
                     if !self.lex_escape() {
-                        self.buffer.clear();
+                        self.builder.clear();
                         return self.finish_token(TokenKind::Unknown);
                     }
                 }
-                x => self.buffer.push(x),
+                x => self.builder.push(x),
             }
         }
     }
@@ -181,7 +181,7 @@ impl<'a> Lexer<'a> {
                         let id = self.finish_string();
                         return self.finish_token_string(TokenKind::Template(template), Some(id));
                     } else {
-                        self.buffer.push(x);
+                        self.builder.push(x);
                     }
                 }
                 CLOSE => {
@@ -198,7 +198,7 @@ impl<'a> Lexer<'a> {
                         return self.finish_token(TokenKind::Unknown);
                     }
                 }
-                x => self.buffer.push(x),
+                x => self.builder.push(x),
             }
         }
         self.finish_token(TokenKind::Unknown)

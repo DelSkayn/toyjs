@@ -141,7 +141,7 @@ impl<'a> Parser<'a> {
                 }
                 t!("default") => {
                     if default.is_some() {
-                        unexpected!(self, t!("default") => "each switch statement can have only a single default case")
+                        unexpected!(self, t!("default") => "multiple default cases is not allowed")
                     }
                     self.next();
                     None
@@ -214,7 +214,7 @@ impl<'a> Parser<'a> {
                     } else {
                         t!("continue")
                     },
-                    message: Some("break is not allowed in this context".to_string()),
+                    message: None,
                 },
                 origin: self.last_span().clone(),
             });

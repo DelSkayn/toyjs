@@ -1,7 +1,14 @@
 use core::fmt;
 use std::cell::RefCell;
 
-use crate::{span::Span, string::String, unicode::units};
+use crate::{
+    span::Span,
+    string::{Encoding, String},
+    unicode::units,
+};
+
+mod format;
+pub use format::Error as FormatError;
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub struct Location {
@@ -34,15 +41,16 @@ impl SourceInfo {
         let mut offset = 0;
         while let Some((idx, u)) = iter.next() {
             if units::LINE_TERMINATOR.contains(&u) {
-                if u == units::LF {
-                    if let Some((_, units::CR)) = iter.peek() {
+                if u == units::CR {
+                    if let Some((_, units::LF)) = iter.peek() {
                         iter.next();
                     }
                 }
                 lines.push(Span::from(offset..idx));
-                offset = idx;
+                offset = idx + 1;
             }
         }
+
         Self { lines }
     }
 }
@@ -60,6 +68,10 @@ impl Source {
             source: source.into(),
             info: RefCell::new(None),
         }
+    }
+
+    pub fn source(&self) -> Encoding {
+        self.source.encoding()
     }
 
     /// Returns the span for a given line.

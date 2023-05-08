@@ -25,7 +25,7 @@ macro_rules! peek_expect {
         }
     };
     (@msg $msg:expr) => {
-        Some(String::from($msg))
+        Some(common::string::String::from($msg))
     };
     (@msg) => {
         None
@@ -71,7 +71,7 @@ macro_rules! unexpected {
         }
     };
     (@msg $msg:expr) => {
-        Some(String::from($msg))
+        Some(common::string::String::from($msg))
     };
     (@msg) => {
         None

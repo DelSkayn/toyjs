@@ -150,6 +150,26 @@ pub union Repr {
     utf16: ManuallyDrop<TaggedPtr<u16>>,
 }
 
+impl Clone for Repr {
+    fn clone(&self) -> Self {
+        unsafe {
+            if self.is_inline() {
+                Repr {
+                    inline: self.inline,
+                }
+            } else if self.is_utf16() {
+                Repr {
+                    utf16: self.utf16.clone(),
+                }
+            } else {
+                Repr {
+                    ascii: self.ascii.clone(),
+                }
+            }
+        }
+    }
+}
+
 impl Repr {
     pub const fn empty() -> Self {
         let mut inline = [0u8; INLINE_SIZE];

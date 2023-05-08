@@ -21,8 +21,10 @@ fn main() -> Result<(), io::Error> {
     let mut read = get_input()?;
     let mut buffer = std::string::String::new();
     read.read_to_string(&mut buffer)?;
+
     let source = String::from_std_str(&buffer);
-    let lexer = Lexer::new(source.encoding());
+    let source = common::source::Source::new(source, Some("parse_script"));
+    let lexer = Lexer::new(source.source());
     let before = Instant::now();
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script();
@@ -43,7 +45,7 @@ fn main() -> Result<(), io::Error> {
             res.unwrap();
         }
         Err(e) => {
-            println!("error parsing text: {:?}", e);
+            eprintln!("{}", e.display(&source))
         }
     }
     Ok(())

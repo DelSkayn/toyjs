@@ -134,14 +134,14 @@ impl<'a> Lexer<'a> {
 
     fn lex_bigint(&mut self, start: &[u8], iter: Units) -> Token {
         for s in start {
-            self.buffer.ascii.push(*s);
+            self.builder.ascii.push(*s);
         }
         for c in iter {
             let c = c as u8;
             if c == b'n' {
                 break;
             }
-            self.buffer.ascii.push(c);
+            self.builder.ascii.push(c);
         }
         let id = self.finish_string();
         self.finish_token_string(t!("big int"), Some(id))
@@ -149,25 +149,25 @@ impl<'a> Lexer<'a> {
 
     fn parse_number(&mut self, start: &[u8], mut iter: Units) -> Token {
         let len = self.end - self.start;
-        debug_assert!(self.buffer.ascii.is_empty());
+        debug_assert!(self.builder.ascii.is_empty());
         for s in start {
-            self.buffer.ascii.push(*s);
+            self.builder.ascii.push(*s);
         }
-        let buf_len = self.buffer.ascii.len();
+        let buf_len = self.builder.ascii.len();
         for _ in buf_len..len {
             // Unwrap because we should have already parsed the bytes.
             let char = iter.next().unwrap() as u8;
             // Should be valid as the we already lexed the number.
             debug_assert!(char.is_ascii());
-            self.buffer.ascii.push(char)
+            self.builder.ascii.push(char)
         }
         // SAFETY: We pushed only ascii characters so the buffer contains a valid utf-8 string.
-        let str = unsafe { std::str::from_utf8_unchecked(&self.buffer.ascii) };
+        let str = unsafe { std::str::from_utf8_unchecked(&self.builder.ascii) };
         // Should always succeed since we alread parse the number.
         let Ok(number) = str.parse() else {
             panic!("invalid number: {} at {}",str,self.end);
         };
-        self.buffer.ascii.clear();
+        self.builder.ascii.clear();
         let id = self.finish_number(number);
         self.finish_token_number(t!("num"), Some(id))
     }
@@ -184,7 +184,7 @@ impl<'a> Lexer<'a> {
                 }
                 Some(b'n') => {
                     self.next_unit();
-                    self.buffer.push(b'0' as u16);
+                    self.builder.push(b'0' as u16);
                     let id = self.finish_string();
                     return self.finish_token_string(t!("big int"), Some(id));
                 }

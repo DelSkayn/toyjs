@@ -53,7 +53,11 @@ impl<'a> Parser<'a> {
     }
 
     fn last_span(&self) -> &Span {
-        &self.last_span
+        if let Some(x) = self.peek.as_ref().map(|x| &x.span) {
+            x
+        } else {
+            &self.last_span
+        }
     }
 
     fn with_lexer_state<R, F: FnOnce(&mut Self) -> R>(&mut self, state: State, f: F) -> R {
