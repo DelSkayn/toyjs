@@ -9,8 +9,7 @@ mod render;
 
 pub type AstStorage = (
     (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>),
-    Vec<Expr>,
-    Vec<PrimeExpr>,
+    (Vec<Expr>, Vec<PrimeExpr>, Vec<Tenary>),
     Vec<PropertyDefinition>,
     Vec<NodeList<ArrayLiteral>>,
 );
@@ -51,7 +50,7 @@ impl RenderAst for Binding {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Stmt {
     Block {
         list: ListHead<Stmt>,
@@ -315,7 +314,7 @@ pub enum PrefixOp {
     TypeOf,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Expr {
     Binary {
         op: BinaryOp,
@@ -330,6 +329,7 @@ pub enum Expr {
         op: PostfixOp,
         expr: NodeId<Expr>,
     },
+    Tenary(NodeId<Tenary>),
     // Postfix like operators with internal values
     // Are inlined into Expr in order to keep the Expr size smaller.
     Index {
@@ -400,12 +400,34 @@ impl RenderAst for Expr {
                 .render_struct("Expr::Prime", w)?
                 .field("expr", expr)?
                 .finish(),
+            Expr::Tenary(ref x) => ctx
+                .render_struct("Expr::Tenary", w)?
+                .field("0", x)?
+                .finish(),
         }
         Ok(())
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+pub struct Tenary {
+    pub cond: NodeId<Expr>,
+    pub then: NodeId<Expr>,
+    pub r#else: NodeId<Expr>,
+}
+
+impl RenderAst for Tenary {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("Tenary", w)?
+            .field("cond", &self.cond)?
+            .field("then", &self.then)?
+            .field("else", &self.r#else)?
+            .finish();
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PrimeExpr {
     Number(NumberId),
     String(StringId),
@@ -547,7 +569,7 @@ impl RenderAst for PropertyName {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ObjectLiteral {
     Empty,
     Item(ListId<PropertyDefinition>),

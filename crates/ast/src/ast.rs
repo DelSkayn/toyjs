@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{
     any::Any,
     marker::PhantomData,
@@ -23,6 +24,15 @@ pub struct NodeId<T> {
     marker: PhantomData<T>,
 }
 
+impl<T> fmt::Debug for NodeId<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NodeId")
+            .field("id", &self.id)
+            .field("marker", &self.marker)
+            .finish()
+    }
+}
+
 impl<T> Eq for NodeId<T> {}
 impl<T> PartialEq for NodeId<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -40,6 +50,15 @@ impl<T> Clone for NodeId<T> {
 pub struct ListId<T> {
     id: NonZeroU32,
     marker: PhantomData<T>,
+}
+
+impl<T> fmt::Debug for ListId<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ListId")
+            .field("id", &self.id)
+            .field("marker", &self.marker)
+            .finish()
+    }
 }
 
 impl<T> Eq for ListId<T> {}
@@ -62,7 +81,23 @@ pub enum ListHead<T> {
     Present(ListId<T>),
 }
 
+impl<T> fmt::Debug for ListHead<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            ListHead::Empty => f.debug_tuple("ListHead::Empty").finish(),
+            ListHead::Present(ref x) => f.debug_tuple("ListHead::Present").field(x).finish(),
+        }
+    }
+}
+
 impl<T> ListHead<T> {
+    pub fn is_empty(&self) -> bool {
+        match *self {
+            ListHead::Empty => true,
+            ListHead::Present(_) => false,
+        }
+    }
+
     pub fn or(self, other: Self) -> Self {
         match self {
             Self::Present(x) => Self::Present(x),

@@ -27,7 +27,11 @@ impl<'a> Parser<'a> {
             t!("continue") => self.parse_cntrl_flow_stmt(false)?,
             t!("try") => self.parse_try_stmt()?,
             t!("throw") => self.parse_throw_stmt()?,
-            t!("debugger") => self.ast.push_node(Stmt::Debugger),
+            t!("debugger") => {
+                self.next();
+                self.semicolon()?;
+                self.ast.push_node(Stmt::Debugger)
+            }
             t!("with") => self.parse_with_stmt()?,
             t!(";") => {
                 self.next();
@@ -35,6 +39,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let expr = self.parse_expr()?;
+                self.semicolon()?;
                 self.ast.push_node(Stmt::Expr { expr })
             }
         };
@@ -80,11 +85,14 @@ impl<'a> Parser<'a> {
         expect!(self, "(");
         let cond = self.parse_expr()?;
         expect!(self, ")");
+
         let r#break = self.state.r#break;
         self.state.r#break = true;
         let r#continue = self.state.r#continue;
         self.state.r#continue = true;
+
         let body = self.parse_stmt()?;
+
         self.state.r#continue = r#continue;
         self.state.r#break = r#break;
 
@@ -93,13 +101,17 @@ impl<'a> Parser<'a> {
 
     pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "do");
+
         let r#break = self.state.r#break;
         self.state.r#break = true;
         let r#continue = self.state.r#continue;
         self.state.r#continue = true;
+
         let body = self.parse_stmt()?;
+
         self.state.r#continue = r#continue;
         self.state.r#break = r#break;
+
         expect!(self, "while");
         expect!(self, "(");
         let cond = self.parse_expr()?;
@@ -116,11 +128,11 @@ impl<'a> Parser<'a> {
         expect!(self, "switch");
         expect!(self, "(");
         let cond = self.parse_expr()?;
+        expect!(self, ")");
+        expect!(self, "{");
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut default = None;
-        expect!(self, ")");
-        expect!(self, "{");
         loop {
             let case = match peek_expect!(self, "case", "default", "}").kind() {
                 t!("case") => {
@@ -178,13 +190,12 @@ impl<'a> Parser<'a> {
     pub fn parse_return_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "return");
         debug_assert!(self.peek.is_none());
-        self.state.eat_line_terminator = false;
-        //TODO: Proper semicolon parsing.
-        if self.eat(t!("\n")) {
+        if self.eat_semicolon() {
             Ok(self.ast.push_node(Stmt::Return { expr: None }))
         } else {
-            let expr = self.parse_expr()?;
-            Ok(self.ast.push_node(Stmt::Return { expr: Some(expr) }))
+            let expr = Some(self.parse_expr()?);
+            self.semicolon()?;
+            Ok(self.ast.push_node(Stmt::Return { expr }))
         }
     }
 
@@ -209,17 +220,15 @@ impl<'a> Parser<'a> {
             });
         }
 
-        self.state.eat_line_terminator = false;
-        let label = self.next();
-        self.state.eat_line_terminator = true;
-        let label = if let Some(token) = label {
+        let label = if self.eat_semicolon() {
+            None
+        } else {
+            let token = peek_expect!(self);
             if let t!("ident") = token.kind() {
                 Some(token.data_id().unwrap())
             } else {
-                None
+                unexpected!(self, token.kind(), "ident");
             }
-        } else {
-            None
         };
 
         let node = if is_break {
@@ -256,12 +265,12 @@ impl<'a> Parser<'a> {
 
     pub fn parse_throw_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "throw");
-        self.state.eat_line_terminator = false;
-        let next = peek_expect!(self);
-        if let t!("\n") = next.kind() {
-            unexpected!(self,next.kind(),"\n" => "line terminator not allowed here");
+        peek_expect!(self);
+        if self.ate_line_terminator {
+            unexpected!(self,t!("\n") => "line terminator not allowed here")
         }
         let expr = self.parse_expr()?;
+        self.semicolon()?;
         Ok(self.ast.push_node(Stmt::Throw { expr }))
     }
 

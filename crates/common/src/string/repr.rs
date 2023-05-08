@@ -132,9 +132,7 @@ impl<T: Copy> Clone for TaggedPtr<T> {
 
 impl PartialEq for Repr {
     fn eq(&self, other: &Self) -> bool {
-        unsafe {
-            self.ascii.len == other.ascii.len && self.as_code_units() == other.as_code_units()
-        }
+        self.as_code_units() == other.as_code_units()
     }
 }
 

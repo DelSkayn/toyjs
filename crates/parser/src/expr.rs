@@ -1,7 +1,7 @@
 use ast::{AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, PostfixOp, PrefixOp, PrimeExpr};
 use token::{t, TokenKind};
 
-use crate::{error::ErrorKind, expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -129,14 +129,7 @@ impl<'a> Parser<'a> {
             t!(".") => {
                 let ident = peek_expect!(self, "ident");
                 if TokenKind::Ident != ident.kind() {
-                    return Err(crate::Error {
-                        kind: ErrorKind::Unexpected {
-                            expected: vec![t!("ident")],
-                            found: ident.kind(),
-                            message: Some(String::from("expected member identifier")),
-                        },
-                        origin: ident.span,
-                    });
+                    unexpected!(self,ident.kind(), "ident" => "expected member identifier");
                 }
                 self.next();
                 let ident = ident.data_id().unwrap();
@@ -199,6 +192,17 @@ impl<'a> Parser<'a> {
             t!("&=") => BinaryOp::Assign(AssignOp::BitwiseAnd),
             t!("|=") => BinaryOp::Assign(AssignOp::BitwiseOr),
             t!("^=") => BinaryOp::Assign(AssignOp::BitwiseXor),
+            t!("?") => {
+                let then = self.parse_assignment_expr()?;
+                expect!(self, ":");
+                let r#else = self.parse_assignment_expr()?;
+                let tenary = self.ast.push_node(ast::Tenary {
+                    cond: lhs,
+                    then,
+                    r#else,
+                });
+                return Ok(self.ast.push_node(Expr::Tenary(tenary)));
+            }
             _ => {
                 panic!("`parse_infix_op` called without a infix operator")
             }

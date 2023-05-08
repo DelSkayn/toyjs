@@ -100,7 +100,7 @@ where
 #[macro_export]
 macro_rules! id {
     ($v:vis struct $name:ident($data:ty)) => {
-        #[derive(Clone, Copy, Eq, PartialEq, Hash, bytemuck::Pod, bytemuck::Zeroable)]
+        #[derive(Clone, Copy, Eq, PartialEq, Hash, bytemuck::Pod, bytemuck::Zeroable, Debug)]
         #[repr(transparent)]
         $v struct $name($data);
 

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use ast::Ast;
-use common::span::Span;
+use ast::{Ast, Expr, ListHead, NodeId, PrimeExpr, Stmt};
+use common::{span::Span, string::String};
 use lexer::{Lexer, State};
 use token::{t, Token, TokenKind};
 
@@ -21,12 +21,12 @@ pub struct Parser<'a> {
     peek: Option<Token>,
     pub ast: Ast,
     last_span: Span,
+    ate_line_terminator: bool,
     state: ParserState,
 }
 
 #[derive(Debug)]
 pub struct ParserState {
-    eat_line_terminator: bool,
     strict: bool,
     yield_ident: bool,
     await_ident: bool,
@@ -41,8 +41,8 @@ impl<'a> Parser<'a> {
             ast: Ast::default(),
             peek: None,
             last_span: Span::empty(),
+            ate_line_terminator: false,
             state: ParserState {
-                eat_line_terminator: true,
                 strict: false,
                 yield_ident: true,
                 await_ident: true,
@@ -64,10 +64,13 @@ impl<'a> Parser<'a> {
     }
 
     fn retrieve_next_token(&mut self) -> Option<Token> {
+        self.ate_line_terminator = false;
         while let Some(x) = self.lexer.next_token() {
             match x.kind_and_data.kind() {
                 t!(" ") => {}
-                t!("\n") if self.state.eat_line_terminator => {}
+                t!("\n") => {
+                    self.ate_line_terminator = true;
+                }
                 _ => return Some(x),
             }
         }
@@ -122,5 +125,52 @@ impl<'a> Parser<'a> {
         } else {
             false
         }
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    fn eat_semicolon(&mut self) -> bool {
+        match self.peek_kind() {
+            Some(t!(";")) => {
+                self.peek = None;
+                true
+            }
+            Some(t!("}")) | None => true,
+            Some(_) => self.ate_line_terminator,
+        }
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    fn semicolon(&mut self) -> Result<()> {
+        if !self.eat_semicolon() {
+            unexpected!(self, self.peek.clone().unwrap().kind(), ";");
+        }
+        Ok(())
+    }
+
+    pub fn is_strict_directive(&self, stmt: NodeId<Stmt>) -> bool {
+        let Stmt::Expr { expr } = self.ast[stmt] else {
+            return false;
+        };
+        let Expr::Prime { expr } = self.ast[self.ast[expr].item] else {
+            return false;
+        };
+        let PrimeExpr::String(id) = self.ast[expr] else {
+            return false;
+        };
+        self.lexer.data.strings[id] == String::new_const("use strict")
+    }
+
+    pub fn parse_script(&mut self) -> Result<ListHead<Stmt>> {
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+        while self.peek().is_some() {
+            let stmt = self.parse_stmt()?;
+            if !self.state.strict && head.is_empty() {
+                self.state.strict = self.is_strict_directive(stmt);
+            }
+            prev = Some(self.ast.append_list(stmt, prev));
+            head = head.or(prev.into())
+        }
+        Ok(head)
     }
 }
