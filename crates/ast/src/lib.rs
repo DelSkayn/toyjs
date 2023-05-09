@@ -10,7 +10,15 @@ mod render;
 pub type AstStorage = (
     (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>),
     (Vec<Expr>, Vec<PrimeExpr>, Vec<Tenary>),
+    (
+        Vec<IdentOrPattern>,
+        Vec<VariableDecl>,
+        Vec<Option<BindingElement>>,
+        Vec<BindingElement>,
+        Vec<BindingProperty>,
+    ),
     Vec<PropertyDefinition>,
+    Vec<Function>,
     Vec<NodeList<ArrayLiteral>>,
 );
 pub type Ast = GenAst<AstStorage>;
@@ -22,29 +30,176 @@ pub enum VariableKind {
     Let,
 }
 
-pub enum Binding {
-    Ident {
-        label: StringId,
-        initializer: Option<NodeId<Expr>>,
-    },
-    Object {},
-    Array {},
+pub enum IdentOrPattern {
+    Ident(StringId),
+    Pattern(BindingPattern),
 }
 
-impl RenderAst for Binding {
+impl RenderAst for IdentOrPattern {
     fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
         match *self {
-            Binding::Ident {
-                ref label,
+            IdentOrPattern::Ident(ref label) => ctx
+                .render_struct("IdentOrPattern::Ident", w)?
+                .field("0", label)?
+                .finish(),
+            IdentOrPattern::Pattern(ref label) => ctx
+                .render_struct("IdentOrPattern::Pattern", w)?
+                .field("0", label)?
+                .finish(),
+        }
+
+        Ok(())
+    }
+}
+
+pub enum BindingPattern {
+    Object {
+        properties: ListHead<BindingProperty>,
+        rest: Option<StringId>,
+    },
+    Array {
+        elements: ListHead<Option<BindingElement>>,
+        rest: Option<NodeId<IdentOrPattern>>,
+    },
+}
+
+impl RenderAst for BindingPattern {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            BindingPattern::Object {
+                ref properties,
+                ref rest,
+            } => ctx
+                .render_struct("BindingPattern::Object", w)?
+                .field("properties", properties)?
+                .field("rest", rest)?
+                .finish(),
+            BindingPattern::Array {
+                ref elements,
+                ref rest,
+            } => ctx
+                .render_struct("BindingPattern::Object", w)?
+                .field("elements", elements)?
+                .field("rest", rest)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum PropertyName {
+    Ident(StringId),
+    String(StringId),
+    Number(NumberId),
+    Computed(NodeId<Expr>),
+}
+
+impl RenderAst for PropertyName {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            PropertyName::Ident(ref x) => ctx
+                .render_struct("PropertyName::Ident", w)?
+                .field("0", x)?
+                .finish(),
+            PropertyName::String(ref x) => ctx
+                .render_struct("PropertyName::Ident", w)?
+                .field("0", x)?
+                .finish(),
+            PropertyName::Number(ref x) => ctx
+                .render_struct("PropertyName::Ident", w)?
+                .field("0", x)?
+                .finish(),
+            PropertyName::Computed(ref x) => ctx
+                .render_struct("PropertyName::Ident", w)?
+                .field("0", x)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+pub enum BindingProperty {
+    Binding {
+        name: StringId,
+        initializer: Option<NodeId<Expr>>,
+    },
+    Property {
+        name: PropertyName,
+        element: BindingElement,
+    },
+}
+
+impl RenderAst for BindingProperty {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            BindingProperty::Binding {
+                ref name,
                 ref initializer,
             } => ctx
-                .render_struct("Binding::Ident", w)?
-                .field("label", label)?
+                .render_struct("BindingProperty::Binding", w)?
+                .field("name", name)?
                 .field("initializer", initializer)?
                 .finish(),
-            Binding::Object {} => ctx.render_struct("Binding::Object", w)?.finish(),
-            Binding::Array {} => ctx.render_struct("Binding::Array", w)?.finish(),
+            BindingProperty::Property {
+                ref name,
+                ref element,
+            } => ctx
+                .render_struct("BindingProperty::Property", w)?
+                .field("name", name)?
+                .field("element", element)?
+                .finish(),
         }
+        Ok(())
+    }
+}
+
+pub enum BindingElement {
+    SingleName {
+        name: StringId,
+        initializer: Option<NodeId<Expr>>,
+    },
+    Pattern {
+        pattern: BindingPattern,
+        initializer: Option<NodeId<Expr>>,
+    },
+}
+
+impl RenderAst for BindingElement {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            BindingElement::SingleName {
+                ref name,
+                ref initializer,
+            } => ctx
+                .render_struct("BindingElement::SingleName", w)?
+                .field("name", name)?
+                .field("initializer", initializer)?
+                .finish(),
+            BindingElement::Pattern {
+                ref pattern,
+                ref initializer,
+            } => ctx
+                .render_struct("BindingElement::Pattern", w)?
+                .field("pattern", pattern)?
+                .field("initializer", initializer)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+pub struct VariableDecl {
+    pub decl: NodeId<IdentOrPattern>,
+    pub initializer: Option<NodeId<Expr>>,
+}
+
+impl RenderAst for VariableDecl {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("VariableDecl", w)?
+            .field("decl", &self.decl)?
+            .field("initializer", &self.initializer)?
+            .finish();
 
         Ok(())
     }
@@ -57,7 +212,7 @@ pub enum Stmt {
     },
     VariableDecl {
         kind: VariableKind,
-        decl: ListId<Binding>,
+        decl: ListId<VariableDecl>,
     },
     Empty,
     Expr {
@@ -109,6 +264,9 @@ pub enum Stmt {
     Labeled {
         label: StringId,
         stmt: NodeId<Stmt>,
+    },
+    Function {
+        func: NodeId<Function>,
     },
     Debugger,
 }
@@ -205,6 +363,10 @@ impl RenderAst for Stmt {
                 .field("stmt", stmt)?
                 .finish(),
             Stmt::Debugger => ctx.render_struct("Stmt::Debugger", w)?.finish(),
+            Stmt::Function { ref func } => ctx
+                .render_struct("Stmt::Function", w)?
+                .field("func", func)?
+                .finish(),
         }
         Ok(())
     }
@@ -237,6 +399,46 @@ impl RenderAst for CatchStmt {
             .field("expr", &self.expr)?
             .field("block", &self.block)?
             .finish();
+        Ok(())
+    }
+}
+
+pub struct Parameters {
+    rest: bool,
+    binding: NodeId<IdentOrPattern>,
+    initializer: Option<NodeId<Expr>>,
+}
+
+impl RenderAst for Parameters {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("Parameters", w)?
+            .field_debug("rest", &self.rest)?
+            .field("binding", &self.binding)?
+            .field("initializer", &self.initializer)?
+            .finish();
+
+        Ok(())
+    }
+}
+
+pub struct Function {
+    pub strict: bool,
+    pub name: Option<StringId>,
+    pub params: ListHead<BindingElement>,
+    pub rest_param: Option<NodeId<IdentOrPattern>>,
+    pub body: ListHead<Stmt>,
+}
+
+impl RenderAst for Function {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("Function", w)?
+            .field_debug("strict", &self.strict)?
+            .field("name", &self.name)?
+            .field("params", &self.params)?
+            .field("rest_param", &self.rest_param)?
+            .field("body", &self.body)?
+            .finish();
+
         Ok(())
     }
 }
@@ -434,6 +636,7 @@ pub enum PrimeExpr {
     Regex(StringId),
     Ident(StringId),
     Boolean(bool),
+    Function(NodeId<Function>),
     Null,
     Object(ObjectLiteral),
     Array(NodeId<NodeList<ArrayLiteral>>),
@@ -467,6 +670,10 @@ impl RenderAst for PrimeExpr {
                 .finish(),
             PrimeExpr::Covered(ref x) => ctx
                 .render_struct("PrimeExpr::Covered", w)?
+                .field("0", x)?
+                .finish(),
+            PrimeExpr::Function(ref x) => ctx
+                .render_struct("PrimeExpr::Function", w)?
                 .field("0", x)?
                 .finish(),
             PrimeExpr::Null => ctx.render_struct("PrimeExpr::Null", w)?.finish(),
@@ -531,37 +738,6 @@ impl RenderAst for PropertyDefinition {
             }
             PropertyDefinition::Rest(ref x) => ctx
                 .render_struct("PropertyDefinition::Rest", w)?
-                .field("0", x)?
-                .finish(),
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub enum PropertyName {
-    Ident(StringId),
-    String(StringId),
-    Number(NumberId),
-    Computed(NodeId<Expr>),
-}
-impl RenderAst for PropertyName {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
-        match *self {
-            PropertyName::Ident(ref x) => ctx
-                .render_struct("PropertyName::Ident", w)?
-                .field("0", x)?
-                .finish(),
-            PropertyName::String(ref x) => ctx
-                .render_struct("PropertyName::String", w)?
-                .field("0", x)?
-                .finish(),
-            PropertyName::Number(ref x) => ctx
-                .render_struct("PropertyName::Number", w)?
-                .field("0", x)?
-                .finish(),
-            PropertyName::Computed(ref x) => ctx
-                .render_struct("PropertyName::Computed", w)?
                 .field("0", x)?
                 .finish(),
         }

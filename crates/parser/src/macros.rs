@@ -15,7 +15,7 @@ macro_rules! peek_expect {
             let Some(token) = $parser.peek() else{
                 return Err($crate::error::Error{
                     kind: $crate::error::ErrorKind::UnexpectedEnd{
-                        expected: vec![$($(t!($expect),)*)*],
+                        expected: vec![$($($crate::t!($expect),)*)*],
                         message: peek_expect!(@msg $($msg)?),
                     },
                     origin: $parser.last_span().clone(),
@@ -59,12 +59,12 @@ macro_rules! unexpected {
                 origin: $parser.last_span().clone(),
             })
         }else{
-            let expected = vec![$($( t!($expect),)*)*];
+            let expected = vec![$($( $crate::t!($expect),)*)*];
             return Err($crate::error::Error{
                 kind: $crate::error::ErrorKind::Unexpected{
                     found: $found,
                     expected,
-                    message: unexpected!(@msg $($msg)*)
+                    message: $crate::unexpected!(@msg $($msg)*)
                 },
                 origin: $parser.last_span().clone(),
             })
@@ -83,14 +83,14 @@ macro_rules! unexpected_end {
     ($parser:expr$( , $( $expect:tt),+ )? $(=> $msg:expr)?) => {
         return Err($crate::error::Error{
             kind: $crate::error::ErrorKind::UnexpectedEnd{
-                expected: vec![$($(t!($expect),)*)*],
+                expected: vec![$($($crate::t!($expect),)*)*],
                 message: $crate::unexpected_end!(@msg $($msg)*),
             },
             origin: $parser.last_span().clone(),
         })
     };
     (@msg $msg:expr) => {
-        Some(String::from($msg))
+        Some(common::string::String::from($msg))
     };
     (@msg) => {
         None
@@ -101,7 +101,7 @@ macro_rules! unexpected_end {
 macro_rules! expect {
     ($parser:expr,$expect:tt$(=> $msg:expr)?) => {
         match $parser.peek_kind() {
-            Some(t!($expect)) => {
+            Some($crate::t!($expect)) => {
                 $parser.next().unwrap()
             }
             Some(x) => {

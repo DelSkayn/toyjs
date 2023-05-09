@@ -69,7 +69,8 @@ impl<'a> Parser<'a> {
                     Ok(this.ast.push_node(PrimeExpr::Array(array)))
                 }),
                 t!("function") => {
-                    todo!("function expression")
+                    let func = this.parse_function(true)?;
+                    Ok(this.ast.push_node(PrimeExpr::Function(func)))
                 }
                 t!("(") => {
                     let expression = this.parse_expr()?;

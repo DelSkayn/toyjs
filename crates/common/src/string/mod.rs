@@ -134,6 +134,13 @@ impl From<std::string::String> for String {
     }
 }
 
+impl From<&String> for String {
+    #[inline]
+    fn from(value: &String) -> Self {
+        value.clone()
+    }
+}
+
 impl From<&str> for String {
     #[inline]
     fn from(value: &str) -> Self {

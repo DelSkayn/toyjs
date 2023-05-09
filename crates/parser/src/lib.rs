@@ -7,9 +7,11 @@ use token::{t, Token, TokenKind};
 
 mod macros;
 
+mod binding;
 mod constants;
 mod error;
 mod expr;
+mod function;
 mod prime;
 mod stmt;
 
@@ -17,9 +19,11 @@ pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct Parser<'a> {
+    /// The lexer used during parsing
     pub lexer: Lexer<'a>,
-    peek: Option<Token>,
+    /// The ast, in which the source parsed.
     pub ast: Ast,
+    peek: Option<Token>,
     last_span: Span,
     ate_line_terminator: bool,
     state: ParserState,
@@ -151,6 +155,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// Checks if a statement contains the strict directive `"use strict"`.
     pub fn is_strict_directive(&self, stmt: NodeId<Stmt>) -> bool {
         let Stmt::Expr { expr } = self.ast[stmt] else {
             return false;

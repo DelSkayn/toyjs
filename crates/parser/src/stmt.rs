@@ -1,4 +1,4 @@
-use ast::{CaseItem, CatchStmt, ListHead, NodeId, Stmt, VariableKind};
+use ast::{CaseItem, CatchStmt, ListHead, NodeId, Stmt, VariableDecl, VariableKind};
 use token::t;
 
 use crate::{error::ErrorKind, expect, peek_expect, unexpected, Parser, Result};
@@ -27,6 +27,11 @@ impl<'a> Parser<'a> {
             t!("continue") => self.parse_cntrl_flow_stmt(false)?,
             t!("try") => self.parse_try_stmt()?,
             t!("throw") => self.parse_throw_stmt()?,
+            t!("function") => {
+                self.next();
+                let func = self.parse_function(false)?;
+                self.ast.push_node(Stmt::Function { func })
+            }
             t!("debugger") => {
                 self.next();
                 self.semicolon()?;
@@ -292,6 +297,28 @@ impl<'a> Parser<'a> {
             VariableKind::Const => expect!(self, "const"),
             VariableKind::Var => expect!(self, "var"),
         };
-        todo!()
+
+        let decl = self.parse_ident_or_pattern()?;
+        let initializer = self
+            .eat(t!("="))
+            .then(|| self.parse_assignment_expr())
+            .transpose()?;
+        let decl = self.ast.push_node(VariableDecl { decl, initializer });
+
+        let head = self.ast.append_list(decl, None);
+        let mut prev = head;
+        while self.eat(t!(",")) {
+            let decl = self.parse_ident_or_pattern()?;
+            let initializer = self
+                .eat(t!("="))
+                .then(|| self.parse_assignment_expr())
+                .transpose()?;
+            let decl = self.ast.push_node(VariableDecl { decl, initializer });
+            prev = self.ast.append_list(decl, Some(prev));
+        }
+
+        let res = self.ast.push_node(Stmt::VariableDecl { kind, decl: head });
+
+        Ok(res)
     }
 }
