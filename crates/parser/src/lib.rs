@@ -75,7 +75,7 @@ impl<'a> Parser<'a> {
         self.ate_line_terminator = false;
         while let Some(x) = self.lexer.next_token() {
             match x.kind_and_data.kind() {
-                t!(" ") => {}
+                t!(" ") | t!("//") => {}
                 t!("\n") => {
                     self.ate_line_terminator = true;
                 }

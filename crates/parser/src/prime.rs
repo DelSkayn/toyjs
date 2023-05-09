@@ -211,70 +211,44 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_literal(&mut self) -> Result<NodeId<NodeList<ArrayLiteral>>> {
-        let res = self.ast.append_node_list(
-            ArrayLiteral {
-                expr: None,
-                is_spread: false,
-            },
-            None,
-        );
+    fn parse_array_literal(&mut self) -> Result<NodeId<ArrayLiteral>> {
+        let mut prev = None;
+        let mut head = None;
+        let mut rest = None;
 
-        let token = peek_expect!(self);
-        if let t!("]") = token.kind() {
-            return Ok(res);
-        } else if let t!("...") = token.kind() {
-            self.ast[res].data.expr = Some(self.parse_assignment_expr()?);
-            self.ast[res].data.is_spread = true;
-        } else if t!(",") != token.kind() {
-            self.ast[res].data.expr = Some(self.parse_assignment_expr()?);
-        }
-
-        let mut item = self.ast.append_node_list(
-            ArrayLiteral {
-                expr: None,
-                is_spread: false,
-            },
-            Some(res),
-        );
         loop {
-            let token = next_expect!(self);
+            let token = peek_expect!(self, "]");
             match token.kind() {
-                t!("]") => return Ok(res),
+                t!("]") => {
+                    self.next();
+                    break;
+                }
                 t!(",") => {
-                    item = self.ast.append_node_list(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                        },
-                        Some(item),
-                    );
+                    self.next();
+                    prev = Some(self.ast.append_node_list(None, prev));
+                    head = head.or(prev);
                 }
                 t!("...") => {
+                    self.next();
                     let expr = self.parse_assignment_expr()?;
-                    self.ast[item].data.expr = Some(expr);
-                    self.ast[item].data.is_spread = true;
-                    item = self.ast.append_node_list(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                        },
-                        Some(item),
-                    );
+                    rest = Some(expr);
                 }
                 _ => {
                     let expr = self.parse_assignment_expr()?;
-                    self.ast[item].data.expr = Some(expr);
-                    item = self.ast.append_node_list(
-                        ArrayLiteral {
-                            expr: None,
-                            is_spread: false,
-                        },
-                        Some(item),
-                    );
+                    prev = Some(self.ast.append_node_list(Some(expr), prev));
+                    head = head.or(prev);
+                    if !self.eat(t!(",")) {
+                        expect!(self, "]");
+                        break;
+                    }
                 }
             }
         }
+
+        Ok(self.ast.push_node(ArrayLiteral {
+            elements: head,
+            spread: rest,
+        }))
     }
 
     fn reparse_arrow_function(&mut self, _expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {

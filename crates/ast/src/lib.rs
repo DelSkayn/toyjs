@@ -9,7 +9,12 @@ mod render;
 
 pub type AstStorage = (
     (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>),
-    (Vec<Expr>, Vec<PrimeExpr>, Vec<Tenary>),
+    (
+        Vec<Expr>,
+        Vec<PrimeExpr>,
+        Vec<Tenary>,
+        Vec<NodeList<Option<NodeId<Expr>>>>,
+    ),
     (
         Vec<IdentOrPattern>,
         Vec<VariableDecl>,
@@ -19,7 +24,7 @@ pub type AstStorage = (
     ),
     Vec<PropertyDefinition>,
     Vec<Function>,
-    Vec<NodeList<ArrayLiteral>>,
+    Vec<ArrayLiteral>,
 );
 pub type Ast = GenAst<AstStorage>;
 
@@ -629,6 +634,22 @@ impl RenderAst for Tenary {
     }
 }
 
+pub struct ArrayLiteral {
+    pub elements: Option<NodeId<NodeList<Option<NodeId<Expr>>>>>,
+    pub spread: Option<NodeId<Expr>>,
+}
+
+impl RenderAst for ArrayLiteral {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        ctx.render_struct("ArrayLiteral", w)?
+            .field("elements", &self.elements)?
+            .field("spread", &self.spread)?
+            .finish();
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PrimeExpr {
     Number(NumberId),
@@ -639,7 +660,7 @@ pub enum PrimeExpr {
     Function(NodeId<Function>),
     Null,
     Object(ObjectLiteral),
-    Array(NodeId<NodeList<ArrayLiteral>>),
+    Array(NodeId<ArrayLiteral>),
     This,
     NewTarget,
     Covered(NodeId<Expr>),
@@ -749,21 +770,4 @@ impl RenderAst for PropertyDefinition {
 pub enum ObjectLiteral {
     Empty,
     Item(ListId<PropertyDefinition>),
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub struct ArrayLiteral {
-    pub expr: Option<NodeId<Expr>>,
-    pub is_spread: bool,
-}
-
-impl RenderAst for ArrayLiteral {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
-        ctx.render_struct("ArrayLiteral", w)?
-            .field("expr", &self.expr)?
-            .field_debug("is_spread", &self.is_spread)?
-            .finish();
-
-        Ok(())
-    }
 }

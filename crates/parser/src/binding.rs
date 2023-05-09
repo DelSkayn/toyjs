@@ -4,7 +4,7 @@ use ast::{
 use common::string::String;
 use token::{t, StringId};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, peek_expect, unexpected, Parser, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_ident_or_pattern(&mut self) -> Result<NodeId<IdentOrPattern>> {
