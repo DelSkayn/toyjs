@@ -29,7 +29,6 @@ fn main() -> Result<(), io::Error> {
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script();
     let elapsed = before.elapsed();
-    println!("parsed in {:.4} seconds", elapsed.as_secs_f64());
     match res {
         Ok(x) => {
             let ctx = RenderCtx::new(
@@ -37,16 +36,12 @@ fn main() -> Result<(), io::Error> {
                 &parser.lexer.data.strings,
                 &parser.lexer.data.numbers,
             );
-            let out = std::io::stdout();
-            let res = {
-                let mut lock = out.lock();
-                x.render(&ctx, &mut lock)
-            };
-            res.unwrap();
+            println!("{}", x.display(ctx))
         }
         Err(e) => {
             eprintln!("{}", e.display(&source))
         }
     }
+    println!("parsed in {:.4} seconds", elapsed.as_secs_f64());
     Ok(())
 }

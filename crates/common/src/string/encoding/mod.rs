@@ -65,6 +65,27 @@ impl<'a> Encoding<'a> {
             Self::Utf16(x) => x.to_string().into(),
         }
     }
+
+    pub fn trim(self) -> Self {
+        match self {
+            Self::Ascii(x) => Self::Ascii(x.trim()),
+            Self::Utf16(x) => Self::Utf16(x.trim()),
+        }
+    }
+
+    pub fn trim_end(self) -> Self {
+        match self {
+            Self::Ascii(x) => Self::Ascii(x.trim_end()),
+            Self::Utf16(x) => Self::Utf16(x.trim_end()),
+        }
+    }
+
+    pub fn trim_start(self) -> Self {
+        match self {
+            Self::Ascii(x) => Self::Ascii(x.trim_start()),
+            Self::Utf16(x) => Self::Utf16(x.trim_start()),
+        }
+    }
 }
 
 impl<'a> Equivalent<String> for Encoding<'a> {

@@ -3,7 +3,10 @@ use std::{
     ops::{Index, Range},
 };
 
-use crate::{span::Span, unicode::Utf16Ext};
+use crate::{
+    span::Span,
+    unicode::{units, Utf16Ext},
+};
 
 use super::Utf16Error;
 
@@ -65,6 +68,43 @@ impl Utf16 {
     /// Returns a iterator over the characters in this string.
     pub fn chars(&self) -> Utf16Chars {
         Utf16Chars(self)
+    }
+
+    /// Trim whitespace charaters at the start of the string
+    #[inline]
+    pub fn trim_start(&self) -> &Utf16 {
+        if let Some((x, _)) = self
+            .0
+            .iter()
+            .enumerate()
+            .find(|(_, x)| !units::WHITE_SPACE.contains(x))
+        {
+            unsafe { Utf16::from_slice_unchecked(&self.0[x..]) }
+        } else {
+            self
+        }
+    }
+
+    /// Trim whitespace charaters at the end of the string
+    #[inline]
+    pub fn trim_end(&self) -> &Utf16 {
+        if let Some((x, _)) = self
+            .0
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, x)| !units::WHITE_SPACE.contains(x))
+        {
+            unsafe { Utf16::from_slice_unchecked(&self.0[..=x]) }
+        } else {
+            self
+        }
+    }
+
+    /// Trim whitespace charaters at the start and end of the charaters
+    #[inline]
+    pub fn trim(&self) -> &Utf16 {
+        self.trim_start().trim_end()
     }
 }
 

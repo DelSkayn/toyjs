@@ -71,6 +71,43 @@ impl Ascii {
         // SAFETY: an ascii string is also a valid utf8 string
         unsafe { std::str::from_utf8_unchecked(self.units()) }
     }
+
+    /// Trim whitespace charaters at the start of the string
+    #[inline]
+    pub fn trim_start(&self) -> &Ascii {
+        if let Some((x, _)) = self
+            .0
+            .iter()
+            .enumerate()
+            .find(|(_, x)| !x.is_ascii_whitespace())
+        {
+            unsafe { Ascii::from_slice_unchecked(&self.0[x..]) }
+        } else {
+            self
+        }
+    }
+
+    /// Trim whitespace charaters at the end of the string
+    #[inline]
+    pub fn trim_end(&self) -> &Ascii {
+        if let Some((x, _)) = self
+            .0
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, x)| !x.is_ascii_whitespace())
+        {
+            unsafe { Ascii::from_slice_unchecked(&self.0[..=x]) }
+        } else {
+            self
+        }
+    }
+
+    /// Trim whitespace charaters at the start and end of the charaters
+    #[inline]
+    pub fn trim(&self) -> &Ascii {
+        self.trim_start().trim_end()
+    }
 }
 
 impl fmt::Display for Ascii {

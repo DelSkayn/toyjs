@@ -66,10 +66,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn with_lexer_state<R, F: FnOnce(&mut Self) -> R>(&mut self, state: State, f: F) -> R {
-        self.lexer.push_state(state);
+    fn with_lexer_state<R, F: FnOnce(&mut Self) -> R>(&mut self, mut state: State, f: F) -> R {
+        std::mem::swap(&mut self.lexer.state, &mut state);
         let res = f(self);
-        self.lexer.pop_state();
+        std::mem::swap(&mut self.lexer.state, &mut state);
         res
     }
 

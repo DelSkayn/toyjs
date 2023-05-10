@@ -69,6 +69,11 @@ impl Error {
         source: &Source,
         w: &mut W,
     ) -> Result<(), source::FormatError> {
+        #[cfg(feature = "trace_error")]
+        writeln!(w)?;
+        #[cfg(feature = "trace_error")]
+        writeln!(w, "{}", self.trace)?;
+
         match self.kind {
             ErrorKind::UnexpectedEnd {
                 ref expected,
@@ -145,10 +150,6 @@ impl Error {
                 source.render_string_block(w, self.origin.clone(), None)?;
             }
         }
-        #[cfg(feature = "trace_error")]
-        writeln!(w)?;
-        #[cfg(feature = "trace_error")]
-        writeln!(w, "{}", self.trace)?;
         Ok(())
     }
 }

@@ -30,6 +30,79 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parse_ident_name(&mut self) -> Result<StringId> {
+        macro_rules! match_keywords{
+            ($i:ident,$($e:tt,)*) => {
+                match $i.kind(){
+                    t!("ident") => return Ok($i.data_id().unwrap()),
+                    $(t!($e) => String::new_const($e),)*
+                    x => unexpected!(self,x,"ident")
+                }
+            }
+        }
+
+        let next = next_expect!(self);
+        let text = match_keywords!(
+            next,
+            "break",
+            "case",
+            "catch",
+            "class",
+            "const",
+            "continue",
+            "debugger",
+            "default",
+            "delete",
+            "do",
+            "else",
+            "enum",
+            "export",
+            "extends",
+            "false",
+            "finally",
+            "for",
+            "function",
+            "if",
+            "import",
+            "in",
+            "instanceof",
+            "new",
+            "null",
+            "return",
+            "super",
+            "switch",
+            "this",
+            "throw",
+            "true",
+            "try",
+            "typeof",
+            "var",
+            "void",
+            "while",
+            "with",
+            "await",
+            "yield",
+            "let",
+            "static",
+            "implements",
+            "interface",
+            "package",
+            "private",
+            "protected",
+            "public",
+            "as",
+            "async",
+            "from",
+            "get",
+            "meta",
+            "of",
+            "set",
+            "target",
+        );
+
+        Ok(self.lexer.data.strings.intern(&text))
+    }
+
     pub fn parse_ident(&mut self) -> Result<StringId> {
         let next = next_expect!(self);
         match next.kind() {
@@ -127,6 +200,7 @@ impl<'a> Parser<'a> {
             // Next keywords are always allowed as identifiers.
             t!("get") => Ok(self.lexer.data.strings.intern(&String::new_const("get"))),
             t!("as") => Ok(self.lexer.data.strings.intern(&String::new_const("as"))),
+            t!("async") => Ok(self.lexer.data.strings.intern(&String::new_const("async"))),
             t!("from") => Ok(self.lexer.data.strings.intern(&String::new_const("from"))),
             t!("meta") => Ok(self.lexer.data.strings.intern(&String::new_const("meta"))),
             t!("set") => Ok(self.lexer.data.strings.intern(&String::new_const("set"))),

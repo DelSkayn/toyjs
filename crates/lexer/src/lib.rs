@@ -25,8 +25,8 @@ mod string;
 pub enum State {
     /// Normal parsing state.
     Base,
-    /// Parse the next `/` as a regex.
-    Regex,
+    /// Parse the next `/` as a div op.
+    Div,
     /// Parse the next `}` as the end of a template substitute
     Template,
 }
@@ -58,10 +58,10 @@ impl LexingData {
 
 /// The toyjs lexer, produces tokens from a source string.
 pub struct Lexer<'a> {
+    pub state: State,
     units: Units<'a>,
     start: usize,
     end: usize,
-    states: Vec<State>,
     peek: Option<u16>,
     overread: Option<u16>,
     builder: StringBuilder,
@@ -73,35 +73,15 @@ impl<'a> Lexer<'a> {
         let units = units.units();
 
         Self {
+            state: State::Base,
             units,
             start: 0,
             end: 0,
-            states: vec![State::Base],
             peek: None,
             overread: None,
             builder: StringBuilder::new(),
             data: LexingData::new(),
         }
-    }
-
-    /// Push a new state into the lexer.
-    #[inline]
-    pub fn push_state(&mut self, state: State) {
-        self.states.push(state)
-    }
-
-    /// Pop the current state from the lexer.
-    /// You can't pop the last state, trying to do so will result in a panic.
-    #[inline]
-    pub fn pop_state(&mut self) -> State {
-        assert!(self.states.len() > 1, "tried to pop last state in lexer");
-        self.states.pop().unwrap()
-    }
-
-    /// The current state of the lexer
-    #[inline]
-    pub fn state(&self) -> State {
-        *self.states.last().unwrap()
     }
 
     /// Pop the next code from the list
@@ -185,9 +165,9 @@ impl<'a> Lexer<'a> {
             }
             _ => {}
         };
-        match self.state() {
-            State::Regex => self.lex_regex(),
-            _ => match byte {
+        match self.state {
+            State::Base | State::Template => self.lex_regex(),
+            State::Div => match byte {
                 Some(b'=') => {
                     self.next_unit();
                     self.finish_token(t!("/="))
@@ -198,7 +178,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_closing_brace(&mut self) -> Token {
-        if let State::Template = self.state() {
+        if let State::Template = self.state {
             self.lex_template(false)
         } else {
             self.finish_token(t!("}"))
@@ -211,19 +191,18 @@ impl<'a> Lexer<'a> {
             .map(|x| units::WHITE_SPACE_CONST.into_iter().any(|y| x == y))
             .unwrap_or(false)
         {
-            self.next_token();
+            self.next_unit();
         }
         self.finish_token(t!(" "))
     }
 
     fn lex_comment(&mut self) -> Token {
-        self.next_token();
         while self
             .peek_unit()
             .map(|x| units::LINE_TERMINATOR_CONST.into_iter().all(|y| x != y))
             .unwrap_or(false)
         {
-            self.next_token();
+            self.next_unit();
         }
         self.finish_token(t!("//"))
     }

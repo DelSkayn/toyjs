@@ -69,6 +69,7 @@ impl<'a> Parser<'a> {
                 return Ok(head);
             }
             let stmt = self.parse_stmt()?;
+
             let new = self.ast.append_list(stmt, prev);
             prev = Some(new);
             head = head.or(ListHead::Present(new));
@@ -361,9 +362,16 @@ impl<'a> Parser<'a> {
         let catch = self
             .eat(t!("catch"))
             .then(|| {
-                let expr = self.eat(t!("(")).then(|| todo!("catch binding"));
+                let binding = self
+                    .eat(t!("("))
+                    .then(|| {
+                        let res = self.parse_ident_or_pattern()?;
+                        expect!(self, ")");
+                        Ok(res)
+                    })
+                    .transpose()?;
                 let block = self.parse_block_stmt()?;
-                Ok(self.ast.push_node(CatchStmt { expr, block }))
+                Ok(self.ast.push_node(CatchStmt { binding, block }))
             })
             .transpose()?;
 

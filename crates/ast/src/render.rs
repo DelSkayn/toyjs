@@ -1,9 +1,5 @@
-use core::fmt;
-use std::{
-    any::Any,
-    cell::Cell,
-    io::{Result, Write},
-};
+use core::fmt::{self, Write};
+use std::{any::Any, cell::Cell, result::Result as StdResult};
 
 use common::{interner::Interner, string::String};
 use token::{Number, NumberId, StringId};
@@ -12,6 +8,19 @@ use crate::{
     ast::{ListHead, NodeList},
     Ast, ListId, NodeId,
 };
+
+pub type Result<T> = StdResult<T, fmt::Error>;
+
+pub struct Display<'a, R: RenderAst> {
+    r: R,
+    ctx: RenderCtx<'a>,
+}
+
+impl<'a, R: RenderAst> fmt::Display for Display<'a, R> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.r.render(&self.ctx, f).map_err(|_| fmt::Error)
+    }
+}
 
 pub struct RenderCtx<'a> {
     pub tree: &'a Ast,
@@ -89,8 +98,18 @@ impl<'a, W: Write> StructRender<'a, W> {
     }
 }
 
-pub trait RenderAst {
+pub trait RenderAst: Sized {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()>;
+
+    fn display<'a>(&'a self, ctx: RenderCtx<'a>) -> Display<'a, &'a Self> {
+        Display { r: self, ctx }
+    }
+}
+
+impl<R: RenderAst> RenderAst for &R {
+    fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        (*self).render(ctx, w)
+    }
 }
 
 impl RenderAst for StringId {

@@ -6,7 +6,8 @@ use crate::Lexer;
 const SLASH: u16 = b'\\' as u16;
 const DASH: u16 = b'/' as u16;
 const STAR: u16 = b'*' as u16;
-const BRACKET: u16 = b'[' as u16;
+const BRACKET_OPEN: u16 = b'[' as u16;
+const BRACKET_CLOSE: u16 = b']' as u16;
 
 impl<'a> Lexer<'a> {
     pub(crate) fn lex_regex(&mut self) -> Token {
@@ -30,7 +31,7 @@ impl<'a> Lexer<'a> {
                 units::LF | units::CR | units::LS | units::PS => {
                     return self.finish_token(TokenKind::Unknown)
                 }
-                BRACKET => {
+                BRACKET_OPEN => {
                     if !self.lex_regex_class() {
                         return self.finish_token(TokenKind::Unknown);
                     }
@@ -82,13 +83,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn lex_regex_class(&mut self) -> bool {
-        self.builder.push(BRACKET);
+        self.builder.push(BRACKET_OPEN);
         loop {
             let Some(unit) = self.next_unit() else {
                 return false;
             };
             match unit {
-                BRACKET => return true,
+                BRACKET_CLOSE => return true,
                 units::LF | units::CR | units::LS | units::PS => return false,
                 SLASH => {
                     if !self.lex_regex_backslash() {

@@ -176,7 +176,7 @@ impl CharExt for char {
 
     #[inline]
     fn encode_utf16_code_point(self) -> (u16, Option<u16>) {
-        if (self as u32) < 0xFFFF {
+        if (self as u32) <= 0xFFFF {
             return (self as u16, None);
         }
 

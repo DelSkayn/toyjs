@@ -1,8 +1,10 @@
 #![allow(dead_code)]
 
 mod ast;
+use core::fmt;
+
 pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList};
-pub use render::{RenderAst, RenderCtx};
+pub use render::{RenderAst, RenderCtx, Result};
 use token::{NumberId, StringId};
 mod r#macro;
 mod render;
@@ -41,7 +43,7 @@ pub enum IdentOrPattern {
 }
 
 impl RenderAst for IdentOrPattern {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             IdentOrPattern::Ident(ref label) => ctx
                 .render_struct("IdentOrPattern::Ident", w)?
@@ -69,7 +71,7 @@ pub enum BindingPattern {
 }
 
 impl RenderAst for BindingPattern {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             BindingPattern::Object {
                 ref properties,
@@ -101,7 +103,7 @@ pub enum PropertyName {
 }
 
 impl RenderAst for PropertyName {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             PropertyName::Ident(ref x) => ctx
                 .render_struct("PropertyName::Ident", w)?
@@ -136,7 +138,7 @@ pub enum BindingProperty {
 }
 
 impl RenderAst for BindingProperty {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             BindingProperty::Binding {
                 ref name,
@@ -171,7 +173,7 @@ pub enum BindingElement {
 }
 
 impl RenderAst for BindingElement {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             BindingElement::SingleName {
                 ref name,
@@ -200,7 +202,7 @@ pub struct VariableDecl {
 }
 
 impl RenderAst for VariableDecl {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("VariableDecl", w)?
             .field("decl", &self.decl)?
             .field("initializer", &self.initializer)?
@@ -277,7 +279,7 @@ pub enum Stmt {
 }
 
 impl RenderAst for Stmt {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             Stmt::Block { ref list } => ctx
                 .render_struct("Stmt::Block", w)?
@@ -387,7 +389,7 @@ pub enum CstyleDecl {
     Empty,
 }
 impl RenderAst for CstyleDecl {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             CstyleDecl::Expr(ref x) => ctx
                 .render_struct("CstyleDecl::Expr", w)?
@@ -414,7 +416,7 @@ pub enum InOfDecl {
 }
 
 impl RenderAst for InOfDecl {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             InOfDecl::Expr(ref x) => ctx
                 .render_struct("InOfDecl::Expr", w)?
@@ -451,7 +453,7 @@ pub enum ForLoopHead {
 }
 
 impl RenderAst for ForLoopHead {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             ForLoopHead::CStyle {
                 ref decl,
@@ -485,7 +487,7 @@ pub struct CaseItem {
 }
 
 impl RenderAst for CaseItem {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("CaseItem", w)?
             .field("expr", &self.expr)?
             .field("stmts", &self.stmts)?
@@ -495,14 +497,14 @@ impl RenderAst for CaseItem {
 }
 
 pub struct CatchStmt {
-    pub expr: Option<ListId<Expr>>,
+    pub binding: Option<NodeId<IdentOrPattern>>,
     pub block: ListHead<Stmt>,
 }
 
 impl RenderAst for CatchStmt {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("CatchStmt", w)?
-            .field("expr", &self.expr)?
+            .field("binding", &self.binding)?
             .field("block", &self.block)?
             .finish();
         Ok(())
@@ -516,7 +518,7 @@ pub struct Parameters {
 }
 
 impl RenderAst for Parameters {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("Parameters", w)?
             .field_debug("rest", &self.rest)?
             .field("binding", &self.binding)?
@@ -536,7 +538,7 @@ pub struct Function {
 }
 
 impl RenderAst for Function {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("Function", w)?
             .field_debug("strict", &self.strict)?
             .field("name", &self.name)?
@@ -658,7 +660,7 @@ pub enum Expr {
 }
 
 impl RenderAst for Expr {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             Expr::Binary {
                 ref op,
@@ -724,7 +726,7 @@ pub struct Tenary {
 }
 
 impl RenderAst for Tenary {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("Tenary", w)?
             .field("cond", &self.cond)?
             .field("then", &self.then)?
@@ -741,7 +743,7 @@ pub struct ArrayLiteral {
 }
 
 impl RenderAst for ArrayLiteral {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         ctx.render_struct("ArrayLiteral", w)?
             .field("elements", &self.elements)?
             .field("spread", &self.spread)?
@@ -768,7 +770,7 @@ pub enum PrimeExpr {
 }
 
 impl RenderAst for PrimeExpr {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             PrimeExpr::Number(ref x) => ctx
                 .render_struct("PrimeExpr::Number", w)?
@@ -833,7 +835,7 @@ pub enum PropertyDefinition {
 }
 
 impl RenderAst for PropertyDefinition {
-    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             PropertyDefinition::Ident(ref x) => ctx
                 .render_struct("PropertyDefinition::Ident", w)?

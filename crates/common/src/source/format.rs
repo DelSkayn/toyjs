@@ -1,7 +1,7 @@
 use core::fmt;
 use std::error::Error as ErrorTrait;
 
-use crate::{span::Span, string::Encoding};
+use crate::{span::Span, string::Encoding, unicode::units};
 
 use super::Source;
 
@@ -65,38 +65,36 @@ impl Source {
             .line_span(location.start.line as usize)
             .ok_or(Error::InvalidSpan)?;
         let line_name = location.start.line + 1;
-        let n_char = line_name.ilog10() + 1;
+        let line_number_length = line_name.ilog10() + 1;
 
         let line = self.source.encoding().slice(line);
-        let n_chars = line.chars().count();
-        let mut offset = 0;
+        let n_whitespace = line
+            .units()
+            .enumerate()
+            .find(|(_, x)| !units::WHITE_SPACE.contains(x))
+            .map(|(x, _)| x)
+            .unwrap_or(0);
 
-        if n_chars > MAX_LINE_CHARS {
-            let rem = n_chars - MAX_LINE_CHARS;
-            offset = (rem + 1) / 2;
+        let line = line.trim();
+        let span_length = line.chars().count();
+        let offset = n_whitespace;
+
+        if span_length > MAX_LINE_CHARS {
+            todo!()
         }
 
         // Write initial `    | `
-        for _ in 0..n_char {
+        for _ in 0..line_number_length {
             write!(w, " ")?
         }
         writeln!(w, "  |")?;
 
         // Write initial `2 | foo.bar`
         write!(w, " {} | ", line_name)?;
-        if offset == 0 {
-            writeln!(w, "{}", line)?;
-        } else {
-            write!(w, "...")?;
-            line.chars()
-                .skip(offset + 3)
-                .take(MAX_LINE_CHARS - 6)
-                .try_for_each(|x| w.write_char(x))?;
-            writeln!(w, "...")?;
-        }
+        writeln!(w, "{}", line)?;
 
         // Write `  | ^ invalid identifier`
-        for _ in 0..n_char {
+        for _ in 0..line_number_length {
             write!(w, " ")?
         }
         write!(w, "  | ")?;
@@ -105,8 +103,7 @@ impl Source {
             write!(w, " ")?
         }
 
-        let span_len = self.source.encoding().slice(span).chars().count();
-        for _ in 0..span_len {
+        for _ in 0..self.source.encoding().slice(span).chars().count() {
             write!(w, "^")?
         }
 

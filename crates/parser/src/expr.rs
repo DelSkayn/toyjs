@@ -62,6 +62,7 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
 impl<'a> Parser<'a> {
     pub fn parse_expr(&mut self) -> Result<ListId<Expr>> {
         let item = self.parse_assignment_expr()?;
+
         let res = self.ast.append_list(item, None);
         let mut expr = res;
         while self.eat(t!(",")) {
@@ -73,6 +74,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
         let res = self.pratt_parse_expr(0)?;
+
         if self.eat(t!("=>")) {
             todo!("arrow function")
         }
@@ -129,12 +131,7 @@ impl<'a> Parser<'a> {
                 return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }));
             }
             t!(".") => {
-                let ident = peek_expect!(self, "ident");
-                if TokenKind::Ident != ident.kind() {
-                    unexpected!(self,ident.kind(), "ident" => "expected member identifier");
-                }
-                self.next();
-                let ident = ident.data_id().unwrap();
+                let ident = self.parse_ident_name()?;
                 return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
@@ -146,7 +143,7 @@ impl<'a> Parser<'a> {
                 expect!(self, ")");
                 return Ok(self.ast.push_node(Expr::Call { params, expr: lhs }));
             }
-            _ => panic!("`parse_postfix_op` called with not a token"),
+            x => panic!("`parse_postfix_op` called with not a token {:?}", x),
         };
 
         Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }))
@@ -230,7 +227,7 @@ impl<'a> Parser<'a> {
             self.ast.push_node(Expr::Prime { expr })
         };
 
-        while let Some(op) = self.peek_kind() {
+        while let Some(op) = self.with_lexer_state(lexer::State::Div, |this| this.peek_kind()) {
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;

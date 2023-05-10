@@ -2,7 +2,6 @@ use ast::{
     ArrayLiteral, Expr, ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
 };
 use common::string::Ascii;
-use lexer::State;
 use token::{t, TokenKind};
 
 use crate::{expect, peek_expect, unexpected, Parser, Result};
@@ -12,104 +11,100 @@ static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
 
 impl<'a> Parser<'a> {
     pub(crate) fn parse_prime(&mut self) -> Result<NodeId<PrimeExpr>> {
-        self.with_lexer_state(lexer::State::Regex, |this| {
-            let token = peek_expect!(
-                this, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
-                "(", "function"
-            );
+        let token = peek_expect!(
+            self, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
+            "(", "function"
+        );
 
-            match token.kind() {
-                t!("ident") => {
-                    this.next();
-                    let ident = token.kind_and_data.data_id().unwrap();
-                    println!("{}", &this.lexer.data.strings[ident]);
-
-                    let id = this.ast.push_node(PrimeExpr::Ident(ident));
+        match token.kind() {
+            t!("ident") => {
+                self.next();
+                let ident = token.kind_and_data.data_id().unwrap();
+                let id = self.ast.push_node(PrimeExpr::Ident(ident));
+                Ok(id)
+            }
+            t!("num") => {
+                self.next();
+                let id = self
+                    .ast
+                    .push_node(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
+                Ok(id)
+            }
+            t!("string") | t!("``") => {
+                self.next();
+                let id = self
+                    .ast
+                    .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
+                Ok(id)
+            }
+            t!("true") => {
+                self.next();
+                let id = self.ast.push_node(PrimeExpr::Boolean(true));
+                Ok(id)
+            }
+            t!("false") => {
+                self.next();
+                let id = self.ast.push_node(PrimeExpr::Boolean(false));
+                Ok(id)
+            }
+            t!("regex") => {
+                self.next();
+                let id = self
+                    .ast
+                    .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
+                Ok(id)
+            }
+            t!("null") => {
+                self.next();
+                let id = self.ast.push_node(PrimeExpr::Null);
+                Ok(id)
+            }
+            t!("this") => {
+                self.next();
+                let id = self.ast.push_node(PrimeExpr::This);
+                Ok(id)
+            }
+            t!("{") => {
+                self.next();
+                let id = self.parse_object_literal()?;
+                Ok(self.ast.push_node(PrimeExpr::Object(id)))
+            }
+            t!("[") => {
+                self.next();
+                let array = self.parse_array_literal()?;
+                Ok(self.ast.push_node(PrimeExpr::Array(array)))
+            }
+            t!("function") => {
+                self.next();
+                let func = self.parse_function(true)?;
+                Ok(self.ast.push_node(PrimeExpr::Function(func)))
+            }
+            t!("(") => {
+                self.next();
+                let expression = self.parse_expr()?;
+                expect!(self, ")");
+                if self.ast[expression].next.is_some() {
+                    peek_expect!(self, "=>");
+                    self.reparse_arrow_function(expression)
+                } else if let Some(t!("=>")) = self.peek_kind() {
+                    self.reparse_arrow_function(expression)
+                } else {
+                    let expr = self.ast[expression].item;
+                    let id = self.ast.push_node(PrimeExpr::Covered(expr));
                     Ok(id)
-                }
-                t!("num") => {
-                    this.next();
-                    let id = this
-                        .ast
-                        .push_node(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
-                    Ok(id)
-                }
-                t!("string") | t!("``") => {
-                    this.next();
-                    let id = this
-                        .ast
-                        .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
-                    Ok(id)
-                }
-                t!("true") => {
-                    this.next();
-                    let id = this.ast.push_node(PrimeExpr::Boolean(true));
-                    Ok(id)
-                }
-                t!("false") => {
-                    this.next();
-                    let id = this.ast.push_node(PrimeExpr::Boolean(false));
-                    Ok(id)
-                }
-                t!("regex") => {
-                    this.next();
-                    let id = this
-                        .ast
-                        .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
-                    Ok(id)
-                }
-                t!("null") => {
-                    this.next();
-                    let id = this.ast.push_node(PrimeExpr::Null);
-                    Ok(id)
-                }
-                t!("this") => {
-                    this.next();
-                    let id = this.ast.push_node(PrimeExpr::This);
-                    Ok(id)
-                }
-                t!("{") => this.with_lexer_state(State::Base, |this| {
-                    this.next();
-                    let id = this.parse_object_literal()?;
-                    Ok(this.ast.push_node(PrimeExpr::Object(id)))
-                }),
-                t!("[") => this.with_lexer_state(State::Base, |this| {
-                    this.next();
-                    let array = this.parse_array_literal()?;
-                    Ok(this.ast.push_node(PrimeExpr::Array(array)))
-                }),
-                t!("function") => {
-                    this.next();
-                    let func = this.parse_function(true)?;
-                    Ok(this.ast.push_node(PrimeExpr::Function(func)))
-                }
-                t!("(") => {
-                    this.next();
-                    let expression = this.parse_expr()?;
-                    expect!(this, ")");
-                    if this.ast[expression].next.is_some() {
-                        peek_expect!(this, "=>");
-                        this.reparse_arrow_function(expression)
-                    } else if let Some(t!("=>")) = this.peek_kind() {
-                        this.reparse_arrow_function(expression)
-                    } else {
-                        let expr = this.ast[expression].item;
-                        let id = this.ast.push_node(PrimeExpr::Covered(expr));
-                        Ok(id)
-                    }
-                }
-                TokenKind::UnreservedKeyword(_) => {
-                    let id = this.parse_ident()?;
-                    Ok(this.ast.push_node(PrimeExpr::Ident(id)))
-                }
-                x => {
-                    unexpected!(
-                        this, x, "ident", "num", "string", "true", "false", "regex", "null",
-                        "this", "{", "[", "(", "function"
-                    )
                 }
             }
-        })
+            TokenKind::UnreservedKeyword(_) => {
+                let id = self.parse_ident()?;
+                Ok(self.ast.push_node(PrimeExpr::Ident(id)))
+            }
+            x => {
+                unexpected!(
+                    self, x, "ident", "num", "string", "true", "false", "regex", "null", "this",
+                    "{", "[", "(", "function"
+                )
+            }
+        }
     }
 
     fn parse_object_literal(&mut self) -> Result<ObjectLiteral> {

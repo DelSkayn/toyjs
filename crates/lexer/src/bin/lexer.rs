@@ -27,9 +27,9 @@ fn main() -> Result<(), io::Error> {
     while let Some(t) = lexer.next() {
         // Simplified template substitute matching, won't always work but should handle most code.
         match t.kind_and_data.kind() {
-            t!("` ${") => lexer.push_state(State::Template),
+            t!("` ${") => lexer.state = State::Template,
             t!("} `") => {
-                lexer.pop_state();
+                lexer.state = State::Base;
             }
             _ => {}
         }
@@ -46,6 +46,7 @@ fn main() -> Result<(), io::Error> {
             span.size(),
             kind_name
         );
+        print!("\t\t\t'{}'", source.encoding().slice(span));
         if kind == t!("ident") {
             let data = t.kind_and_data.data_id();
             println!(" = '{}'", lexer.data.strings.get(data.unwrap()).unwrap());
