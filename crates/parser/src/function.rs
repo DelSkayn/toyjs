@@ -1,7 +1,7 @@
 use std::mem;
 
 use ast::{Function, ListHead, NodeId};
-use token::{t, StringId};
+use token::t;
 
 use crate::{expect, peek_expect, unexpected, Parser, Result};
 
@@ -29,14 +29,13 @@ impl<'a> Parser<'a> {
 
     pub fn parse_function(&mut self, allow_nameless: bool) -> Result<NodeId<Function>> {
         let token = peek_expect!(self, "ident", "(");
-        let name = if let t!("ident") = token.kind() {
-            self.next();
-            Some(token.data_id::<StringId>().unwrap())
-        } else {
+        let name = if let t!("(") = token.kind() {
             if !allow_nameless {
                 unexpected!(self,token.kind(),"ident" => "function statement must have a name")
             }
             None
+        } else {
+            Some(self.parse_ident()?)
         };
 
         expect!(self, "(");

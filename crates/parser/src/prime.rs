@@ -4,7 +4,7 @@ use ast::{
 use common::string::Ascii;
 use token::{t, TokenKind};
 
-use crate::{expect, peek_expect, unexpected, Parser, Result};
+use crate::{alter_state, expect, peek_expect, unexpected, Parser, Result};
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
 static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
@@ -81,12 +81,15 @@ impl<'a> Parser<'a> {
             }
             t!("(") => {
                 self.next();
-                let expression = self.parse_expr()?;
+                alter_state!(self,r#in = true => {
+                    let expression = self.parse_expr()?;
+                });
                 expect!(self, ")");
-                if self.ast[expression].next.is_some() {
-                    peek_expect!(self, "=>");
-                    self.reparse_arrow_function(expression)
-                } else if let Some(t!("=>")) = self.peek_kind() {
+                if let Some(t!("=>")) =
+                    // Divide is possible after a covered prime expression.
+                    self.with_lexer_state(lexer::State::Div, |this| this.peek_kind())
+                {
+                    self.next();
                     self.reparse_arrow_function(expression)
                 } else {
                     let expr = self.ast[expression].item;

@@ -9,6 +9,25 @@ macro_rules! apply_msg {
 }
 
 #[macro_export]
+macro_rules! dbg_tree {
+    ($parser:expr,$e:expr) => {{
+        let expr = $e;
+        eprintln!(
+            "DBG: {}",
+            ast::RenderAst::display(
+                &expr,
+                ast::RenderCtx::new(
+                    &$parser.ast,
+                    &$parser.lexer.data.strings,
+                    &$parser.lexer.data.numbers,
+                )
+            )
+        );
+        expr
+    }};
+}
+
+#[macro_export]
 macro_rules! alter_state{
     ($parser:expr $(,$name:ident = $e:expr)* => { $($t:tt)* }) => {
         $(

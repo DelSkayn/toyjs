@@ -12,13 +12,14 @@ pub fn get_scource(url: &str) -> StdString {
         .expect("failed to read source")
 }
 
-pub fn bench_parser(name: &str, source: &StdString, c: &mut Criterion) {
-    let source = String::from_std_str(source);
+pub fn bench_parser(name: &str, source: &str, c: &mut Criterion) {
+    let source = get_scource(source);
+    let source = String::from_std_str(&source);
     let source = common::source::Source::new(source, Some("parse_script"));
 
     c.bench_function(name, |b| {
         b.iter(|| {
-            let lexer = Lexer::new(source.source());
+            let lexer = Lexer::new(black_box(source.source()));
             let mut parser = Parser::new(lexer);
             let _ = black_box(parser.parse_script()).expect("parsing failed");
         })
@@ -26,8 +27,17 @@ pub fn bench_parser(name: &str, source: &StdString, c: &mut Criterion) {
 }
 
 pub fn scripts(c: &mut Criterion) {
-    let source = get_scource("https://code.jquery.com/jquery-3.6.4.js");
-    bench_parser("jquery", &source, c);
+    bench_parser("jquery", "https://code.jquery.com/jquery-3.6.4.js", c);
+    bench_parser(
+        "axios",
+        "https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.js",
+        c,
+    );
+    bench_parser(
+        "jquery_minified",
+        "https://code.jquery.com/jquery-3.6.4.min.js",
+        c,
+    );
 }
 
 criterion_group!(benches, scripts);
