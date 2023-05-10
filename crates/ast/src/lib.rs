@@ -16,6 +16,7 @@ pub type AstStorage = (
         Vec<PrimeExpr>,
         Vec<Tenary>,
         Vec<NodeList<Option<NodeId<Expr>>>>,
+        Vec<Template>,
     ),
     (
         Vec<IdentOrPattern>,
@@ -757,6 +758,7 @@ impl RenderAst for ArrayLiteral {
 pub enum PrimeExpr {
     Number(NumberId),
     String(StringId),
+    Template(NodeId<Template>),
     Regex(StringId),
     Ident(StringId),
     Boolean(bool),
@@ -778,6 +780,10 @@ impl RenderAst for PrimeExpr {
                 .finish(),
             PrimeExpr::String(ref x) => ctx
                 .render_struct("PrimeExpr::String", w)?
+                .field("0", x)?
+                .finish(),
+            PrimeExpr::Template(ref x) => ctx
+                .render_struct("PrimeExpr::Template", w)?
                 .field("0", x)?
                 .finish(),
             PrimeExpr::Regex(ref x) => ctx
@@ -813,6 +819,39 @@ impl RenderAst for PrimeExpr {
             PrimeExpr::Array(ref id) => ctx
                 .render_struct("PrimeExpr::Array", w)?
                 .field("0", id)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+pub enum Template {
+    Head {
+        text: StringId,
+        expr: ListId<Expr>,
+        next: NodeId<Template>,
+    },
+    Tail {
+        text: StringId,
+    },
+}
+
+impl RenderAst for Template {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        match *self {
+            Self::Head {
+                ref text,
+                ref expr,
+                ref next,
+            } => ctx
+                .render_struct("Template::Head", w)?
+                .field("text", text)?
+                .field("expr", expr)?
+                .field("next", next)?
+                .finish(),
+            Self::Tail { ref text } => ctx
+                .render_struct("Template::Tail", w)?
+                .field("text", text)?
                 .finish(),
         }
         Ok(())

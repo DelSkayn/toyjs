@@ -2,7 +2,7 @@
 
 use ast::{Ast, Expr, ListHead, NodeId, PrimeExpr, Stmt};
 use common::{span::Span, string::String};
-use lexer::{Lexer, State};
+use lexer::Lexer;
 use token::{t, Token, TokenKind};
 
 mod macros;
@@ -64,13 +64,6 @@ impl<'a> Parser<'a> {
         } else {
             &self.last_span
         }
-    }
-
-    fn with_lexer_state<R, F: FnOnce(&mut Self) -> R>(&mut self, mut state: State, f: F) -> R {
-        std::mem::swap(&mut self.lexer.state, &mut state);
-        let res = f(self);
-        std::mem::swap(&mut self.lexer.state, &mut state);
-        res
     }
 
     fn retrieve_next_token(&mut self) -> Option<Token> {

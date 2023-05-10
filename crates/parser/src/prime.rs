@@ -1,10 +1,11 @@
 use ast::{
     ArrayLiteral, Expr, ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
+    Template,
 };
 use common::string::Ascii;
 use token::{t, TokenKind};
 
-use crate::{alter_state, expect, peek_expect, unexpected, Parser, Result};
+use crate::{alter_state, expect, next_expect, peek_expect, unexpected, Parser, Result};
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
 static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
@@ -37,6 +38,11 @@ impl<'a> Parser<'a> {
                     .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
                 Ok(id)
             }
+            t!("` ${") => {
+                let template = self.parse_template()?;
+                let id = self.ast.push_node(PrimeExpr::Template(template));
+                Ok(id)
+            }
             t!("true") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::Boolean(true));
@@ -47,8 +53,9 @@ impl<'a> Parser<'a> {
                 let id = self.ast.push_node(PrimeExpr::Boolean(false));
                 Ok(id)
             }
-            t!("regex") => {
+            t!("/") | t!("/=") => {
                 self.next();
+                let token = self.lexer.relex_regex(token);
                 let id = self
                     .ast
                     .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
@@ -85,10 +92,7 @@ impl<'a> Parser<'a> {
                     let expression = self.parse_expr()?;
                 });
                 expect!(self, ")");
-                if let Some(t!("=>")) =
-                    // Divide is possible after a covered prime expression.
-                    self.with_lexer_state(lexer::State::Div, |this| this.peek_kind())
-                {
+                if let Some(t!("=>")) = self.peek_kind() {
                     self.next();
                     self.reparse_arrow_function(expression)
                 } else {
@@ -107,6 +111,35 @@ impl<'a> Parser<'a> {
                     "{", "[", "(", "function"
                 )
             }
+        }
+    }
+
+    fn parse_template(&mut self) -> Result<NodeId<Template>> {
+        let token = next_expect!(self, "} `");
+        match token.kind() {
+            t!("` ${") => {
+                let expr = self.parse_expr()?;
+                let text = token.data_id().unwrap();
+                let next = self.parse_template()?;
+                Ok(self.ast.push_node(Template::Head { text, expr, next }))
+            }
+            t!("}") => {
+                let token = self.lexer.relex_template(token);
+                match token.kind() {
+                    t!("} ${") => {
+                        let expr = self.parse_expr()?;
+                        let text = token.data_id().unwrap();
+                        let next = self.parse_template()?;
+                        Ok(self.ast.push_node(Template::Head { text, expr, next }))
+                    }
+                    t!("} `") => {
+                        let text = token.data_id().unwrap();
+                        Ok(self.ast.push_node(Template::Tail { text }))
+                    }
+                    x => unexpected!(self, x, "} `"),
+                }
+            }
+            x => unexpected!(self, x),
         }
     }
 

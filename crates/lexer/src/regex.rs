@@ -10,9 +10,7 @@ const BRACKET_OPEN: u16 = b'[' as u16;
 const BRACKET_CLOSE: u16 = b']' as u16;
 
 impl<'a> Lexer<'a> {
-    pub(crate) fn lex_regex(&mut self) -> Token {
-        let mut first = true;
-
+    pub(crate) fn lex_regex(&mut self, mut first: bool) -> Token {
         loop {
             let Some(unit) = self.next_unit() else {
                 return self.finish_token(TokenKind::Unknown);

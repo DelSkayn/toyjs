@@ -6,7 +6,7 @@ use std::{
     time::Instant,
 };
 use token::{t, NumberId, TokenKind};
-use toyjs_lexer::{Lexer, State};
+use toyjs_lexer::Lexer;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().nth(1) {
@@ -26,6 +26,7 @@ fn main() -> Result<(), io::Error> {
     let time = Instant::now();
     while let Some(t) = lexer.next() {
         // Simplified template substitute matching, won't always work but should handle most code.
+        /*
         match t.kind_and_data.kind() {
             t!("` ${") => lexer.state = State::Template,
             t!("} `") => {
@@ -33,6 +34,7 @@ fn main() -> Result<(), io::Error> {
             }
             _ => {}
         }
+        */
         tokens.push(t);
     }
     let elapsed = time.elapsed();

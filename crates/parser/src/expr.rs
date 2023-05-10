@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
             self.ast.push_node(Expr::Prime { expr })
         };
 
-        while let Some(op) = self.with_lexer_state(lexer::State::Div, |this| this.peek_kind()) {
+        while let Some(op) = self.peek_kind() {
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;

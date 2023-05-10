@@ -14,23 +14,6 @@ mod number;
 mod regex;
 mod string;
 
-/// Lexer state.
-///
-/// Javascript syntax can't be parsed by a stateless lexer as there are a few tokens who's prefix
-/// are the same and are only parsed in certain context. The first is the character `/` as this is
-/// the division operator, start of a line comment, as well as start of a regex definition. The
-/// second is `}` as this can be a delimitator as well as the end of a expression in a template.
-/// This enum defines how the lexer will lex tokens.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum State {
-    /// Normal parsing state.
-    Base,
-    /// Parse the next `/` as a div op.
-    Div,
-    /// Parse the next `}` as the end of a template substitute
-    Template,
-}
-
 /// Additional data produced during lexing which is not present in the produced token.
 pub struct LexingData {
     pub strings: Interner<String, StringId>,
@@ -58,7 +41,6 @@ impl LexingData {
 
 /// The toyjs lexer, produces tokens from a source string.
 pub struct Lexer<'a> {
-    pub state: State,
     units: Units<'a>,
     start: usize,
     end: usize,
@@ -73,7 +55,6 @@ impl<'a> Lexer<'a> {
         let units = units.units();
 
         Self {
-            state: State::Base,
             units,
             start: 0,
             end: 0,
@@ -157,32 +138,22 @@ impl<'a> Lexer<'a> {
         match byte {
             Some(b'/') => {
                 self.next_unit();
-                return self.lex_comment();
+                self.lex_comment()
             }
             Some(b'*') => {
                 self.next_unit();
-                return self.lex_multiline_comment();
+                self.lex_multiline_comment()
             }
-            _ => {}
-        };
-        match self.state {
-            State::Base | State::Template => self.lex_regex(),
-            State::Div => match byte {
-                Some(b'=') => {
-                    self.next_unit();
-                    self.finish_token(t!("/="))
-                }
-                _ => self.finish_token(t!("/")),
-            },
+            Some(b'=') => {
+                self.next_unit();
+                self.finish_token(t!("/="))
+            }
+            _ => self.finish_token(t!("/")),
         }
     }
 
     fn lex_closing_brace(&mut self) -> Token {
-        if let State::Template = self.state {
-            self.lex_template(false)
-        } else {
-            self.finish_token(t!("}"))
-        }
+        self.finish_token(t!("}"))
     }
 
     fn lex_whitespace(&mut self) -> Token {
@@ -462,6 +433,27 @@ impl<'a> Lexer<'a> {
             _ => TokenKind::Unknown,
         };
         self.finish_token(kind)
+    }
+
+    /// Redoes lexing for a `/` token changing it to be parsed as a regex.
+    pub fn relex_regex(&mut self, token: Token) -> Token {
+        debug_assert!(matches!(token.kind(), t!("/") | t!("/=")));
+        debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
+        self.start = token.span.offset();
+        if let t!("/=") = token.kind() {
+            self.builder.push(b'=' as u16);
+            self.lex_regex(false)
+        } else {
+            self.lex_regex(true)
+        }
+    }
+
+    /// Redoes lexing for a `/` token changing it to be parsed as a regex.
+    pub fn relex_template(&mut self, token: Token) -> Token {
+        debug_assert_eq!(token.kind(), t!("}"));
+        debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
+        self.start = token.span.offset();
+        self.lex_template(false)
     }
 
     #[inline]

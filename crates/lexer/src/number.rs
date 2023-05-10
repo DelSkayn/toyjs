@@ -6,6 +6,7 @@ use crate::Lexer;
 impl<'a> Lexer<'a> {
     fn lex_radix(&mut self, radix: u8) -> Token {
         // Implementation derived from V8 implementation.
+
         while let Some(x) = self.peek_byte() {
             if x != b'0' {
                 break;

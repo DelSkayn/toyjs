@@ -8,6 +8,7 @@ macro_rules! apply_msg {
     };
 }
 
+/// render the part of the ast and return it.
 #[macro_export]
 macro_rules! dbg_tree {
     ($parser:expr,$e:expr) => {{
@@ -27,6 +28,18 @@ macro_rules! dbg_tree {
     }};
 }
 
+/// Alter the state of the render for the duration of scope.
+///
+/// # Usage
+/// ```
+/// alter_state!(self, r#break = true, r#continue = true => {
+///     // break and continue are allowed in this statement.
+///     let stmt = self.parse_stmt()
+///     // Dont break out of this scope by for example returning.
+///     // It will not restore the previous state of the parser.
+/// });
+/// // previous state is restored here.
+/// ```
 #[macro_export]
 macro_rules! alter_state{
     ($parser:expr $(,$name:ident = $e:expr)* => { $($t:tt)* }) => {
@@ -39,6 +52,12 @@ macro_rules! alter_state{
     }
 }
 
+/// Peeks the next token raising an error if there is no next token.
+///
+/// # Usage
+/// ```
+/// peek_expect!(self,"ident","other expected tokens")
+/// ```
 #[macro_export]
 macro_rules! peek_expect {
     ($parser:expr$(,$($expect:tt),*$(,)?)? $(=> $msg:expr)?) => {
@@ -63,6 +82,12 @@ macro_rules! peek_expect {
     };
 }
 
+/// Returns the next token raising an error if there is no next token.
+///
+/// # Usage
+/// ```
+/// next_expect!(self,"ident","other expected tokens")
+/// ```
 #[macro_export]
 macro_rules! next_expect {
     ($parser:expr$(,$expect:tt)* $(=> $msg:expr)?) => {
@@ -81,6 +106,14 @@ macro_rules! next_expect {
     };
 }
 
+/// Raising an unexpected error
+///
+/// # Usage
+/// ```
+/// unexpected!(self,"token which was found","ident","other tokens which where expected" => "error message for more context");
+/// // Message is optional
+/// unexpected!(self,"token which was found","ident","other tokens which where expected");
+/// ```
 #[macro_export]
 macro_rules! unexpected {
     ($parser:expr,$found:expr$( , $( $expect:tt),+ )? $(=> $msg:expr)?) => {
@@ -109,6 +142,14 @@ macro_rules! unexpected {
     };
 }
 
+/// Raising an unexpected end error, notifying that source ended to early
+///
+/// # Usage
+/// ```
+/// unexpected_end!(self,"ident","other tokens which where expected" => "error message for more context");
+/// // Message is optional
+/// unexpected_end!(self,"ident","other tokens which where expected");
+/// ```
 #[macro_export]
 macro_rules! unexpected_end {
     ($parser:expr$( , $( $expect:tt),+ )? $(=> $msg:expr)?) => {
@@ -127,6 +168,16 @@ macro_rules! unexpected_end {
         None
     };
 }
+
+/// Expect the next token to be of a certain kind, raising an unexpected error if the token found
+/// is different, returning it otherwise
+///
+/// # Usage
+/// ```
+/// let ident = expect!(self,"ident");
+/// expect!(self,".");
+/// let member = expect!(self,"ident");
+/// ```
 
 #[macro_export]
 macro_rules! expect {
