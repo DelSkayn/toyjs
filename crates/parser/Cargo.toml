@@ -14,3 +14,11 @@ token = { version = "0.1.0", path = "../token", package = "toyjs_token" }
 
 [features]
 trace_error = []
+
+[dev-dependencies]
+attohttpc = "0.25.0"
+criterion = "0.4.0"
+
+[[bench]]
+name = "scripts"
+harness = false

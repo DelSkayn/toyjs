@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
                 Ok(PropertyName::Computed(expr))
             }
             _ => {
-                let ident = self.parse_ident()?;
+                let ident = self.parse_ident_name()?;
                 Ok(PropertyName::Ident(ident))
             }
         }
