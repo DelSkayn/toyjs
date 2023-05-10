@@ -1,7 +1,6 @@
-use core::fmt;
-use std::ops::{Index, Range};
-
 use crate::span::Span;
+use core::fmt;
+use std::ops::Index;
 
 use super::Utf16Error;
 
@@ -140,11 +139,22 @@ impl Iterator for AsciiChars<'_> {
     }
 }
 
-impl Index<Range<usize>> for Ascii {
+impl DoubleEndedIterator for AsciiChars<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let (first, rest) = self.0 .0.split_last()?;
+        self.0 = unsafe { Ascii::from_slice_unchecked(rest) };
+        Some(unsafe { char::from_u32_unchecked(*first as u32) })
+    }
+}
+
+impl<Idx> Index<Idx> for Ascii
+where
+    [u8]: Index<Idx, Output = [u8]>,
+{
     type Output = Ascii;
 
     #[inline]
-    fn index(&self, index: Range<usize>) -> &Self::Output {
+    fn index(&self, index: Idx) -> &Self::Output {
         unsafe { Self::from_slice_unchecked(&self.units()[index]) }
     }
 }

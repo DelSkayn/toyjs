@@ -141,6 +141,15 @@ impl Iterator for Chars<'_> {
     }
 }
 
+impl DoubleEndedIterator for Chars<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match *self {
+            Chars::Ascii(ref mut x) => x.next_back(),
+            Chars::Utf16(ref mut x) => x.next_back(),
+        }
+    }
+}
+
 impl FusedIterator for Chars<'_> {}
 
 /// An iterator over either utf16 code units returning u16's

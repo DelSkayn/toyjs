@@ -34,6 +34,11 @@ pub fn scripts(c: &mut Criterion) {
         c,
     );
     bench_parser(
+        "axios_minified",
+        "https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js",
+        c,
+    );
+    bench_parser(
         "jquery_minified",
         "https://code.jquery.com/jquery-3.6.4.min.js",
         c,

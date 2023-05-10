@@ -1,6 +1,6 @@
 use std::{
     fmt::{self, Write},
-    ops::{Index, Range},
+    ops::Index,
 };
 
 use crate::{
@@ -150,19 +150,49 @@ impl Iterator for Utf16Chars<'_> {
     }
 }
 
-impl Index<Range<usize>> for Utf16 {
+impl DoubleEndedIterator for Utf16Chars<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        let (first, rest) = self.0 .0.split_last()?;
+        // Is it a surrogate
+        if first.is_utf16_surrogate() {
+            let (second, rest) = rest.split_last().expect("orphan utf16 surrogate in string");
+            self.0 = unsafe { Utf16::from_slice_unchecked(rest) };
+
+            let c = second.utf16_extend(*first);
+            Some(unsafe { char::from_u32_unchecked(c) })
+        } else {
+            self.0 = unsafe { Utf16::from_slice_unchecked(rest) };
+            Some(unsafe { char::from_u32_unchecked(*first as u32) })
+        }
+    }
+}
+
+impl<Idx> Index<Idx> for Utf16
+where
+    [u16]: Index<Idx, Output = [u16]>,
+{
     type Output = Utf16;
 
     #[inline]
-    fn index(&self, index: Range<usize>) -> &Self::Output {
-        let units = self.units();
-        if units[index.start].is_utf16_trailing_surrogate() {
+    fn index(&self, index: Idx) -> &Self::Output {
+        //TODO: Possibly implement specialization over specific ranges for improved performance.
+        let units = &self.units()[index];
+        if units
+            .first()
+            .map(|x| x.is_utf16_trailing_surrogate())
+            .unwrap_or(false)
+        {
             panic!("invalid utf16 range, range start within utf16 surrogate pair");
         }
-        if units[index.end - 1].is_utf16_leading_surrogate() {
-            panic!("invalid utf16 range, range ends within utf16 surrogate pair");
+        if units
+            .last()
+            .map(|x| x.is_utf16_leading_surrogate())
+            .unwrap_or(false)
+        {
+            panic!("invalid utf16 range, range start within utf16 surrogate pair");
         }
-        unsafe { Self::from_slice_unchecked(&self.units()[index]) }
+
+        unsafe { Self::from_slice_unchecked(units) }
     }
 }
 

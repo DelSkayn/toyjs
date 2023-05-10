@@ -79,7 +79,9 @@ impl<'a> Parser<'a> {
     pub fn parse_if_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "if");
         expect!(self, "(");
-        let cond = self.parse_expr()?;
+        alter_state!(self,r#in = true => {
+            let cond = self.parse_expr()?;
+        });
         expect!(self, ")");
         let body = self.parse_stmt()?;
         let r#else = if self.eat(t!("else")) {
@@ -94,7 +96,9 @@ impl<'a> Parser<'a> {
     pub fn parse_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "while");
         expect!(self, "(");
+        alter_state!(self,r#in = true => {
         let cond = self.parse_expr()?;
+        });
         expect!(self, ")");
 
         alter_state!(self,r#break = true, r#continue = true => {
