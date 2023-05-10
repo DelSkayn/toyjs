@@ -4,23 +4,20 @@ use ast::{
 use common::string::String;
 use token::{t, StringId};
 
-use crate::{expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_ident_or_pattern(&mut self) -> Result<NodeId<IdentOrPattern>> {
         let first = peek_expect!(self, "ident", "{", "[");
         match first.kind() {
-            t!("ident") => {
-                self.next();
-                Ok(self
-                    .ast
-                    .push_node(IdentOrPattern::Ident(first.data_id().unwrap())))
-            }
             t!("{") | t!("[") => {
                 let pattern = self.parse_pattern()?;
                 Ok(self.ast.push_node(IdentOrPattern::Pattern(pattern)))
             }
-            x => unexpected!(self, x, "ident", "{", "["),
+            _ => {
+                let ident = self.parse_ident()?;
+                Ok(self.ast.push_node(IdentOrPattern::Ident(ident)))
+            }
         }
     }
 
@@ -34,23 +31,107 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_ident(&mut self) -> Result<StringId> {
-        let next = peek_expect!(self);
+        let next = next_expect!(self);
         match next.kind() {
             t!("ident") => Ok(next.data_id().unwrap()),
             t!("yield") => {
                 if self.state.yield_ident {
-                    unexpected!(self,t!("yield"),"ident" => "yield not allowed as an identifier in this context");
+                    unexpected!(self,t!("yield"),"ident" => "not allowed as an identifier in this context");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("yield")))
                 }
             }
             t!("await") => {
                 if self.state.yield_ident {
-                    unexpected!(self,t!("await"),"ident" => "await not allowed as an identifier in this context");
+                    unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("await")))
                 }
             }
+            t!("let") => {
+                if self.state.strict {
+                    unexpected!(self,t!("let"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self.lexer.data.strings.intern(&String::new_const("let")))
+                }
+            }
+            t!("static") => {
+                if self.state.strict {
+                    unexpected!(self,t!("static"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self.lexer.data.strings.intern(&String::new_const("static")))
+                }
+            }
+            t!("implements") => {
+                if self.state.strict {
+                    unexpected!(self,t!("implements"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self
+                        .lexer
+                        .data
+                        .strings
+                        .intern(&String::new_const("implements")))
+                }
+            }
+            t!("interface") => {
+                if self.state.strict {
+                    unexpected!(self,t!("interface"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self
+                        .lexer
+                        .data
+                        .strings
+                        .intern(&String::new_const("interface")))
+                }
+            }
+            t!("package") => {
+                if self.state.strict {
+                    unexpected!(self,t!("package"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self
+                        .lexer
+                        .data
+                        .strings
+                        .intern(&String::new_const("package")))
+                }
+            }
+            t!("private") => {
+                if self.state.strict {
+                    unexpected!(self,t!("private"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self
+                        .lexer
+                        .data
+                        .strings
+                        .intern(&String::new_const("private")))
+                }
+            }
+            t!("protected") => {
+                if self.state.strict {
+                    unexpected!(self,t!("protected"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self
+                        .lexer
+                        .data
+                        .strings
+                        .intern(&String::new_const("protected")))
+                }
+            }
+            t!("public") => {
+                if self.state.strict {
+                    unexpected!(self,t!("public"),"ident" => "not allowed as an identifier in strict mode");
+                } else {
+                    Ok(self.lexer.data.strings.intern(&String::new_const("public")))
+                }
+            }
+            // Next keywords are always allowed as identifiers.
+            t!("get") => Ok(self.lexer.data.strings.intern(&String::new_const("get"))),
+            t!("as") => Ok(self.lexer.data.strings.intern(&String::new_const("as"))),
+            t!("from") => Ok(self.lexer.data.strings.intern(&String::new_const("from"))),
+            t!("meta") => Ok(self.lexer.data.strings.intern(&String::new_const("meta"))),
+            t!("set") => Ok(self.lexer.data.strings.intern(&String::new_const("set"))),
+            t!("target") => Ok(self.lexer.data.strings.intern(&String::new_const("target"))),
+
             x => unexpected!(self, x, "ident"),
         }
     }
@@ -69,9 +150,9 @@ impl<'a> Parser<'a> {
                 }
                 t!("...") => {
                     self.next();
-                    let ident = expect!(self, "ident");
+                    let ident = self.parse_ident()?;
                     expect!(self, "}");
-                    rest = Some(ident.data_id().unwrap());
+                    rest = Some(ident);
                     break;
                 }
                 _ => {
@@ -96,23 +177,6 @@ impl<'a> Parser<'a> {
     pub fn parse_binding_property(&mut self) -> Result<BindingProperty> {
         let next = peek_expect!(self);
         match next.kind() {
-            t!("ident") => {
-                self.next();
-                if self.eat(t!(":")) {
-                    let name = PropertyName::Ident(next.data_id().unwrap());
-                    let element = self.parse_binding_element()?;
-                    Ok(BindingProperty::Property { name, element })
-                } else {
-                    let initializer = self
-                        .eat(t!("="))
-                        .then(|| self.parse_assignment_expr())
-                        .transpose()?;
-                    Ok(BindingProperty::Binding {
-                        name: next.data_id().unwrap(),
-                        initializer,
-                    })
-                }
-            }
             t!("string") => {
                 self.next();
                 let name = PropertyName::String(next.data_id().unwrap());
@@ -133,7 +197,23 @@ impl<'a> Parser<'a> {
                 let element = self.parse_binding_element()?;
                 Ok(BindingProperty::Property { name, element })
             }
-            x => unexpected!(self, x, "ident", "string", "num", "["),
+            _ => {
+                let ident = self.parse_ident()?;
+                if self.eat(t!(":")) {
+                    let name = PropertyName::Ident(ident);
+                    let element = self.parse_binding_element()?;
+                    Ok(BindingProperty::Property { name, element })
+                } else {
+                    let initializer = self
+                        .eat(t!("="))
+                        .then(|| self.parse_assignment_expr())
+                        .transpose()?;
+                    Ok(BindingProperty::Binding {
+                        name: next.data_id().unwrap(),
+                        initializer,
+                    })
+                }
+            }
         }
     }
 
@@ -144,7 +224,7 @@ impl<'a> Parser<'a> {
         let mut rest = None;
         loop {
             let next = peek_expect!(self, "]");
-            match dbg!(next.kind()) {
+            match next.kind() {
                 t!("]") => {
                     self.next();
                     break;
@@ -181,15 +261,6 @@ impl<'a> Parser<'a> {
     pub fn parse_binding_element(&mut self) -> Result<BindingElement> {
         let next = peek_expect!(self);
         match next.kind() {
-            t!("ident") => {
-                self.next();
-                let name = next.data_id().unwrap();
-                let initializer = self
-                    .eat(t!("="))
-                    .then(|| self.parse_assignment_expr())
-                    .transpose()?;
-                Ok(BindingElement::SingleName { name, initializer })
-            }
             t!("{") | t!("[") => {
                 let pattern = self.parse_pattern()?;
                 let initializer = self
@@ -201,7 +272,14 @@ impl<'a> Parser<'a> {
                     initializer,
                 })
             }
-            x => unexpected!(self, x, "ident", "{", "["),
+            _ => {
+                let name = self.parse_ident()?;
+                let initializer = self
+                    .eat(t!("="))
+                    .then(|| self.parse_assignment_expr())
+                    .transpose()?;
+                Ok(BindingElement::SingleName { name, initializer })
+            }
         }
     }
 }

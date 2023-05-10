@@ -1,4 +1,6 @@
 use core::fmt;
+#[cfg(feature = "trace_error")]
+use std::backtrace::Backtrace;
 
 use common::{
     source::{self, Source},
@@ -30,6 +32,8 @@ pub enum ErrorKind {
 pub struct Error {
     pub kind: ErrorKind,
     pub origin: Span,
+    #[cfg(feature = "trace_error")]
+    trace: Backtrace,
 }
 
 pub struct FormatableError<'a> {
@@ -44,6 +48,15 @@ impl<'a> fmt::Display for FormatableError<'a> {
 }
 
 impl Error {
+    pub fn new(kind: ErrorKind, origin: Span) -> Self {
+        Error {
+            kind,
+            origin,
+            #[cfg(feature = "trace_error")]
+            trace: Backtrace::capture(),
+        }
+    }
+
     pub fn display(self, source: &Source) -> FormatableError {
         FormatableError {
             error: self,
@@ -81,8 +94,6 @@ impl Error {
                     self.origin.clone(),
                     message.as_ref().map(|x| x.encoding()),
                 )?;
-
-                Ok(())
             }
             ErrorKind::Unexpected {
                 ref expected,
@@ -109,8 +120,6 @@ impl Error {
                     self.origin.clone(),
                     message.as_ref().map(|x| x.encoding()),
                 )?;
-
-                Ok(())
             }
             ErrorKind::DisallowedToken {
                 ref found,
@@ -126,8 +135,6 @@ impl Error {
                     self.origin.clone(),
                     message.as_ref().map(|x| x.encoding()),
                 )?;
-
-                Ok(())
             }
             ErrorKind::InvalidToken => {
                 write!(w, "invalid token")?;
@@ -136,9 +143,12 @@ impl Error {
                 source.render_span_location(w, self.origin.clone())?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin.clone(), None)?;
-
-                Ok(())
             }
         }
+        #[cfg(feature = "trace_error")]
+        writeln!(w)?;
+        #[cfg(feature = "trace_error")]
+        writeln!(w, "{}", self.trace)?;
+        Ok(())
     }
 }

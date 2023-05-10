@@ -9,17 +9,29 @@ macro_rules! apply_msg {
 }
 
 #[macro_export]
+macro_rules! alter_state{
+    ($parser:expr $(,$name:ident = $e:expr)* => { $($t:tt)* }) => {
+        $(
+            let $name = $parser.state.$name;
+            $parser.state.$name = $e;
+        )*
+            $($t)*
+        $($parser.state.$name = $name;)*
+    }
+}
+
+#[macro_export]
 macro_rules! peek_expect {
     ($parser:expr$(,$($expect:tt),*$(,)?)? $(=> $msg:expr)?) => {
         {
             let Some(token) = $parser.peek() else{
-                return Err($crate::error::Error{
-                    kind: $crate::error::ErrorKind::UnexpectedEnd{
+                return Err($crate::error::Error::new(
+                    $crate::error::ErrorKind::UnexpectedEnd{
                         expected: vec![$($($crate::t!($expect),)*)*],
                         message: peek_expect!(@msg $($msg)?),
                     },
-                    origin: $parser.last_span().clone(),
-                });
+                    $parser.last_span().clone(),
+                ));
             };
             token
         }
@@ -54,20 +66,20 @@ macro_rules! next_expect {
 macro_rules! unexpected {
     ($parser:expr,$found:expr$( , $( $expect:tt),+ )? $(=> $msg:expr)?) => {
         if let token::TokenKind::Unknown = $found{
-            return Err($crate::error::Error{
-                kind: $crate::error::ErrorKind::InvalidToken,
-                origin: $parser.last_span().clone(),
-            })
+            return Err($crate::error::Error::new(
+                $crate::error::ErrorKind::InvalidToken,
+                $parser.last_span().clone(),
+            ))
         }else{
             let expected = vec![$($( $crate::t!($expect),)*)*];
-            return Err($crate::error::Error{
-                kind: $crate::error::ErrorKind::Unexpected{
+            return Err($crate::error::Error::new(
+                 $crate::error::ErrorKind::Unexpected{
                     found: $found,
                     expected,
                     message: $crate::unexpected!(@msg $($msg)*)
                 },
-                origin: $parser.last_span().clone(),
-            })
+                 $parser.last_span().clone(),
+            ))
         }
     };
     (@msg $msg:expr) => {
@@ -81,13 +93,13 @@ macro_rules! unexpected {
 #[macro_export]
 macro_rules! unexpected_end {
     ($parser:expr$( , $( $expect:tt),+ )? $(=> $msg:expr)?) => {
-        return Err($crate::error::Error{
-            kind: $crate::error::ErrorKind::UnexpectedEnd{
+        return Err($crate::error::Error::new(
+             $crate::error::ErrorKind::UnexpectedEnd{
                 expected: vec![$($($crate::t!($expect),)*)*],
                 message: $crate::unexpected_end!(@msg $($msg)*),
             },
-            origin: $parser.last_span().clone(),
-        })
+             $parser.last_span().clone(),
+        ))
     };
     (@msg $msg:expr) => {
         Some(common::string::String::from($msg))

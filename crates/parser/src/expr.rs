@@ -1,4 +1,6 @@
-use ast::{AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, PostfixOp, PrefixOp, PrimeExpr};
+use ast::{
+    AssignOp, BaseOp, BinaryOp, Expr, ListHead, ListId, NodeId, PostfixOp, PrefixOp, PrimeExpr,
+};
 use token::{t, TokenKind};
 
 use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
@@ -136,7 +138,11 @@ impl<'a> Parser<'a> {
                 return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
-                let params = self.parse_expr()?;
+                let params = if let t!(")") = peek_expect!(self, ")").kind() {
+                    ListHead::Empty
+                } else {
+                    ListHead::Present(self.parse_expr()?)
+                };
                 expect!(self, ")");
                 return Ok(self.ast.push_node(Expr::Call { params, expr: lhs }));
             }
@@ -234,6 +240,9 @@ impl<'a> Parser<'a> {
             }
 
             if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+                if !self.state.r#in && t!("in") == op {
+                    break;
+                }
                 if l_bp < min_bp {
                     break;
                 }

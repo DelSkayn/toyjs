@@ -8,7 +8,7 @@ mod r#macro;
 mod render;
 
 pub type AstStorage = (
-    (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>),
+    (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>, Vec<ForLoopHead>),
     (
         Vec<Expr>,
         Vec<PrimeExpr>,
@@ -92,7 +92,7 @@ impl RenderAst for BindingPattern {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum PropertyName {
     Ident(StringId),
     String(StringId),
@@ -237,7 +237,7 @@ pub enum Stmt {
         body: NodeId<Stmt>,
     },
     For {
-        head: NodeId<Expr>,
+        head: NodeId<ForLoopHead>,
         body: NodeId<Stmt>,
     },
     Switch {
@@ -371,6 +371,107 @@ impl RenderAst for Stmt {
             Stmt::Function { ref func } => ctx
                 .render_struct("Stmt::Function", w)?
                 .field("func", func)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum CstyleDecl {
+    Expr(ListId<Expr>),
+    Decl {
+        kind: VariableKind,
+        decl: ListId<VariableDecl>,
+    },
+    Empty,
+}
+impl RenderAst for CstyleDecl {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            CstyleDecl::Expr(ref x) => ctx
+                .render_struct("CstyleDecl::Expr", w)?
+                .field("0", x)?
+                .finish(),
+            CstyleDecl::Decl { ref kind, ref decl } => ctx
+                .render_struct("CstyleDecl::Decl", w)?
+                .field_debug("kind", kind)?
+                .field("decl", decl)?
+                .finish(),
+            CstyleDecl::Empty => ctx.render_struct("CstyleDecl::Empty", w)?.finish(),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum InOfDecl {
+    Expr(NodeId<Expr>),
+    Decl {
+        kind: VariableKind,
+        binding: NodeId<IdentOrPattern>,
+    },
+}
+
+impl RenderAst for InOfDecl {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            InOfDecl::Expr(ref x) => ctx
+                .render_struct("InOfDecl::Expr", w)?
+                .field("0", x)?
+                .finish(),
+            InOfDecl::Decl {
+                ref kind,
+                ref binding,
+            } => ctx
+                .render_struct("InOfDecl::Decl", w)?
+                .field_debug("kind", kind)?
+                .field("binding", binding)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub enum ForLoopHead {
+    CStyle {
+        decl: CstyleDecl,
+        cond: Option<ListId<Expr>>,
+        post: Option<ListId<Expr>>,
+    },
+    In {
+        decl: InOfDecl,
+        expr: ListId<Expr>,
+    },
+    Of {
+        decl: InOfDecl,
+        expr: NodeId<Expr>,
+    },
+}
+
+impl RenderAst for ForLoopHead {
+    fn render<W: std::io::Write>(&self, ctx: &RenderCtx, w: &mut W) -> std::io::Result<()> {
+        match *self {
+            ForLoopHead::CStyle {
+                ref decl,
+                ref cond,
+                ref post,
+            } => ctx
+                .render_struct("ForLoopKind::CStyle", w)?
+                .field("decl", decl)?
+                .field("cond", cond)?
+                .field("post", post)?
+                .finish(),
+            ForLoopHead::In { ref decl, ref expr } => ctx
+                .render_struct("ForLoopKind::In", w)?
+                .field("decl", decl)?
+                .field("expr", expr)?
+                .finish(),
+            ForLoopHead::Of { ref decl, ref expr } => ctx
+                .render_struct("ForLoopKind::Of", w)?
+                .field("decl", decl)?
+                .field("expr", expr)?
                 .finish(),
         }
         Ok(())
@@ -548,7 +649,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Call {
-        params: ListId<Expr>,
+        params: ListHead<Expr>,
         expr: NodeId<Expr>,
     },
     Prime {

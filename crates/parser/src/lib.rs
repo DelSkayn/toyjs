@@ -34,6 +34,7 @@ pub struct ParserState {
     strict: bool,
     yield_ident: bool,
     await_ident: bool,
+    r#in: bool,
     r#break: bool,
     r#continue: bool,
 }
@@ -50,6 +51,7 @@ impl<'a> Parser<'a> {
                 strict: false,
                 yield_ident: true,
                 await_ident: true,
+                r#in: true,
                 r#break: false,
                 r#continue: false,
             },

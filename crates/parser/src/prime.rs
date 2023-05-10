@@ -1,12 +1,11 @@
 use ast::{
-    ArrayLiteral, Expr, ListId, NodeId, NodeList, ObjectLiteral, PrimeExpr, PropertyDefinition,
-    PropertyName,
+    ArrayLiteral, Expr, ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
 };
-use common::string::{Ascii, Encoding};
+use common::string::Ascii;
 use lexer::State;
-use token::t;
+use token::{t, TokenKind};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, peek_expect, unexpected, Parser, Result};
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
 static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
@@ -14,65 +13,78 @@ static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
 impl<'a> Parser<'a> {
     pub(crate) fn parse_prime(&mut self) -> Result<NodeId<PrimeExpr>> {
         self.with_lexer_state(lexer::State::Regex, |this| {
-            let token = next_expect!(
+            let token = peek_expect!(
                 this, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
                 "(", "function"
             );
 
             match token.kind() {
                 t!("ident") => {
-                    let id = this
-                        .ast
-                        .push_node(PrimeExpr::Ident(token.kind_and_data.data_id().unwrap()));
+                    this.next();
+                    let ident = token.kind_and_data.data_id().unwrap();
+                    println!("{}", &this.lexer.data.strings[ident]);
+
+                    let id = this.ast.push_node(PrimeExpr::Ident(ident));
                     Ok(id)
                 }
                 t!("num") => {
+                    this.next();
                     let id = this
                         .ast
                         .push_node(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("string") | t!("``") => {
+                    this.next();
                     let id = this
                         .ast
                         .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("true") => {
+                    this.next();
                     let id = this.ast.push_node(PrimeExpr::Boolean(true));
                     Ok(id)
                 }
                 t!("false") => {
+                    this.next();
                     let id = this.ast.push_node(PrimeExpr::Boolean(false));
                     Ok(id)
                 }
                 t!("regex") => {
+                    this.next();
                     let id = this
                         .ast
                         .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
                     Ok(id)
                 }
                 t!("null") => {
+                    this.next();
                     let id = this.ast.push_node(PrimeExpr::Null);
                     Ok(id)
                 }
                 t!("this") => {
+                    this.next();
                     let id = this.ast.push_node(PrimeExpr::This);
                     Ok(id)
                 }
                 t!("{") => this.with_lexer_state(State::Base, |this| {
+                    this.next();
                     let id = this.parse_object_literal()?;
                     Ok(this.ast.push_node(PrimeExpr::Object(id)))
                 }),
                 t!("[") => this.with_lexer_state(State::Base, |this| {
+                    this.next();
                     let array = this.parse_array_literal()?;
                     Ok(this.ast.push_node(PrimeExpr::Array(array)))
                 }),
                 t!("function") => {
+                    this.next();
                     let func = this.parse_function(true)?;
                     Ok(this.ast.push_node(PrimeExpr::Function(func)))
                 }
                 t!("(") => {
+                    this.next();
                     let expression = this.parse_expr()?;
                     expect!(this, ")");
                     if this.ast[expression].next.is_some() {
@@ -86,15 +98,9 @@ impl<'a> Parser<'a> {
                         Ok(id)
                     }
                 }
-                t!("yield") if this.state.yield_ident => {
-                    let str = this.lexer.data.push_string(Encoding::Ascii(YIELD_STR));
-                    let id = this.ast.push_node(PrimeExpr::Ident(str));
-                    Ok(id)
-                }
-                t!("await") if this.state.await_ident => {
-                    let str = this.lexer.data.push_string(Encoding::Ascii(AWAIT_STR));
-                    let id = this.ast.push_node(PrimeExpr::Ident(str));
-                    Ok(id)
+                TokenKind::UnreservedKeyword(_) => {
+                    let id = this.parse_ident()?;
+                    Ok(this.ast.push_node(PrimeExpr::Ident(id)))
                 }
                 x => {
                     unexpected!(
@@ -182,31 +188,38 @@ impl<'a> Parser<'a> {
                 } else if let Some(x) = x {
                     unexpected!(self, x, ":")
                 } else {
-                    return Err(crate::Error {
-                        kind: crate::error::ErrorKind::UnexpectedEnd {
+                    return Err(crate::Error::new(
+                        crate::error::ErrorKind::UnexpectedEnd {
                             expected: vec![t!(":")],
                             message: None,
                         },
-                        origin: token.span,
-                    });
+                        token.span,
+                    ));
                 }
             }
         }
     }
 
     fn parse_property_name(&mut self) -> Result<PropertyName> {
-        let token = next_expect!(self, "ident", "[", "string", "num");
+        let token = peek_expect!(self, "ident", "[", "string", "num");
         match token.kind() {
-            t!("ident") => Ok(PropertyName::Ident(token.data_id().unwrap())),
-            t!("string") => Ok(PropertyName::String(token.data_id().unwrap())),
-            t!("num") => Ok(PropertyName::Number(token.data_id().unwrap())),
+            t!("string") => {
+                self.next();
+                Ok(PropertyName::String(token.data_id().unwrap()))
+            }
+            t!("num") => {
+                self.next();
+                Ok(PropertyName::Number(token.data_id().unwrap()))
+            }
             t!("[") => {
+                self.next();
                 let expr = self.parse_assignment_expr()?;
                 expect!(self, "]");
                 Ok(PropertyName::Computed(expr))
             }
-            x => {
-                unexpected!(self, x, "ident", "[")
+            _ => {
+                let ident = self.parse_ident()?;
+                Ok(PropertyName::Ident(ident))
             }
         }
     }

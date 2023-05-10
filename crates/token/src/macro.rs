@@ -247,9 +247,6 @@ macro_rules! t {
     ("in") => {
         $crate::TokenKind::Keyword($crate::Keyword::In)
     };
-    ("of") => {
-        $crate::TokenKind::Keyword($crate::Keyword::Of)
-    };
     ("instanceof") => {
         $crate::TokenKind::Keyword($crate::Keyword::Instanceof)
     };
