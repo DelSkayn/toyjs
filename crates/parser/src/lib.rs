@@ -15,9 +15,11 @@ mod function;
 mod prime;
 mod stmt;
 
-pub use error::Error;
+pub use error::{Error, ErrorKind};
+/// Result type used troughout the parser
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The toyjs javascript parser.
 pub struct Parser<'a> {
     /// The lexer used during parsing
     pub lexer: Lexer<'a>,
@@ -29,17 +31,22 @@ pub struct Parser<'a> {
     state: ParserState,
 }
 
+/// Parser state.
+///
+/// Javascript syntax has a bunch of parameterized productions. This struct tracks the state of
+/// those parameters.
 #[derive(Debug)]
 pub struct ParserState {
-    strict: bool,
-    yield_ident: bool,
-    await_ident: bool,
-    r#in: bool,
-    r#break: bool,
-    r#continue: bool,
+    pub strict: bool,
+    pub yield_ident: bool,
+    pub await_ident: bool,
+    pub r#in: bool,
+    pub r#break: bool,
+    pub r#continue: bool,
 }
 
 impl<'a> Parser<'a> {
+    /// Create a new parser.
     pub fn new(lexer: Lexer<'a>) -> Self {
         Parser {
             lexer,
@@ -172,6 +179,7 @@ impl<'a> Parser<'a> {
         self.lexer.data.strings[id] == String::new_const("use strict")
     }
 
+    /// Parse a javascript script.
     pub fn parse_script(&mut self) -> Result<ListHead<Stmt>> {
         let mut head = ListHead::Empty;
         let mut prev = None;

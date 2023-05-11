@@ -59,6 +59,7 @@ impl StringBuilder {
         }
     }
 
+    // TODO: Since access to the buffers is allowed, this function should be unsafe.
     pub fn encoding(&self) -> Encoding {
         unsafe {
             if self.is_ascii {

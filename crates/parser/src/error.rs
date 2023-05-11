@@ -9,6 +9,7 @@ use common::{
 };
 use token::TokenKind;
 
+/// The type of error generated.
 #[derive(Clone, Debug)]
 pub enum ErrorKind {
     /// The parser unexpectedly encounted the end of source.
@@ -28,6 +29,7 @@ pub enum ErrorKind {
     InvalidToken,
 }
 
+/// A parser error.
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,

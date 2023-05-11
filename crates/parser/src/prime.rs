@@ -1,8 +1,9 @@
 use std::mem;
 
 use ast::{
-    ArrayLiteral, ArrowFunctionBody, BindingElement, Expr, Function, IdentOrPattern, ListHead,
-    ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Template,
+    ArrayLiteral, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
+    BindingProperty, Expr, Function, IdentOrPattern, ListHead, ListId, NodeId, ObjectLiteral,
+    PrimeExpr, PropertyDefinition, PropertyName, Template,
 };
 use common::string::Ascii;
 use token::{t, TokenKind};
@@ -111,7 +112,6 @@ impl<'a> Parser<'a> {
                     });
                     expect!(self, ")");
                     if let Some(t!("=>")) = self.peek_kind() {
-                        self.next();
                         self.reparse_arrow_function(expression)
                     } else {
                         let expr = self.ast[expression].item;
@@ -314,7 +314,131 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn reparse_arrow_function(&mut self, _expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {
+    fn reparse_arrow_function(&mut self, mut expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+        loop {
+            let Some(param) = self.reparse_binding_element(self.ast[expr].item) else{
+                unexpected!(self,t!("=>") => "covered expression can't be parsed as parameters");
+            };
+            let param = self.ast.push_node(param);
+            prev = Some(self.ast.append_list(param, prev));
+            head = head.or(prev.into());
+            let Some(x) = self.ast[expr].next else {
+                break;
+            };
+            expr = x;
+        }
+        let func = self.parse_array_function(head, None)?;
+        Ok(self.ast.push_node(PrimeExpr::Function(func)))
+    }
+
+    fn reparse_binding_element(&mut self, expr: NodeId<Expr>) -> Option<BindingElement> {
+        match self.ast[expr] {
+            Expr::Prime { expr } => match self.ast[expr] {
+                PrimeExpr::Ident(name) => Some(BindingElement::SingleName {
+                    name,
+                    initializer: None,
+                }),
+                PrimeExpr::Object(x) => {
+                    let pattern = self.reparse_object_binding(x)?;
+                    Some(BindingElement::Pattern {
+                        pattern,
+                        initializer: None,
+                    })
+                }
+                PrimeExpr::Array(x) => {
+                    let pattern = self.reparse_array_lit(x)?;
+                    Some(BindingElement::Pattern {
+                        pattern,
+                        initializer: None,
+                    })
+                }
+                _ => None,
+            },
+            Expr::Binary {
+                op: BinaryOp::Assign(AssignOp::Assign),
+                left,
+                right,
+            } => {
+                let mut binding = self.reparse_binding_element(left)?;
+                let (BindingElement::SingleName {
+                    ref mut initializer,
+                    ..
+                }
+                | BindingElement::Pattern {
+                    ref mut initializer,
+                    ..
+                }) = binding;
+                debug_assert!(initializer.is_none());
+                *initializer = Some(right);
+                Some(binding)
+            }
+            _ => None,
+        }
+    }
+
+    fn reparse_object_binding(&mut self, expr: ObjectLiteral) -> Option<BindingPattern> {
+        let ObjectLiteral::Item(mut item) = expr else {
+            return Some(BindingPattern::Object {
+                properties: ListHead::Empty,
+                rest: None,
+            })
+        };
+
+        let mut properties = ListHead::Empty;
+        let mut prev = None;
+        let mut rest = None;
+        loop {
+            let item_node = self.ast[item].item;
+            let prop = match self.ast[item_node] {
+                PropertyDefinition::Ident(name) => BindingProperty::Binding {
+                    name,
+                    initializer: None,
+                },
+                // TODO: make sure this is a syntax error in actual object literals
+                PropertyDefinition::Covered { ident, initializer } => BindingProperty::Binding {
+                    name: ident,
+                    initializer: Some(initializer),
+                },
+                PropertyDefinition::Define { property, expr } => {
+                    let element = self.reparse_binding_element(expr)?;
+                    BindingProperty::Property {
+                        name: property,
+                        element,
+                    }
+                }
+                PropertyDefinition::Method {} => return None,
+                PropertyDefinition::Rest(r) => {
+                    // Rest not last in the object
+                    if rest.is_some() || self.ast[item].next.is_some() {
+                        return None;
+                    }
+                    let Expr::Prime { expr } = self.ast[r] else {
+                        return None
+                    };
+                    let PrimeExpr::Ident(x) = self.ast[expr] else {
+                        return None
+                    };
+                    rest = Some(x);
+                    // rest is last
+                    break;
+                }
+            };
+            let prop = self.ast.push_node(prop);
+            prev = Some(self.ast.append_list(prop, prev));
+            properties = properties.or(prev.into());
+
+            let Some(next) = self.ast[item].next else{
+                break;
+            };
+            item = next;
+        }
+
+        Some(BindingPattern::Object { properties, rest })
+    }
+
+    fn reparse_array_lit(&mut self, _expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
         todo!()
     }
 
