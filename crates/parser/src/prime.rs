@@ -438,8 +438,52 @@ impl<'a> Parser<'a> {
         Some(BindingPattern::Object { properties, rest })
     }
 
-    fn reparse_array_lit(&mut self, _expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
-        todo!()
+    fn reparse_array_lit(&mut self, expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
+        let rest = if let Some(x) = self.ast[expr].spread {
+            let rest = self.reparse_ident_or_pattern(x)?;
+            Some(self.ast.push_node(rest))
+        } else {
+            None
+        };
+
+        let mut cur = self.ast[expr].elements;
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+
+        while let Some(c) = cur {
+            let element = if let Some(x) = self.ast[c].data {
+                Some(self.reparse_binding_element(x)?)
+            } else {
+                None
+            };
+            let element = self.ast.push_node(element);
+            prev = Some(self.ast.append_list(element, prev));
+            head = head.or(prev.into());
+            cur = self.ast[c].next;
+        }
+
+        Some(BindingPattern::Array {
+            elements: head,
+            rest,
+        })
+    }
+
+    fn reparse_ident_or_pattern(&mut self, expr: NodeId<Expr>) -> Option<IdentOrPattern> {
+        let Expr::Prime { expr } = self.ast[expr] else {
+            return None
+        };
+        match self.ast[expr] {
+            PrimeExpr::Ident(name) => Some(IdentOrPattern::Ident(name)),
+            PrimeExpr::Object(lit) => {
+                let pat = self.reparse_object_binding(lit)?;
+                Some(IdentOrPattern::Pattern(pat))
+            }
+            PrimeExpr::Array(lit) => {
+                let pat = self.reparse_array_lit(lit)?;
+                Some(IdentOrPattern::Pattern(pat))
+            }
+            _ => None,
+        }
     }
 
     fn parse_array_function(

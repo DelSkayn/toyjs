@@ -85,7 +85,7 @@ impl RenderAst for BindingPattern {
                 ref elements,
                 ref rest,
             } => ctx
-                .render_struct("BindingPattern::Object", w)?
+                .render_struct("BindingPattern::Array", w)?
                 .field("elements", elements)?
                 .field("rest", rest)?
                 .finish(),
