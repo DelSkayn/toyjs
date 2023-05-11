@@ -1,6 +1,8 @@
+use std::mem;
+
 use ast::{
-    ArrayLiteral, Expr, ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName,
-    Template,
+    ArrayLiteral, ArrowFunctionBody, BindingElement, Expr, Function, IdentOrPattern, ListHead,
+    ListId, NodeId, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Template,
 };
 use common::string::Ascii;
 use token::{t, TokenKind};
@@ -21,8 +23,19 @@ impl<'a> Parser<'a> {
             t!("ident") => {
                 self.next();
                 let ident = token.kind_and_data.data_id().unwrap();
-                let id = self.ast.push_node(PrimeExpr::Ident(ident));
-                Ok(id)
+                if let Some(t!("=>")) = self.peek_kind() {
+                    let param = self.ast.push_node(BindingElement::SingleName {
+                        name: ident,
+                        initializer: None,
+                    });
+
+                    let params = ListHead::Present(self.ast.append_list(param, None));
+                    let function = self.parse_array_function(params, None)?;
+                    Ok(self.ast.push_node(PrimeExpr::Function(function)))
+                } else {
+                    let id = self.ast.push_node(PrimeExpr::Ident(ident));
+                    Ok(id)
+                }
             }
             t!("num") => {
                 self.next();
@@ -88,17 +101,23 @@ impl<'a> Parser<'a> {
             }
             t!("(") => {
                 self.next();
-                alter_state!(self,r#in = true => {
-                    let expression = self.parse_expr()?;
-                });
-                expect!(self, ")");
-                if let Some(t!("=>")) = self.peek_kind() {
+                if let Some(t!(")")) = self.peek_kind() {
                     self.next();
-                    self.reparse_arrow_function(expression)
+                    let function = self.parse_array_function(ListHead::Empty, None)?;
+                    Ok(self.ast.push_node(PrimeExpr::Function(function)))
                 } else {
-                    let expr = self.ast[expression].item;
-                    let id = self.ast.push_node(PrimeExpr::Covered(expr));
-                    Ok(id)
+                    alter_state!(self,r#in = true => {
+                        let expression = self.parse_expr()?;
+                    });
+                    expect!(self, ")");
+                    if let Some(t!("=>")) = self.peek_kind() {
+                        self.next();
+                        self.reparse_arrow_function(expression)
+                    } else {
+                        let expr = self.ast[expression].item;
+                        let id = self.ast.push_node(PrimeExpr::Covered(expr));
+                        Ok(id)
+                    }
                 }
             }
             TokenKind::UnreservedKeyword(_) => {
@@ -297,6 +316,40 @@ impl<'a> Parser<'a> {
 
     fn reparse_arrow_function(&mut self, _expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {
         todo!()
+    }
+
+    fn parse_array_function(
+        &mut self,
+        params: ListHead<BindingElement>,
+        rest_param: Option<NodeId<IdentOrPattern>>,
+    ) -> Result<NodeId<Function>> {
+        expect!(self, "=>");
+        let mut strict = self.state.strict;
+        let body = if let t!("{") = peek_expect!(self, "{").kind() {
+            self.next();
+            let mut head = ListHead::Empty;
+            let mut prev = None;
+
+            while !self.eat(t!("}")) {
+                let stmt = self.parse_stmt()?;
+                if prev.is_none() && !strict {
+                    self.state.strict = self.is_strict_directive(stmt);
+                }
+                prev = Some(self.ast.append_list(stmt, prev));
+                head = head.or(prev.into());
+            }
+            mem::swap(&mut self.state.strict, &mut strict);
+            ArrowFunctionBody::Stmt(head)
+        } else {
+            ArrowFunctionBody::Expr(self.parse_assignment_expr()?)
+        };
+
+        Ok(self.ast.push_node(Function::Arrow {
+            strict,
+            params,
+            rest_param,
+            body,
+        }))
     }
 }
 

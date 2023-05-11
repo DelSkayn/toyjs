@@ -30,12 +30,7 @@ impl LexingData {
     }
 
     pub fn push_string(&mut self, encoding: Encoding) -> StringId {
-        // Don't bother for large strings, they are unlikely to be repeated in source code.
-        if encoding.len() > 32 {
-            self.strings.skip_push(encoding)
-        } else {
-            self.strings.intern(&encoding)
-        }
+        self.strings.intern(&encoding)
     }
 }
 
@@ -66,12 +61,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Pop the next code from the list
+    #[inline]
     fn next_unit(&mut self) -> Option<u16> {
         self.end += 1;
         self.peek.take().or_else(|| self.units.next())
     }
 
     /// Peek the next code on the list without consuming it.
+    #[inline]
     fn peek_unit(&mut self) -> Option<u16> {
         if let Some(x) = self.peek {
             Some(x)
@@ -82,6 +79,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Peek the next code on the list without consuming it.
+    #[inline]
     fn peek_byte(&mut self) -> Option<u8> {
         self.peek_unit().and_then(|x| x.try_into().ok())
     }
@@ -195,6 +193,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    #[inline]
     fn lex_ascii(&mut self, byte: u8) -> Token {
         let kind = match byte {
             byte::LF => t!("\n"),
@@ -216,7 +215,7 @@ impl<'a> Lexer<'a> {
             b'[' => t!("["),
             b']' => t!("]"),
             b'{' => t!("{"),
-            b'}' => return self.lex_closing_brace(),
+            b'}' => t!("}"),
             b'?' => match self.peek_byte() {
                 Some(b'?') => {
                     self.next_unit();
@@ -263,7 +262,21 @@ impl<'a> Lexer<'a> {
                 }
                 _ => t!("*"),
             },
-            b'/' => return self.lex_slash(),
+            b'/' => match self.peek_byte() {
+                Some(b'/') => {
+                    self.next_unit();
+                    return self.lex_comment();
+                }
+                Some(b'*') => {
+                    self.next_unit();
+                    return self.lex_multiline_comment();
+                }
+                Some(b'=') => {
+                    self.next_unit();
+                    t!("/=")
+                }
+                _ => t!("/"),
+            },
             b'%' => match self.peek_byte() {
                 Some(b'=') => {
                     self.next_unit();
@@ -435,7 +448,7 @@ impl<'a> Lexer<'a> {
         self.finish_token(kind)
     }
 
-    /// Redoes lexing for a `/` token changing it to be parsed as a regex.
+    /// Redoes lexing for a `/` or `/=` token changing it to be parsed as a regex.
     pub fn relex_regex(&mut self, token: Token) -> Token {
         debug_assert!(matches!(token.kind(), t!("/") | t!("/=")));
         debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
@@ -448,7 +461,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Redoes lexing for a `/` token changing it to be parsed as a regex.
+    /// Redoes lexing for a `}` token changing it to be parsed as a regex.
     pub fn relex_template(&mut self, token: Token) -> Token {
         debug_assert_eq!(token.kind(), t!("}"));
         debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
@@ -466,7 +479,7 @@ impl<'a> Lexer<'a> {
                 let Some(trailing) = self.next_unit() else{
                     // Encoding can only contain valid utf16 or ascii any other text is undefined
                     // behaviour. So this should be unreachable if safety guarentees where upheld.
-                    unreachable!("lexer source data shoulb be valid utf16.")
+                    unreachable!("lexer source data should be valid utf16.")
                 };
                 trailing
             });

@@ -6,7 +6,6 @@ use core::fmt;
 pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList};
 pub use render::{RenderAst, RenderCtx, Result};
 use token::{NumberId, StringId};
-mod r#macro;
 mod render;
 
 pub type AstStorage = (
@@ -25,9 +24,9 @@ pub type AstStorage = (
         Vec<BindingElement>,
         Vec<BindingProperty>,
     ),
-    Vec<PropertyDefinition>,
     Vec<Function>,
     Vec<ArrayLiteral>,
+    Vec<PropertyDefinition>,
 );
 pub type Ast = GenAst<AstStorage>;
 
@@ -530,23 +529,73 @@ impl RenderAst for Parameters {
     }
 }
 
-pub struct Function {
-    pub strict: bool,
-    pub name: Option<StringId>,
-    pub params: ListHead<BindingElement>,
-    pub rest_param: Option<NodeId<IdentOrPattern>>,
-    pub body: ListHead<Stmt>,
+pub enum ArrowFunctionBody {
+    Expr(NodeId<Expr>),
+    Stmt(ListHead<Stmt>),
+}
+
+impl RenderAst for ArrowFunctionBody {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        match *self {
+            ArrowFunctionBody::Expr(ref x) => ctx
+                .render_struct("ArrowFunctionBody::Expr", w)?
+                .field("0", x)?
+                .finish(),
+            ArrowFunctionBody::Stmt(ref x) => ctx
+                .render_struct("ArrowFunctionBody::Stmt", w)?
+                .field("0", x)?
+                .finish(),
+        }
+        Ok(())
+    }
+}
+
+pub enum Function {
+    Arrow {
+        strict: bool,
+        params: ListHead<BindingElement>,
+        rest_param: Option<NodeId<IdentOrPattern>>,
+        body: ArrowFunctionBody,
+    },
+    Base {
+        strict: bool,
+        name: Option<StringId>,
+        params: ListHead<BindingElement>,
+        rest_param: Option<NodeId<IdentOrPattern>>,
+        body: ListHead<Stmt>,
+    },
 }
 
 impl RenderAst for Function {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
-        ctx.render_struct("Function", w)?
-            .field_debug("strict", &self.strict)?
-            .field("name", &self.name)?
-            .field("params", &self.params)?
-            .field("rest_param", &self.rest_param)?
-            .field("body", &self.body)?
-            .finish();
+        match *self {
+            Function::Arrow {
+                ref strict,
+                ref params,
+                ref rest_param,
+                ref body,
+            } => ctx
+                .render_struct("Function::Arrow", w)?
+                .field_debug("strict", strict)?
+                .field("params", params)?
+                .field("rest_param", rest_param)?
+                .field("body", body)?
+                .finish(),
+            Function::Base {
+                ref strict,
+                ref name,
+                ref params,
+                ref rest_param,
+                ref body,
+            } => ctx
+                .render_struct("Function::Base", w)?
+                .field_debug("strict", strict)?
+                .field("name", name)?
+                .field("params", params)?
+                .field("rest_param", rest_param)?
+                .field("body", body)?
+                .finish(),
+        }
 
         Ok(())
     }

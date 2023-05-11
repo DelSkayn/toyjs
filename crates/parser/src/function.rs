@@ -89,7 +89,7 @@ impl<'a> Parser<'a> {
         }
         mem::swap(&mut strict, &mut self.state.strict);
 
-        let function = self.ast.push_node(Function {
+        let function = self.ast.push_node(Function::Base {
             name,
             params: param_head,
             rest_param,

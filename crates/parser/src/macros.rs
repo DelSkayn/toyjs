@@ -31,7 +31,7 @@ macro_rules! dbg_tree {
 /// Alter the state of the render for the duration of scope.
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// alter_state!(self, r#break = true, r#continue = true => {
 ///     // break and continue are allowed in this statement.
 ///     let stmt = self.parse_stmt()
@@ -55,7 +55,7 @@ macro_rules! alter_state{
 /// Peeks the next token raising an error if there is no next token.
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// peek_expect!(self,"ident","other expected tokens")
 /// ```
 #[macro_export]
@@ -85,7 +85,7 @@ macro_rules! peek_expect {
 /// Returns the next token raising an error if there is no next token.
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// next_expect!(self,"ident","other expected tokens")
 /// ```
 #[macro_export]
@@ -109,7 +109,7 @@ macro_rules! next_expect {
 /// Raising an unexpected error
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// unexpected!(self,"token which was found","ident","other tokens which where expected" => "error message for more context");
 /// // Message is optional
 /// unexpected!(self,"token which was found","ident","other tokens which where expected");
@@ -145,7 +145,7 @@ macro_rules! unexpected {
 /// Raising an unexpected end error, notifying that source ended to early
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// unexpected_end!(self,"ident","other tokens which where expected" => "error message for more context");
 /// // Message is optional
 /// unexpected_end!(self,"ident","other tokens which where expected");
@@ -173,7 +173,7 @@ macro_rules! unexpected_end {
 /// is different, returning it otherwise
 ///
 /// # Usage
-/// ```
+/// ```ignore
 /// let ident = expect!(self,"ident");
 /// expect!(self,".");
 /// let member = expect!(self,"ident");
