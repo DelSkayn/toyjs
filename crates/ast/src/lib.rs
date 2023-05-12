@@ -16,6 +16,7 @@ pub type AstStorage = (
         Vec<Tenary>,
         Vec<NodeList<Option<NodeId<Expr>>>>,
         Vec<Template>,
+        Vec<NodeList<Argument>>,
     ),
     (
         Vec<IdentOrPattern>,
@@ -674,6 +675,21 @@ pub enum PrefixOp {
     TypeOf,
 }
 
+pub struct Argument {
+    pub is_spread: bool,
+    pub expr: NodeId<Expr>,
+}
+
+impl RenderAst for Argument {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        ctx.render_struct("Argument", w)?
+            .field_debug("is_spread", &self.is_spread)?
+            .field("expr", &self.expr)?
+            .finish();
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Expr {
     Binary {
@@ -701,7 +717,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Call {
-        params: ListHead<Expr>,
+        args: Option<NodeId<NodeList<Argument>>>,
         expr: NodeId<Expr>,
     },
     Prime {
@@ -748,12 +764,9 @@ impl RenderAst for Expr {
                 .field("ident", ident)?
                 .field("expr", expr)?
                 .finish(),
-            Expr::Call {
-                ref params,
-                ref expr,
-            } => ctx
+            Expr::Call { ref args, ref expr } => ctx
                 .render_struct("Expr::Call", w)?
-                .field("params", params)?
+                .field("args", args)?
                 .field("expr", expr)?
                 .finish(),
             Expr::Prime { ref expr } => ctx
@@ -817,7 +830,7 @@ pub enum PrimeExpr {
     Array(NodeId<ArrayLiteral>),
     This,
     NewTarget,
-    Covered(NodeId<Expr>),
+    Covered(ListId<Expr>),
 }
 
 impl RenderAst for PrimeExpr {

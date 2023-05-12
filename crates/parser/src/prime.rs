@@ -102,23 +102,7 @@ impl<'a> Parser<'a> {
             }
             t!("(") => {
                 self.next();
-                if let Some(t!(")")) = self.peek_kind() {
-                    self.next();
-                    let function = self.parse_array_function(ListHead::Empty, None)?;
-                    Ok(self.ast.push_node(PrimeExpr::Function(function)))
-                } else {
-                    alter_state!(self,r#in = true => {
-                        let expression = self.parse_expr()?;
-                    });
-                    expect!(self, ")");
-                    if let Some(t!("=>")) = self.peek_kind() {
-                        self.reparse_arrow_function(expression)
-                    } else {
-                        let expr = self.ast[expression].item;
-                        let id = self.ast.push_node(PrimeExpr::Covered(expr));
-                        Ok(id)
-                    }
-                }
+                self.parse_covered_expression()
             }
             TokenKind::UnreservedKeyword(_) => {
                 let id = self.parse_ident()?;
@@ -130,6 +114,41 @@ impl<'a> Parser<'a> {
                     "{", "[", "(", "function"
                 )
             }
+        }
+    }
+
+    fn parse_covered_expression(&mut self) -> Result<NodeId<PrimeExpr>> {
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+        let mut rest = None;
+        while t!(")") != peek_expect!(self, ")").kind() {
+            if self.eat(t!("...")) {
+                rest = Some(self.parse_assignment_expr()?);
+                break;
+            }
+            alter_state!(self,r#in = true => {
+                let expr = self.parse_assignment_expr()?;
+            });
+            prev = Some(self.ast.append_list(expr, prev));
+            head = head.or(prev.into());
+            if !self.eat(t!(",")) {
+                break;
+            }
+        }
+        expect!(self, ")");
+
+        // spread operator or an empty head always indicate an arrow function.
+        if rest.is_some() || head.is_empty() {
+            return self.reparse_arrow_function(head, rest);
+        }
+        if let Some(t!("=>")) = self.peek_kind() {
+            self.reparse_arrow_function(head, None)
+        } else {
+            let ListHead::Present(expr) = head else {
+                unreachable!();
+            };
+            let id = self.ast.push_node(PrimeExpr::Covered(expr));
+            Ok(id)
         }
     }
 
@@ -314,22 +333,33 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn reparse_arrow_function(&mut self, mut expr: ListId<Expr>) -> Result<NodeId<PrimeExpr>> {
+    fn reparse_arrow_function(
+        &mut self,
+        expr: ListHead<Expr>,
+        rest: Option<NodeId<Expr>>,
+    ) -> Result<NodeId<PrimeExpr>> {
         let mut head = ListHead::Empty;
         let mut prev = None;
-        loop {
+
+        let mut cur: Option<ListId<Expr>> = expr.into();
+        while let Some(expr) = cur {
             let Some(param) = self.reparse_binding_element(self.ast[expr].item) else{
                 unexpected!(self,t!("=>") => "covered expression can't be parsed as parameters");
             };
             let param = self.ast.push_node(param);
             prev = Some(self.ast.append_list(param, prev));
             head = head.or(prev.into());
-            let Some(x) = self.ast[expr].next else {
-                break;
-            };
-            expr = x;
+            cur = self.ast[expr].next;
         }
-        let func = self.parse_array_function(head, None)?;
+        let rest = if let Some(rest) = rest {
+            let Some(rest) = self.reparse_ident_or_pattern(rest) else {
+                unexpected!(self,t!("=>") => "covered expression can't be parsed as parameters");
+            };
+            Some(self.ast.push_node(rest))
+        } else {
+            None
+        };
+        let func = self.parse_array_function(head, rest)?;
         Ok(self.ast.push_node(PrimeExpr::Function(func)))
     }
 

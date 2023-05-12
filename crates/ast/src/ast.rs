@@ -115,6 +115,15 @@ impl<T> From<Option<ListId<T>>> for ListHead<T> {
     }
 }
 
+impl<T> From<ListHead<T>> for Option<ListId<T>> {
+    fn from(value: ListHead<T>) -> Self {
+        match value {
+            ListHead::Empty => None,
+            ListHead::Present(x) => Some(x),
+        }
+    }
+}
+
 impl<T> Eq for ListHead<T> {}
 impl<T> PartialEq for ListHead<T> {
     fn eq(&self, other: &Self) -> bool {

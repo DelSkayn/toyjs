@@ -1,5 +1,6 @@
 use ast::{
-    AssignOp, BaseOp, BinaryOp, Expr, ListHead, ListId, NodeId, PostfixOp, PrefixOp, PrimeExpr,
+    Argument, AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, NodeList, PostfixOp, PrefixOp,
+    PrimeExpr,
 };
 use token::{t, TokenKind};
 
@@ -135,13 +136,8 @@ impl<'a> Parser<'a> {
                 return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
-                let params = if let t!(")") = peek_expect!(self, ")").kind() {
-                    ListHead::Empty
-                } else {
-                    ListHead::Present(self.parse_expr()?)
-                };
-                expect!(self, ")");
-                return Ok(self.ast.push_node(Expr::Call { params, expr: lhs }));
+                let args = self.parse_arguments()?;
+                return Ok(self.ast.push_node(Expr::Call { args, expr: lhs }));
             }
             x => panic!("`parse_postfix_op` called with not a token {:?}", x),
         };
@@ -249,6 +245,34 @@ impl<'a> Parser<'a> {
             break;
         }
         Ok(lhs)
+    }
+
+    fn parse_arguments(&mut self) -> Result<Option<NodeId<NodeList<Argument>>>> {
+        let mut head = None;
+        let mut prev = None;
+
+        loop {
+            let mut is_spread = false;
+            match peek_expect!(self, ")").kind() {
+                t!(")") => break,
+                t!("...") => {
+                    self.next();
+                    is_spread = true;
+                }
+                _ => {}
+            };
+            let expr = self.parse_assignment_expr()?;
+            prev = Some(
+                self.ast
+                    .append_node_list(Argument { is_spread, expr }, prev),
+            );
+            head = head.or(prev);
+            if !self.eat(t!(",")) {
+                break;
+            }
+        }
+        expect!(self, ")");
+        Ok(prev)
     }
 }
 
