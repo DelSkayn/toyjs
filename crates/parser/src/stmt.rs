@@ -4,7 +4,10 @@ use ast::{
 };
 use token::t;
 
-use crate::{alter_state, error::ErrorKind, expect, peek_expect, unexpected, Parser, Result};
+use crate::{
+    alter_state, error::ErrorKind, expect, function::FunctionKind, peek_expect, unexpected, Parser,
+    Result,
+};
 
 impl<'a> Parser<'a> {
     /// Parses ECMA spec `Declaration`, `Statement` and other `...Statement` productions
@@ -32,7 +35,7 @@ impl<'a> Parser<'a> {
             t!("throw") => self.parse_throw_stmt()?,
             t!("function") => {
                 self.next();
-                let func = self.parse_function(false)?;
+                let func = self.parse_function(FunctionKind::Stmt)?;
                 self.ast.push_node(Stmt::Function { func })
             }
             t!("debugger") => {

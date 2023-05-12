@@ -1,41 +1,36 @@
 use std::mem;
 
-use ast::{Function, ListHead, NodeId};
-use token::t;
+use ast::{Function, ListHead, NodeId, Stmt};
+use token::{t, TokenKind};
 
 use crate::{expect, peek_expect, unexpected, Parser, Result};
 
-pub struct Parameter {}
+pub struct FunctionBody {
+    pub body: ListHead<Stmt>,
+    pub is_strict: bool,
+}
+
+pub enum FunctionKind {
+    Stmt,
+    Expression,
+    Method,
+}
 
 impl<'a> Parser<'a> {
-    pub fn parse_parameters(&mut self) -> Result<ListHead<Parameter>> {
-        loop {
-            let next = peek_expect!(self, ")");
-            match next.kind() {
-                t!("...") => {
-                    // Rest binding
-                    expect!(self,")" => "rest parameter must be last");
+    pub fn parse_function(&mut self, kind: FunctionKind) -> Result<NodeId<Function>> {
+        let name = match kind {
+            FunctionKind::Stmt => Some(self.parse_ident()?),
+            FunctionKind::Expression => {
+                let token = peek_expect!(self, "ident");
+                match token.kind() {
+                    TokenKind::UnreservedKeyword(_) | TokenKind::Ident => Some(self.parse_ident()?),
+                    t!("(") => None,
+                    _ => {
+                        unexpected!(self, token.kind(), "ident");
+                    }
                 }
-                t!("ident") | t!("{") | t!("[") => {
-                    // Binding
-                }
-                x => unexpected!(self, x, "ident", "{", "[", "..."),
             }
-            if !self.eat(t!(",")) {
-                expect!(self,")" => "expected parameter to end");
-            }
-        }
-    }
-
-    pub fn parse_function(&mut self, allow_nameless: bool) -> Result<NodeId<Function>> {
-        let token = peek_expect!(self, "ident", "(");
-        let name = if let t!("(") = token.kind() {
-            if !allow_nameless {
-                unexpected!(self,token.kind(),"ident" => "function statement must have a name")
-            }
-            None
-        } else {
-            Some(self.parse_ident()?)
+            FunctionKind::Method => None,
         };
 
         expect!(self, "(");
@@ -46,13 +41,11 @@ impl<'a> Parser<'a> {
             let next = peek_expect!(self, ")");
             match next.kind() {
                 t!(")") => {
-                    self.next();
                     break;
                 }
                 t!("...") => {
                     self.next();
                     rest_param = Some(self.parse_ident_or_pattern()?);
-                    expect!(self, ")");
                     break;
                 }
                 _ => {
@@ -61,13 +54,26 @@ impl<'a> Parser<'a> {
                     param_prev = Some(self.ast.append_list(elem, param_prev));
                     param_head = param_head.or(param_prev.into());
                     if !self.eat(t!(",")) {
-                        expect!(self, ")");
                         break;
                     }
                 }
             }
         }
+        expect!(self, ")");
 
+        let body = self.parse_function_body()?;
+
+        let function = self.ast.push_node(Function::Base {
+            name,
+            params: param_head,
+            rest_param,
+            body: body.body,
+            is_strict: body.is_strict,
+        });
+        Ok(function)
+    }
+
+    pub fn parse_function_body(&mut self) -> Result<FunctionBody> {
         expect!(self, "{");
         let mut strict = self.state.strict;
 
@@ -88,14 +94,9 @@ impl<'a> Parser<'a> {
             head = head.or(prev.into());
         }
         mem::swap(&mut strict, &mut self.state.strict);
-
-        let function = self.ast.push_node(Function::Base {
-            name,
-            params: param_head,
-            rest_param,
+        Ok(FunctionBody {
             body: head,
-            strict,
-        });
-        Ok(function)
+            is_strict: strict,
+        })
     }
 }

@@ -2,7 +2,7 @@ use ast::{
     BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, PropertyName,
 };
 use common::string::String;
-use token::{t, StringId};
+use token::{t, StringId, TokenKind};
 
 use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
 
@@ -31,74 +31,13 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_ident_name(&mut self) -> Result<StringId> {
-        macro_rules! match_keywords{
-            ($i:ident,$($e:tt,)*) => {
-                match $i.kind(){
-                    t!("ident") => return Ok($i.data_id().unwrap()),
-                    $(t!($e) => String::new_const($e),)*
-                    x => unexpected!(self,x,"ident")
-                }
-            }
-        }
-
         let next = next_expect!(self);
-        let text = match_keywords!(
-            next,
-            "break",
-            "case",
-            "catch",
-            "class",
-            "const",
-            "continue",
-            "debugger",
-            "default",
-            "delete",
-            "do",
-            "else",
-            "enum",
-            "export",
-            "extends",
-            "false",
-            "finally",
-            "for",
-            "function",
-            "if",
-            "import",
-            "in",
-            "instanceof",
-            "new",
-            "null",
-            "return",
-            "super",
-            "switch",
-            "this",
-            "throw",
-            "true",
-            "try",
-            "typeof",
-            "var",
-            "void",
-            "while",
-            "with",
-            "await",
-            "yield",
-            "let",
-            "static",
-            "implements",
-            "interface",
-            "package",
-            "private",
-            "protected",
-            "public",
-            "as",
-            "async",
-            "from",
-            "get",
-            "meta",
-            "of",
-            "set",
-            "target",
-        );
+        let text = match next.kind() {
+            t!("ident") => return Ok(next.data_id().unwrap()),
+            TokenKind::Keyword(x) => x.to_string(),
+            TokenKind::UnreservedKeyword(x) => x.to_string(),
+            x => unexpected!(self, x, "ident"),
+        };
 
         Ok(self.lexer.data.strings.intern(&text))
     }

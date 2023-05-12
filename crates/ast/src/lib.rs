@@ -559,7 +559,7 @@ pub enum Function {
         body: ArrowFunctionBody,
     },
     Base {
-        strict: bool,
+        is_strict: bool,
         name: Option<StringId>,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
@@ -583,7 +583,7 @@ impl RenderAst for Function {
                 .field("body", body)?
                 .finish(),
             Function::Base {
-                ref strict,
+                is_strict: ref strict,
                 ref name,
                 ref params,
                 ref rest_param,
@@ -931,7 +931,18 @@ pub enum PropertyDefinition {
         property: PropertyName,
         expr: NodeId<Expr>,
     },
-    Method {},
+    Method {
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
+    Getter {
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
+    Setter {
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
     Rest(NodeId<Expr>),
 }
 
@@ -958,9 +969,30 @@ impl RenderAst for PropertyDefinition {
                 .field("property", property)?
                 .field("expr", expr)?
                 .finish(),
-            PropertyDefinition::Method {} => {
-                ctx.render_struct("PropertyDefinition::Method", w)?.finish()
-            }
+            PropertyDefinition::Method {
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("PropertyDefinition::Method", w)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
+            PropertyDefinition::Setter {
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("PropertyDefinition::Setter", w)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
+            PropertyDefinition::Getter {
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("PropertyDefinition::Getter", w)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
             PropertyDefinition::Rest(ref x) => ctx
                 .render_struct("PropertyDefinition::Rest", w)?
                 .field("0", x)?

@@ -5,10 +5,13 @@ use ast::{
     BindingProperty, Expr, Function, IdentOrPattern, ListHead, ListId, NodeId, ObjectLiteral,
     PrimeExpr, PropertyDefinition, PropertyName, Template,
 };
-use common::string::Ascii;
+use common::string::{Ascii, String};
 use token::{t, TokenKind};
 
-use crate::{alter_state, expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{
+    alter_state, expect, function::FunctionKind, next_expect, peek_expect, unexpected, Parser,
+    Result,
+};
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
 static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
@@ -97,7 +100,7 @@ impl<'a> Parser<'a> {
             }
             t!("function") => {
                 self.next();
-                let func = self.parse_function(true)?;
+                let func = self.parse_function(FunctionKind::Expression)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
             t!("(") => {
@@ -224,11 +227,69 @@ impl<'a> Parser<'a> {
             t!("*") => {
                 todo!("parse generator method")
             }
+            t!("get") => {
+                self.next();
+                if let t!("ident")
+                | TokenKind::Keyword(_)
+                | TokenKind::UnreservedKeyword(_)
+                | t!("[")
+                | t!("string")
+                | t!("num") = peek_expect!(self, "}").kind()
+                {
+                    let name = self.parse_property_name()?;
+                    expect!(self,"(" => "expected start of getter parameters");
+                    expect!(self,")" => "getter can't have any parameters");
+                    let body = self.parse_function_body()?;
+                    let func = self.ast.push_node(Function::Base {
+                        is_strict: body.is_strict,
+                        name: None,
+                        params: ListHead::Empty,
+                        rest_param: None,
+                        body: body.body,
+                    });
+                    return Ok(self.ast.push_node(PropertyDefinition::Getter {
+                        property: name,
+                        func,
+                    }));
+                }
+                PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("get")))
+            }
+            t!("set") => {
+                self.next();
+                if let t!("ident")
+                | TokenKind::Keyword(_)
+                | TokenKind::UnreservedKeyword(_)
+                | t!("[")
+                | t!("string")
+                | t!("num") = peek_expect!(self, "}").kind()
+                {
+                    let name = self.parse_property_name()?;
+                    expect!(self,"(" => "expected start of setter parameters");
+                    let param = self.parse_binding_element()?;
+                    let param = self.ast.push_node(param);
+                    let params = self.ast.append_list(param, None);
+                    expect!(self,")" => "setter must have a single parameter");
+
+                    let body = self.parse_function_body()?;
+                    let func = self.ast.push_node(Function::Base {
+                        is_strict: body.is_strict,
+                        name: None,
+                        params: ListHead::Present(params),
+                        rest_param: None,
+                        body: body.body,
+                    });
+                    return Ok(self.ast.push_node(PropertyDefinition::Setter {
+                        property: name,
+                        func,
+                    }));
+                }
+                PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("set")))
+            }
             _ => self.parse_property_name()?,
         };
 
-        match self.peek_kind() {
-            Some(t!(":")) => {
+        match peek_expect!(self, "}", ":").kind() {
+            t!(":") => {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
                 let id = self.ast.push_node(PropertyDefinition::Define {
@@ -237,7 +298,7 @@ impl<'a> Parser<'a> {
                 });
                 Ok(id)
             }
-            Some(t!("=")) => {
+            t!("=") => {
                 if let PropertyName::Ident(x) = name {
                     self.next();
                     let expr = self.parse_assignment_expr()?;
@@ -250,20 +311,19 @@ impl<'a> Parser<'a> {
                     unexpected!(self, t!("="), ":")
                 }
             }
+            t!("(") => {
+                let func = self.parse_function(FunctionKind::Method)?;
+                Ok(self.ast.push_node(PropertyDefinition::Method {
+                    property: name,
+                    func,
+                }))
+            }
             x => {
                 if let PropertyName::Ident(x) = name {
                     let id = self.ast.push_node(PropertyDefinition::Ident(x));
                     Ok(id)
-                } else if let Some(x) = x {
-                    unexpected!(self, x, ":")
                 } else {
-                    return Err(crate::Error::new(
-                        crate::error::ErrorKind::UnexpectedEnd {
-                            expected: vec![t!(":")],
-                            message: None,
-                        },
-                        token.span,
-                    ));
+                    unexpected!(self, x, ":")
                 }
             }
         }
@@ -438,7 +498,9 @@ impl<'a> Parser<'a> {
                         element,
                     }
                 }
-                PropertyDefinition::Method {} => return None,
+                PropertyDefinition::Method { .. }
+                | PropertyDefinition::Getter { .. }
+                | PropertyDefinition::Setter { .. } => return None,
                 PropertyDefinition::Rest(r) => {
                     // Rest not last in the object
                     if rest.is_some() || self.ast[item].next.is_some() {
@@ -522,6 +584,9 @@ impl<'a> Parser<'a> {
         rest_param: Option<NodeId<IdentOrPattern>>,
     ) -> Result<NodeId<Function>> {
         expect!(self, "=>");
+        if self.ate_line_terminator {
+            unexpected!(self,t!("=>") => "no line terminator allowed here");
+        }
         let mut strict = self.state.strict;
         let body = if let t!("{") = peek_expect!(self, "{").kind() {
             self.next();
