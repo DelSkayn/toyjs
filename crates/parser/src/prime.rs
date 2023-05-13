@@ -253,24 +253,22 @@ impl<'a> Parser<'a> {
             t!("get") => {
                 self.next();
                 if Self::is_property_name(peek_expect!(self, "}").kind()) {
-                    let name = self.parse_property_name()?;
+                    let property = self.parse_property_name()?;
                     let func = self.parse_getter()?;
-                    return Ok(self.ast.push_node(PropertyDefinition::Getter {
-                        property: name,
-                        func,
-                    }));
+                    return Ok(self
+                        .ast
+                        .push_node(PropertyDefinition::Getter { property, func }));
                 }
                 PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("get")))
             }
             t!("set") => {
                 self.next();
                 if Self::is_property_name(peek_expect!(self, "}").kind()) {
-                    let name = self.parse_property_name()?;
+                    let property = self.parse_property_name()?;
                     let func = self.parse_setter()?;
-                    return Ok(self.ast.push_node(PropertyDefinition::Setter {
-                        property: name,
-                        func,
-                    }));
+                    return Ok(self
+                        .ast
+                        .push_node(PropertyDefinition::Setter { property, func }));
                 }
                 PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("set")))
             }

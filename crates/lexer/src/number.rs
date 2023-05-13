@@ -158,6 +158,9 @@ impl<'a> Lexer<'a> {
         for _ in buf_len..len {
             // Unwrap because we should have already parsed the bytes.
             let char = iter.next().unwrap() as u8;
+            if char == b'_' {
+                continue;
+            }
             // Should be valid as the we already lexed the number.
             debug_assert!(char.is_ascii());
             self.builder.ascii.push(char)
@@ -201,6 +204,7 @@ impl<'a> Lexer<'a> {
                     self.next_unit();
                     return self.lex_radix(16);
                 }
+                Some(b'_') => return self.finish_token(TokenKind::Unknown),
                 _ => {}
             }
         }
@@ -210,7 +214,7 @@ impl<'a> Lexer<'a> {
         } else {
             while self
                 .peek_byte()
-                .map(|x| x.is_ascii_digit())
+                .map(|x| x.is_ascii_digit() || x == b'_')
                 .unwrap_or(false)
             {
                 self.next_unit();
