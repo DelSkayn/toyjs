@@ -66,6 +66,7 @@ fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
 }
 
 impl<'a> Parser<'a> {
+    /// Parse the ecma `Expression` production.
     pub fn parse_expr(&mut self) -> Result<ListId<Expr>> {
         let item = self.parse_assignment_expr()?;
 
@@ -78,11 +79,14 @@ impl<'a> Parser<'a> {
         Ok(res)
     }
 
+    /// Parse the ecma `AssignmentExpression` production.
     pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
         let res = self.pratt_parse_expr(0)?;
         Ok(res)
     }
 
+    /// Parsers any prefix operator, called in a pratt parser.
+    /// Only call if the next token is prefix operator.
     fn parse_prefix_op(&mut self, r_bp: u8) -> Result<NodeId<Expr>> {
         let token = self
             .peek()
@@ -133,6 +137,8 @@ impl<'a> Parser<'a> {
         Ok(self.ast.push_node(Expr::Prefix { op: operator, expr }))
     }
 
+    /// Parsers any postfix operator, called in a pratt parser.
+    /// Only call if the next token is postfix operator.
     fn parse_postfix_op(&mut self, _l_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
         let token = self
             .next()
@@ -160,6 +166,8 @@ impl<'a> Parser<'a> {
         Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }))
     }
 
+    /// Parsers any infix operator, called in a pratt parser.
+    /// Only call if the next token is infix operator.
     fn parse_infix_op(&mut self, r_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
         let token = self
             .next()
@@ -229,6 +237,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// The pratt parser, uses binding power to parse operator with correct precedence.
     fn pratt_parse_expr(&mut self, min_bp: u8) -> Result<NodeId<Expr>> {
         let mut lhs = if let Some(((), r_bp)) = self.peek_kind().and_then(prefix_binding_power) {
             self.parse_prefix_op(r_bp)?
@@ -247,6 +256,7 @@ impl<'a> Parser<'a> {
             }
 
             if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+                // In is not allowed in some contexts.
                 if !self.state.r#in && t!("in") == op {
                     break;
                 }
@@ -261,6 +271,10 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
+    /// Parse argument for a function call.
+    /// ```javascript
+    /// foo(/* start here */ 1,2,...b)
+    /// ```
     fn parse_arguments(&mut self) -> Result<Option<NodeId<NodeList<Argument>>>> {
         let mut head = None;
         let mut prev = None;

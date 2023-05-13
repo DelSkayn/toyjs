@@ -1,20 +1,10 @@
 use common::string::String;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lexer::Lexer;
-use std::string::String as StdString;
 use toyjs_parser::Parser;
 
-pub fn get_scource(url: &str) -> StdString {
-    attohttpc::get(url)
-        .send()
-        .expect("failed to retrieve source")
-        .text()
-        .expect("failed to read source")
-}
-
 pub fn bench_parser(name: &str, source: &str, c: &mut Criterion) {
-    let source = get_scource(source);
-    let source = String::from_std_str(&source);
+    let source = String::from_std_str(source);
     let source = common::source::Source::new(source, Some("parse_script"));
 
     c.bench_function(name, |b| {
@@ -27,22 +17,10 @@ pub fn bench_parser(name: &str, source: &str, c: &mut Criterion) {
 }
 
 pub fn scripts(c: &mut Criterion) {
-    bench_parser("jquery", "https://code.jquery.com/jquery-3.6.4.js", c);
-    bench_parser(
-        "axios",
-        "https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.js",
-        c,
-    );
-    bench_parser(
-        "axios_minified",
-        "https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js",
-        c,
-    );
-    bench_parser(
-        "jquery_minified",
-        "https://code.jquery.com/jquery-3.6.4.min.js",
-        c,
-    );
+    bench_parser("jquery", include_str!("jquery.js"), c);
+    bench_parser("jquery_minified", include_str!("jquery.min.js"), c);
+    bench_parser("axios", include_str!("axios.js"), c);
+    bench_parser("axios_minified", include_str!("axios.min.js"), c);
 }
 
 criterion_group!(benches, scripts);

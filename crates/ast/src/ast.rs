@@ -181,6 +181,7 @@ impl<S: AnyVec> Ast<S> {
     }
 
     /// Pushes a new node into the ast. Returns the id of the new node.
+    #[inline]
     pub fn push_node<N: Any>(&mut self, node: N) -> NodeId<N> {
         let Some(len) = self.storage.any_len::<N>() else {
             panic_no_storage::<N>()
@@ -198,6 +199,7 @@ impl<S: AnyVec> Ast<S> {
         }
     }
 
+    #[inline]
     pub fn push_list<N: Any>(&mut self, node: List<N>) -> ListId<N> {
         let len = self.lists.len();
 
@@ -212,6 +214,7 @@ impl<S: AnyVec> Ast<S> {
         }
     }
 
+    #[inline]
     pub fn append_list<N: Any>(
         &mut self,
         item: NodeId<N>,
@@ -236,6 +239,7 @@ impl<S: AnyVec> Ast<S> {
         id
     }
 
+    #[inline]
     pub fn append_node_list<N: Any>(
         &mut self,
         item: N,

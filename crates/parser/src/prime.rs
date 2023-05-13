@@ -17,6 +17,7 @@ static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
 static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
 
 impl<'a> Parser<'a> {
+    /// Parsers a primary expression or a expression without any operators.
     pub(crate) fn parse_prime(&mut self) -> Result<NodeId<PrimeExpr>> {
         let token = peek_expect!(
             self, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
@@ -130,6 +131,15 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a covered expression, e.g.:
+    /// ```javascript
+    /// (/* start here */ 1 + 1, b)
+    /// ```
+    /// Also parses arrow function, e.g.:
+    /// ```javascript
+    /// (a,b) => a + b
+    /// ```
+    /// Refining the covered expression if it is actually a parameter list.
     fn parse_covered_expression(&mut self) -> Result<NodeId<PrimeExpr>> {
         let mut head = ListHead::Empty;
         let mut prev = None;
@@ -165,6 +175,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a covered expression, e.g.:
+    /// ```javascript
+    /// `This is some template with ${ /* start here */ a } substition`
+    /// ```
     fn parse_template(&mut self) -> Result<NodeId<Template>> {
         let token = next_expect!(self, "} `");
         match token.kind() {
@@ -194,6 +208,10 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a object literal expression, e.g.:
+    /// ```javascript
+    /// { /* start here */ foo: "bar" }
+    /// ```
     fn parse_object_literal(&mut self) -> Result<ObjectLiteral> {
         let token = peek_expect!(self);
         if let t!("}") = token.kind() {
@@ -226,6 +244,7 @@ impl<'a> Parser<'a> {
         Ok(res)
     }
 
+    /// Returns wether the token can be parsed as a property name.
     pub fn is_property_name(kind: TokenKind) -> bool {
         matches!(
             kind,
@@ -238,6 +257,10 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// Parses a property definition, e.g. `foo: 1` and `"bar": 2` in :
+    /// ```javascript
+    /// { /* start here */ foo: 1, "bar": 2 }
+    /// ```
     fn parse_property_definition(&mut self) -> Result<NodeId<PropertyDefinition>> {
         let token = peek_expect!(self);
         let property = match token.kind() {

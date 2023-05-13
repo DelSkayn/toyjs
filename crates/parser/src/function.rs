@@ -17,6 +17,19 @@ pub enum FunctionCtx {
 }
 
 impl<'a> Parser<'a> {
+    /// Parses the parameters and body of a function:
+    /// ```javascript
+    /// // function declaration.
+    /// function foo /* starts here */(a,b){
+    ///     return a + b
+    /// }
+    /// ({
+    ///     // member
+    ///     foo /* starts here */(a,b){
+    ///         return a + b
+    ///     }
+    /// })
+    /// ```
     pub fn parse_function(
         &mut self,
         ctx: FunctionCtx,
@@ -81,6 +94,7 @@ impl<'a> Parser<'a> {
         Ok(function)
     }
 
+    /// Parses the parameters and body of a getter method:
     pub fn parse_getter(&mut self) -> Result<NodeId<Function>> {
         expect!(self,"(" => "expected start of getter parameters");
         expect!(self,")" => "getter can't have any parameters");
@@ -95,6 +109,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parses the parameters and body of a setter method:
     pub fn parse_setter(&mut self) -> Result<NodeId<Function>> {
         expect!(self,"(" => "expected start of setter parameters");
         let param = self.parse_binding_element()?;
@@ -113,6 +128,10 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parses the body of a function:
+    /// function foo() /* start here */ {
+    ///     // some body
+    /// }
     pub fn parse_function_body(&mut self) -> Result<FunctionBody> {
         expect!(self, "{");
         let mut strict = self.state.strict;

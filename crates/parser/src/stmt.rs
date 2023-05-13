@@ -85,6 +85,12 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
+    /// Parser a block statement:
+    /// ```javascript
+    /// // starts here {
+    ///     var a = 1;
+    /// }
+    /// ```
     pub fn parse_block_stmt(&mut self) -> Result<ListHead<Stmt>> {
         expect!(self, "{");
         let mut head = ListHead::Empty;
@@ -150,6 +156,10 @@ impl<'a> Parser<'a> {
         Ok(self.ast.push_node(Stmt::DoWhile { cond, body }))
     }
 
+    /// Parse a c style for loop declaration:
+    /// ```javascript
+    /// for(let i /* start here */ = foo, b = bar; i < 10;i++){ body }
+    /// ```
     pub fn parse_c_style_decl(
         &mut self,
         decl: NodeId<IdentOrPattern>,
@@ -174,6 +184,10 @@ impl<'a> Parser<'a> {
         Ok(head)
     }
 
+    /// Parse a c style for loop:
+    /// ```javascript
+    /// for(let i = foo /* start here */; i < 10;i++){ body }
+    /// ```
     pub fn parse_c_style_for(&mut self, decl: CstyleDecl) -> Result<NodeId<Stmt>> {
         expect!(self, ";");
         let cond = if let t!(";") = peek_expect!(self, ";").kind() {
@@ -349,11 +363,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_cntrl_flow_stmt(&mut self, is_break: bool) -> Result<NodeId<Stmt>> {
-        if is_break {
-            expect!(self, "break");
+        let span = if is_break {
+            expect!(self, "break").span
         } else {
-            expect!(self, "continue");
-        }
+            expect!(self, "continue").span
+        };
 
         if is_break && !self.state.r#break || !is_break && !self.state.r#continue {
             return Err(crate::Error::new(
@@ -365,7 +379,7 @@ impl<'a> Parser<'a> {
                     },
                     message: None,
                 },
-                self.last_span().clone(),
+                span,
             ));
         }
 
@@ -440,6 +454,12 @@ impl<'a> Parser<'a> {
         Ok(self.ast.push_node(Stmt::With { expr, stmt }))
     }
 
+    /// Parse a variable declaration, e.g. any of:
+    /// ```javascript
+    /// var a = 1;
+    /// let [b,,,...rest] = 1;
+    /// const { c } = foo;
+    /// ```
     pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
         match kind {
             VariableKind::Let => expect!(self, "let"),

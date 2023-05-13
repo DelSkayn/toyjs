@@ -66,6 +66,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    // Return the span
     fn last_span(&self) -> &Span {
         if let Some(x) = self.peek.as_ref().map(|x| &x.span) {
             x
@@ -74,6 +75,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Return the next token from the lexer which is not whitespace.
     #[inline(always)]
     fn retrieve_next_token(&mut self) -> Option<Token> {
         self.ate_line_terminator = false;
@@ -97,17 +99,6 @@ impl<'a> Parser<'a> {
             self.last_span = x.span.clone();
         }
         res
-    }
-
-    fn following_span(&mut self) -> Span {
-        if let Some(x) = self.peek.as_ref() {
-            return x.span.clone();
-        }
-        self.peek = self.retrieve_next_token();
-        self.peek
-            .as_ref()
-            .map(|x| x.span.clone())
-            .unwrap_or_else(|| self.last_span.clone())
     }
 
     /// Returns the next token in the list without advancing the token iterator..
