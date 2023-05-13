@@ -17,23 +17,64 @@ impl<'a> Parser<'a> {
         };
         let expr = match token.kind() {
             t!("{") => {
+                self.next();
                 let list = self.parse_block_stmt()?;
                 self.ast.push_node(Stmt::Block { list })
             }
-            t!("var") => self.parse_variable_decl(VariableKind::Var)?,
-            t!("let") => self.parse_variable_decl(VariableKind::Let)?,
-            t!("const") => self.parse_variable_decl(VariableKind::Const)?,
-            t!("if") => self.parse_if_stmt()?,
-            t!("while") => self.parse_while_stmt()?,
-            t!("do") => self.parse_do_while_stmt()?,
-            t!("for") => self.parse_for_stmt()?,
-            t!("switch") => self.parse_switch_stmt()?,
-            t!("return") => self.parse_return_stmt()?,
-            t!("break") => self.parse_cntrl_flow_stmt(true)?,
-            t!("continue") => self.parse_cntrl_flow_stmt(false)?,
-            t!("try") => self.parse_try_stmt()?,
-            t!("throw") => self.parse_throw_stmt()?,
+            t!("var") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Var)?
+            }
+            t!("let") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Let)?
+            }
+            t!("const") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Const)?
+            }
+            t!("if") => {
+                self.next();
+                self.parse_if_stmt()?
+            }
+            t!("while") => {
+                self.next();
+                self.parse_while_stmt()?
+            }
+            t!("do") => {
+                self.next();
+                self.parse_do_while_stmt()?
+            }
+            t!("for") => {
+                self.next();
+                self.parse_for_stmt()?
+            }
+            t!("switch") => {
+                self.next();
+                self.parse_switch_stmt()?
+            }
+            t!("return") => {
+                self.next();
+                self.parse_return_stmt()?
+            }
+            t!("break") => {
+                self.next();
+                self.parse_cntrl_flow_stmt(true)?
+            }
+            t!("continue") => {
+                self.next();
+                self.parse_cntrl_flow_stmt(false)?
+            }
+            t!("try") => {
+                self.next();
+                self.parse_try_stmt()?
+            }
+            t!("throw") => {
+                self.next();
+                self.parse_throw_stmt()?
+            }
             t!("class") => {
+                self.next();
                 let class = self.parse_class(true)?;
                 self.ast.push_node(Stmt::Class { class })
             }
@@ -54,7 +95,10 @@ impl<'a> Parser<'a> {
                 self.semicolon()?;
                 self.ast.push_node(Stmt::Debugger)
             }
-            t!("with") => self.parse_with_stmt()?,
+            t!("with") => {
+                self.next();
+                self.parse_with_stmt()?
+            }
             t!(";") => {
                 self.next();
                 self.ast.push_node(Stmt::Empty)
@@ -92,7 +136,6 @@ impl<'a> Parser<'a> {
     /// }
     /// ```
     pub fn parse_block_stmt(&mut self) -> Result<ListHead<Stmt>> {
-        expect!(self, "{");
         let mut head = ListHead::Empty;
         let mut prev = None;
 
@@ -111,7 +154,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_if_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "if");
         expect!(self, "(");
         alter_state!(self,r#in = true => {
             let cond = self.parse_expr()?;
@@ -128,7 +170,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "while");
         expect!(self, "(");
         alter_state!(self,r#in = true => {
         let cond = self.parse_expr()?;
@@ -143,8 +184,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "do");
-
         alter_state!(self,r#break = true, r#continue = true => {
             let body = self.parse_stmt()?;
         });
@@ -210,7 +249,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_for_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "for");
         //TODO await loop
         expect!(self, "(");
 
@@ -288,7 +326,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_switch_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "switch");
         expect!(self, "(");
         let cond = self.parse_expr()?;
         expect!(self, ")");
@@ -351,7 +388,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_return_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "return");
         debug_assert!(self.peek.is_none());
         if self.eat_semicolon() {
             Ok(self.ast.push_node(Stmt::Return { expr: None }))
@@ -363,12 +399,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_cntrl_flow_stmt(&mut self, is_break: bool) -> Result<NodeId<Stmt>> {
-        let span = if is_break {
-            expect!(self, "break").span
-        } else {
-            expect!(self, "continue").span
-        };
-
         if is_break && !self.state.r#break || !is_break && !self.state.r#continue {
             return Err(crate::Error::new(
                 ErrorKind::DisallowedToken {
@@ -379,7 +409,7 @@ impl<'a> Parser<'a> {
                     },
                     message: None,
                 },
-                span,
+                self.last_span().clone(),
             ));
         }
 
@@ -403,7 +433,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_try_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "try");
+        expect!(self, "{");
         let block = self.parse_block_stmt()?;
         let catch = self
             .eat(t!("catch"))
@@ -416,6 +446,8 @@ impl<'a> Parser<'a> {
                         Ok(res)
                     })
                     .transpose()?;
+
+                expect!(self, "{");
                 let block = self.parse_block_stmt()?;
                 Ok(self.ast.push_node(CatchStmt { binding, block }))
             })
@@ -423,7 +455,10 @@ impl<'a> Parser<'a> {
 
         let finally = self
             .eat(t!("finally"))
-            .then(|| self.parse_block_stmt())
+            .then(|| {
+                expect!(self, "{");
+                self.parse_block_stmt()
+            })
             .transpose()?;
 
         Ok(self.ast.push_node(Stmt::Try {
@@ -434,7 +469,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_throw_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "throw");
         peek_expect!(self);
         self.no_line_terminator()?;
         let expr = self.parse_expr()?;
@@ -443,7 +477,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_with_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "with");
         if self.state.strict {
             todo!("disallow with in strict mode")
         }
@@ -461,12 +494,6 @@ impl<'a> Parser<'a> {
     /// const { c } = foo;
     /// ```
     pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
-        match kind {
-            VariableKind::Let => expect!(self, "let"),
-            VariableKind::Const => expect!(self, "const"),
-            VariableKind::Var => expect!(self, "var"),
-        };
-
         let decl = self.parse_ident_or_pattern()?;
         let initializer = self
             .eat(t!("="))

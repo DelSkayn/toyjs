@@ -6,7 +6,6 @@ use crate::{expect, function::FunctionCtx, peek_expect, Parser, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_class(&mut self, stmt: bool) -> Result<NodeId<Class>> {
-        expect!(self, "class");
         let name = if stmt {
             Some(self.parse_ident()?)
         } else {

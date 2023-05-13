@@ -22,7 +22,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_pattern(&mut self) -> Result<BindingPattern> {
-        let first = peek_expect!(self, "{", "[");
+        let first = next_expect!(self, "{", "[");
         match first.kind() {
             t!("{") => self.parse_object_pattern(),
             t!("[") => self.parse_array_pattern(),
@@ -143,7 +143,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_object_pattern(&mut self) -> Result<BindingPattern> {
-        expect!(self, "{");
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut rest = None;
@@ -224,7 +223,6 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_array_pattern(&mut self) -> Result<BindingPattern> {
-        expect!(self, "[");
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut rest = None;

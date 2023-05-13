@@ -9,7 +9,6 @@ mod macros;
 
 mod binding;
 mod class;
-mod constants;
 mod error;
 mod expr;
 mod function;

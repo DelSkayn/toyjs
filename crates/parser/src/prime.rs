@@ -29,13 +29,13 @@ impl<'a> Parser<'a> {
                 self.next();
                 let ident = token.kind_and_data.data_id().unwrap();
                 if let Some(t!("=>")) = self.peek_kind() {
+                    self.next();
                     let param = self.ast.push_node(BindingElement::SingleName {
                         name: ident,
                         initializer: None,
                     });
-
                     let params = ListHead::Present(self.ast.append_list(param, None));
-                    let function = self.parse_array_function(params, None, FunctionKind::Simple)?;
+                    let function = self.parse_arrow_function(params, None, FunctionKind::Simple)?;
                     Ok(self.ast.push_node(PrimeExpr::Function(function)))
                 } else {
                     let id = self.ast.push_node(PrimeExpr::Ident(ident));
@@ -111,6 +111,7 @@ impl<'a> Parser<'a> {
             }
             t!("async") => self.parse_async_function(),
             t!("class") => {
+                self.next();
                 let class = self.parse_class(false)?;
                 Ok(self.ast.push_node(PrimeExpr::Class(class)))
             }
@@ -162,9 +163,11 @@ impl<'a> Parser<'a> {
 
         // spread operator or an empty head always indicate an arrow function.
         if rest.is_some() || head.is_empty() {
+            expect!(self, "=>");
             return self.reparse_arrow_function(head, rest);
         }
         if let Some(t!("=>")) = self.peek_kind() {
+            self.next();
             self.reparse_arrow_function(head, None)
         } else {
             let ListHead::Present(expr) = head else {
@@ -430,7 +433,7 @@ impl<'a> Parser<'a> {
             head = head.or(prev.into());
             cur = self.ast[expr].next;
         }
-        let func = self.parse_array_function(head, rest, FunctionKind::Simple)?;
+        let func = self.parse_arrow_function(head, rest, FunctionKind::Simple)?;
         Ok(self.ast.push_node(PrimeExpr::Function(func)))
     }
 
@@ -589,7 +592,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_function(
+    fn parse_arrow_function(
         &mut self,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
@@ -661,7 +664,8 @@ impl<'a> Parser<'a> {
                         head = head.or(prev.into());
                     }
                 }
-                let func = self.parse_array_function(head, rest, FunctionKind::Async)?;
+                expect!(self, "=>");
+                let func = self.parse_arrow_function(head, rest, FunctionKind::Async)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
             _ => {
@@ -672,7 +676,8 @@ impl<'a> Parser<'a> {
                 });
                 let element = self.ast.append_list(element, None);
                 let element = ListHead::Present(element);
-                let func = self.parse_array_function(element, None, FunctionKind::Async)?;
+                expect!(self, "=>");
+                let func = self.parse_arrow_function(element, None, FunctionKind::Async)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
         }
