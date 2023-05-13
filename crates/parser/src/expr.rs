@@ -51,9 +51,14 @@ fn postfix_binding_power(kind: TokenKind) -> Option<(u8, ())> {
 
 fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
     match kind {
-        t!("delete") | t!("void") | t!("typeof") | t!("+") | t!("-") | t!("~") | t!("!") => {
-            Some(((), 29))
-        }
+        t!("await")
+        | t!("delete")
+        | t!("void")
+        | t!("typeof")
+        | t!("+")
+        | t!("-")
+        | t!("~")
+        | t!("!") => Some(((), 29)),
         t!("++") | t!("--") => Some(((), 31)),
         t!("new") => Some(((), 33)),
         _ => None,
@@ -75,16 +80,12 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
         let res = self.pratt_parse_expr(0)?;
-
-        if self.eat(t!("=>")) {
-            todo!("arrow function")
-        }
         Ok(res)
     }
 
     fn parse_prefix_op(&mut self, r_bp: u8) -> Result<NodeId<Expr>> {
         let token = self
-            .next()
+            .peek()
             .expect("`parse_prefix_op` should only be called if next token is present");
 
         let operator = match token.kind() {
@@ -92,6 +93,7 @@ impl<'a> Parser<'a> {
             t!("void") => PrefixOp::Void,
             t!("typeof") => PrefixOp::TypeOf,
             t!("new") => {
+                self.next();
                 if self.eat(t!(".")) {
                     let token = next_expect!(self, "target");
                     if token.kind() != t!("target") {
@@ -101,7 +103,19 @@ impl<'a> Parser<'a> {
                     let expr = self.ast.push_node(Expr::Prime { expr });
                     return Ok(expr);
                 }
-                PrefixOp::New
+                let expr = self.pratt_parse_expr(r_bp)?;
+                return Ok(self.ast.push_node(Expr::Prefix {
+                    op: PrefixOp::New,
+                    expr,
+                }));
+            }
+            t!("await") => {
+                if self.state.await_ident {
+                    let expr = self.parse_prime()?;
+                    return Ok(self.ast.push_node(Expr::Prime { expr }));
+                } else {
+                    PrefixOp::Await
+                }
             }
             t!("+") => PrefixOp::Plus,
             t!("-") => PrefixOp::Minus,
@@ -113,6 +127,7 @@ impl<'a> Parser<'a> {
                 panic!("`parse_prefix_op` should only be called when the next token is a operator")
             }
         };
+        self.next();
 
         let expr = self.pratt_parse_expr(r_bp)?;
         Ok(self.ast.push_node(Expr::Prefix { op: operator, expr }))
@@ -151,7 +166,6 @@ impl<'a> Parser<'a> {
             .expect("`parse_postfix_op` should only be called if next token is present");
 
         let op = match token.kind() {
-            t!("=>") => todo!("arrow function"),
             t!("??") => BinaryOp::Base(BaseOp::NullCoalessing),
             t!("?.") => BinaryOp::Base(BaseOp::TenaryNull),
             t!("||") => BinaryOp::Base(BaseOp::Or),

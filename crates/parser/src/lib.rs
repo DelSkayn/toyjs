@@ -8,6 +8,7 @@ use token::{t, Token, TokenKind};
 mod macros;
 
 mod binding;
+mod class;
 mod constants;
 mod error;
 mod expr;
@@ -160,6 +161,15 @@ impl<'a> Parser<'a> {
     fn semicolon(&mut self) -> Result<()> {
         if !self.eat_semicolon() {
             unexpected!(self, self.peek.clone().unwrap().kind(), ";");
+        }
+        Ok(())
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    #[inline]
+    fn no_line_terminator(&mut self) -> Result<()> {
+        if self.ate_line_terminator {
+            unexpected!(self, self.peek.clone().unwrap().kind() => "new line before this token is not allowed");
         }
         Ok(())
     }

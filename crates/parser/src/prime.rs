@@ -2,14 +2,14 @@ use std::mem;
 
 use ast::{
     ArrayLiteral, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
-    BindingProperty, Expr, Function, IdentOrPattern, ListHead, ListId, NodeId, ObjectLiteral,
-    PrimeExpr, PropertyDefinition, PropertyName, Template,
+    BindingProperty, Expr, Function, FunctionKind, IdentOrPattern, ListHead, ListId, NodeId,
+    ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Template,
 };
 use common::string::{Ascii, String};
 use token::{t, TokenKind};
 
 use crate::{
-    alter_state, expect, function::FunctionKind, next_expect, peek_expect, unexpected, Parser,
+    alter_state, expect, function::FunctionCtx, next_expect, peek_expect, unexpected, Parser,
     Result,
 };
 
@@ -34,7 +34,7 @@ impl<'a> Parser<'a> {
                     });
 
                     let params = ListHead::Present(self.ast.append_list(param, None));
-                    let function = self.parse_array_function(params, None)?;
+                    let function = self.parse_array_function(params, None, FunctionKind::Simple)?;
                     Ok(self.ast.push_node(PrimeExpr::Function(function)))
                 } else {
                     let id = self.ast.push_node(PrimeExpr::Ident(ident));
@@ -88,6 +88,11 @@ impl<'a> Parser<'a> {
                 let id = self.ast.push_node(PrimeExpr::This);
                 Ok(id)
             }
+            t!("super") => {
+                self.next();
+                let id = self.ast.push_node(PrimeExpr::Super);
+                Ok(id)
+            }
             t!("{") => {
                 self.next();
                 let id = self.parse_object_literal()?;
@@ -100,8 +105,13 @@ impl<'a> Parser<'a> {
             }
             t!("function") => {
                 self.next();
-                let func = self.parse_function(FunctionKind::Expression)?;
+                let func = self.parse_function(FunctionCtx::Expression, FunctionKind::Simple)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
+            }
+            t!("async") => self.parse_async_function(),
+            t!("class") => {
+                let class = self.parse_class(false)?;
+                Ok(self.ast.push_node(PrimeExpr::Class(class)))
             }
             t!("(") => {
                 self.next();
@@ -126,7 +136,7 @@ impl<'a> Parser<'a> {
         let mut rest = None;
         while t!(")") != peek_expect!(self, ")").kind() {
             if self.eat(t!("...")) {
-                rest = Some(self.parse_assignment_expr()?);
+                rest = Some(self.parse_ident_or_pattern()?);
                 break;
             }
             alter_state!(self,r#in = true => {
@@ -216,10 +226,23 @@ impl<'a> Parser<'a> {
         Ok(res)
     }
 
+    pub fn is_property_name(kind: TokenKind) -> bool {
+        matches!(
+            kind,
+            t!("ident")
+                | TokenKind::Keyword(_)
+                | TokenKind::UnreservedKeyword(_)
+                | t!("[")
+                | t!("string")
+                | t!("num"),
+        )
+    }
+
     fn parse_property_definition(&mut self) -> Result<NodeId<PropertyDefinition>> {
         let token = peek_expect!(self);
-        let name = match token.kind() {
+        let property = match token.kind() {
             t!("...") => {
+                self.next();
                 let expr = self.parse_assignment_expr()?;
                 let id = self.ast.push_node(PropertyDefinition::Rest(expr));
                 return Ok(id);
@@ -229,24 +252,9 @@ impl<'a> Parser<'a> {
             }
             t!("get") => {
                 self.next();
-                if let t!("ident")
-                | TokenKind::Keyword(_)
-                | TokenKind::UnreservedKeyword(_)
-                | t!("[")
-                | t!("string")
-                | t!("num") = peek_expect!(self, "}").kind()
-                {
+                if Self::is_property_name(peek_expect!(self, "}").kind()) {
                     let name = self.parse_property_name()?;
-                    expect!(self,"(" => "expected start of getter parameters");
-                    expect!(self,")" => "getter can't have any parameters");
-                    let body = self.parse_function_body()?;
-                    let func = self.ast.push_node(Function::Base {
-                        is_strict: body.is_strict,
-                        name: None,
-                        params: ListHead::Empty,
-                        rest_param: None,
-                        body: body.body,
-                    });
+                    let func = self.parse_getter()?;
                     return Ok(self.ast.push_node(PropertyDefinition::Getter {
                         property: name,
                         func,
@@ -256,34 +264,27 @@ impl<'a> Parser<'a> {
             }
             t!("set") => {
                 self.next();
-                if let t!("ident")
-                | TokenKind::Keyword(_)
-                | TokenKind::UnreservedKeyword(_)
-                | t!("[")
-                | t!("string")
-                | t!("num") = peek_expect!(self, "}").kind()
-                {
+                if Self::is_property_name(peek_expect!(self, "}").kind()) {
                     let name = self.parse_property_name()?;
-                    expect!(self,"(" => "expected start of setter parameters");
-                    let param = self.parse_binding_element()?;
-                    let param = self.ast.push_node(param);
-                    let params = self.ast.append_list(param, None);
-                    expect!(self,")" => "setter must have a single parameter");
-
-                    let body = self.parse_function_body()?;
-                    let func = self.ast.push_node(Function::Base {
-                        is_strict: body.is_strict,
-                        name: None,
-                        params: ListHead::Present(params),
-                        rest_param: None,
-                        body: body.body,
-                    });
+                    let func = self.parse_setter()?;
                     return Ok(self.ast.push_node(PropertyDefinition::Setter {
                         property: name,
                         func,
                     }));
                 }
                 PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("set")))
+            }
+            t!("async") => {
+                self.next();
+                if let t!(":") = peek_expect!(self, ":").kind() {
+                    PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("async")))
+                } else {
+                    let property = self.parse_property_name()?;
+                    let func = self.parse_function(FunctionCtx::Method, FunctionKind::Async)?;
+                    return Ok(self
+                        .ast
+                        .push_node(PropertyDefinition::Method { property, func }));
+                }
             }
             _ => self.parse_property_name()?,
         };
@@ -292,14 +293,13 @@ impl<'a> Parser<'a> {
             t!(":") => {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
-                let id = self.ast.push_node(PropertyDefinition::Define {
-                    property: name,
-                    expr,
-                });
+                let id = self
+                    .ast
+                    .push_node(PropertyDefinition::Define { property, expr });
                 Ok(id)
             }
             t!("=") => {
-                if let PropertyName::Ident(x) = name {
+                if let PropertyName::Ident(x) = property {
                     self.next();
                     let expr = self.parse_assignment_expr()?;
                     let id = self.ast.push_node(PropertyDefinition::Covered {
@@ -312,14 +312,13 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("(") => {
-                let func = self.parse_function(FunctionKind::Method)?;
-                Ok(self.ast.push_node(PropertyDefinition::Method {
-                    property: name,
-                    func,
-                }))
+                let func = self.parse_function(FunctionCtx::Method, FunctionKind::Simple)?;
+                Ok(self
+                    .ast
+                    .push_node(PropertyDefinition::Method { property, func }))
             }
             x => {
-                if let PropertyName::Ident(x) = name {
+                if let PropertyName::Ident(x) = property {
                     let id = self.ast.push_node(PropertyDefinition::Ident(x));
                     Ok(id)
                 } else {
@@ -329,7 +328,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_property_name(&mut self) -> Result<PropertyName> {
+    pub fn parse_property_name(&mut self) -> Result<PropertyName> {
         let token = peek_expect!(self, "ident", "[", "string", "num");
         match token.kind() {
             t!("string") => {
@@ -362,7 +361,6 @@ impl<'a> Parser<'a> {
             let token = peek_expect!(self, "]");
             match token.kind() {
                 t!("]") => {
-                    self.next();
                     break;
                 }
                 t!(",") => {
@@ -380,12 +378,12 @@ impl<'a> Parser<'a> {
                     prev = Some(self.ast.append_node_list(Some(expr), prev));
                     head = head.or(prev);
                     if !self.eat(t!(",")) {
-                        expect!(self, "]");
                         break;
                     }
                 }
             }
         }
+        expect!(self, "]");
 
         Ok(self.ast.push_node(ArrayLiteral {
             elements: head,
@@ -396,7 +394,7 @@ impl<'a> Parser<'a> {
     fn reparse_arrow_function(
         &mut self,
         expr: ListHead<Expr>,
-        rest: Option<NodeId<Expr>>,
+        rest: Option<NodeId<IdentOrPattern>>,
     ) -> Result<NodeId<PrimeExpr>> {
         let mut head = ListHead::Empty;
         let mut prev = None;
@@ -411,15 +409,7 @@ impl<'a> Parser<'a> {
             head = head.or(prev.into());
             cur = self.ast[expr].next;
         }
-        let rest = if let Some(rest) = rest {
-            let Some(rest) = self.reparse_ident_or_pattern(rest) else {
-                unexpected!(self,t!("=>") => "covered expression can't be parsed as parameters");
-            };
-            Some(self.ast.push_node(rest))
-        } else {
-            None
-        };
-        let func = self.parse_array_function(head, rest)?;
+        let func = self.parse_array_function(head, rest, FunctionKind::Simple)?;
         Ok(self.ast.push_node(PrimeExpr::Function(func)))
     }
 
@@ -582,16 +572,22 @@ impl<'a> Parser<'a> {
         &mut self,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
+        kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
         expect!(self, "=>");
-        if self.ate_line_terminator {
-            unexpected!(self,t!("=>") => "no line terminator allowed here");
-        }
+        self.no_line_terminator()?;
         let mut strict = self.state.strict;
+
+        let await_ident = self.state.await_ident;
+        self.state.await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator);
+
         let body = if let t!("{") = peek_expect!(self, "{").kind() {
             self.next();
             let mut head = ListHead::Empty;
             let mut prev = None;
+
+            let await_ident = self.state.await_ident;
+            self.state.await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator);
 
             while !self.eat(t!("}")) {
                 let stmt = self.parse_stmt()?;
@@ -601,18 +597,64 @@ impl<'a> Parser<'a> {
                 prev = Some(self.ast.append_list(stmt, prev));
                 head = head.or(prev.into());
             }
+            self.state.await_ident = await_ident;
             mem::swap(&mut self.state.strict, &mut strict);
             ArrowFunctionBody::Stmt(head)
         } else {
             ArrowFunctionBody::Expr(self.parse_assignment_expr()?)
         };
+        self.state.await_ident = await_ident;
 
         Ok(self.ast.push_node(Function::Arrow {
-            strict,
+            is_strict: strict,
+            kind,
             params,
             rest_param,
             body,
         }))
+    }
+
+    fn parse_async_function(&mut self) -> Result<NodeId<PrimeExpr>> {
+        self.next();
+        let token = peek_expect!(self, "function");
+        self.no_line_terminator()?;
+        // TODO not sure if this the right way to do it.
+        match token.kind() {
+            t!("function") => {
+                self.next();
+                let func = self.parse_function(FunctionCtx::Expression, FunctionKind::Async)?;
+                Ok(self.ast.push_node(PrimeExpr::Function(func)))
+            }
+            t!("(") => {
+                self.next();
+                let mut head = ListHead::Empty;
+                let mut prev = None;
+                let mut rest = None;
+                while !self.eat(t!(")")) {
+                    if self.eat(t!("...")) {
+                        rest = Some(self.parse_ident_or_pattern()?);
+                    } else {
+                        let element = self.parse_binding_element()?;
+                        let element = self.ast.push_node(element);
+                        prev = Some(self.ast.append_list(element, prev));
+                        head = head.or(prev.into());
+                    }
+                }
+                let func = self.parse_array_function(head, rest, FunctionKind::Async)?;
+                Ok(self.ast.push_node(PrimeExpr::Function(func)))
+            }
+            _ => {
+                let name = self.parse_ident()?;
+                let element = self.ast.push_node(BindingElement::SingleName {
+                    name,
+                    initializer: None,
+                });
+                let element = self.ast.append_list(element, None);
+                let element = ListHead::Present(element);
+                let func = self.parse_array_function(element, None, FunctionKind::Async)?;
+                Ok(self.ast.push_node(PrimeExpr::Function(func)))
+            }
+        }
     }
 }
 

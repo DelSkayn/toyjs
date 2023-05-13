@@ -26,8 +26,8 @@ pub type AstStorage = (
         Vec<BindingProperty>,
     ),
     Vec<Function>,
-    Vec<ArrayLiteral>,
-    Vec<PropertyDefinition>,
+    (Vec<Class>, Vec<ClassMember>),
+    (Vec<ArrayLiteral>, Vec<PropertyDefinition>),
 );
 pub type Ast = GenAst<AstStorage>;
 
@@ -276,6 +276,9 @@ pub enum Stmt {
     Function {
         func: NodeId<Function>,
     },
+    Class {
+        class: NodeId<Class>,
+    },
     Debugger,
 }
 
@@ -374,6 +377,10 @@ impl RenderAst for Stmt {
             Stmt::Function { ref func } => ctx
                 .render_struct("Stmt::Function", w)?
                 .field("func", func)?
+                .finish(),
+            Stmt::Class { ref class } => ctx
+                .render_struct("Stmt::Class", w)?
+                .field("class", class)?
                 .finish(),
         }
         Ok(())
@@ -551,15 +558,25 @@ impl RenderAst for ArrowFunctionBody {
     }
 }
 
+#[derive(Debug)]
+pub enum FunctionKind {
+    Simple,
+    Async,
+    Generator,
+    AsyncGenerator,
+}
+
 pub enum Function {
     Arrow {
-        strict: bool,
+        is_strict: bool,
+        kind: FunctionKind,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ArrowFunctionBody,
     },
     Base {
         is_strict: bool,
+        kind: FunctionKind,
         name: Option<StringId>,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
@@ -571,26 +588,30 @@ impl RenderAst for Function {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             Function::Arrow {
-                ref strict,
+                ref is_strict,
+                ref kind,
                 ref params,
                 ref rest_param,
                 ref body,
             } => ctx
                 .render_struct("Function::Arrow", w)?
-                .field_debug("strict", strict)?
+                .field_debug("is_strict", is_strict)?
+                .field_debug("kind", kind)?
                 .field("params", params)?
                 .field("rest_param", rest_param)?
                 .field("body", body)?
                 .finish(),
             Function::Base {
-                is_strict: ref strict,
+                ref is_strict,
+                ref kind,
                 ref name,
                 ref params,
                 ref rest_param,
                 ref body,
             } => ctx
                 .render_struct("Function::Base", w)?
-                .field_debug("strict", strict)?
+                .field_debug("is_strict", is_strict)?
+                .field_debug("kind", kind)?
                 .field("name", name)?
                 .field("params", params)?
                 .field("rest_param", rest_param)?
@@ -598,6 +619,101 @@ impl RenderAst for Function {
                 .finish(),
         }
 
+        Ok(())
+    }
+}
+
+pub struct Class {
+    pub name: Option<StringId>,
+    pub heritage: Option<NodeId<Expr>>,
+    pub body: ListHead<ClassMember>,
+}
+
+impl RenderAst for Class {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        ctx.render_struct("Class", w)?
+            .field("name", &self.name)?
+            .field("heritage", &self.heritage)?
+            .field("body", &self.body)?
+            .finish();
+        Ok(())
+    }
+}
+
+pub enum ClassMember {
+    StaticBlock {
+        stmts: ListHead<Stmt>,
+    },
+    Method {
+        is_static: bool,
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
+    Field {
+        is_static: bool,
+        property: PropertyName,
+        initializer: Option<NodeId<Expr>>,
+    },
+    Getter {
+        is_static: bool,
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
+    Setter {
+        is_static: bool,
+        property: PropertyName,
+        func: NodeId<Function>,
+    },
+}
+
+impl RenderAst for ClassMember {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        match *self {
+            ClassMember::StaticBlock { ref stmts } => ctx
+                .render_struct("ClassMember::StaticBlock", w)?
+                .field("stmts", stmts)?
+                .finish(),
+            ClassMember::Method {
+                ref is_static,
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("ClassMember::Method", w)?
+                .field_debug("is_static", is_static)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
+            ClassMember::Getter {
+                ref is_static,
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("ClassMember::Getter", w)?
+                .field_debug("is_static", is_static)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
+            ClassMember::Setter {
+                ref is_static,
+                ref property,
+                ref func,
+            } => ctx
+                .render_struct("ClassMember::Setter", w)?
+                .field_debug("is_static", is_static)?
+                .field("property", property)?
+                .field("func", func)?
+                .finish(),
+            ClassMember::Field {
+                ref is_static,
+                ref property,
+                ref initializer,
+            } => ctx
+                .render_struct("ClassMember::Field", w)?
+                .field_debug("is_static", is_static)?
+                .field("property", property)?
+                .field("initializer", initializer)?
+                .finish(),
+        }
         Ok(())
     }
 }
@@ -673,6 +789,7 @@ pub enum PrefixOp {
     Delete,
     Void,
     TypeOf,
+    Await,
 }
 
 pub struct Argument {
@@ -825,11 +942,13 @@ pub enum PrimeExpr {
     Ident(StringId),
     Boolean(bool),
     Function(NodeId<Function>),
-    Null,
+    Class(NodeId<Class>),
     Object(ObjectLiteral),
     Array(NodeId<ArrayLiteral>),
-    This,
     NewTarget,
+    Null,
+    This,
+    Super,
     Covered(ListId<Expr>),
 }
 
@@ -868,8 +987,13 @@ impl RenderAst for PrimeExpr {
                 .render_struct("PrimeExpr::Function", w)?
                 .field("0", x)?
                 .finish(),
+            PrimeExpr::Class(ref x) => ctx
+                .render_struct("PrimeExpr::Class", w)?
+                .field("0", x)?
+                .finish(),
             PrimeExpr::Null => ctx.render_struct("PrimeExpr::Null", w)?.finish(),
             PrimeExpr::This => ctx.render_struct("PrimeExpr::This", w)?.finish(),
+            PrimeExpr::Super => ctx.render_struct("PrimeExpr::Super", w)?.finish(),
             PrimeExpr::NewTarget => ctx.render_struct("PrimeExpr::NewTarget", w)?.finish(),
             PrimeExpr::Object(ObjectLiteral::Empty) => {
                 ctx.render_struct("PrimeExpr::Object", w)?.finish()

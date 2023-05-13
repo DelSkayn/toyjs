@@ -1,11 +1,11 @@
 use ast::{
-    CaseItem, CatchStmt, CstyleDecl, ForLoopHead, IdentOrPattern, InOfDecl, List, ListHead, ListId,
-    NodeId, Stmt, VariableDecl, VariableKind,
+    CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern, InOfDecl,
+    List, ListHead, ListId, NodeId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
 use token::t;
 
 use crate::{
-    alter_state, error::ErrorKind, expect, function::FunctionKind, peek_expect, unexpected, Parser,
+    alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Parser,
     Result,
 };
 
@@ -33,9 +33,20 @@ impl<'a> Parser<'a> {
             t!("continue") => self.parse_cntrl_flow_stmt(false)?,
             t!("try") => self.parse_try_stmt()?,
             t!("throw") => self.parse_throw_stmt()?,
+            t!("class") => {
+                let class = self.parse_class(true)?;
+                self.ast.push_node(Stmt::Class { class })
+            }
             t!("function") => {
                 self.next();
-                let func = self.parse_function(FunctionKind::Stmt)?;
+                let func = self.parse_function(FunctionCtx::Stmt, FunctionKind::Simple)?;
+                self.ast.push_node(Stmt::Function { func })
+            }
+            t!("async") => {
+                self.next();
+                expect!(self, "function");
+                self.no_line_terminator()?;
+                let func = self.parse_function(FunctionCtx::Stmt, FunctionKind::Async)?;
                 self.ast.push_node(Stmt::Function { func })
             }
             t!("debugger") => {
@@ -52,8 +63,22 @@ impl<'a> Parser<'a> {
                 alter_state!(self,r#in = true => {
                     let expr = self.parse_expr()?;
                 });
-                self.semicolon()?;
-                self.ast.push_node(Stmt::Expr { expr })
+                if self.eat(t!(":")) {
+                    if self.ast[expr].next.is_some() {
+                        unexpected!(self, t!(":"), ";");
+                    }
+                    let Expr::Prime { expr } = self.ast[self.ast[expr].item] else {
+                        unexpected!(self,t!(":"),";");
+                    };
+                    let PrimeExpr::Ident(label) = self.ast[expr] else {
+                        unexpected!(self,t!(":"),";");
+                    };
+                    let stmt = self.parse_stmt()?;
+                    self.ast.push_node(Stmt::Labeled { label, stmt })
+                } else {
+                    self.semicolon()?;
+                    self.ast.push_node(Stmt::Expr { expr })
+                }
             }
         };
 
@@ -397,9 +422,7 @@ impl<'a> Parser<'a> {
     pub fn parse_throw_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "throw");
         peek_expect!(self);
-        if self.ate_line_terminator {
-            unexpected!(self,t!("\n") => "line terminator not allowed here")
-        }
+        self.no_line_terminator()?;
         let expr = self.parse_expr()?;
         self.semicolon()?;
         Ok(self.ast.push_node(Stmt::Throw { expr }))
@@ -442,6 +465,7 @@ impl<'a> Parser<'a> {
             let decl = self.ast.push_node(VariableDecl { decl, initializer });
             prev = self.ast.append_list(decl, Some(prev));
         }
+        self.semicolon()?;
 
         let res = self.ast.push_node(Stmt::VariableDecl { kind, decl: head });
 

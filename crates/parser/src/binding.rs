@@ -54,7 +54,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("await") => {
-                if self.state.yield_ident {
+                if self.state.await_ident {
                     unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("await")))
@@ -137,14 +137,7 @@ impl<'a> Parser<'a> {
                 }
             }
             // Next keywords are always allowed as identifiers.
-            t!("get") => Ok(self.lexer.data.strings.intern(&String::new_const("get"))),
-            t!("as") => Ok(self.lexer.data.strings.intern(&String::new_const("as"))),
-            t!("async") => Ok(self.lexer.data.strings.intern(&String::new_const("async"))),
-            t!("from") => Ok(self.lexer.data.strings.intern(&String::new_const("from"))),
-            t!("meta") => Ok(self.lexer.data.strings.intern(&String::new_const("meta"))),
-            t!("set") => Ok(self.lexer.data.strings.intern(&String::new_const("set"))),
-            t!("target") => Ok(self.lexer.data.strings.intern(&String::new_const("target"))),
-
+            TokenKind::UnreservedKeyword(x) => Ok(self.lexer.data.strings.intern(&x.to_string())),
             x => unexpected!(self, x, "ident"),
         }
     }
@@ -239,7 +232,6 @@ impl<'a> Parser<'a> {
             let next = peek_expect!(self, "]");
             match next.kind() {
                 t!("]") => {
-                    self.next();
                     break;
                 }
                 t!("...") => {
@@ -264,6 +256,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        expect!(self, "]");
 
         Ok(BindingPattern::Array {
             elements: head,
