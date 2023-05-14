@@ -66,8 +66,29 @@ impl<'a> Parser<'a> {
                 }
                 t!("async") => {
                     self.next();
+                    let kind = if self.eat(t!("*")) {
+                        FunctionKind::AsyncGenerator
+                    } else {
+                        FunctionKind::Async
+                    };
+                    self.no_line_terminator()?;
                     let property = self.parse_property_name()?;
-                    let func = self.parse_function(FunctionCtx::Method, FunctionKind::Async)?;
+                    let func = self.parse_function(FunctionCtx::Method, kind)?;
+                    let item = self.ast.push_node(ClassMember::Method {
+                        is_static,
+                        property,
+                        func,
+                    });
+                    prev = Some(self.ast.append_list(item, prev));
+                    head = head.or(prev.into());
+                    continue;
+                }
+                t!("*") => {
+                    self.next();
+                    self.peek();
+                    self.no_line_terminator()?;
+                    let property = self.parse_property_name()?;
+                    let func = self.parse_function(FunctionCtx::Method, FunctionKind::Generator)?;
                     let item = self.ast.push_node(ClassMember::Method {
                         is_static,
                         property,

@@ -29,4 +29,19 @@ fn axios_minified() {
     bench_parser(include_str!("axios.min.js"));
 }
 
-iai::main!(jquery, jquery_minified, axios, axios_minified);
+fn typescript() {
+    bench_parser(include_str!("typescript.js"));
+}
+
+fn typescript_minified() {
+    bench_parser(include_str!("typescript.min.js"));
+}
+
+iai::main!(
+    jquery,
+    jquery_minified,
+    axios,
+    axios_minified,
+    typescript,
+    typescript_minified
+);

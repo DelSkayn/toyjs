@@ -262,12 +262,14 @@ impl<S: AnyVec> Ast<S> {
     ///
     /// # Usage
     /// ```rust
+    /// # use toyjs_ast::{GenAst as Ast};
     /// # let generate_item = || {return 0u32};
     /// # let condition = false;
-    /// let mut ast = Ast::new(Vec::<u32>::new())
+    /// let mut ast = Ast::new(Vec::<u32>::new());
     /// let mut prev = None;
     /// while condition{
     ///     let item: u32 = generate_item();
+    ///     let item = ast.push_node(item);
     ///     prev = Some(ast.append_list(item,prev));
     /// }
     /// ```

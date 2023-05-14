@@ -106,7 +106,12 @@ impl<'a> Parser<'a> {
             }
             t!("function") => {
                 self.next();
-                let func = self.parse_function(FunctionCtx::Expression, FunctionKind::Simple)?;
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::Generator
+                } else {
+                    FunctionKind::Simple
+                };
+                let func = self.parse_function(FunctionCtx::Expression, kind)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
             t!("async") => self.parse_async_function(),
@@ -178,13 +183,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a covered expression, e.g.:
-    /// ```javascript
-    /// `This is some template with ${ /* start here */ a } substition`
-    /// ```
-    fn parse_template(&mut self) -> Result<NodeId<Template>> {
+    /// Parses a template expression, e.g.:
+    pub fn parse_template(&mut self) -> Result<NodeId<Template>> {
         let token = next_expect!(self, "} `");
         match token.kind() {
+            t!("``") => {
+                let text = token.data_id().unwrap();
+                Ok(self.ast.push_node(Template::Tail { text }))
+            }
             t!("` ${") => {
                 let expr = self.parse_expr()?;
                 let text = token.data_id().unwrap();
@@ -274,7 +280,12 @@ impl<'a> Parser<'a> {
                 return Ok(id);
             }
             t!("*") => {
-                todo!("parse generator method")
+                self.next();
+                let property = self.parse_property_name()?;
+                let func = self.parse_function(FunctionCtx::Method, FunctionKind::Generator)?;
+                return Ok(self
+                    .ast
+                    .push_node(PropertyDefinition::Method { property, func }));
             }
             t!("get") => {
                 self.next();
@@ -303,8 +314,14 @@ impl<'a> Parser<'a> {
                 if let t!(":") = peek_expect!(self, ":").kind() {
                     PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("async")))
                 } else {
+                    self.no_line_terminator()?;
+                    let kind = if self.eat(t!("*")) {
+                        FunctionKind::AsyncGenerator
+                    } else {
+                        FunctionKind::Generator
+                    };
                     let property = self.parse_property_name()?;
-                    let func = self.parse_function(FunctionCtx::Method, FunctionKind::Async)?;
+                    let func = self.parse_function(FunctionCtx::Method, kind)?;
                     return Ok(self
                         .ast
                         .push_node(PropertyDefinition::Method { property, func }));
@@ -598,7 +615,6 @@ impl<'a> Parser<'a> {
         rest_param: Option<NodeId<IdentOrPattern>>,
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
-        expect!(self, "=>");
         self.no_line_terminator()?;
         let mut strict = self.state.strict;
 
@@ -646,7 +662,12 @@ impl<'a> Parser<'a> {
         match token.kind() {
             t!("function") => {
                 self.next();
-                let func = self.parse_function(FunctionCtx::Expression, FunctionKind::Async)?;
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::AsyncGenerator
+                } else {
+                    FunctionKind::Async
+                };
+                let func = self.parse_function(FunctionCtx::Expression, kind)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
             t!("(") => {

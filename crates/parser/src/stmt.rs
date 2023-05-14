@@ -80,14 +80,24 @@ impl<'a> Parser<'a> {
             }
             t!("function") => {
                 self.next();
-                let func = self.parse_function(FunctionCtx::Stmt, FunctionKind::Simple)?;
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::Generator
+                } else {
+                    FunctionKind::Simple
+                };
+                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
                 self.ast.push_node(Stmt::Function { func })
             }
             t!("async") => {
                 self.next();
                 expect!(self, "function");
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::AsyncGenerator
+                } else {
+                    FunctionKind::Async
+                };
                 self.no_line_terminator()?;
-                let func = self.parse_function(FunctionCtx::Stmt, FunctionKind::Async)?;
+                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
                 self.ast.push_node(Stmt::Function { func })
             }
             t!("debugger") => {

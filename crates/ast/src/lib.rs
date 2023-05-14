@@ -566,6 +566,24 @@ pub enum FunctionKind {
     AsyncGenerator,
 }
 
+impl FunctionKind {
+    pub fn set_async(&mut self) {
+        match *self {
+            Self::Simple => *self = FunctionKind::Async,
+            Self::Generator => *self = FunctionKind::AsyncGenerator,
+            _ => {}
+        }
+    }
+
+    pub fn set_generator(&mut self) {
+        match *self {
+            Self::Simple => *self = FunctionKind::Generator,
+            Self::Async => *self = FunctionKind::AsyncGenerator,
+            _ => {}
+        }
+    }
+}
+
 pub enum Function {
     Arrow {
         is_strict: bool,
@@ -840,6 +858,14 @@ pub enum Expr {
     Prime {
         expr: NodeId<PrimeExpr>,
     },
+    Yield {
+        star: bool,
+        expr: NodeId<Expr>,
+    },
+    TaggedTemplate {
+        tag: NodeId<Expr>,
+        template: NodeId<Template>,
+    },
 }
 
 impl RenderAst for Expr {
@@ -890,9 +916,22 @@ impl RenderAst for Expr {
                 .render_struct("Expr::Prime", w)?
                 .field("expr", expr)?
                 .finish(),
+            Expr::Yield { ref expr, ref star } => ctx
+                .render_struct("Expr::Prime", w)?
+                .field_debug("star", star)?
+                .field("expr", expr)?
+                .finish(),
             Expr::Tenary(ref x) => ctx
                 .render_struct("Expr::Tenary", w)?
                 .field("0", x)?
+                .finish(),
+            Expr::TaggedTemplate {
+                ref tag,
+                ref template,
+            } => ctx
+                .render_struct("Expr::TaggedTemplate", w)?
+                .field("tag", tag)?
+                .field("template", template)?
                 .finish(),
         }
         Ok(())

@@ -3,7 +3,7 @@ use std::mem;
 use ast::{Function, FunctionKind, ListHead, NodeId, Stmt};
 use token::{t, TokenKind};
 
-use crate::{expect, peek_expect, unexpected, Parser, Result};
+use crate::{alter_state, expect, peek_expect, unexpected, Parser, Result};
 
 pub struct FunctionBody {
     pub body: ListHead<Stmt>,
@@ -78,10 +78,12 @@ impl<'a> Parser<'a> {
         }
         expect!(self, ")");
 
-        let await_ident = self.state.await_ident;
-        self.state.await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator);
-        let body = self.parse_function_body()?;
-        self.state.await_ident = await_ident;
+        alter_state!(self,
+                     await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator),
+                     yield_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Async) =>
+        {
+            let body = self.parse_function_body()?;
+        });
 
         let function = self.ast.push_node(Function::Base {
             name,

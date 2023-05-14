@@ -44,7 +44,7 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
 fn postfix_binding_power(kind: TokenKind) -> Option<(u8, ())> {
     match kind {
         t!("++") | t!("--") => Some((31, ())),
-        t!("[") | t!(".") | t!("(") => Some((38, ())),
+        t!("[") | t!(".") | t!("(") | t!("``") | t!("` ${") => Some((38, ())),
         _ => None,
     }
 }
@@ -81,6 +81,12 @@ impl<'a> Parser<'a> {
 
     /// Parse the ecma `AssignmentExpression` production.
     pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
+        if !self.state.yield_ident && self.eat(t!("yield")) {
+            let star = self.eat(t!("*"));
+            let expr = self.parse_assignment_expr()?;
+            let res = self.ast.push_node(Expr::Yield { star, expr });
+            return Ok(res);
+        }
         let res = self.pratt_parse_expr(0)?;
         Ok(res)
     }
@@ -141,27 +147,37 @@ impl<'a> Parser<'a> {
     /// Only call if the next token is postfix operator.
     fn parse_postfix_op(&mut self, _l_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
         let token = self
-            .next()
+            .peek()
             .expect("`parse_postfix_op` should only be called if next token is present");
 
         let op = match token.kind() {
             t!("++") => PostfixOp::AddOne,
             t!("--") => PostfixOp::SubOne,
             t!("[") => {
+                self.next();
                 let index = self.parse_assignment_expr()?;
                 expect!(self, "]");
                 return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }));
             }
             t!(".") => {
+                self.next();
                 let ident = self.parse_ident_name()?;
                 return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
+                self.next();
                 let args = self.parse_arguments()?;
                 return Ok(self.ast.push_node(Expr::Call { args, expr: lhs }));
             }
+            t!("` ${") | t!("``") => {
+                let template = self.parse_template()?;
+                return Ok(self
+                    .ast
+                    .push_node(Expr::TaggedTemplate { tag: lhs, template }));
+            }
             x => panic!("`parse_postfix_op` called with not a token {:?}", x),
         };
+        self.next();
 
         Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }))
     }

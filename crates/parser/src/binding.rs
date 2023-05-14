@@ -47,14 +47,14 @@ impl<'a> Parser<'a> {
         match next.kind() {
             t!("ident") => Ok(next.data_id().unwrap()),
             t!("yield") => {
-                if self.state.yield_ident {
+                if !self.state.yield_ident {
                     unexpected!(self,t!("yield"),"ident" => "not allowed as an identifier in this context");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("yield")))
                 }
             }
             t!("await") => {
-                if self.state.await_ident {
+                if !self.state.await_ident {
                     unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("await")))
@@ -184,12 +184,14 @@ impl<'a> Parser<'a> {
         match next.kind() {
             t!("string") => {
                 self.next();
+                expect!(self, ":");
                 let name = PropertyName::String(next.data_id().unwrap());
                 let element = self.parse_binding_element()?;
                 Ok(BindingProperty::Property { name, element })
             }
             t!("num") => {
                 self.next();
+                expect!(self, ":");
                 let name = PropertyName::Number(next.data_id().unwrap());
                 let element = self.parse_binding_element()?;
                 Ok(BindingProperty::Property { name, element })
@@ -198,12 +200,13 @@ impl<'a> Parser<'a> {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
                 expect!(self, "]");
+                expect!(self, ":");
                 let name = PropertyName::Computed(expr);
                 let element = self.parse_binding_element()?;
                 Ok(BindingProperty::Property { name, element })
             }
             _ => {
-                let ident = self.parse_ident()?;
+                let ident = self.parse_ident_name()?;
                 if self.eat(t!(":")) {
                     let name = PropertyName::Ident(ident);
                     let element = self.parse_binding_element()?;
@@ -214,7 +217,7 @@ impl<'a> Parser<'a> {
                         .then(|| self.parse_assignment_expr())
                         .transpose()?;
                     Ok(BindingProperty::Binding {
-                        name: next.data_id().unwrap(),
+                        name: ident,
                         initializer,
                     })
                 }
