@@ -1,3 +1,23 @@
+//! The ast datastructure used by the engine.
+//!
+//! For performance reasons the ast is structured as a flattenend collection of nodes.
+//! Nodes are stored in a vector by types and are refered to by `NodeId` an index into the vector.
+//! An index is a 32 bit number which is formatted as a non-zero integer. This allows rust to
+//! optimize for example `Option<NodeId<T>>` to still only take 4 bytes of size.
+//!
+//! The tree uses the `AnyVec` and `AnyIndex` traits to store the different types of nodes.
+//! The ast is defined with a vector for each type the ast might need to store.
+//! If one tries to store a type which was not defined in the storage the implementation will
+//! panic. Most of this is just fancy syntatic sugar. Each methods just compiles down to a load of
+//! a field and then an operation on that field.
+//!
+//! A lot of nodes in the ast require lists so the ast supports a generic list type which can be
+//! referred to by a list id. The different types of lists nodes are all stored in the same vector.
+//!
+//! Sometimes using the builtin list node is inefficient because, for example, the list can have
+//! empty items. In this case you can use the `NodeList` type to define a list of nodes with a
+//! different storage type.
+
 use core::fmt;
 use std::{
     any::Any,
@@ -10,6 +30,7 @@ use common::any_vec::AnyVec;
 
 static TOO_MANY_NODES: &str = "Too many nodes in storage to fit 32 bit id.";
 
+/// Generates the panic for when a type is not in the storage.
 #[cold]
 fn panic_no_storage<T>() -> ! {
     panic!(
@@ -18,6 +39,9 @@ fn panic_no_storage<T>() -> ! {
     );
 }
 
+/// The node id for a specific type.
+///
+/// Internally represented by `NonZeroU32` so can be efficiently used with options.
 #[repr(transparent)]
 pub struct NodeId<T> {
     id: NonZeroU32,
@@ -46,6 +70,9 @@ impl<T> Clone for NodeId<T> {
     }
 }
 
+/// An id of a `List<T>` node.
+///
+/// Internally represented by `NonZeroU32` so can be efficiently used with options.
 #[repr(transparent)]
 pub struct ListId<T> {
     id: NonZeroU32,
@@ -137,15 +164,22 @@ impl<T> Clone for ListHead<T> {
     }
 }
 
+/// A generic list node
 pub struct List<T> {
+    /// The id of the current item
     pub item: NodeId<T>,
+    /// The id of the next item, if it exists.
     pub next: Option<ListId<T>>,
 }
 
+/// A generic list node for when the normal list node would be inefficient.
 pub struct NodeList<T> {
     pub data: T,
     pub next: Option<NodeId<NodeList<T>>>,
 }
+
+/// Shorthand for `NodeId<NodeList<T>>`;
+pub type NodeListId<T> = NodeId<NodeList<T>>;
 
 impl<T> List<T> {
     fn cast<V>(self) -> List<V> {
@@ -166,6 +200,9 @@ impl<T> List<T> {
     }
 }
 
+/// The generic ast datastructure.
+///
+/// Can be indexed with the index syntax by both `NodeId` as well as `ListId`;
 #[derive(Default)]
 pub struct Ast<Storage: AnyVec> {
     storage: Storage,
@@ -199,6 +236,7 @@ impl<S: AnyVec> Ast<S> {
         }
     }
 
+    /// Pushes a new list node into the ast. Returns the id of the new list node.
     #[inline]
     pub fn push_list<N: Any>(&mut self, node: List<N>) -> ListId<N> {
         let len = self.lists.len();
@@ -214,6 +252,25 @@ impl<S: AnyVec> Ast<S> {
         }
     }
 
+    /// Utility function for creating lists.
+    ///
+    /// Adds a new item to a list of nodes.
+    /// `prev` should be the id of the previous list node if there is one.
+    /// `item` is the id of the item the node should refer to.
+    ///
+    /// Returns the id of the newly create list node.
+    ///
+    /// # Usage
+    /// ```rust
+    /// # let generate_item = || {return 0u32};
+    /// # let condition = false;
+    /// let mut ast = Ast::new(Vec::<u32>::new())
+    /// let mut prev = None;
+    /// while condition{
+    ///     let item: u32 = generate_item();
+    ///     prev = Some(ast.append_list(item,prev));
+    /// }
+    /// ```
     #[inline]
     pub fn append_list<N: Any>(
         &mut self,
@@ -239,6 +296,15 @@ impl<S: AnyVec> Ast<S> {
         id
     }
 
+    /// Utility function for creating lists both for `NodeList` instead.
+    ///
+    /// Adds a new item to a list of nodes.
+    /// `prev` should be id of the previous node list node if there is one.
+    /// `item` is the item the node.
+    ///
+    /// Returns the id of the newly create list node.
+    ///
+    /// See `append_list` for usage.
     #[inline]
     pub fn append_node_list<N: Any>(
         &mut self,
@@ -257,6 +323,9 @@ impl<S: AnyVec> Ast<S> {
         id
     }
 
+    /// Clears out all storage.
+    ///
+    /// Indexing with any an id after this call will probably panic or return an invalid value.
     pub fn clear(&mut self) {
         self.storage.all_clear();
     }
