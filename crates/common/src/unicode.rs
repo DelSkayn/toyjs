@@ -151,6 +151,16 @@ impl Utf16Ext for u16 {
     }
 }
 
+pub fn byte_is_continue(v: u8) -> bool {
+    // Bitmap containing with 1's for the bit representing a character which javascript
+    // considers to be an ident continuing character.
+    v < 128 && (1 << v) & 0x7fffffe87fffffe03ff001000000000u128 != 0
+}
+
+pub fn byte_is_start(v: u8) -> bool {
+    (1 << v) & 0x7fffffe87fffffe0000001000000000u128 != 0
+}
+
 pub trait CharExt {
     fn is_xid_continue(&self) -> bool;
 

@@ -47,17 +47,17 @@ impl<'a> Parser<'a> {
         match next.kind() {
             t!("ident") => Ok(next.data_id().unwrap()),
             t!("yield") => {
-                if !self.state.yield_ident {
-                    unexpected!(self,t!("yield"),"ident" => "not allowed as an identifier in this context");
-                } else {
+                if self.state.yield_ident {
                     Ok(self.lexer.data.strings.intern(&String::new_const("yield")))
+                } else {
+                    unexpected!(self,t!("yield"),"ident" => "not allowed as an identifier in this context");
                 }
             }
             t!("await") => {
-                if !self.state.await_ident {
-                    unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
-                } else {
+                if self.state.await_ident {
                     Ok(self.lexer.data.strings.intern(&String::new_const("await")))
+                } else {
+                    unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
                 }
             }
             t!("let") => {

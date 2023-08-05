@@ -605,6 +605,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "toyjs_bc"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "toyjs_common"
 version = "0.1.0"
 dependencies = [

@@ -23,6 +23,6 @@ iai = "0.1.1"
 name = "scripts"
 harness = false
 
-[[bench]]
-name = "iai_scripts"
-harness = false
+#[[bench]]
+#name = "iai_scripts"
+#harness = false

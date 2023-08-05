@@ -409,11 +409,10 @@ impl<'a> Lexer<'a> {
             b'\'' => return self.lex_string(b'\'' as u16),
             b'\"' => return self.lex_string(b'\"' as u16),
             b'`' => return self.lex_template(true),
-
-            x if x.is_ascii_digit() => return self.lex_number(&[x]),
             x if x.is_ascii_alphabetic() => {
                 return self.lex_ident(char::from_u32(x as u32).unwrap())
             }
+            x if x.is_ascii_digit() => return self.lex_number(&[x]),
             _ => TokenKind::Unknown,
         };
         self.finish_token(kind)
