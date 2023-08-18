@@ -42,13 +42,10 @@ macro_rules! dbg_tree {
 /// ```
 #[macro_export]
 macro_rules! alter_state{
-    ($parser:expr $(,$name:ident = $e:expr)* => { $($t:tt)* }) => {
-        $(
-            let $name = $parser.state.$name;
-            $parser.state.$name = $e;
-        )*
-            $($t)*
-        $($parser.state.$name = $name;)*
+    ($parser:expr => { $($t:tt)* }) => {
+        let _state = $parser.state;
+        $($t)*
+        $parser.state = _state;
     }
 }
 
@@ -243,7 +240,8 @@ macro_rules! match_peek{
 macro_rules! create_test_parser {
     ($source:expr,$parser:ident) => {
         let text = common::string::String::from_std_str($source);
-        let lexer = lexer::Lexer::new(text.encoding());
+        let mut interners = common::structs::Interners::default();
+        let lexer = lexer::Lexer::new(text.encoding(), &mut interners);
         let mut $parser = $crate::Parser::new(lexer);
     };
 }

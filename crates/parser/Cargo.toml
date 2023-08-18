@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 ast = { version = "0.1.0", path = "../ast", package = "toyjs_ast" }
+bitflags = "2.4.0"
 bytemuck = { version = "1.13.1", features = ["derive"] }
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 lexer = { version = "0.1.0", path = "../lexer", package = "toyjs_lexer" }
@@ -17,7 +18,7 @@ trace_error = []
 
 [dev-dependencies]
 criterion = "0.4.0"
-iai = "0.1.1"
+iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
 
 [[bench]]
 name = "scripts"
@@ -26,3 +27,6 @@ harness = false
 #[[bench]]
 #name = "iai_scripts"
 #harness = false
+
+[[example]]
+name = "parser"

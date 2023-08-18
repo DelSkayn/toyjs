@@ -10,7 +10,7 @@ use token::{t, TokenKind};
 
 use crate::{
     alter_state, expect, function::FunctionCtx, next_expect, peek_expect, unexpected, Parser,
-    Result,
+    ParserState, Result,
 };
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
@@ -155,7 +155,8 @@ impl<'a> Parser<'a> {
                 rest = Some(self.parse_ident_or_pattern()?);
                 break;
             }
-            alter_state!(self,r#in = true => {
+            alter_state!(self => {
+                self.state.insert(ParserState::In);
                 let expr = self.parse_assignment_expr()?;
             });
             prev = Some(self.ast.append_list(expr, prev));
@@ -442,7 +443,7 @@ impl<'a> Parser<'a> {
 
         let mut cur: Option<ListId<Expr>> = expr.into();
         while let Some(expr) = cur {
-            let Some(param) = self.reparse_binding_element(self.ast[expr].item) else{
+            let Some(param) = self.reparse_binding_element(self.ast[expr].item) else {
                 unexpected!(self,t!("=>") => "covered expression can't be parsed as parameters");
             };
             let param = self.ast.push_node(param);
@@ -504,7 +505,7 @@ impl<'a> Parser<'a> {
             return Some(BindingPattern::Object {
                 properties: ListHead::Empty,
                 rest: None,
-            })
+            });
         };
 
         let mut properties = ListHead::Empty;
@@ -538,10 +539,10 @@ impl<'a> Parser<'a> {
                         return None;
                     }
                     let Expr::Prime { expr } = self.ast[r] else {
-                        return None
+                        return None;
                     };
                     let PrimeExpr::Ident(x) = self.ast[expr] else {
-                        return None
+                        return None;
                     };
                     rest = Some(x);
                     // rest is last
@@ -552,7 +553,7 @@ impl<'a> Parser<'a> {
             prev = Some(self.ast.append_list(prop, prev));
             properties = properties.or(prev.into());
 
-            let Some(next) = self.ast[item].next else{
+            let Some(next) = self.ast[item].next else {
                 break;
             };
             item = next;
@@ -593,7 +594,7 @@ impl<'a> Parser<'a> {
 
     fn reparse_ident_or_pattern(&mut self, expr: NodeId<Expr>) -> Option<IdentOrPattern> {
         let Expr::Prime { expr } = self.ast[expr] else {
-            return None
+            return None;
         };
         match self.ast[expr] {
             PrimeExpr::Ident(name) => Some(IdentOrPattern::Ident(name)),
@@ -616,37 +617,37 @@ impl<'a> Parser<'a> {
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
         self.no_line_terminator()?;
-        let mut strict = self.state.strict;
+        let state = self.state;
 
-        let await_ident = self.state.await_ident;
-        self.state.await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator);
-
+        self.state.set(
+            ParserState::AwaitIdent,
+            matches!(kind, FunctionKind::Simple | FunctionKind::Generator),
+        );
         let body = if let t!("{") = peek_expect!(self, "{").kind() {
             self.next();
             let mut head = ListHead::Empty;
             let mut prev = None;
 
-            let await_ident = self.state.await_ident;
-            self.state.await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator);
-
             while !self.eat(t!("}")) {
                 let stmt = self.parse_stmt()?;
-                if prev.is_none() && !strict {
-                    self.state.strict = self.is_strict_directive(stmt);
+                if prev.is_none()
+                    && !self.state.contains(ParserState::Strict)
+                    && self.is_strict_directive(stmt)
+                {
+                    self.state.insert(ParserState::Strict);
                 }
                 prev = Some(self.ast.append_list(stmt, prev));
                 head = head.or(prev.into());
             }
-            self.state.await_ident = await_ident;
-            mem::swap(&mut self.state.strict, &mut strict);
             ArrowFunctionBody::Stmt(head)
         } else {
             ArrowFunctionBody::Expr(self.parse_assignment_expr()?)
         };
-        self.state.await_ident = await_ident;
 
+        let is_strict = state.contains(ParserState::Strict);
+        self.state = state;
         Ok(self.ast.push_node(Function::Arrow {
-            is_strict: strict,
+            is_strict,
             kind,
             params,
             rest_param,

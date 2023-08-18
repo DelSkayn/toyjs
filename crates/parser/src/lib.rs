@@ -31,18 +31,21 @@ pub struct Parser<'a> {
     state: ParserState,
 }
 
-/// Parser state.
-///
-/// Javascript syntax has a bunch of parameterized productions. This struct tracks the state of
-/// those parameters.
-#[derive(Debug)]
-pub struct ParserState {
-    pub strict: bool,
-    pub yield_ident: bool,
-    pub await_ident: bool,
-    pub r#in: bool,
-    pub r#break: bool,
-    pub r#continue: bool,
+bitflags::bitflags! {
+    /// Parser state.
+    ///
+    /// Javascript syntax has a bunch of parameterized productions. This struct tracks the state of
+    /// those parameters.
+    #[repr(transparent)]
+    #[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
+    pub struct ParserState: u8 {
+        const Strict     = 0b100000;
+        const YieldIdent = 0b010000;
+        const AwaitIdent = 0b001000;
+        const In         = 0b000100;
+        const Break      = 0b000010;
+        const Continue   = 0b000001;
+    }
 }
 
 impl<'a> Parser<'a> {
@@ -54,15 +57,20 @@ impl<'a> Parser<'a> {
             peek: None,
             last_span: Span::empty(),
             ate_line_terminator: false,
-            state: ParserState {
-                strict: false,
-                yield_ident: true,
-                await_ident: true,
-                r#in: true,
-                r#break: false,
-                r#continue: false,
-            },
+            state: ParserState::In | ParserState::YieldIdent | ParserState::AwaitIdent,
         }
+    }
+
+    pub fn ast(&self) -> &Ast {
+        &self.ast
+    }
+
+    pub fn ast_mut(&mut self) -> &mut Ast {
+        &mut self.ast
+    }
+
+    pub fn into_ast(self) -> Ast {
+        self.ast
     }
 
     // Return the span
@@ -110,7 +118,8 @@ impl<'a> Parser<'a> {
         self.peek.clone()
     }
 
-    /// Returns the next token in the list without advancing the token iterator..
+    /// Returns the next token in the list w
+    /// ithout advancing the token iterator..
     #[inline]
     fn peek_kind(&mut self) -> Option<TokenKind> {
         if let Some(x) = self.peek.as_ref().map(|x| x.kind_and_data.kind()) {
@@ -185,8 +194,11 @@ impl<'a> Parser<'a> {
         let mut prev = None;
         while self.peek().is_some() {
             let stmt = self.parse_stmt()?;
-            if !self.state.strict && head.is_empty() {
-                self.state.strict = self.is_strict_directive(stmt);
+            if !self.state.contains(ParserState::Strict)
+                && head.is_empty()
+                && self.is_strict_directive(stmt)
+            {
+                self.state.insert(ParserState::Strict);
             }
             prev = Some(self.ast.append_list(stmt, prev));
             head = head.or(prev.into())

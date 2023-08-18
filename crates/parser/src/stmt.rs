@@ -6,7 +6,7 @@ use token::t;
 
 use crate::{
     alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Parser,
-    Result,
+    ParserState, Result,
 };
 
 impl<'a> Parser<'a> {
@@ -114,7 +114,8 @@ impl<'a> Parser<'a> {
                 self.ast.push_node(Stmt::Empty)
             }
             _ => {
-                alter_state!(self,r#in = true => {
+                alter_state!(self => {
+                    self.state.insert(ParserState::In);
                     let expr = self.parse_expr()?;
                 });
                 if self.eat(t!(":")) {
@@ -122,10 +123,10 @@ impl<'a> Parser<'a> {
                         unexpected!(self, t!(":"), ";");
                     }
                     let Expr::Prime { expr } = self.ast[self.ast[expr].item] else {
-                        unexpected!(self,t!(":"),";");
+                        unexpected!(self, t!(":"), ";");
                     };
                     let PrimeExpr::Ident(label) = self.ast[expr] else {
-                        unexpected!(self,t!(":"),";");
+                        unexpected!(self, t!(":"), ";");
                     };
                     let stmt = self.parse_stmt()?;
                     self.ast.push_node(Stmt::Labeled { label, stmt })
@@ -165,7 +166,8 @@ impl<'a> Parser<'a> {
 
     pub fn parse_if_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "(");
-        alter_state!(self,r#in = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::In);
             let cond = self.parse_expr()?;
         });
         expect!(self, ")");
@@ -181,12 +183,14 @@ impl<'a> Parser<'a> {
 
     pub fn parse_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "(");
-        alter_state!(self,r#in = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::In);
         let cond = self.parse_expr()?;
         });
         expect!(self, ")");
 
-        alter_state!(self,r#break = true, r#continue = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
             let body = self.parse_stmt()?;
         });
 
@@ -194,7 +198,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        alter_state!(self,r#break = true, r#continue = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
             let body = self.parse_stmt()?;
         });
 
@@ -252,7 +257,8 @@ impl<'a> Parser<'a> {
         };
         expect!(self, ")");
         let head = self.ast.push_node(ForLoopHead::CStyle { decl, cond, post });
-        alter_state!(self, r#break = true, r#continue = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
             let body = self.parse_stmt()?;
         });
         Ok(self.ast.push_node(Stmt::For { head, body }))
@@ -282,17 +288,17 @@ impl<'a> Parser<'a> {
             }
             t!(";") => return self.parse_c_style_for(CstyleDecl::Empty),
             _ => {
-                let r#in = self.state.r#in;
-                self.state.r#in = false;
+                let state = self.state;
+                self.state.remove(ParserState::In);
                 let expr = self.parse_assignment_expr()?;
 
                 if self.eat(t!(",")) {
                     let next = Some(self.parse_expr()?);
                     let expr = self.ast.push_list(List { item: expr, next });
-                    self.state.r#in = r#in;
+                    self.state = state;
                     return self.parse_c_style_for(CstyleDecl::Expr(expr));
                 }
-                self.state.r#in = r#in;
+                self.state = state;
                 InOfDecl::Expr(expr)
             }
         };
@@ -329,7 +335,8 @@ impl<'a> Parser<'a> {
         let head = self.ast.push_node(head);
 
         expect!(self, ")");
-        alter_state!(self, r#break = true, r#continue = true => {
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
             let body = self.parse_stmt()?;
         });
         Ok(self.ast.push_node(Stmt::For { head, body }))
@@ -368,7 +375,8 @@ impl<'a> Parser<'a> {
             };
             expect!(self, ":");
 
-            alter_state!(self,r#break = true => {
+            alter_state!(self => {
+                self.state.insert(ParserState::Break);
                 let mut stmt_head = ListHead::Empty;
                 let mut stmt_prev = None;
                 loop {
@@ -409,7 +417,9 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_cntrl_flow_stmt(&mut self, is_break: bool) -> Result<NodeId<Stmt>> {
-        if is_break && !self.state.r#break || !is_break && !self.state.r#continue {
+        if is_break && !self.state.contains(ParserState::Break)
+            || !is_break && !self.state.contains(ParserState::Continue)
+        {
             return Err(crate::Error::new(
                 ErrorKind::DisallowedToken {
                     found: if is_break {
@@ -487,7 +497,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_with_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        if self.state.strict {
+        if self.state.contains(ParserState::Strict) {
             todo!("disallow with in strict mode")
         }
         expect!(self, "(");

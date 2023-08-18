@@ -3,7 +3,7 @@ use std::mem;
 use ast::{Function, FunctionKind, ListHead, NodeId, Stmt};
 use token::{t, TokenKind};
 
-use crate::{alter_state, expect, peek_expect, unexpected, Parser, Result};
+use crate::{alter_state, expect, peek_expect, unexpected, Parser, ParserState, Result};
 
 pub struct FunctionBody {
     pub body: ListHead<Stmt>,
@@ -78,10 +78,11 @@ impl<'a> Parser<'a> {
         }
         expect!(self, ")");
 
-        alter_state!(self,
-                     await_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Generator),
-                     yield_ident = matches!(kind, FunctionKind::Simple | FunctionKind::Async) =>
-        {
+        alter_state!(self => {
+            self.state.set(ParserState::AwaitIdent,
+                           matches!(kind,FunctionKind::Simple | FunctionKind::Generator));
+            self.state.set(ParserState::YieldIdent,
+                           matches!(kind,FunctionKind::Simple | FunctionKind::Async));
             let body = self.parse_function_body()?;
         });
 
@@ -136,7 +137,7 @@ impl<'a> Parser<'a> {
     /// }
     pub fn parse_function_body(&mut self) -> Result<FunctionBody> {
         expect!(self, "{");
-        let mut strict = self.state.strict;
+        let state = self.state;
 
         let mut head = ListHead::Empty;
         let mut prev = None;
@@ -148,16 +149,20 @@ impl<'a> Parser<'a> {
             }
 
             let stmt = self.parse_stmt()?;
-            if head.is_empty() && !self.state.strict {
-                self.state.strict = self.is_strict_directive(stmt);
+            if head.is_empty()
+                && !self.state.contains(ParserState::Strict)
+                && self.is_strict_directive(stmt)
+            {
+                self.state.insert(ParserState::Strict);
             }
             prev = Some(self.ast.append_list(stmt, prev));
             head = head.or(prev.into());
         }
-        mem::swap(&mut strict, &mut self.state.strict);
+        let is_strict = self.state.contains(ParserState::Strict);
+        self.state = state;
         Ok(FunctionBody {
             body: head,
-            is_strict: strict,
+            is_strict,
         })
     }
 }

@@ -1,4 +1,4 @@
-use common::string::String;
+use common::{string::String, structs::Interners};
 use iai::black_box;
 use lexer::Lexer;
 use toyjs_parser::Parser;
@@ -6,9 +6,10 @@ use toyjs_parser::Parser;
 pub fn bench_parser(source: &str) {
     let source = String::from_std_str(source);
     let source = common::source::Source::new(source, Some("parse_script"));
+    let mut interners = Interners::default();
 
     // Just to make sure that the parser generates the most instructions
-    let lexer = Lexer::new(black_box(source.source()));
+    let lexer = Lexer::new(black_box(source.source()), &mut interners);
     let mut parser = Parser::new(lexer);
     let _ = black_box(parser.parse_script()).expect("parsing failed");
 }

@@ -1,10 +1,10 @@
 use ast::{
     BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, PropertyName,
 };
-use common::string::String;
-use token::{t, StringId, TokenKind};
+use common::string::{String, StringId};
+use token::{t, TokenKind};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, next_expect, peek_expect, unexpected, Parser, ParserState, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_ident_or_pattern(&mut self) -> Result<NodeId<IdentOrPattern>> {
@@ -47,35 +47,35 @@ impl<'a> Parser<'a> {
         match next.kind() {
             t!("ident") => Ok(next.data_id().unwrap()),
             t!("yield") => {
-                if self.state.yield_ident {
+                if self.state.contains(ParserState::YieldIdent) {
                     Ok(self.lexer.data.strings.intern(&String::new_const("yield")))
                 } else {
                     unexpected!(self,t!("yield"),"ident" => "not allowed as an identifier in this context");
                 }
             }
             t!("await") => {
-                if self.state.await_ident {
+                if self.state.contains(ParserState::AwaitIdent) {
                     Ok(self.lexer.data.strings.intern(&String::new_const("await")))
                 } else {
                     unexpected!(self,t!("await"),"ident" => "not allowed as an identifier in this context");
                 }
             }
             t!("let") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("let"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("let")))
                 }
             }
             t!("static") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("static"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("static")))
                 }
             }
             t!("implements") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("implements"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self
@@ -86,7 +86,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("interface") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("interface"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self
@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("package") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("package"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self
@@ -108,7 +108,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("private") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("private"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self
@@ -119,7 +119,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("protected") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("protected"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self
@@ -130,7 +130,7 @@ impl<'a> Parser<'a> {
                 }
             }
             t!("public") => {
-                if self.state.strict {
+                if self.state.contains(ParserState::Strict) {
                     unexpected!(self,t!("public"),"ident" => "not allowed as an identifier in strict mode");
                 } else {
                     Ok(self.lexer.data.strings.intern(&String::new_const("public")))

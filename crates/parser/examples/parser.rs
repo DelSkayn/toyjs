@@ -1,5 +1,5 @@
 use ast::{RenderAst, RenderCtx};
-use common::string::String;
+use common::{string::String, structs::Interners};
 use lexer::Lexer;
 use std::{
     env,
@@ -24,7 +24,8 @@ fn main() -> Result<(), io::Error> {
 
     let source = String::from_std_str(&buffer);
     let source = common::source::Source::new(source, Some("parse_script"));
-    let lexer = Lexer::new(source.source());
+    let mut interners = Interners::default();
+    let lexer = Lexer::new(source.source(), &mut interners);
     let before = Instant::now();
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script();

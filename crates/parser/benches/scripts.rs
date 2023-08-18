@@ -1,4 +1,4 @@
-use common::string::String;
+use common::{string::String, structs::Interners};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lexer::Lexer;
 use toyjs_parser::Parser;
@@ -9,7 +9,8 @@ pub fn bench_parser(name: &str, source: &str, c: &mut Criterion) {
 
     c.bench_function(name, |b| {
         b.iter(|| {
-            let lexer = Lexer::new(black_box(source.source()));
+            let mut interners = Interners::default();
+            let lexer = Lexer::new(black_box(source.source()), &mut interners);
             let mut parser = Parser::new(lexer);
             let _ = black_box(parser.parse_script()).expect("parsing failed");
         })

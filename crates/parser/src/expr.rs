@@ -4,7 +4,7 @@ use ast::{
 };
 use token::{t, TokenKind};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, Result};
+use crate::{expect, next_expect, peek_expect, unexpected, Parser, ParserState, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -81,7 +81,7 @@ impl<'a> Parser<'a> {
 
     /// Parse the ecma `AssignmentExpression` production.
     pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
-        if !self.state.yield_ident && self.eat(t!("yield")) {
+        if !self.state.contains(ParserState::YieldIdent) && self.eat(t!("yield")) {
             let star = self.eat(t!("*"));
             let expr = self.parse_assignment_expr()?;
             let res = self.ast.push_node(Expr::Yield { star, expr });
@@ -120,7 +120,7 @@ impl<'a> Parser<'a> {
                 }));
             }
             t!("await") => {
-                if self.state.await_ident {
+                if self.state.contains(ParserState::AwaitIdent) {
                     let expr = self.parse_prime()?;
                     return Ok(self.ast.push_node(Expr::Prime { expr }));
                 } else {
@@ -273,7 +273,7 @@ impl<'a> Parser<'a> {
 
             if let Some((l_bp, r_bp)) = infix_binding_power(op) {
                 // In is not allowed in some contexts.
-                if !self.state.r#in && t!("in") == op {
+                if !self.state.contains(ParserState::In) && t!("in") == op {
                     break;
                 }
                 if l_bp < min_bp {
@@ -335,13 +335,13 @@ mod test {
         let Expr::Binary { op, left, right } = parser.ast[x] else {
             panic!()
         };
-        let BinaryOp::Base(BaseOp::Add) = op else{
+        let BinaryOp::Base(BaseOp::Add) = op else {
             panic!()
         };
-        let Expr::Prime{ expr: left } = parser.ast[left] else {
+        let Expr::Prime { expr: left } = parser.ast[left] else {
             panic!()
         };
-        let Expr::Prime{ expr: right } = parser.ast[right] else {
+        let Expr::Prime { expr: right } = parser.ast[right] else {
             panic!()
         };
         let PrimeExpr::Number(left) = parser.ast[left] else {
