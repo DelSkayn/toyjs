@@ -1,9 +1,20 @@
-use ast::NodeId;
+use ast::{ListId, NodeId};
 use bc::{Instruction, Reg};
 
 use crate::{Compiler, Result};
 
 impl<'a> Compiler<'a> {
+    pub fn compile_exprs(&mut self, mut expr: ListId<ast::Expr>) -> Result<i8> {
+        loop {
+            let res = self.compile_expr(self.ast[expr].item)?;
+            if let Some(e) = self.ast[expr].next {
+                expr = e;
+            } else {
+                return Ok(res);
+            }
+        }
+    }
+
     pub fn compile_expr(&mut self, expr: NodeId<ast::Expr>) -> Result<i8> {
         match self.ast[expr] {
             ast::Expr::Binary { op, left, right } => match op {

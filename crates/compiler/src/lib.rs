@@ -4,6 +4,7 @@ use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction, Reg};
 use common::{id, structs::Interners};
 use std::result::Result as StdResult;
+use variables::Variables;
 
 macro_rules! to_do {
     () => {
@@ -15,6 +16,7 @@ mod expr;
 mod prime;
 mod proc;
 mod stmt;
+mod variables;
 
 id!(pub struct InstructionId(u32));
 
@@ -30,6 +32,7 @@ pub struct Compiler<'a> {
     register: i8,
     interners: &'a mut Interners,
     ast: &'a mut Ast,
+    variables: Variables,
 }
 
 impl<'a> Compiler<'a> {
@@ -39,6 +42,7 @@ impl<'a> Compiler<'a> {
             register: 0,
             interners,
             ast,
+            variables: Variables::new(),
         }
     }
 
@@ -50,8 +54,9 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile_script(mut self, script: ListHead<ast::Stmt>) -> Result<ByteCode> {
-        let mut expr = None;
+        self.resolve_variables(script)?;
 
+        let mut expr = None;
         if let ListHead::Present(s) = script {
             let mut s = Some(s);
             while let Some(stmt_item) = s {

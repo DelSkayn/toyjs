@@ -19,6 +19,9 @@ impl<'a> Compiler<'a> {
                 } else if let Some(imm) = number.cast() {
                     self.instructions
                         .push(Instruction::Loadi32 { dst: Reg(reg), imm });
+                } else if let Some(imm) = number.cast() {
+                    self.instructions
+                        .push(Instruction::Loadf32 { dst: Reg(reg), imm });
                 } else {
                     self.instructions.push(Instruction::Loadf64 {
                         dst: Reg(reg),
@@ -40,7 +43,7 @@ impl<'a> Compiler<'a> {
             ast::PrimeExpr::Null => to_do!(),
             ast::PrimeExpr::This => to_do!(),
             ast::PrimeExpr::Super => to_do!(),
-            ast::PrimeExpr::Covered(_) => to_do!(),
+            ast::PrimeExpr::Covered(x) => self.compile_exprs(x),
         }
     }
 }
