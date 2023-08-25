@@ -1,6 +1,6 @@
 /// Macro used to define instructions
 #[macro_export]
-macro_rules! instruction {
+macro_rules! instructions {
     ($(
 
             $(#[$attr:meta])*
@@ -20,9 +20,10 @@ macro_rules! instruction {
         }
 
         impl Instruction{
-            pub fn read(bc: &mut SafeByteCodeReader) -> Option<Self>{
+            /// Read a instruction from a reader.
+            pub fn read(bc: &mut $crate::reader::SafeByteCodeReader) -> Option<Self>{
                 let mut bc_clone = *bc;
-                let res = match bc_clone.read::<u8>()?{
+                let res = match bc_clone.read_u8()?{
                     $(opcodes::$ir_name => {
                         Self::$ir_name$({
                             $($field: bc_clone.read::<$ty>()?,)*
@@ -34,6 +35,7 @@ macro_rules! instruction {
                 Some(res)
             }
 
+            /// Write an instruction into a buffer of bytes.
             pub fn write(self,write: &mut Vec<u8>){
                 match self{
                     $(
@@ -43,6 +45,17 @@ macro_rules! instruction {
                                 let data = &bytemuck::cast::<_,[u8; std::mem::size_of::<$ty>()]>($field);
                                 write.extend_from_slice(data.as_slice());
                             )*)*
+                        }
+                    )*
+                }
+            }
+
+            /// Returns the amount of bytes this instruction takes in a buffer
+            pub fn size(self) -> usize{
+                match self{
+                    $(
+                        Self::$ir_name$({ $($field: _,)* })* => {
+                            super::types::$ir_name::size()
                         }
                     )*
                 }
@@ -101,6 +114,48 @@ macro_rules! instruction {
                 )*)*
                 pub const $ir_name: u8 = super::OpCode::$ir_name as u8;
                 )*
+        }
+
+
+        /// The instruction as a type.
+        pub trait InstructionType{
+            /// The opcode for this instruction.
+            const OPCODE: OpCode;
+            /// The operands for this instruction.
+            type Operands;
+
+            /// Returns the amount of bytes this instruction takes in a buffer
+            fn size() -> usize;
+
+            /// Create this instruction
+            fn to_instruction(operands: Self::Operands) -> Instruction;
+        }
+
+        /// Instruction variants as types.
+        pub mod types{
+
+            use super::*;
+            $(
+                $(#[$attr])*
+                pub struct $ir_name;
+
+                impl InstructionType for $ir_name {
+                    const OPCODE: OpCode = OpCode::$ir_name;
+
+                    type Operands = ($($($ty,)*)*);
+
+                    fn size() -> usize{
+                        1 $($(+ std::mem::size_of::<$ty>())*)*
+                    }
+
+                    fn to_instruction(operands: Self::Operands) -> Instruction{
+                        let ($($($field,)*)*) = operands;
+                        Instruction::$ir_name$({$(
+                                $field,
+                        )*})*
+                    }
+                }
+            )*
         }
 
     };

@@ -1,8 +1,11 @@
 use core::fmt::{self, Write};
 use std::{any::Any, cell::Cell, result::Result as StdResult};
 
-use common::{interner::Interner, string::String};
-use token::{Number, NumberId, StringId};
+use common::{
+    interner::Interner,
+    number::{Number, NumberId},
+    string::{String, StringId},
+};
 
 use crate::{
     ast::{ListHead, NodeList},

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bytemuck::Pod;
 
-use crate::Offset;
+use crate::{Instruction, Offset};
 
 /// An instruction reader which has a safe interface.
 #[derive(Clone, Copy)]
@@ -25,16 +25,31 @@ impl<'a> SafeByteCodeReader<'a> {
         unsafe {
             if self
                 .validate
-                .is_valid(self.ip.add(std::mem::size_of::<D>()))
+                .is_valid(self.ip.add(std::mem::size_of::<D>() - 1))
             {
                 let res = self.ip.cast::<D>().read_unaligned();
-                let ip = self.ip.add(1);
-                self.ip = ip;
+                self.ip = self.ip.add(std::mem::size_of::<D>());
                 Some(res)
             } else {
                 None
             }
         }
+    }
+
+    pub fn read_u8(&mut self) -> Option<u8> {
+        unsafe {
+            if self.validate.is_valid(self.ip) {
+                let res = self.ip.read();
+                self.ip = self.ip.add(1);
+                Some(res)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn read_instruction(&mut self) -> Option<Instruction> {
+        Instruction::read(self)
     }
 }
 
@@ -85,6 +100,18 @@ impl<'a> ByteCodeReader<'a> {
         }
     }
 
+    /// # Safety
+    ///
+    /// TODO
+    pub unsafe fn detach(self) -> ByteCodeReader<'static> {
+        ByteCodeReader {
+            ip: self.ip,
+            #[cfg(feature = "slow_checks")]
+            validate: self.validate,
+            bc: PhantomData,
+        }
+    }
+
     /// Jump the instruction pointer,
     ///
     /// # Safety
@@ -103,7 +130,7 @@ impl<'a> ByteCodeReader<'a> {
     /// User must ensure that no data is read past the end of the instruction buffer.
     pub unsafe fn read<D: Pod>(&mut self) -> D {
         let res = self.ip.cast::<D>().read_unaligned();
-        let ip = self.ip.add(1);
+        let ip = self.ip.add(std::mem::size_of::<D>());
         self.check_valid(ip);
         self.ip = ip;
         res

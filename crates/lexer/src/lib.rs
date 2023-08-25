@@ -3,11 +3,13 @@
 use bytemuck::Pod;
 use common::{
     interner::Interner,
+    number::{Number, NumberId},
     span::Span,
-    string::{Encoding, String, StringBuilder, Units},
+    string::{Encoding, String, StringBuilder, StringId, Units},
+    structs::Interners,
     unicode::{byte, chars, units, CharExt, Utf16Ext},
 };
-use token::{t, Number, NumberId, StringId, Token, TokenKind, TokenKindData};
+use token::{t, Token, TokenKind, TokenKindData};
 
 mod ident;
 mod number;
@@ -42,11 +44,11 @@ pub struct Lexer<'a> {
     peek: Option<u16>,
     overread: Option<u16>,
     builder: StringBuilder,
-    pub data: LexingData,
+    pub data: &'a mut Interners,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(units: Encoding<'a>) -> Self {
+    pub fn new(units: Encoding<'a>, interners: &'a mut Interners) -> Self {
         let units = units.units();
 
         Self {
@@ -56,7 +58,7 @@ impl<'a> Lexer<'a> {
             peek: None,
             overread: None,
             builder: StringBuilder::new(),
-            data: LexingData::new(),
+            data: interners,
         }
     }
 
@@ -122,7 +124,7 @@ impl<'a> Lexer<'a> {
     /// Returns the id of the strings data.
     fn finish_string(&mut self) -> StringId {
         let result = self.builder.encoding();
-        let id = self.data.push_string(result);
+        let id = self.data.strings.intern(&result);
         self.builder.clear();
         id
     }
@@ -475,7 +477,7 @@ impl<'a> Lexer<'a> {
             self.lex_ascii(unit as u8)
         } else {
             let char = unit.decode_utf16_with(|| {
-                let Some(trailing) = self.next_unit() else{
+                let Some(trailing) = self.next_unit() else {
                     // Encoding can only contain valid utf16 or ascii any other text is undefined
                     // behaviour. So this should be unreachable if safety guarentees where upheld.
                     unreachable!("lexer source data should be valid utf16.")

@@ -4,6 +4,7 @@ use core::hash::Hash;
 use hashbrown::{Equivalent, HashMap};
 use std::ops::Index;
 
+#[derive(Clone)]
 pub struct Interner<K: Hash + Eq, I> {
     map: HashMap<K, I>,
     items: Vec<K>,
@@ -27,11 +28,8 @@ impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
         K: From<&'a V>,
     {
         let res = self.map.entry_ref(value).or_insert_with(|| {
-            let Ok(len) = self
-                .items
-                .len()
-                .try_into() else{
-                    panic!("too many values in interner to fit in bits")
+            let Ok(len) = self.items.len().try_into() else {
+                panic!("too many values in interner to fit in bits")
             };
             self.items.push(K::from(value));
             len
@@ -45,11 +43,8 @@ impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
     where
         K: From<V>,
     {
-        let Ok(len) = self
-            .items
-            .len()
-            .try_into() else{
-                panic!("too many values in interner to fit in bits")
+        let Ok(len) = self.items.len().try_into() else {
+            panic!("too many values in interner to fit in bits")
         };
         self.items.push(K::from(value));
         len
@@ -58,7 +53,7 @@ impl<K: Hash + Eq, I: TryFrom<usize> + TryInto<usize> + Copy> Interner<K, I> {
     /// Get the value associated with the id.
     #[inline]
     pub fn get(&self, id: I) -> Option<&K> {
-        let Ok(idx) = id.try_into() else{
+        let Ok(idx) = id.try_into() else {
             panic!("failed to convert id to interner index");
         };
         self.items.get(idx)
@@ -89,7 +84,7 @@ where
     type Output = K;
 
     fn index(&self, index: I) -> &Self::Output {
-        let Ok(idx) = index.try_into() else{
+        let Ok(idx) = index.try_into() else {
             panic!("failed to convert id to interner index");
         };
         &self.items[idx]
@@ -108,7 +103,7 @@ macro_rules! id {
             type Error = <$data as TryFrom<usize>>::Error;
 
             #[inline]
-            fn try_from(value: usize) -> Result<Self, Self::Error> {
+            fn try_from(value: usize) -> ::std::result::Result<Self, Self::Error> {
                 Ok($name(value.try_into()?))
             }
         }
@@ -117,7 +112,7 @@ macro_rules! id {
             type Error = <usize as TryFrom<u32>>::Error;
 
             #[inline]
-            fn try_from(value: $name) -> Result<Self, Self::Error> {
+            fn try_from(value: $name) -> ::std::result::Result<Self, Self::Error> {
                 value.0.try_into()
             }
         }

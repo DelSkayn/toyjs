@@ -1,11 +1,11 @@
-use common::string::String;
+use common::{number::NumberId, string::String, structs::Interners};
 use std::{
     env,
     fs::File,
     io::{self, Read},
     time::Instant,
 };
-use token::{t, NumberId, TokenKind};
+use token::{t, TokenKind};
 use toyjs_lexer::Lexer;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
@@ -21,20 +21,12 @@ fn main() -> Result<(), io::Error> {
     let mut buffer = std::string::String::new();
     read.read_to_string(&mut buffer)?;
     let source = String::from_std_str(&buffer);
-    let mut lexer = Lexer::new(source.encoding());
+    let mut interners = Interners::default();
+
+    let mut lexer = Lexer::new(source.encoding(), &mut interners);
     let mut tokens = Vec::new();
     let time = Instant::now();
-    while let Some(t) = lexer.next() {
-        // Simplified template substitute matching, won't always work but should handle most code.
-        /*
-        match t.kind_and_data.kind() {
-            t!("` ${") => lexer.state = State::Template,
-            t!("} `") => {
-                lexer.state = State::Base;
-            }
-            _ => {}
-        }
-        */
+    for t in lexer.by_ref() {
         tokens.push(t);
     }
     let elapsed = time.elapsed();

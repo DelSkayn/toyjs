@@ -70,6 +70,18 @@ impl<T> Clone for NodeId<T> {
     }
 }
 
+impl<T> PartialOrd for NodeId<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.id.cmp(&other.id))
+    }
+}
+
+impl<T> Ord for NodeId<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+
 /// An id of a `List<T>` node.
 ///
 /// Internally represented by `NonZeroU32` so can be efficiently used with options.

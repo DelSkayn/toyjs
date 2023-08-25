@@ -1,12 +1,13 @@
 #![allow(dead_code)]
 
-mod ast;
+use common::{number::NumberId, string::StringId};
 use core::fmt;
 
+mod ast;
 pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList};
-pub use render::{RenderAst, RenderCtx, Result};
-use token::{NumberId, StringId};
+
 mod render;
+pub use render::{RenderAst, RenderCtx, Result};
 
 pub type AstStorage = (
     (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>, Vec<ForLoopHead>),
@@ -29,6 +30,7 @@ pub type AstStorage = (
     (Vec<Class>, Vec<ClassMember>),
     (Vec<ArrayLiteral>, Vec<PropertyDefinition>),
 );
+
 pub type Ast = GenAst<AstStorage>;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]

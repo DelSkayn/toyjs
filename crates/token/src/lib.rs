@@ -1,32 +1,10 @@
 use bytemuck::{AnyBitPattern, NoUninit};
 use common::{id, span::Span, string::String};
-use core::hash::{Hash, Hasher};
+use core::hash::Hash;
 
 mod r#macro;
 
 id!(pub struct StringId(u32));
-id!(pub struct NumberId(u32));
-
-/// A wrapper around f64 which implements bitwise equility and hashing.
-#[derive(Clone, Copy, Debug)]
-pub struct Number(pub f64);
-impl From<&Number> for Number {
-    fn from(value: &Number) -> Self {
-        Number(value.0)
-    }
-}
-
-impl Hash for Number {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.to_bits().hash(state)
-    }
-}
-impl Eq for Number {}
-impl PartialEq for Number {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
-}
 
 /// A token produced by the lexer.
 #[derive(Clone, Eq, PartialEq, Debug)]

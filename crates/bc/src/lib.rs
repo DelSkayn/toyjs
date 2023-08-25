@@ -1,19 +1,79 @@
+use bytemuck::{Pod, TransparentWrapper, Zeroable};
+use common::span::Span;
+use dreck::Trace;
 use std::fmt;
 
-use bytemuck::{Pod, TransparentWrapper, Zeroable};
-
+mod instructions;
+pub use instructions::*;
 mod r#macro;
 mod reader;
 pub use reader::{BcValid, ByteCodeReader, SafeByteCodeReader};
+//mod writer;
+//pub use writer::{ByteCodeWriter, WriteOffset};
+
+/// A module with specific bytecode and VM specific limitations.
+pub mod limits {
+    /// The maximum number of registers a function frame can have.
+    ///
+    /// Limit is a result from how registers are addressed in thye bytecode.
+    /// Every register is addressed via a i8 where all positive values can be a register.
+    pub const MAX_REGISTERS: usize = i8::MAX as usize;
+    /// The maximum number of arguments that can be directly addressed from an instruction.
+    ///
+    /// Limit is a result from how arguments are addressed in the bytecode.
+    /// A set of arguments is addressable via negative register values.
+    /// Register -1 and -2 are the info for the stack frame and the current function object so
+    /// these are excluded.
+    pub const MAX_ADDRESSABLE_ARGUMENTS: usize = -(i8::MIN as isize) as usize - 2;
+
+    /// The maximum number of values an function can be called with.
+    ///
+    /// Limit is a result from how the stack stores stack information.
+    pub const MAX_ARGUMENTS: usize = u32::MAX as usize - 2;
+
+    /// The maximum bytecode size of a single function.
+    ///
+    /// If a function is bigger than this no single jump will be able to jump far enough if
+    /// required.
+    pub const MAX_BYTECODE_SIZE: usize = u32::MAX as usize;
+}
 
 pub struct ByteCode {
+    pub functions: Box<[Function]>,
     pub instructions: Box<[u8]>,
 }
 
+unsafe impl<'own> Trace<'own> for ByteCode {
+    type Gc<'r> = ByteCode;
+
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
+    fn trace(&self, _marker: dreck::Marker<'own, '_>) {}
+}
+
 /// A newtype for a register index.
+///
+/// An instruction can directly access upto 127 register and 126 arguments.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
 #[repr(transparent)]
-pub struct Reg(pub u8);
+pub struct Reg(pub i8);
+
+impl Reg {
+    /// Returns the register index of the place where the `this` value is stored.
+    pub const fn this_reg() -> Self {
+        Reg(-1)
+    }
+
+    /// Returns the register for the current function being executed.
+    pub const fn function_reg() -> Self {
+        Reg(-2)
+    }
+}
 
 impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -32,99 +92,64 @@ impl fmt::Display for Offset {
     }
 }
 
-instruction! {
-    /// Load the i8 value in imm into dst
-    Loadi8{ dst: Reg, imm: i8 },
-    /// Load the i32 value in imm into dst
-    Loadi32{ dst: Reg, imm: i32 },
-    /// Load the f64 value in imm into dst
-    Loadf64{ dst: Reg, imm: f64 },
-    /// Load the bool value in imm into dst
-    LoadBool{ dst: Reg, imm: u8 },
-    /// Load the undefined value into dst
-    LoadUndefined{ dst: Reg},
-    /// Load the string with id `const` into dst
-    LoadString{ dst: Reg, cons: u16 },
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct LongOffset(pub i32);
 
-    /// Load the current `this` value
-    LoadThis{ dst: Reg },
-    /// Load the current `new.target` value
-    LoadTarget{ dst: Reg },
+impl fmt::Display for LongOffset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
-    /// Copy the value from src into dst.
-    Move{ dst: Reg , src: Reg},
+/// A newtype for a string constant ids.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct StringId(u16);
 
-    /// Add left to right and store the result into dst.
-    Add{ dst: Reg, left: Reg, right: Reg},
-    /// Subtrace left form right and store the result into dst.
-    Sub{ dst: Reg, left: Reg, right: Reg},
-    /// Multiply left by right and store the result into dst.
-    Mul{ dst: Reg, left: Reg, right: Reg},
-    /// Divide left by right and store the result into dst.
-    Div{ dst: Reg, left: Reg, right: Reg},
-    /// Modulo left by right and store the result into dst.
-    Mod{ dst: Reg, left: Reg, right: Reg},
-    /// Raise left by rigth store the result into dst.
-    Pow{ dst: Reg, left: Reg, right: Reg},
+impl fmt::Display for StringId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "s{}", self.0)
+    }
+}
 
-    /// Shift left by rigth and store the result into dst
-    ShiftL{ dst: Reg, left: Reg, right: Reg},
-    /// Shift right by rigth and store the result into dst
-    ShiftR{ dst: Reg, left: Reg, right: Reg},
-    /// Shift right unsighned by rigth and store the result into dst
-    ShiftRU{ dst: Reg, left: Reg, right: Reg},
+/// A newtype for a bytecode function constants.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct FunctionId(pub u16);
 
-    /// Calculate if left and right are equal and store the result in dst.
-    Equal{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left and right are strictly equal and store the result in dst.
-    SEqual{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left and right are not equal and store the result in dst.
-    NotEqual{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left and right are strictly not equal and store the result in dst.
-    SNotEqual{ dst: Reg, left: Reg, right: Reg},
+impl FunctionId {
+    /// Returns the id of an entry function.
+    pub fn entry() -> FunctionId {
+        FunctionId(0)
+    }
+}
 
-    /// Calculate if left is greater then right and store the result in dst.
-    Greater{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left is greater then  or equal to right and store the result in dst.
-    GreaterEq{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left is less then right and store the result in dst.
-    Less{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate if left is less then or equal to right and store the result in dst.
-    LessEq{ dst: Reg, left: Reg, right: Reg},
+impl fmt::Display for FunctionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "f{}", self.0)
+    }
+}
 
-    /// Calculate bitwise and of left and right and store the result in dst.
-    BitAnd{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate bitwise or of left and right and store the result in dst.
-    BitOr{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate bitwise exclusive or of left and right and store the result in dst.
-    BitXor{ dst: Reg, left: Reg, right: Reg},
-    /// Calculate bitwise not of src and store the result in dst.
-    BitNot{ dst: Reg, src: Reg},
+pub struct Function {
+    // offset into the instruction buffer.
+    pub offset: u32,
+    // the amount of bytes in this function.
+    pub len: u32,
+    // Information used to reconstruct variable locations for functions with direct eval.
+    pub reflect_info: Option<()>,
+    // The span of the function in the source code.
+    pub span: Span,
+}
 
-    /// Calculate negative of src and store the result in dst.
-    Neg{ dst: Reg, src: Reg},
-    /// Coerce src into a number and store the result in dst.
-    ToNum{ dst: Reg, src: Reg},
-    /// Calculate if src is falsish and store the result in dst.
-    Not{ dst: Reg, src: Reg},
+impl fmt::Display for ByteCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, " - INSTRUCTIONS -")?;
+        let mut reader = SafeByteCodeReader::from_bc(&self.instructions);
+        while let Some(instr) = reader.read_instruction() {
+            writeln!(f, "{}", instr)?;
+        }
 
-    /// Jump to instruction with offset dst.
-    Jump{ dst: Offset},
-    /// Jump to instruction with offset dst if cond is trueish.
-    JumpTrue{ cond: Reg, dst: Offset},
-    /// Jump to instruction with offset dst if cond is falsish.
-    JumpFalse{ cond: Reg, dst: Offset},
-
-    /// Throw the error value in src
-    Throw{ src: Reg },
-    ///  Retrieve the thrown error value and store it in dst
-    Catch{ dst: Reg },
-
-    /// Return from the current function with a undefined value.
-    RetUndefind{},
-    /// Return from the current function with a the value in the src register.
-    Ret{src: Reg},
-
-    /// Call the function in func and store its result in ret..
-    Call{func: Reg, ret: Reg},
+        Ok(())
+    }
 }
