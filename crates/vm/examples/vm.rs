@@ -86,8 +86,8 @@ fn main() -> Result<(), io::Error> {
         Err(Error::Parse(e)) => {
             eprintln!("{}", e.display(&source))
         }
-        Err(Error::Compile(_)) => {
-            todo!()
+        Err(Error::Compile(e)) => {
+            eprintln!("Compile error: {:?}", e)
         }
     }
     println!("compiled in {:.4} seconds", elapsed.as_secs_f64());

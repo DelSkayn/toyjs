@@ -68,7 +68,7 @@ impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
         let res = unsafe { self.dispatch(reader, owner) };
 
         unsafe {
-            self.stack.pop_frame();
+            self.stack.pop_entry_frame();
         }
 
         res

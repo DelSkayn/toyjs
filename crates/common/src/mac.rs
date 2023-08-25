@@ -1,10 +1,10 @@
 /// A macro for running assertions which should be disabled if performance is required.
 #[macro_export]
 macro_rules! slow_assert {
-    ($assert:expr) => {
+    ($($t:tt)*) => {
         #[cfg(feature = "slow_assert")]
         {
-            assert!($assert)
+            assert!($($t)*)
         }
     };
 }
@@ -12,10 +12,10 @@ macro_rules! slow_assert {
 /// A macro for running assertions which should be disabled if performance is required.
 #[macro_export]
 macro_rules! slow_assert_ne {
-    ($a:expr, $b:expr) => {
+    ($($t:tt)*) => {
         #[cfg(feature = "slow_assert")]
         {
-            assert_ne!($a, $b)
+            assert_ne!($($t)*)
         }
     };
 }
@@ -23,10 +23,10 @@ macro_rules! slow_assert_ne {
 /// A macro for running assertions which should be disabled if performance is required.
 #[macro_export]
 macro_rules! slow_assert_eq {
-    ($a:expr, $b:expr) => {
+    ($($t:tt)*) => {
         #[cfg(feature = "slow_assert")]
         {
-            assert_eq!($a, $b)
+            assert_eq!($($t)*)
         }
     };
 }

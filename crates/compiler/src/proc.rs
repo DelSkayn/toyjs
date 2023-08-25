@@ -119,6 +119,8 @@ impl<'a> Compiler<'a> {
                 span: Span::empty(),
             }]
             .into_boxed_slice(),
+            strings: Default::default(),
+            string_buffer: Default::default(),
             instructions: bytes.into_boxed_slice(),
         })
     }

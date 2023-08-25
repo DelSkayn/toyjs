@@ -63,8 +63,6 @@ pub struct ErrorFrameInfo {
     offset: u32,
     // Offset into the stack to the previous error stack value if it exists.
     prev: Option<NonZeroU32>,
-    // Offset from the current error frame to the previous call frame.
-    prev_frame: NonZeroU32,
 }
 
 pub struct Stack<'gc, 'own> {
@@ -164,9 +162,8 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         let last = self.frame.max(self.error);
         if last == self.frames.end() {
             let mut last = last;
-            let cap = dbg!(self.frames.capacity().max(4));
+            let cap = self.frames.capacity().max(4);
             self.frames.grow(cap.next_power_of_two(), |from, to| {
-                dbg!(self.frame);
                 self.error = NonNull::new_unchecked(
                     to.as_ptr()
                         .offset(self.error.as_ptr().offset_from(from.as_ptr())),
@@ -185,8 +182,12 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         }
     }
 
-    unsafe fn frame_info(&self) -> &FrameInfo {
-        self.frame.as_ref()
+    unsafe fn frame_info(&self) -> &CallFrameInfo {
+        &self.frame.as_ref().call
+    }
+
+    unsafe fn frame_info_mut(&mut self) -> &mut CallFrameInfo {
+        &mut self.frame.as_mut().call
     }
 
     #[inline(always)]
@@ -270,15 +271,47 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         Ok(())
     }
 
-    pub unsafe fn pop_frame(&mut self) {}
+    pub unsafe fn pop_entry_frame(&mut self) {
+        slow_assert!(self.frame > self.error, "Can only pop the top frame");
+        slow_assert_ne!(
+            self.frame,
+            self.frames.root(),
+            "Tried to pop from empty stack"
+        );
 
+        let args = self.frame.as_ref().call.args;
+        // TODO arg check limit, prevent u32 overflow.
+        self.top = NonNull::new_unchecked(self.call.as_ptr().sub((2 + args) as usize));
+        self.frame = NonNull::new_unchecked(self.frame.as_ptr().sub(1));
+        if self.frame.as_ptr() == self.error.as_ptr() {
+            let mut cur_error = self.error;
+            slow_assert!(cur_error.as_ref().error.prev.is_some());
+            // If the current offset is 1 the next frame is also an error so keep searching.
+            while cur_error.as_ref().error.prev.unwrap_unchecked() == NonZeroU32::new_unchecked(1) {
+                cur_error = NonNull::new_unchecked(cur_error.as_ptr().sub(1));
+            }
+            self.frame = NonNull::new_unchecked(cur_error.as_ptr().sub(1));
+        }
+        let size = self.frame.as_ref().call.size;
+        self.call = NonNull::new_unchecked(self.top.as_ptr().sub(size.try_into().unwrap()));
+    }
+
+    /// Push a value onto the frame increasing the size of the stack.
     pub fn push(&mut self, value: Value<'gc, 'own>) -> Result<(), StackSizeError> {
         self.reserve(1)?;
-        todo!()
+        unsafe {
+            self.frame_info_mut().size += 1;
+        }
+        unsafe {
+            self.top.as_ptr().write(value);
+        }
+        Ok(())
     }
 
     /// Pop value of the stack
     pub unsafe fn pop(&mut self) -> Value<'gc, 'own> {
+        slow_assert!(self.frame_info_mut().size >= 1);
+        self.frame_info_mut().size -= 1;
         todo!()
     }
 

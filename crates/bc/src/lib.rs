@@ -40,6 +40,8 @@ pub mod limits {
 
 pub struct ByteCode {
     pub functions: Box<[Function]>,
+    pub strings: Box<[String]>,
+    pub string_buffer: Box<[u16]>,
     pub instructions: Box<[u8]>,
 }
 
@@ -111,6 +113,19 @@ impl fmt::Display for StringId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "s{}", self.0)
     }
+}
+
+pub struct String {
+    // offset into the string buffer.
+    pub offset: u32,
+    // the amount of codepoints in this string.
+    pub len: u32,
+    pub kind: StringKind,
+}
+
+pub enum StringKind {
+    Ascii,
+    Utf16,
 }
 
 /// A newtype for a bytecode function constants.

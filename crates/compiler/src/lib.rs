@@ -19,6 +19,7 @@ mod stmt;
 id!(pub struct InstructionId(u32));
 
 pub type Result<T> = StdResult<T, Error>;
+#[derive(Debug)]
 pub enum Error {
     ExceededLimits,
     NotImplemented,
