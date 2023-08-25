@@ -71,7 +71,7 @@ impl<T: Any> AnyVec for Vec<T> {
     #[inline]
     fn any_push<V: Any>(&mut self, value: V) -> Option<V> {
         let Some(this) = coerce_mut::<_, Vec<V>>(self) else {
-            return Some(value)
+            return Some(value);
         };
         this.push(value);
         None
@@ -150,9 +150,7 @@ macro_rules! impl_tuple {
             fn any_push<V: Any>(&mut self, value: V) -> Option<V> {
                 let ($(ref mut $n,)*) = self;
                 $(
-                    let Some(value) = $n.any_push(value) else {
-                        return None
-                    };
+                    let value = $n.any_push(value)?;
                 )*
                 Some(value)
             }

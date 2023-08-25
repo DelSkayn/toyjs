@@ -1,4 +1,7 @@
+// TODO remove once ready to release
 #![allow(dead_code)]
+#![allow(clippy::missing_safety_doc)]
+
 use bc::ByteCode;
 use common::{interner::Interner, string::StringId};
 use dreck::{Gc, Trace};
@@ -32,6 +35,12 @@ impl Vm {
             interner: Interner::new(),
             evaluator: None,
         }
+    }
+}
+
+impl Default for Vm {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

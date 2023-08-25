@@ -47,10 +47,10 @@ fn main() -> Result<(), io::Error> {
         } else if kind == t!("string") {
             let data = t.kind_and_data.data_id();
             println!(" = \"{}\"", lexer.data.strings.get(data.unwrap()).unwrap());
-        } else if kind == t!("num") {
+        } else if kind == t!("123") {
             let data = t.kind_and_data.data_id::<NumberId>();
             println!(" = {:e}", lexer.data.numbers[data.unwrap()].0);
-        } else if kind == t!("big int") {
+        } else if kind == t!("123n") {
             let data = t.kind_and_data.data_id();
             println!(" = {}n", lexer.data.strings.get(data.unwrap()).unwrap());
         } else if let TokenKind::Template(_) = kind {

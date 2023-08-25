@@ -123,3 +123,9 @@ impl<'gc, 'own> Object<'gc, 'own> {
         }
     }
 }
+
+impl<'gc, 'own> Default for Object<'gc, 'own> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

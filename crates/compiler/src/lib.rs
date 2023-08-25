@@ -1,8 +1,8 @@
 #![allow(unused_variables)]
 
-use ast::{Ast, ListHead, NodeId};
+use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction, Reg};
-use common::{id, number::Number, structs::Interners};
+use common::{id, structs::Interners};
 use std::result::Result as StdResult;
 
 macro_rules! to_do {

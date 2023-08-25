@@ -189,7 +189,7 @@ impl<'a> Parser<'a> {
                 let element = self.parse_binding_element()?;
                 Ok(BindingProperty::Property { name, element })
             }
-            t!("num") => {
+            t!("123") => {
                 self.next();
                 expect!(self, ":");
                 let name = PropertyName::Number(next.data_id().unwrap());

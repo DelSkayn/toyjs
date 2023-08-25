@@ -80,11 +80,11 @@ impl<'a> Lexer<'a> {
 
         if exponent == 0 {
             let id = self.finish_number(number as f64);
-            self.finish_token_number(t!("num"), Some(id))
+            self.finish_token_number(t!("123"), Some(id))
         } else {
             let number = (number as f64) * 2f64.powi(exponent as i32);
             let id = self.finish_number(number);
-            self.finish_token_number(t!("num"), Some(id))
+            self.finish_token_number(t!("123"), Some(id))
         }
     }
 
@@ -114,7 +114,7 @@ impl<'a> Lexer<'a> {
     fn lex_exponent(&mut self) -> bool {
         let Some(first) = self.peek_byte() else {
             // A exponent must have atleast a single digit.
-            return false
+            return false;
         };
 
         if first != b'-' && first != b'+' && !first.is_ascii_digit() {
@@ -145,7 +145,7 @@ impl<'a> Lexer<'a> {
             self.builder.ascii.push(c);
         }
         let id = self.finish_string();
-        self.finish_token_string(t!("big int"), Some(id))
+        self.finish_token_string(t!("123n"), Some(id))
     }
 
     fn parse_number(&mut self, start: &[u8], mut iter: Units) -> Token {
@@ -169,11 +169,11 @@ impl<'a> Lexer<'a> {
         let str = unsafe { std::str::from_utf8_unchecked(&self.builder.ascii) };
         // Should always succeed since we alread parse the number.
         let Ok(number) = str.parse() else {
-            panic!("invalid number: {} at {}",str,self.end);
+            panic!("invalid number: {} at {}", str, self.end);
         };
         self.builder.ascii.clear();
         let id = self.finish_number(number);
-        self.finish_token_number(t!("num"), Some(id))
+        self.finish_token_number(t!("123"), Some(id))
     }
 
     pub(super) fn lex_number(&mut self, start: &[u8]) -> Token {
@@ -184,13 +184,13 @@ impl<'a> Lexer<'a> {
             match self.peek_byte() {
                 None => {
                     let id = self.finish_number(0.0);
-                    return self.finish_token_number(t!("num"), Some(id));
+                    return self.finish_token_number(t!("123"), Some(id));
                 }
                 Some(b'n') => {
                     self.next_unit();
                     self.builder.push(b'0' as u16);
                     let id = self.finish_string();
-                    return self.finish_token_string(t!("big int"), Some(id));
+                    return self.finish_token_string(t!("123n"), Some(id));
                 }
                 Some(b'b' | b'B') => {
                     self.next_unit();

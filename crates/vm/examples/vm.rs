@@ -38,7 +38,7 @@ fn get_input() -> Result<Box<dyn Read>, io::Error> {
 
 fn run<'gc, 'own>(
     source: &Source,
-    gc: &'gc mut Arena<'own>,
+    gc: &'gc Arena<'own>,
     owner: &'gc mut Owner<'own>,
 ) -> Result<Result<Value<'gc, 'own>, Value<'gc, 'own>>, Error> {
     let mut interners = Interners::default();
@@ -77,7 +77,7 @@ fn main() -> Result<(), io::Error> {
     let source = String::from_std_str(&buffer);
     let source = common::source::Source::new(source, Some("parse_script"));
     let before = Instant::now();
-    let res = run(&source, &mut arena, &mut owner);
+    let res = run(&source, &arena, &mut owner);
     let elapsed = before.elapsed();
     match res {
         Ok(res) => {

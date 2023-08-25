@@ -1,5 +1,5 @@
 use bc::ByteCodeReader;
-use dreck::{Gc, Owner, Trace};
+use dreck::{Owner, Trace};
 
 mod dispatch;
 

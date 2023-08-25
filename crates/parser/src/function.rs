@@ -1,5 +1,3 @@
-use std::mem;
-
 use ast::{Function, FunctionKind, ListHead, NodeId, Stmt};
 use token::{t, TokenKind};
 

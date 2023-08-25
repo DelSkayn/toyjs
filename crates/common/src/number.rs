@@ -15,9 +15,11 @@ macro_rules! impl_num{
             impl Num for $n {
                 fn equal_bits(self,other: Self) -> bool{
                     let this: [u8; std::mem::size_of::<Self>()] = unsafe{
+                        #[allow(clippy::transmute_num_to_bytes)]
                         std::mem::transmute(self)
                     };
                     let other: [u8; std::mem::size_of::<Self>()] = unsafe{
+                        #[allow(clippy::transmute_num_to_bytes)]
                         std::mem::transmute(other)
                     };
                     this == other

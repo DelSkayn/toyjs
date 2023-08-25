@@ -9,7 +9,7 @@ impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
     pub(crate) unsafe fn dispatch(
         &mut self,
         mut reader: ByteCodeReader,
-        owner: &mut Owner<'own>,
+        _owner: &mut Owner<'own>,
     ) -> Result<Value<'gc, 'own>, Value<'gc, 'own>> {
         loop {
             match reader.read::<u8>() {

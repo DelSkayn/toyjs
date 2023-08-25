@@ -1,5 +1,3 @@
-use std::mem;
-
 use ast::{
     ArrayLiteral, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
     BindingProperty, Expr, Function, FunctionKind, IdentOrPattern, ListHead, ListId, NodeId,
@@ -20,7 +18,7 @@ impl<'a> Parser<'a> {
     /// Parsers a primary expression or a expression without any operators.
     pub(crate) fn parse_prime(&mut self) -> Result<NodeId<PrimeExpr>> {
         let token = peek_expect!(
-            self, "ident", "num", "string", "true", "false", "regex", "null", "this", "{", "[",
+            self, "ident", "123", "string", "true", "false", "regex", "null", "this", "{", "[",
             "(", "function"
         );
 
@@ -42,7 +40,7 @@ impl<'a> Parser<'a> {
                     Ok(id)
                 }
             }
-            t!("num") => {
+            t!("123") => {
                 self.next();
                 let id = self
                     .ast
@@ -130,7 +128,7 @@ impl<'a> Parser<'a> {
             }
             x => {
                 unexpected!(
-                    self, x, "ident", "num", "string", "true", "false", "regex", "null", "this",
+                    self, x, "ident", "123", "string", "true", "false", "regex", "null", "this",
                     "{", "[", "(", "function"
                 )
             }
@@ -263,7 +261,7 @@ impl<'a> Parser<'a> {
                 | TokenKind::UnreservedKeyword(_)
                 | t!("[")
                 | t!("string")
-                | t!("num"),
+                | t!("123"),
         )
     }
 
@@ -371,13 +369,13 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_property_name(&mut self) -> Result<PropertyName> {
-        let token = peek_expect!(self, "ident", "[", "string", "num");
+        let token = peek_expect!(self, "ident", "[", "string", "123");
         match token.kind() {
             t!("string") => {
                 self.next();
                 Ok(PropertyName::String(token.data_id().unwrap()))
             }
-            t!("num") => {
+            t!("123") => {
                 self.next();
                 Ok(PropertyName::Number(token.data_id().unwrap()))
             }

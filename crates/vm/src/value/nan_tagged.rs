@@ -2,7 +2,7 @@
 
 use dreck::{marker::Invariant, Gc, Marker, Trace};
 
-use crate::object::{GcObject, Object};
+use crate::object::GcObject;
 
 //TODO rediscover implementation and document.
 

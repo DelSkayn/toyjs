@@ -7,10 +7,10 @@ macro_rules! t {
     ("string") => {
         $crate::TokenKind::String
     };
-    ("num") => {
+    ("123") => {
         $crate::TokenKind::Number
     };
-    ("big int") => {
+    ("123n") => {
         $crate::TokenKind::BigInt
     };
     ("\n") => {

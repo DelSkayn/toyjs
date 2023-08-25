@@ -17,11 +17,7 @@ use bc::{ByteCodeReader, Reg};
 use common::{slow_assert, slow_assert_ne};
 use core::fmt;
 use dreck::{Marker, Trace};
-use std::{
-    mem::MaybeUninit,
-    num::NonZeroU32,
-    ptr::{self, NonNull},
-};
+use std::{mem::MaybeUninit, num::NonZeroU32, ptr::NonNull};
 
 mod buffer;
 
@@ -119,10 +115,10 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Result<Self, StackSizeError> {
         let mut res = Self::new();
-        res.reserve(capacity);
-        res
+        res.reserve(capacity)?;
+        Ok(res)
     }
 
     /// Returns the amount of stack values in use.
@@ -316,7 +312,13 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     }
 
     /// Push a catch frame onto the stack.
-    pub fn push_catch(&mut self, offset: u32) -> Result<(), StackSizeError> {
+    pub fn push_catch(&mut self, _offset: u32) -> Result<(), StackSizeError> {
         todo!()
+    }
+}
+
+impl<'gc, 'own> Default for Stack<'gc, 'own> {
+    fn default() -> Self {
+        Self::new()
     }
 }
