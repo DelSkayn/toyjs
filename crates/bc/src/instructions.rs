@@ -9,6 +9,8 @@ instructions! {
     Loadi16{ dst: Reg, imm: i16 },
     /// Load the i32 value in imm into dst
     Loadi32{ dst: Reg, imm: i32 },
+    /// Load the f32 value in imm into dst
+    Loadf32{ dst: Reg, imm: f32 },
     /// Load the f64 value in imm into dst
     Loadf64{ dst: Reg, imm: f64 },
     /// Loads a small primitive value in imm into dst

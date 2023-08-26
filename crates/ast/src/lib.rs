@@ -4,7 +4,7 @@ use common::{number::NumberId, string::StringId};
 use core::fmt;
 
 mod ast;
-pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList};
+pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList, NodeListId};
 
 mod render;
 pub use render::{RenderAst, RenderCtx, Result};
@@ -22,9 +22,10 @@ pub type AstStorage = (
     (
         Vec<IdentOrPattern>,
         Vec<VariableDecl>,
-        Vec<Option<BindingElement>>,
+        Vec<NodeList<Option<NodeId<BindingElement>>>>,
         Vec<BindingElement>,
         Vec<BindingProperty>,
+        Vec<BindingPattern>,
     ),
     Vec<Function>,
     (Vec<Class>, Vec<ClassMember>),
@@ -42,7 +43,7 @@ pub enum VariableKind {
 
 pub enum IdentOrPattern {
     Ident(StringId),
-    Pattern(BindingPattern),
+    Pattern(NodeId<BindingPattern>),
 }
 
 impl RenderAst for IdentOrPattern {
@@ -68,7 +69,7 @@ pub enum BindingPattern {
         rest: Option<StringId>,
     },
     Array {
-        elements: ListHead<Option<BindingElement>>,
+        elements: Option<NodeListId<Option<NodeId<BindingElement>>>>,
         rest: Option<NodeId<IdentOrPattern>>,
     },
 }
@@ -136,7 +137,7 @@ pub enum BindingProperty {
     },
     Property {
         name: PropertyName,
-        element: BindingElement,
+        element: NodeId<BindingElement>,
     },
 }
 
@@ -170,7 +171,7 @@ pub enum BindingElement {
         initializer: Option<NodeId<Expr>>,
     },
     Pattern {
-        pattern: BindingPattern,
+        pattern: NodeId<BindingPattern>,
         initializer: Option<NodeId<Expr>>,
     },
 }
@@ -854,7 +855,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Call {
-        args: Option<NodeId<NodeList<Argument>>>,
+        args: Option<NodeListId<Argument>>,
         expr: NodeId<Expr>,
     },
     Prime {

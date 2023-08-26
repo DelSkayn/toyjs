@@ -1,5 +1,6 @@
 use ast::{
-    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, PropertyName,
+    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, NodeList,
+    PropertyName,
 };
 use common::string::{String, StringId};
 use token::{t, TokenKind};
@@ -21,7 +22,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_pattern(&mut self) -> Result<BindingPattern> {
+    pub fn parse_pattern(&mut self) -> Result<NodeId<BindingPattern>> {
         let first = next_expect!(self, "{", "[");
         match first.kind() {
             t!("{") => self.parse_object_pattern(),
@@ -142,7 +143,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_object_pattern(&mut self) -> Result<BindingPattern> {
+    pub fn parse_object_pattern(&mut self) -> Result<NodeId<BindingPattern>> {
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut rest = None;
@@ -173,10 +174,10 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(BindingPattern::Object {
+        Ok(self.ast.push_node(BindingPattern::Object {
             properties: head,
             rest,
-        })
+        }))
     }
 
     pub fn parse_binding_property(&mut self) -> Result<BindingProperty> {
@@ -187,6 +188,7 @@ impl<'a> Parser<'a> {
                 expect!(self, ":");
                 let name = PropertyName::String(next.data_id().unwrap());
                 let element = self.parse_binding_element()?;
+                let element = self.ast.push_node(element);
                 Ok(BindingProperty::Property { name, element })
             }
             t!("123") => {
@@ -194,6 +196,7 @@ impl<'a> Parser<'a> {
                 expect!(self, ":");
                 let name = PropertyName::Number(next.data_id().unwrap());
                 let element = self.parse_binding_element()?;
+                let element = self.ast.push_node(element);
                 Ok(BindingProperty::Property { name, element })
             }
             t!("[") => {
@@ -203,6 +206,7 @@ impl<'a> Parser<'a> {
                 expect!(self, ":");
                 let name = PropertyName::Computed(expr);
                 let element = self.parse_binding_element()?;
+                let element = self.ast.push_node(element);
                 Ok(BindingProperty::Property { name, element })
             }
             _ => {
@@ -210,6 +214,7 @@ impl<'a> Parser<'a> {
                 if self.eat(t!(":")) {
                     let name = PropertyName::Ident(ident);
                     let element = self.parse_binding_element()?;
+                    let element = self.ast.push_node(element);
                     Ok(BindingProperty::Property { name, element })
                 } else {
                     let initializer = self
@@ -225,8 +230,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_array_pattern(&mut self) -> Result<BindingPattern> {
-        let mut head = ListHead::Empty;
+    pub fn parse_array_pattern(&mut self) -> Result<NodeId<BindingPattern>> {
+        let mut head = None;
         let mut prev = None;
         let mut rest = None;
         loop {
@@ -242,15 +247,14 @@ impl<'a> Parser<'a> {
                 }
                 t!(",") => {
                     self.next();
-                    let item = self.ast.push_node(None);
-                    prev = Some(self.ast.append_list(item, prev));
-                    head = head.or(prev.into());
+                    prev = Some(self.ast.append_node_list(None, prev));
+                    head = head.or(prev);
                 }
                 _ => {
                     let elem = self.parse_binding_element()?;
-                    let item = self.ast.push_node(Some(elem));
-                    prev = Some(self.ast.append_list(item, prev));
-                    head = head.or(prev.into());
+                    let item = self.ast.push_node(elem);
+                    prev = Some(self.ast.append_node_list(Some(item), prev));
+                    head = head.or(prev);
                     if !self.eat(t!(",")) {
                         break;
                     }
@@ -259,10 +263,10 @@ impl<'a> Parser<'a> {
         }
         expect!(self, "]");
 
-        Ok(BindingPattern::Array {
+        Ok(self.ast.push_node(BindingPattern::Array {
             elements: head,
             rest,
-        })
+        }))
     }
 
     pub fn parse_binding_element(&mut self) -> Result<BindingElement> {

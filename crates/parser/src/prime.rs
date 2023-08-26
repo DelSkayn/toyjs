@@ -462,6 +462,7 @@ impl<'a> Parser<'a> {
                 }),
                 PrimeExpr::Object(x) => {
                     let pattern = self.reparse_object_binding(x)?;
+                    let pattern = self.ast.push_node(pattern);
                     Some(BindingElement::Pattern {
                         pattern,
                         initializer: None,
@@ -469,6 +470,7 @@ impl<'a> Parser<'a> {
                 }
                 PrimeExpr::Array(x) => {
                     let pattern = self.reparse_array_lit(x)?;
+                    let pattern = self.ast.push_node(pattern);
                     Some(BindingElement::Pattern {
                         pattern,
                         initializer: None,
@@ -523,6 +525,7 @@ impl<'a> Parser<'a> {
                 },
                 PropertyDefinition::Define { property, expr } => {
                     let element = self.reparse_binding_element(expr)?;
+                    let element = self.ast.push_node(element);
                     BindingProperty::Property {
                         name: property,
                         element,
@@ -569,18 +572,18 @@ impl<'a> Parser<'a> {
         };
 
         let mut cur = self.ast[expr].elements;
-        let mut head = ListHead::Empty;
+        let mut head = None;
         let mut prev = None;
 
         while let Some(c) = cur {
             let element = if let Some(x) = self.ast[c].data {
-                Some(self.reparse_binding_element(x)?)
+                let elem = self.reparse_binding_element(x)?;
+                Some(self.ast.push_node(elem))
             } else {
                 None
             };
-            let element = self.ast.push_node(element);
-            prev = Some(self.ast.append_list(element, prev));
-            head = head.or(prev.into());
+            prev = Some(self.ast.append_node_list(element, prev));
+            head = head.or(prev);
             cur = self.ast[c].next;
         }
 
@@ -598,10 +601,12 @@ impl<'a> Parser<'a> {
             PrimeExpr::Ident(name) => Some(IdentOrPattern::Ident(name)),
             PrimeExpr::Object(lit) => {
                 let pat = self.reparse_object_binding(lit)?;
+                let pat = self.ast.push_node(pat);
                 Some(IdentOrPattern::Pattern(pat))
             }
             PrimeExpr::Array(lit) => {
                 let pat = self.reparse_array_lit(lit)?;
+                let pat = self.ast.push_node(pat);
                 Some(IdentOrPattern::Pattern(pat))
             }
             _ => None,

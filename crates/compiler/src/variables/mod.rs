@@ -6,6 +6,7 @@ use super::{Compiler, Result};
 mod expr;
 mod stmt;
 
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Kind {
     /// Defined with the side effect of introducing new global variables.
     Global,
@@ -46,7 +47,11 @@ impl Variables {
         Variables {}
     }
 
-    pub fn load(&mut self, name: StringId, expr: NodeId<ast::Expr>) -> Result<()> {
+    pub fn load(&mut self, name: StringId, at: NodeId<ast::Expr>) -> Result<()> {
+        to_do!()
+    }
+
+    pub fn store(&mut self, name: StringId, from: NodeId<ast::Expr>) -> Result<()> {
         to_do!()
     }
 
