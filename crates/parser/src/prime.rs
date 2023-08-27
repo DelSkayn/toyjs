@@ -461,7 +461,7 @@ impl<'a> Parser<'a> {
                     initializer: None,
                 }),
                 PrimeExpr::Object(x) => {
-                    let pattern = self.reparse_object_binding(x)?;
+                    let pattern = self.reparse_object_lit(x)?;
                     let pattern = self.ast.push_node(pattern);
                     Some(BindingElement::Pattern {
                         pattern,
@@ -500,7 +500,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn reparse_object_binding(&mut self, expr: ObjectLiteral) -> Option<BindingPattern> {
+    pub fn reparse_object_lit(&mut self, expr: ObjectLiteral) -> Option<BindingPattern> {
         let ObjectLiteral::Item(mut item) = expr else {
             return Some(BindingPattern::Object {
                 properties: ListHead::Empty,
@@ -563,7 +563,7 @@ impl<'a> Parser<'a> {
         Some(BindingPattern::Object { properties, rest })
     }
 
-    fn reparse_array_lit(&mut self, expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
+    pub fn reparse_array_lit(&mut self, expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
         let rest = if let Some(x) = self.ast[expr].spread {
             let rest = self.reparse_ident_or_pattern(x)?;
             Some(self.ast.push_node(rest))
@@ -600,7 +600,7 @@ impl<'a> Parser<'a> {
         match self.ast[expr] {
             PrimeExpr::Ident(name) => Some(IdentOrPattern::Ident(name)),
             PrimeExpr::Object(lit) => {
-                let pat = self.reparse_object_binding(lit)?;
+                let pat = self.reparse_object_lit(lit)?;
                 let pat = self.ast.push_node(pat);
                 Some(IdentOrPattern::Pattern(pat))
             }

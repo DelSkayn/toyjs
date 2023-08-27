@@ -498,3 +498,76 @@ impl Iterator for Lexer<'_> {
         self.next_token()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use common::{source::Source, span::Span, structs::Interners};
+    use token::{t, Token, TokenKindData};
+
+    use crate::Lexer;
+
+    #[test]
+    fn newlines() {
+        let source = b"\n\n\n \n\n  tgt\n\n";
+        let source = Source::new(std::str::from_utf8(source).unwrap(), Some("test"));
+        let mut interners = Interners::default();
+        let mut lexer = Lexer::new(source.source(), &mut interners);
+
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(0, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(1, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(2, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!(" "), None),
+                span: Span::new(3, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(4, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(5, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!(" "), None),
+                span: Span::new(6, 2),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("ident"), Some(0)),
+                span: Span::new(8, 3),
+            }),
+        );
+    }
+}

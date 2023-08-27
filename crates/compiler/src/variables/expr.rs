@@ -92,7 +92,11 @@ impl<'a> Compiler<'a> {
                 self.resolve_expr(self.ast[x].then)?;
                 self.resolve_expr(self.ast[x].r#else)?;
             }
-            ast::Expr::TaggedTemplate { tag, template } => to_do!(),
+            ast::Expr::TaggedTemplate { tag, .. } => {
+                self.resolve_expr(tag)?;
+                // TODO template
+            }
+            ast::Expr::Destructure { pattern, expr } => to_do!(),
         }
         Ok(())
     }

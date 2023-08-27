@@ -60,10 +60,10 @@ fn main() -> Result<(), io::Error> {
             println!("{}", bc);
         }
         Err(Error::Parse(e)) => {
-            eprintln!("{}", e.display(&source))
+            eprintln!("parse error {}", e.display(&source))
         }
-        Err(Error::Compile(_)) => {
-            todo!()
+        Err(Error::Compile(e)) => {
+            eprintln!("compile_error {}", e)
         }
     }
     println!("compiled in {:.4} seconds", elapsed.as_secs_f64());

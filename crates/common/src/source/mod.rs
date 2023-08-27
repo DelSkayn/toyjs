@@ -10,13 +10,13 @@ use crate::{
 mod format;
 pub use format::Error as FormatError;
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct Location {
     pub line: u32,
     pub column: u32,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub struct SpanLocation {
     /// Where the span starts,
     pub start: Location,
@@ -125,5 +125,48 @@ impl Source {
                 column: end_col,
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        source::{Location, SpanLocation},
+        span::Span,
+    };
+
+    use super::Source;
+    use std::str;
+
+    #[test]
+    fn locate() {
+        let source = b"\n\n\n \n\n  tgt\n\n";
+        let source = Source::new(str::from_utf8(source).unwrap(), Some("test"));
+        assert_eq!(source.line_span(0).unwrap(), Span::new(0, 0));
+        assert_eq!(source.line_span(1).unwrap(), Span::new(1, 0));
+        assert_eq!(source.line_span(2).unwrap(), Span::new(2, 0));
+        assert_eq!(source.line_span(3).unwrap(), Span::new(3, 1));
+        assert_eq!(source.line_span(4).unwrap(), Span::new(5, 0));
+        assert_eq!(source.line_span(5).unwrap(), Span::new(6, 5));
+        assert_eq!(source.line_span(6).unwrap(), Span::new(12, 0));
+        assert!(source.line_span(7).is_none());
+
+        let span = Span::new(3, 0);
+        assert_eq!(
+            source.locate_span(span).unwrap(),
+            SpanLocation {
+                start: Location { line: 3, column: 0 },
+                end: Location { line: 3, column: 0 }
+            }
+        );
+
+        let span = Span::new(8, 3);
+        assert_eq!(
+            source.locate_span(span).unwrap(),
+            SpanLocation {
+                start: Location { line: 5, column: 2 },
+                end: Location { line: 5, column: 5 }
+            }
+        );
     }
 }

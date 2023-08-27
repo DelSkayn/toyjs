@@ -109,6 +109,7 @@ impl<'a> Lexer<'a> {
                     has_escape_code = true;
                 } else {
                     self.peek = Some(x);
+                    self.end -= 1;
                     break;
                 }
             } else {

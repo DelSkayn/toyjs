@@ -26,6 +26,8 @@ pub enum ErrorKind {
         found: TokenKind,
         message: Option<String>,
     },
+    NotAssignable,
+    InvalidDestructuringAssigment,
     InvalidToken,
 }
 
@@ -142,6 +144,22 @@ impl Error {
                     self.origin.clone(),
                     message.as_ref().map(|x| x.encoding()),
                 )?;
+            }
+            ErrorKind::NotAssignable => {
+                write!(w, "left hand side expression is not assignable")?;
+                writeln!(w)?;
+                write!(w, " --> ")?;
+                source.render_span_location(w, self.origin.clone())?;
+                writeln!(w)?;
+                source.render_string_block(w, self.origin.clone(), None)?;
+            }
+            ErrorKind::InvalidDestructuringAssigment => {
+                write!(w, "invalid destructuring assignment target")?;
+                writeln!(w)?;
+                write!(w, " --> ")?;
+                source.render_span_location(w, self.origin.clone())?;
+                writeln!(w)?;
+                source.render_string_block(w, self.origin.clone(), None)?;
             }
             ErrorKind::InvalidToken => {
                 write!(w, "invalid token")?;

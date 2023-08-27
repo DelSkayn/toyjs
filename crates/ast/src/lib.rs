@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use common::{number::NumberId, string::StringId};
 use core::fmt;
 
@@ -865,6 +863,10 @@ pub enum Expr {
         star: bool,
         expr: NodeId<Expr>,
     },
+    Destructure {
+        pattern: NodeId<BindingPattern>,
+        expr: NodeId<Expr>,
+    },
     TaggedTemplate {
         tag: NodeId<Expr>,
         template: NodeId<Template>,
@@ -927,6 +929,14 @@ impl RenderAst for Expr {
             Expr::Tenary(ref x) => ctx
                 .render_struct("Expr::Tenary", w)?
                 .field("0", x)?
+                .finish(),
+            Expr::Destructure {
+                ref pattern,
+                ref expr,
+            } => ctx
+                .render_struct("Expr::Destructure", w)?
+                .field("pattern", pattern)?
+                .field("expr", expr)?
                 .finish(),
             Expr::TaggedTemplate {
                 ref tag,

@@ -1,4 +1,4 @@
-use ast::{BindingElement, BindingPattern, BindingProperty, ListHead, NodeId};
+use ast::{BindingElement, BindingPattern, BindingProperty, ForLoopHead, ListHead, NodeId};
 
 use crate::{Compiler, Result};
 
@@ -65,7 +65,7 @@ impl<'a> Compiler<'a> {
                 self.resolve_stmt(body)?;
             }
             ast::Stmt::For { head, body } => {
-                //TODO
+                self.resolve_for_head(head)?;
                 self.resolve_stmt(body)?;
             }
             ast::Stmt::Switch {
@@ -82,11 +82,9 @@ impl<'a> Compiler<'a> {
                 finally,
             } => {
                 self.resolve_stmts(block)?;
-
                 if let Some(catch) = catch {
                     self.resolve_stmts(self.ast[catch].block)?;
                 }
-
                 if let Some(finally) = finally {
                     self.resolve_stmts(finally)?;
                 }
@@ -102,6 +100,43 @@ impl<'a> Compiler<'a> {
             }
             ast::Stmt::Function { func } => self.resolve_func(func)?,
             ast::Stmt::Class { class } => self.resolve_class(class)?,
+        }
+        Ok(())
+    }
+
+    pub fn resolve_for_head(&mut self, head: NodeId<ForLoopHead>) -> Result<()> {
+        match self.ast[head] {
+            ForLoopHead::CStyle { decl, cond, post } => todo!(),
+            ForLoopHead::In { decl, mut expr } => {
+                match decl {
+                    ast::InOfDecl::Expr(x) => self.resolve_expr(x)?,
+                    ast::InOfDecl::Decl { kind, binding } => {
+                        // find the last expression.
+                        let mut head = expr;
+                        while let Some(next) = self.ast[head].next {
+                            head = next;
+                        }
+                        self.resolve_decl(kind.into(), binding, Some(self.ast[head].item))?;
+                    }
+                }
+                loop {
+                    self.resolve_expr(self.ast[expr].item)?;
+                    if let Some(next) = self.ast[expr].next {
+                        expr = next;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            ForLoopHead::Of { decl, expr } => {
+                match decl {
+                    ast::InOfDecl::Expr(x) => self.resolve_expr(x)?,
+                    ast::InOfDecl::Decl { kind, binding } => {
+                        self.resolve_decl(kind.into(), binding, Some(expr))?;
+                    }
+                }
+                self.resolve_expr(expr)?;
+            }
         }
         Ok(())
     }
@@ -136,54 +171,85 @@ impl<'a> Compiler<'a> {
         pattern: NodeId<BindingPattern>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
-        to_do!()
-        /*
-            if let ListHead::Present(mut head) = properties {
-                loop {
-                    self.resolve_binding_property(
-                        kind,
-                        decl,
-                        self.ast[head].item,
-                        initializer,
-                    )?;
-                    if let Some(x) = self.ast[head].next {
-                        head = x;
-                    } else {
-                        break;
+        match self.ast[pattern] {
+            BindingPattern::Object { properties, rest } => {
+                if let ListHead::Present(mut head) = properties {
+                    loop {
+                        self.resolve_binding_property(
+                            kind,
+                            decl,
+                            self.ast[head].item,
+                            initializer,
+                        )?;
+                        if let Some(x) = self.ast[head].next {
+                            head = x;
+                        } else {
+                            break;
+                        }
                     }
                 }
-            }
 
-            if let Some(rest) = rest {
-                self.variables.declare(rest, kind, decl)?;
+                if let Some(rest) = rest {
+                    self.variables.declare(rest, kind, decl)?;
+                }
             }
-        */
+            BindingPattern::Array { elements, rest } => {
+                if let Some(mut head) = elements {
+                    loop {
+                        if let Some(elem) = self.ast[head].data {
+                            self.resolve_binding_element(kind, decl, elem, initializer)?;
+                        }
+                        if let Some(x) = self.ast[head].next {
+                            head = x;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(rest) = rest {
+                    self.resolve_decl(kind, rest, initializer)?;
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn resolve_binding_property(
         &mut self,
         kind: Kind,
         decl: NodeId<ast::IdentOrPattern>,
-        element: NodeId<BindingProperty>,
+        property: NodeId<BindingProperty>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
-        match self.ast[element] {
+        match self.ast[property] {
             BindingProperty::Binding { name, initializer } => {
                 self.variables.declare(name, kind, decl)?;
             }
-            BindingProperty::Property { element, .. } => {}
+            BindingProperty::Property { element, .. } => {
+                self.resolve_binding_element(kind, decl, element, initializer)?;
+            }
         }
-        to_do!()
+        Ok(())
     }
 
     pub fn resolve_binding_element(
         &mut self,
         kind: Kind,
         decl: NodeId<ast::IdentOrPattern>,
-        element: NodeId<Option<BindingElement>>,
+        element: NodeId<BindingElement>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
-        to_do!()
+        match self.ast[element] {
+            BindingElement::SingleName { name, initializer } => {
+                self.variables.declare(name, kind, decl)?;
+            }
+            BindingElement::Pattern {
+                pattern,
+                initializer,
+            } => self.resolve_binding_pattern(kind, decl, pattern, initializer)?,
+        }
+        Ok(())
     }
 
     pub fn resolve_func(&mut self, func: NodeId<ast::Function>) -> Result<()> {

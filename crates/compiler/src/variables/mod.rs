@@ -1,4 +1,4 @@
-use ast::{ListHead, NodeId};
+use ast::{Function, ListHead, NodeId};
 use common::string::StringId;
 
 use super::{Compiler, Result};
@@ -20,6 +20,16 @@ pub enum Kind {
     Unresolved,
 }
 
+impl From<ast::VariableKind> for Kind {
+    fn from(value: ast::VariableKind) -> Self {
+        match value {
+            ast::VariableKind::Const => Self::Const,
+            ast::VariableKind::Var => Self::Function,
+            ast::VariableKind::Let => Self::Let,
+        }
+    }
+}
+
 pub struct Lifetime {
     /// When the variable is first declared.
     declared: NodeId<ast::IdentOrPattern>,
@@ -38,6 +48,11 @@ pub struct VariableInfo {
     kind: Kind,
     /// How long does the variable life.
     lifetime: Option<Lifetime>,
+}
+
+pub enum Scope {
+    Function(NodeId<ast::Function>),
+    Block(NodeId<ast::Stmt>),
 }
 
 pub struct Variables {}

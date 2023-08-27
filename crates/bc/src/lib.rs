@@ -83,6 +83,32 @@ impl fmt::Display for Reg {
     }
 }
 
+/// A newtype for a register of a far index.
+///
+/// An instruction can directly access upto 127 register and 126 arguments.
+/// When an instruction needs to read from a further address this register is used.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct FarReg(pub i32);
+
+impl FarReg {
+    /// Returns the register index of the place where the `this` value is stored.
+    pub const fn this_reg() -> Self {
+        FarReg(-1)
+    }
+
+    /// Returns the register for the current function being executed.
+    pub const fn function_reg() -> Self {
+        FarReg(-2)
+    }
+}
+
+impl fmt::Display for FarReg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "fr{}", self.0)
+    }
+}
+
 /// A newtype for a instruction offset for jumps.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
 #[repr(transparent)]
@@ -126,6 +152,17 @@ pub struct String {
 pub enum StringKind {
     Ascii,
     Utf16,
+}
+
+/// A newtype for a bytecode function constants.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct UpvalueId(pub u16);
+
+impl fmt::Display for UpvalueId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "u{}", self.0)
+    }
 }
 
 /// A newtype for a bytecode function constants.

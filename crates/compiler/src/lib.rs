@@ -1,20 +1,25 @@
 #![allow(unused_variables)]
 
 use ast::{Ast, ListHead};
-use bc::{ByteCode, Instruction, Reg};
+use bc::{ByteCode, Instruction};
 use common::{id, structs::Interners};
-use std::result::Result as StdResult;
+use core::fmt;
+use registers::Registers;
+use std::{backtrace::Backtrace, result::Result as StdResult};
 use variables::Variables;
 
 macro_rules! to_do {
     () => {
-        return Err($crate::Error::NotImplemented)
+        return Err($crate::Error::NotImplemented(
+            std::backtrace::Backtrace::capture(),
+        ))
     };
 }
 
 mod expr;
 mod prime;
 mod proc;
+mod registers;
 mod stmt;
 mod variables;
 
@@ -24,25 +29,36 @@ pub type Result<T> = StdResult<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     ExceededLimits,
-    NotImplemented,
+    NotImplemented(Backtrace),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::ExceededLimits => write!(f, "Code exceeded interpreter limits"),
+            Error::NotImplemented(b) => {
+                write!(f, "Compiler hit path which was not yet implemented:\n{b}")
+            }
+        }
+    }
 }
 
 pub struct Compiler<'a> {
     instructions: Vec<Instruction>,
-    register: i8,
     interners: &'a mut Interners,
     ast: &'a mut Ast,
     variables: Variables,
+    registers: Registers,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(interners: &'a mut Interners, ast: &'a mut Ast) -> Self {
         Self {
             instructions: Vec::new(),
-            register: 0,
             interners,
             ast,
             variables: Variables::new(),
+            registers: Registers::new(),
         }
     }
 
@@ -67,7 +83,7 @@ impl<'a> Compiler<'a> {
         }
 
         if let Some(x) = expr {
-            self.push(Instruction::Ret { src: Reg(x) })?;
+            self.push(Instruction::Ret { src: x })?;
         } else {
             self.push(Instruction::RetUndefind {})?;
         }

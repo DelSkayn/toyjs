@@ -4,46 +4,58 @@ use bc::{Instruction, Reg};
 use crate::{Compiler, Result};
 
 impl<'a> Compiler<'a> {
-    pub fn compile_prime(&mut self, expr: NodeId<ast::PrimeExpr>) -> Result<i8> {
+    pub fn compile_prime(
+        &mut self,
+        valid: NodeId<ast::Expr>,
+        expr: NodeId<ast::PrimeExpr>,
+    ) -> Result<Reg> {
         match self.ast[expr] {
             ast::PrimeExpr::Number(id) => {
                 let number = self.interners.numbers[id];
-                let reg = self.register;
-                self.register += 1;
+                let dst = self.registers.alloc_tmp(valid, valid)?;
                 if let Some(imm) = number.cast() {
-                    self.instructions
-                        .push(Instruction::Loadi8 { dst: Reg(reg), imm })
+                    self.instructions.push(Instruction::Loadi8 { dst, imm });
                 } else if let Some(imm) = number.cast() {
-                    self.instructions
-                        .push(Instruction::Loadi16 { dst: Reg(reg), imm })
+                    self.instructions.push(Instruction::Loadi16 { dst, imm });
                 } else if let Some(imm) = number.cast() {
-                    self.instructions
-                        .push(Instruction::Loadi32 { dst: Reg(reg), imm });
+                    self.instructions.push(Instruction::Loadi32 { dst, imm });
                 } else if let Some(imm) = number.cast() {
-                    self.instructions
-                        .push(Instruction::Loadf32 { dst: Reg(reg), imm });
+                    self.instructions.push(Instruction::Loadf32 { dst, imm });
                 } else {
-                    self.instructions.push(Instruction::Loadf64 {
-                        dst: Reg(reg),
-                        imm: number.0,
-                    });
+                    self.instructions
+                        .push(Instruction::Loadf64 { dst, imm: number.0 });
                 }
-                Ok(reg)
+                Ok(dst)
             }
             ast::PrimeExpr::String(_) => to_do!(),
             ast::PrimeExpr::Template(_) => to_do!(),
             ast::PrimeExpr::Regex(_) => to_do!(),
             ast::PrimeExpr::Ident(_) => to_do!(),
-            ast::PrimeExpr::Boolean(_) => to_do!(),
+            ast::PrimeExpr::Boolean(x) => {
+                let dst = self.registers.alloc_tmp(valid, valid)?;
+                if x {
+                    self.instructions
+                        .push(Instruction::LoadPrim { dst, imm: 6 });
+                } else {
+                    self.instructions
+                        .push(Instruction::LoadPrim { dst, imm: 7 });
+                }
+                Ok(dst)
+            }
             ast::PrimeExpr::Function(_) => to_do!(),
             ast::PrimeExpr::Class(_) => to_do!(),
             ast::PrimeExpr::Object(_) => to_do!(),
             ast::PrimeExpr::Array(_) => to_do!(),
-            ast::PrimeExpr::NewTarget => to_do!(),
-            ast::PrimeExpr::Null => to_do!(),
-            ast::PrimeExpr::This => to_do!(),
+            ast::PrimeExpr::NewTarget => Ok(Reg::this_reg()),
+            ast::PrimeExpr::Null => {
+                let dst = self.registers.alloc_tmp(valid, valid)?;
+                self.instructions
+                    .push(Instruction::LoadPrim { dst, imm: 2 });
+                Ok(dst)
+            }
+            ast::PrimeExpr::This => Ok(Reg::this_reg()),
             ast::PrimeExpr::Super => to_do!(),
-            ast::PrimeExpr::Covered(x) => self.compile_exprs(x),
+            ast::PrimeExpr::Covered(x) => self.compile_exprs(Some(valid), x),
         }
     }
 }

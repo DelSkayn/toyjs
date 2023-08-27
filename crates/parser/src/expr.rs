@@ -1,10 +1,13 @@
 use ast::{
-    Argument, AssignOp, BaseOp, BinaryOp, Expr, ListId, NodeId, NodeList, PostfixOp, PrefixOp,
-    PrimeExpr,
+    Argument, AssignOp, BaseOp, BinaryOp, BindingPattern, Expr, ListId, NodeId, NodeList,
+    ObjectLiteral, PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
 };
+use common::span::Span;
 use token::{t, TokenKind};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, ParserState, Result};
+use crate::{
+    expect, next_expect, peek_expect, unexpected, Error, ErrorKind, Parser, ParserState, Result,
+};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -184,7 +187,12 @@ impl<'a> Parser<'a> {
 
     /// Parsers any infix operator, called in a pratt parser.
     /// Only call if the next token is infix operator.
-    fn parse_infix_op(&mut self, r_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
+    fn parse_infix_op(
+        &mut self,
+        r_bp: u8,
+        lhs: NodeId<Expr>,
+        lhs_span: Span,
+    ) -> Result<NodeId<Expr>> {
         let token = self
             .next()
             .expect("`parse_postfix_op` should only be called if next token is present");
@@ -216,7 +224,20 @@ impl<'a> Parser<'a> {
             t!("===") => BinaryOp::Base(BaseOp::StrictEqual),
             t!("!=") => BinaryOp::Base(BaseOp::NotEqual),
             t!("!==") => BinaryOp::Base(BaseOp::StrictNotEqual),
-            t!("=") => BinaryOp::Assign(AssignOp::Assign),
+            t!("=") => {
+                if let Expr::Prime { expr } = self.ast[lhs] {
+                    // Test for destructuring assignment.
+                    if let Some(pattern) = self.reparse_destructuring(lhs_span.clone(), expr)? {
+                        let right = self.pratt_parse_expr(r_bp)?;
+                        let res = self.ast.push_node(Expr::Destructure {
+                            pattern,
+                            expr: right,
+                        });
+                        return Ok(res);
+                    }
+                }
+                BinaryOp::Assign(AssignOp::Assign)
+            }
             t!("+=") => BinaryOp::Assign(AssignOp::Add),
             t!("-=") => BinaryOp::Assign(AssignOp::Sub),
             t!("*=") => BinaryOp::Assign(AssignOp::Mul),
@@ -245,6 +266,18 @@ impl<'a> Parser<'a> {
             }
         };
 
+        if let BinaryOp::Assign(_) = op {
+            if !self.is_assignable(lhs) {
+                let ctx = RenderCtx::new(
+                    &self.ast,
+                    &self.lexer.data.strings,
+                    &self.lexer.data.numbers,
+                );
+                println!("{}", lhs.display(ctx));
+                return Err(Error::new(ErrorKind::NotAssignable, lhs_span));
+            }
+        }
+
         let right = self.pratt_parse_expr(r_bp)?;
         Ok(self.ast.push_node(Expr::Binary {
             op,
@@ -255,6 +288,7 @@ impl<'a> Parser<'a> {
 
     /// The pratt parser, uses binding power to parse operator with correct precedence.
     fn pratt_parse_expr(&mut self, min_bp: u8) -> Result<NodeId<Expr>> {
+        let start_span = self.peek().map(|x| x.span).unwrap_or_else(Span::empty);
         let mut lhs = if let Some(((), r_bp)) = self.peek_kind().and_then(prefix_binding_power) {
             self.parse_prefix_op(r_bp)?
         } else {
@@ -262,6 +296,7 @@ impl<'a> Parser<'a> {
             self.ast.push_node(Expr::Prime { expr })
         };
 
+        let mut lhs_span = start_span.covers(self.last_span());
         while let Some(op) = self.peek_kind() {
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
@@ -279,7 +314,8 @@ impl<'a> Parser<'a> {
                 if l_bp < min_bp {
                     break;
                 }
-                lhs = self.parse_infix_op(r_bp, lhs)?;
+                lhs = self.parse_infix_op(r_bp, lhs, lhs_span.clone())?;
+                lhs_span = start_span.covers(self.last_span());
                 continue;
             }
             break;
@@ -317,6 +353,53 @@ impl<'a> Parser<'a> {
         }
         expect!(self, ")");
         Ok(prev)
+    }
+
+    fn is_assignable(&self, expr: NodeId<ast::Expr>) -> bool {
+        match self.ast[expr] {
+            Expr::Binary { .. }
+            | Expr::Prefix { .. }
+            | Expr::Postfix { .. }
+            | Expr::Tenary(_)
+            | Expr::Call { .. }
+            | Expr::Yield { .. }
+            | Expr::TaggedTemplate { .. }
+            | Expr::Destructure { .. } => false,
+            Expr::Index { .. } | Expr::Dot { .. } => true,
+            Expr::Prime { expr } => match self.ast[expr] {
+                PrimeExpr::Number(_)
+                | PrimeExpr::String(_)
+                | PrimeExpr::Template(_)
+                | PrimeExpr::Regex(_)
+                | PrimeExpr::Boolean(_)
+                | PrimeExpr::Function(_)
+                | PrimeExpr::Class(_)
+                | PrimeExpr::Object(_)
+                | PrimeExpr::Array(_)
+                | PrimeExpr::Null
+                | PrimeExpr::Covered(_) => false,
+                PrimeExpr::Ident(_) | PrimeExpr::NewTarget | PrimeExpr::This | PrimeExpr::Super => {
+                    true
+                }
+            },
+        }
+    }
+
+    pub fn reparse_destructuring(
+        &mut self,
+        span: Span,
+        pattern: NodeId<PrimeExpr>,
+    ) -> Result<Option<NodeId<BindingPattern>>> {
+        let pattern = match self.ast[pattern] {
+            PrimeExpr::Object(o) => self
+                .reparse_object_lit(o)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
+            PrimeExpr::Array(a) => self
+                .reparse_array_lit(a)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
+            _ => return Ok(None),
+        };
+        Ok(Some(self.ast.push_node(pattern)))
     }
 }
 

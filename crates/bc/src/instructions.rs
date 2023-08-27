@@ -1,6 +1,6 @@
 //! Module defining instructions
 
-use crate::{instructions, FunctionId, LongOffset, Offset, Reg, StringId};
+use crate::{instructions, FunctionId, LongOffset, Offset, Reg, StringId, UpvalueId};
 
 instructions! {
     /// Load the i8 value in imm into dst
@@ -30,6 +30,11 @@ instructions! {
     Move{ dst: Reg , src: Reg},
     /// Copy the value from src into dst allowing reaching far furter then regular move.
     MoveLong{ dst: i32, src: i32},
+
+    /// Load an upvalue into a specified registers dst
+    LoadUpvalue{ dst: Reg, upvalue: UpvalueId },
+    /// Store the value or register src into an upvalue.
+    StoreUpvalue{ upvalue: UpvalueId, src: Reg},
 
     /// Add left to right and store the result into dst.
     Add{ dst: Reg, left: Reg, right: Reg},
@@ -119,6 +124,8 @@ instructions! {
     Call{func: Reg, ret: Reg},
     /// Call the function with a specific number of arguments store its result in ret..
     Call1{func: Reg, ret: Reg, arg: Reg},
+    /// Call the function with a specific number of arguments store its result in ret..
     Call2{func: Reg, ret: Reg, arg1: Reg, arg2: Reg},
+    /// Call the function with a specific number of arguments store its result in ret..
     Call3{func: Reg, ret: Reg, arg1: Reg, arg2: Reg, arg3: Reg},
 }

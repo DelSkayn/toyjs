@@ -26,14 +26,23 @@ impl Token {
 }
 
 /// A packed data struct.
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy)]
 pub struct TokenKindData(u64);
+
+impl PartialEq for TokenKindData {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind() == other.kind() && self.data_id_inner() == other.data_id_inner()
+    }
+}
+
+impl Eq for TokenKindData {}
 
 impl std::fmt::Debug for TokenKindData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenKindData")
             .field("kind", &self.kind())
             .field("data_id", &self.data_id::<u32>())
+            .field("raw", &self.0)
             .finish()
     }
 }
