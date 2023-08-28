@@ -1,6 +1,7 @@
 use bc::{ByteCode, FunctionId};
 use dreck::{Gc, Trace};
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
     hint::unreachable_unchecked,
 };
@@ -14,6 +15,8 @@ pub struct BcFunction<'gc, 'own> {
 
 pub type NativeFunc<'gc, 'own> = Box<dyn Fn() -> Result<Value<'gc, 'own>, Value<'gc, 'own>>>;
 
+pub trait UserData<'own>: Trace<'own> + Any {}
+
 pub enum ObjectSlot<'gc, 'own> {
     Generic,
     Array,
@@ -24,6 +27,7 @@ pub enum ObjectSlot<'gc, 'own> {
     NativeFunction(NativeFunc<'gc, 'own>),
     BcFunction(BcFunction<'gc, 'own>),
     Proxy(()),
+    UserData(Box<dyn UserData<'own>>),
 }
 
 unsafe impl<'gc, 'own> Trace<'own> for ObjectSlot<'gc, 'own> {
@@ -47,6 +51,7 @@ unsafe impl<'gc, 'own> Trace<'own> for ObjectSlot<'gc, 'own> {
             ObjectSlot::Set(ref x) => x.trace(marker),
             ObjectSlot::BcFunction(_) => todo!(),
             ObjectSlot::Proxy(_) => todo!(),
+            ObjectSlot::UserData(_) => todo!(),
         }
     }
 }

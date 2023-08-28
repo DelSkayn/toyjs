@@ -1,6 +1,5 @@
 use ast::{
-    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, NodeList,
-    PropertyName,
+    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, PropertyName,
 };
 use common::string::{String, StringId};
 use token::{t, TokenKind};

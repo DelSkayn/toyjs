@@ -193,7 +193,7 @@ impl<'a> Parser<'a> {
         let mut head = ListHead::Empty;
         let mut prev = None;
         while self.peek().is_some() {
-            let stmt = self.parse_stmt()?;
+            let stmt = self.parse_stmt(false)?;
             if !self.state.contains(ParserState::Strict)
                 && head.is_empty()
                 && self.is_strict_directive(stmt)

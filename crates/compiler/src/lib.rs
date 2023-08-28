@@ -1,4 +1,5 @@
 #![allow(unused_variables)]
+#![allow(dead_code)]
 
 use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction};

@@ -350,6 +350,16 @@ impl<S: AnyVec> Ast<S> {
         self.storage.any_pop::<N>();
     }
 
+    pub fn free_list<N: Any>(&mut self, node: ListId<N>) {
+        let len = self.lists.len();
+        assert_eq!(
+            len,
+            u32::from(node.id).try_into().unwrap(),
+            "A node can only be removed if it is the last item"
+        );
+        self.lists.pop();
+    }
+
     /// Clears out all storage.
     ///
     /// Indexing with any an id after this call will probably panic or return an invalid value.

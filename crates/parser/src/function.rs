@@ -146,7 +146,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let stmt = self.parse_stmt()?;
+            let stmt = self.parse_stmt(false)?;
             if head.is_empty()
                 && !self.state.contains(ParserState::Strict)
                 && self.is_strict_directive(stmt)

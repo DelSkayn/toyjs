@@ -1,4 +1,4 @@
-use ast::{Function, ListHead, NodeId};
+use ast::{ListHead, NodeId};
 use common::string::StringId;
 
 use super::{Compiler, Result};

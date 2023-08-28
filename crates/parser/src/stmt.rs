@@ -11,7 +11,7 @@ use crate::{
 
 impl<'a> Parser<'a> {
     /// Parses ECMA spec `Declaration`, `Statement` and other `...Statement` productions
-    pub fn parse_stmt(&mut self) -> Result<NodeId<Stmt>> {
+    pub fn parse_stmt(&mut self, in_block: bool) -> Result<NodeId<Stmt>> {
         let Some(token) = self.peek() else {
             return Ok(self.ast.push_node(Stmt::Empty));
         };
@@ -79,6 +79,12 @@ impl<'a> Parser<'a> {
                 self.ast.push_node(Stmt::Class { class })
             }
             t!("function") => {
+                if in_block && self.state.contains(ParserState::Strict) {
+                    unexpected!(
+                        self, t!("function") => "functions declarations in block statements are forbidden in strict mode."
+                    )
+                }
+
                 self.next();
                 let kind = if self.eat(t!("*")) {
                     FunctionKind::Generator
@@ -128,7 +134,7 @@ impl<'a> Parser<'a> {
                     let PrimeExpr::Ident(label) = self.ast[expr] else {
                         unexpected!(self, t!(":"), ";");
                     };
-                    let stmt = self.parse_stmt()?;
+                    let stmt = self.parse_stmt(false)?;
                     self.ast.push_node(Stmt::Labeled { label, stmt })
                 } else {
                     self.semicolon()?;
@@ -151,12 +157,12 @@ impl<'a> Parser<'a> {
         let mut prev = None;
 
         loop {
-            let token = peek_expect!(self,"}" => "expected statement block to close");
+            let token = peek_expect!(self,"}" => "expected statement block to close.");
             if let t!("}") = token.kind() {
                 self.next();
                 return Ok(head);
             }
-            let stmt = self.parse_stmt()?;
+            let stmt = self.parse_stmt(true)?;
 
             let new = self.ast.append_list(stmt, prev);
             prev = Some(new);
@@ -171,9 +177,9 @@ impl<'a> Parser<'a> {
             let cond = self.parse_expr()?;
         });
         expect!(self, ")");
-        let body = self.parse_stmt()?;
+        let body = self.parse_stmt(false)?;
         let r#else = if self.eat(t!("else")) {
-            Some(self.parse_stmt()?)
+            Some(self.parse_stmt(false)?)
         } else {
             None
         };
@@ -191,7 +197,7 @@ impl<'a> Parser<'a> {
 
         alter_state!(self => {
             self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
+            let body = self.parse_stmt(false)?;
         });
 
         Ok(self.ast.push_node(Stmt::While { cond, body }))
@@ -200,7 +206,7 @@ impl<'a> Parser<'a> {
     pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
         alter_state!(self => {
             self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
+            let body = self.parse_stmt(false)?;
         });
 
         expect!(self, "while");
@@ -259,7 +265,7 @@ impl<'a> Parser<'a> {
         let head = self.ast.push_node(ForLoopHead::CStyle { decl, cond, post });
         alter_state!(self => {
             self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
+            let body = self.parse_stmt(false)?;
         });
         Ok(self.ast.push_node(Stmt::For { head, body }))
     }
@@ -337,7 +343,7 @@ impl<'a> Parser<'a> {
         expect!(self, ")");
         alter_state!(self => {
             self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
+            let body = self.parse_stmt(false)?;
         });
         Ok(self.ast.push_node(Stmt::For { head, body }))
     }
@@ -383,7 +389,7 @@ impl<'a> Parser<'a> {
                     match peek_expect!(self).kind() {
                         t!("case") | t!("default") | t!("}") => break,
                         _ => {
-                            let stmt = self.parse_stmt()?;
+                            let stmt = self.parse_stmt(false)?;
                             stmt_prev = Some(self.ast.append_list(stmt, stmt_prev));
                             stmt_head = stmt_head.or(stmt_prev.into())
                         }
@@ -503,7 +509,7 @@ impl<'a> Parser<'a> {
         expect!(self, "(");
         let expr = self.parse_expr()?;
         expect!(self, ")");
-        let stmt = self.parse_stmt()?;
+        let stmt = self.parse_stmt(false)?;
         Ok(self.ast.push_node(Stmt::With { expr, stmt }))
     }
 

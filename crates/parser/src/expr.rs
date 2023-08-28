@@ -1,6 +1,6 @@
 use ast::{
     Argument, AssignOp, BaseOp, BinaryOp, BindingPattern, Expr, ListId, NodeId, NodeList,
-    ObjectLiteral, PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
+    PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
 };
 use common::span::Span;
 use token::{t, TokenKind};
@@ -390,7 +390,7 @@ impl<'a> Parser<'a> {
         span: Span,
         pattern: NodeId<PrimeExpr>,
     ) -> Result<Option<NodeId<BindingPattern>>> {
-        let pattern = match self.ast[pattern] {
+        let pat = match self.ast[pattern] {
             PrimeExpr::Object(o) => self
                 .reparse_object_lit(o)
                 .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
@@ -399,7 +399,8 @@ impl<'a> Parser<'a> {
                 .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
             _ => return Ok(None),
         };
-        Ok(Some(self.ast.push_node(pattern)))
+        self.ast.free_node(pattern);
+        Ok(Some(self.ast.push_node(pat)))
     }
 }
 
