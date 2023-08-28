@@ -1,5 +1,5 @@
 use ast::{RenderAst, RenderCtx};
-use common::{string::String, structs::Interners};
+use common::{result::ContextResultExt, string::String, structs::Interners};
 use lexer::Lexer;
 use std::{
     env,
@@ -30,7 +30,7 @@ fn main() -> Result<(), io::Error> {
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script();
     let elapsed = before.elapsed();
-    match res {
+    match res.supply_context(&source) {
         Ok(x) => {
             let ctx = RenderCtx::new(
                 &parser.ast,
@@ -40,7 +40,7 @@ fn main() -> Result<(), io::Error> {
             println!("{}", x.display(ctx))
         }
         Err(e) => {
-            eprintln!("{}", e.display(&source))
+            eprintln!("{}", e)
         }
     }
     println!("parsed in {:.4} seconds", elapsed.as_secs_f64());

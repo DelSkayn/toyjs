@@ -3,6 +3,7 @@ use core::fmt;
 use std::backtrace::Backtrace;
 
 use common::{
+    result::ContextError,
     source::{self, Source},
     span::Span,
     string::String,
@@ -40,14 +41,9 @@ pub struct Error {
     trace: Backtrace,
 }
 
-pub struct FormatableError<'a> {
-    error: Error,
-    source: &'a Source,
-}
-
-impl<'a> fmt::Display for FormatableError<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.error.format(self.source, f).map_err(|_| fmt::Error)
+impl ContextError<Source> for Error {
+    fn display(&self, f: &mut fmt::Formatter, ctx: &Source) -> fmt::Result {
+        self.format(ctx, f).map_err(|_| fmt::Error)
     }
 }
 
@@ -58,13 +54,6 @@ impl Error {
             origin,
             #[cfg(feature = "trace_error")]
             trace: Backtrace::capture(),
-        }
-    }
-
-    pub fn display(self, source: &Source) -> FormatableError {
-        FormatableError {
-            error: self,
-            source,
         }
     }
 
@@ -96,11 +85,11 @@ impl Error {
                 }
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
-                    self.origin.clone(),
+                    self.origin,
                     message.as_ref().map(|x| x.encoding()),
                 )?;
             }
@@ -122,11 +111,11 @@ impl Error {
                 }
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
-                    self.origin.clone(),
+                    self.origin,
                     message.as_ref().map(|x| x.encoding()),
                 )?;
             }
@@ -137,11 +126,11 @@ impl Error {
                 write!(w, "token `{:?}` is not allowed in this context", found)?;
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
-                    self.origin.clone(),
+                    self.origin,
                     message.as_ref().map(|x| x.encoding()),
                 )?;
             }
@@ -149,25 +138,25 @@ impl Error {
                 write!(w, "left hand side expression is not assignable")?;
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin.clone(), None)?;
+                source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidDestructuringAssigment => {
                 write!(w, "invalid destructuring assignment target")?;
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin.clone(), None)?;
+                source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidToken => {
                 write!(w, "invalid token")?;
                 writeln!(w)?;
                 write!(w, " --> ")?;
-                source.render_span_location(w, self.origin.clone())?;
+                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin.clone(), None)?;
+                source.render_string_block(w, self.origin, None)?;
             }
         }
         Ok(())

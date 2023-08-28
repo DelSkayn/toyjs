@@ -366,6 +366,19 @@ impl<S: AnyVec> Ast<S> {
     pub fn clear(&mut self) {
         self.storage.all_clear();
     }
+
+    /// Returns the number of nodes of this specific type.
+    pub fn len<N: Any>(&mut self) -> usize {
+        let Some(len) = self.storage.any_len::<N>() else {
+            panic_no_storage::<N>();
+        };
+        len
+    }
+
+    /// Returns the if there are no nodes of this specific type.
+    pub fn is_empty<N: Any>(&mut self) -> bool {
+        self.len::<N>() == 0
+    }
 }
 
 impl<R: AnyVec, N: Any> Index<NodeId<N>> for Ast<R> {

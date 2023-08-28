@@ -1,4 +1,4 @@
-use common::{source::Source, string::String, structs::Interners};
+use common::{result::ContextError, source::Source, string::String, structs::Interners};
 use lexer::Lexer;
 use parser::Parser;
 use std::{
@@ -60,7 +60,7 @@ fn main() -> Result<(), io::Error> {
             println!("{}", bc);
         }
         Err(Error::Parse(e)) => {
-            eprintln!("parse error {}", e.display(&source))
+            eprintln!("parse error {}", e.supply_context(&source))
         }
         Err(Error::Compile(e)) => {
             eprintln!("compile_error {}", e)

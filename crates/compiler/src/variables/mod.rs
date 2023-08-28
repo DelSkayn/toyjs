@@ -1,10 +1,13 @@
 use ast::{ListHead, NodeId};
-use common::string::StringId;
+use common::{hashmap::HashMap, id, id::KeyedVec, string::StringId};
 
 use super::{Compiler, Result};
 
 mod expr;
 mod stmt;
+
+id!(pub struct ScopeId(u32));
+id!(pub struct SymbolId(u32));
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Kind {
@@ -39,7 +42,7 @@ pub struct Lifetime {
     last_use: Option<NodeId<ast::Expr>>,
 }
 
-pub struct VariableInfo {
+pub struct Symbol {
     /// The identifier of the variable.
     ident: StringId,
     /// Is the variable captured by a closure.
@@ -50,16 +53,29 @@ pub struct VariableInfo {
     lifetime: Option<Lifetime>,
 }
 
-pub enum Scope {
+pub struct Scope {
+    parent: Option<ScopeId>,
+    num_childeren: usize,
+    child_list_offset: usize,
+    symbols: HashMap<StringId, SymbolId>,
+}
+
+pub enum ScopeKind {
     Function(NodeId<ast::Function>),
     Block(NodeId<ast::Stmt>),
 }
 
-pub struct Variables {}
+pub struct Variables {
+    pub scopes: KeyedVec<ScopeId, Scope>,
+    pub symbols: KeyedVec<SymbolId, Symbol>,
+}
 
 impl Variables {
     pub fn new() -> Self {
-        Variables {}
+        Variables {
+            scopes: KeyedVec::new(),
+            symbols: KeyedVec::new(),
+        }
     }
 
     pub fn load(&mut self, name: StringId, at: NodeId<ast::Expr>) -> Result<()> {

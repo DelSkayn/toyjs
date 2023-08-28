@@ -1,4 +1,4 @@
-use common::{number::NumberId, string::StringId};
+use common::{number::NumberId, span::Span, string::StringId};
 use core::fmt;
 
 mod ast;
@@ -28,9 +28,27 @@ pub type AstStorage = (
     Vec<Function>,
     (Vec<Class>, Vec<ClassMember>),
     (Vec<ArrayLiteral>, Vec<PropertyDefinition>),
+    Vec<Symbol>,
 );
 
 pub type Ast = GenAst<AstStorage>;
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub struct Symbol {
+    pub name: StringId,
+    pub span: Span,
+}
+
+impl RenderAst for Symbol {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        ctx.render_struct("Symbol", w)?
+            .field("name", &self.name)?
+            .field_debug("span", &self.span)?
+            .finish();
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum VariableKind {

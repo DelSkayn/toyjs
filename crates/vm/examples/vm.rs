@@ -1,4 +1,4 @@
-use common::{source::Source, string::String, structs::Interners};
+use common::{result::ContextError, source::Source, string::String, structs::Interners};
 use compiler::Compiler;
 use dreck::{dreck, Arena, Owner};
 use lexer::Lexer;
@@ -84,7 +84,7 @@ fn main() -> Result<(), io::Error> {
             println!("{:?}", res);
         }
         Err(Error::Parse(e)) => {
-            eprintln!("{}", e.display(&source))
+            eprintln!("{}", e.supply_context(&source))
         }
         Err(Error::Compile(e)) => {
             eprintln!("Compile error: {}", e)
