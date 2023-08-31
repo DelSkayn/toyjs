@@ -31,7 +31,7 @@ fn main() -> Result<(), io::Error> {
     }
     let elapsed = time.elapsed();
     for t in &tokens {
-        let span = t.span.clone();
+        let span = t.span;
         let kind = t.kind_and_data.kind();
         let kind_name = format!("{:?}", kind);
         print!(

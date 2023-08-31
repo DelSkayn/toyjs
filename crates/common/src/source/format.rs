@@ -55,7 +55,7 @@ impl Source {
     ) -> Result<(), Error> {
         const MAX_LINE_CHARS: usize = 80;
 
-        let location = self.locate_span(span.clone()).ok_or(Error::InvalidSpan)?;
+        let location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
 
         if location.start.line != location.end.line {
             writeln!(w, "TODO: render span that covers multiple lines")?;
@@ -80,7 +80,7 @@ impl Source {
 
         let line = line.slice(n_whitespace..).trim_end();
         let line_length = line.chars().count();
-        let token_lenght = self.source.encoding().slice(span.clone()).chars().count();
+        let token_lenght = self.source.encoding().slice(span).chars().count();
         let offset = n_whitespace;
 
         // Write initial `    | `

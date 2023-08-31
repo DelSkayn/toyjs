@@ -1,4 +1,4 @@
-use ast::{ListHead, NodeId};
+use ast::{Ast, ListHead, NodeId};
 use common::{hashmap::HashMap, id, id::KeyedVec, string::StringId};
 
 use super::{Compiler, Result};
@@ -67,7 +67,8 @@ pub enum ScopeKind {
 
 pub struct Variables {
     pub scopes: KeyedVec<ScopeId, Scope>,
-    pub symbols: KeyedVec<SymbolId, Symbol>,
+    pub symbols: KeyedVec<SymbolId, Option<Symbol>>,
+    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, Option<SymbolId>>,
 }
 
 impl Variables {
@@ -75,25 +76,30 @@ impl Variables {
         Variables {
             scopes: KeyedVec::new(),
             symbols: KeyedVec::new(),
+            ast_to_symbol: KeyedVec::new(),
         }
     }
 
-    pub fn load(&mut self, name: StringId, at: NodeId<ast::Expr>) -> Result<()> {
+    pub fn load(&mut self, name: NodeId<ast::Symbol>, at: NodeId<ast::Expr>) -> Result<()> {
         to_do!()
     }
 
-    pub fn store(&mut self, name: StringId, from: NodeId<ast::Expr>) -> Result<()> {
+    pub fn store(&mut self, name: NodeId<ast::Symbol>, from: NodeId<ast::Expr>) -> Result<()> {
         to_do!()
     }
 
     pub fn declare(
         &mut self,
-        name: StringId,
+        name: NodeId<ast::Symbol>,
         kind: Kind,
         at: NodeId<ast::IdentOrPattern>,
     ) -> Result<()> {
         to_do!()
     }
+}
+
+pub struct VariablesBuilder<'a> {
+    ast: &'a mut Ast,
 }
 
 impl<'a> Compiler<'a> {

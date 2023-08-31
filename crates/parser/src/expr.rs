@@ -3,7 +3,7 @@ use ast::{
     PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
 };
 use common::span::Span;
-use token::{t, TokenKind};
+use token::{t, AssignOperator, TokenKind};
 
 use crate::{
     expect, next_expect, peek_expect, unexpected, Error, ErrorKind, Parser, ParserState, Result,
@@ -124,7 +124,7 @@ impl<'a> Parser<'a> {
             }
             t!("await") => {
                 if self.state.contains(ParserState::AwaitIdent) {
-                    let expr = self.parse_prime()?;
+                    let (expr, _) = self.parse_prime()?;
                     return Ok(self.ast.push_node(Expr::Prime { expr }));
                 } else {
                     PrefixOp::Await
@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
             t!("=") => {
                 if let Expr::Prime { expr } = self.ast[lhs] {
                     // Test for destructuring assignment.
-                    if let Some(pattern) = self.reparse_destructuring(lhs_span.clone(), expr)? {
+                    if let Some(pattern) = self.reparse_destructuring(lhs_span, expr)? {
                         let right = self.pratt_parse_expr(r_bp)?;
                         let res = self.ast.push_node(Expr::Destructure {
                             pattern,
@@ -292,7 +292,31 @@ impl<'a> Parser<'a> {
         let mut lhs = if let Some(((), r_bp)) = self.peek_kind().and_then(prefix_binding_power) {
             self.parse_prefix_op(r_bp)?
         } else {
-            let expr = self.parse_prime()?;
+            let (expr, span) = self.parse_prime()?;
+
+            if let Some(span) = span {
+                let lhs_span = start_span.covers(self.last_span());
+                // Found a covered initializer in an object literal.
+                // If the next token isn't `=` this would be invalid.
+                if let Some(TokenKind::AssignOperator(AssignOperator::Assign)) = self.peek_kind() {
+                    self.next();
+                    // This should always succeed, otherwise a span was returned when the prime
+                    // expression wasn't an object literal with a covered initializer.
+                    let pattern = self.reparse_destructuring(lhs_span, expr)?.unwrap();
+                    let right = self.pratt_parse_expr(min_bp)?;
+                    let res = self.ast.push_node(Expr::Destructure {
+                        pattern,
+                        expr: right,
+                    });
+                    return Ok(res);
+                } else {
+                    return Err(Error {
+                        kind: ErrorKind::CoveredObjectLiteral,
+                        origin: span,
+                    });
+                }
+            }
+
             self.ast.push_node(Expr::Prime { expr })
         };
 
@@ -314,7 +338,7 @@ impl<'a> Parser<'a> {
                 if l_bp < min_bp {
                     break;
                 }
-                lhs = self.parse_infix_op(r_bp, lhs, lhs_span.clone())?;
+                lhs = self.parse_infix_op(r_bp, lhs, lhs_span)?;
                 lhs_span = start_span.covers(self.last_span());
                 continue;
             }

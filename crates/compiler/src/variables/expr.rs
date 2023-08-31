@@ -56,9 +56,9 @@ impl<'a> Compiler<'a> {
                 ast::PrimeExpr::Object(ast::ObjectLiteral::Item(mut def)) => loop {
                     let item = self.ast[def].item;
                     match self.ast[item] {
-                        ast::PropertyDefinition::Ident(_) => {}
+                        ast::PropertyDefinition::Ident { .. } => {}
                         ast::PropertyDefinition::Covered { initializer, .. } => {
-                            self.resolve_expr(initializer)?
+                            panic!("A covered object should not make it to the compiler");
                         }
                         ast::PropertyDefinition::Define { expr, .. } => self.resolve_expr(expr)?,
                         ast::PropertyDefinition::Method { func, .. }

@@ -223,8 +223,11 @@ impl<'a> Compiler<'a> {
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
         match self.ast[property] {
-            BindingProperty::Binding { name, initializer } => {
-                self.variables.declare(name, kind, decl)?;
+            BindingProperty::Binding {
+                symbol,
+                initializer,
+            } => {
+                self.variables.declare(symbol, kind, decl)?;
             }
             BindingProperty::Property { element, .. } => {
                 self.resolve_binding_element(kind, decl, element, initializer)?;
@@ -241,7 +244,10 @@ impl<'a> Compiler<'a> {
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
         match self.ast[element] {
-            BindingElement::SingleName { name, initializer } => {
+            BindingElement::SingleName {
+                symbol: name,
+                initializer,
+            } => {
                 self.variables.declare(name, kind, decl)?;
             }
             BindingElement::Pattern {

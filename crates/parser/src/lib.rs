@@ -103,7 +103,7 @@ impl<'a> Parser<'a> {
     fn next(&mut self) -> Option<Token> {
         let res = self.peek.take().or_else(|| self.retrieve_next_token());
         if let Some(x) = res.as_ref() {
-            self.last_span = x.span.clone();
+            self.last_span = x.span;
         }
         res
     }

@@ -28,7 +28,7 @@ pub type AstStorage = (
     Vec<Function>,
     (Vec<Class>, Vec<ClassMember>),
     (Vec<ArrayLiteral>, Vec<PropertyDefinition>),
-    Vec<Symbol>,
+    (Vec<Symbol>, Vec<Span>),
 );
 
 pub type Ast = GenAst<AstStorage>;
@@ -58,7 +58,7 @@ pub enum VariableKind {
 }
 
 pub enum IdentOrPattern {
-    Ident(StringId),
+    Ident(NodeId<Symbol>),
     Pattern(NodeId<BindingPattern>),
 }
 
@@ -82,7 +82,7 @@ impl RenderAst for IdentOrPattern {
 pub enum BindingPattern {
     Object {
         properties: ListHead<BindingProperty>,
-        rest: Option<StringId>,
+        rest: Option<NodeId<Symbol>>,
     },
     Array {
         elements: Option<NodeListId<Option<NodeId<BindingElement>>>>,
@@ -130,15 +130,15 @@ impl RenderAst for PropertyName {
                 .field("0", x)?
                 .finish(),
             PropertyName::String(ref x) => ctx
-                .render_struct("PropertyName::Ident", w)?
+                .render_struct("PropertyName::String", w)?
                 .field("0", x)?
                 .finish(),
             PropertyName::Number(ref x) => ctx
-                .render_struct("PropertyName::Ident", w)?
+                .render_struct("PropertyName::Number", w)?
                 .field("0", x)?
                 .finish(),
             PropertyName::Computed(ref x) => ctx
-                .render_struct("PropertyName::Ident", w)?
+                .render_struct("PropertyName::Computed", w)?
                 .field("0", x)?
                 .finish(),
         }
@@ -148,7 +148,7 @@ impl RenderAst for PropertyName {
 
 pub enum BindingProperty {
     Binding {
-        name: StringId,
+        symbol: NodeId<Symbol>,
         initializer: Option<NodeId<Expr>>,
     },
     Property {
@@ -161,11 +161,11 @@ impl RenderAst for BindingProperty {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             BindingProperty::Binding {
-                ref name,
+                ref symbol,
                 ref initializer,
             } => ctx
                 .render_struct("BindingProperty::Binding", w)?
-                .field("name", name)?
+                .field("symbol", symbol)?
                 .field("initializer", initializer)?
                 .finish(),
             BindingProperty::Property {
@@ -183,7 +183,7 @@ impl RenderAst for BindingProperty {
 
 pub enum BindingElement {
     SingleName {
-        name: StringId,
+        symbol: NodeId<Symbol>,
         initializer: Option<NodeId<Expr>>,
     },
     Pattern {
@@ -196,11 +196,11 @@ impl RenderAst for BindingElement {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
             BindingElement::SingleName {
-                ref name,
+                ref symbol,
                 ref initializer,
             } => ctx
                 .render_struct("BindingElement::SingleName", w)?
-                .field("name", name)?
+                .field("symbol", symbol)?
                 .field("initializer", initializer)?
                 .finish(),
             BindingElement::Pattern {
@@ -1009,7 +1009,7 @@ pub enum PrimeExpr {
     String(StringId),
     Template(NodeId<Template>),
     Regex(StringId),
-    Ident(StringId),
+    Ident(NodeId<Symbol>),
     Boolean(bool),
     Function(NodeId<Function>),
     Class(NodeId<Class>),
@@ -1116,9 +1116,12 @@ impl RenderAst for Template {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PropertyDefinition {
-    Ident(StringId),
+    Ident {
+        name: StringId,
+        span: NodeId<Span>,
+    },
     Covered {
-        ident: StringId,
+        symbol: NodeId<Symbol>,
         initializer: NodeId<Expr>,
     },
     Define {
@@ -1143,12 +1146,13 @@ pub enum PropertyDefinition {
 impl RenderAst for PropertyDefinition {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
-            PropertyDefinition::Ident(ref x) => ctx
+            PropertyDefinition::Ident { ref name, ref span } => ctx
                 .render_struct("PropertyDefinition::Ident", w)?
-                .field("0", x)?
+                .field("name", name)?
+                .field("span", span)?
                 .finish(),
             PropertyDefinition::Covered {
-                ref ident,
+                symbol: ref ident,
                 ref initializer,
             } => ctx
                 .render_struct("PropertyDefinition::Covered", w)?
@@ -1200,4 +1204,14 @@ impl RenderAst for PropertyDefinition {
 pub enum ObjectLiteral {
     Empty,
     Item(ListId<PropertyDefinition>),
+}
+
+impl RenderAst for Span {
+    fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        ctx.render_struct("Span", w)?
+            .field_debug("offset", &self.offset())?
+            .field_debug("size", &self.size())?
+            .finish();
+        Ok(())
+    }
 }

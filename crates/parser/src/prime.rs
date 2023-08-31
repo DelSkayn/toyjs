@@ -1,9 +1,12 @@
 use ast::{
     ArrayLiteral, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
     BindingProperty, Expr, Function, FunctionKind, IdentOrPattern, ListHead, ListId, NodeId,
-    ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Template,
+    ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Symbol, Template,
 };
-use common::string::{Ascii, String};
+use common::{
+    span::Span,
+    string::{Ascii, String},
+};
 use token::{t, TokenKind};
 
 use crate::{
@@ -16,7 +19,7 @@ static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
 
 impl<'a> Parser<'a> {
     /// Parsers a primary expression or a expression without any operators.
-    pub(crate) fn parse_prime(&mut self) -> Result<NodeId<PrimeExpr>> {
+    pub(crate) fn parse_prime(&mut self) -> Result<(NodeId<PrimeExpr>, Option<Span>)> {
         let token = peek_expect!(
             self, "ident", "123", "string", "true", "false", "regex", "null", "this", "{", "[",
             "(", "function"
@@ -24,20 +27,20 @@ impl<'a> Parser<'a> {
 
         match token.kind() {
             t!("ident") => {
-                self.next();
-                let ident = token.kind_and_data.data_id().unwrap();
+                let symbol = self.parse_symbol()?;
                 if let Some(t!("=>")) = self.peek_kind() {
                     self.next();
                     let param = self.ast.push_node(BindingElement::SingleName {
-                        name: ident,
+                        symbol,
                         initializer: None,
                     });
                     let params = ListHead::Present(self.ast.append_list(param, None));
                     let function = self.parse_arrow_function(params, None, FunctionKind::Simple)?;
-                    Ok(self.ast.push_node(PrimeExpr::Function(function)))
+                    let id = self.ast.push_node(PrimeExpr::Function(function));
+                    Ok((id, None))
                 } else {
-                    let id = self.ast.push_node(PrimeExpr::Ident(ident));
-                    Ok(id)
+                    let id = self.ast.push_node(PrimeExpr::Ident(symbol));
+                    Ok((id, None))
                 }
             }
             t!("123") => {
@@ -45,29 +48,29 @@ impl<'a> Parser<'a> {
                 let id = self
                     .ast
                     .push_node(PrimeExpr::Number(token.kind_and_data.data_id().unwrap()));
-                Ok(id)
+                Ok((id, None))
             }
             t!("string") | t!("``") => {
                 self.next();
                 let id = self
                     .ast
                     .push_node(PrimeExpr::String(token.kind_and_data.data_id().unwrap()));
-                Ok(id)
+                Ok((id, None))
             }
             t!("` ${") => {
                 let template = self.parse_template()?;
                 let id = self.ast.push_node(PrimeExpr::Template(template));
-                Ok(id)
+                Ok((id, None))
             }
             t!("true") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::Boolean(true));
-                Ok(id)
+                Ok((id, None))
             }
             t!("false") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::Boolean(false));
-                Ok(id)
+                Ok((id, None))
             }
             t!("/") | t!("/=") => {
                 self.next();
@@ -75,32 +78,32 @@ impl<'a> Parser<'a> {
                 let id = self
                     .ast
                     .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
-                Ok(id)
+                Ok((id, None))
             }
             t!("null") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::Null);
-                Ok(id)
+                Ok((id, None))
             }
             t!("this") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::This);
-                Ok(id)
+                Ok((id, None))
             }
             t!("super") => {
                 self.next();
                 let id = self.ast.push_node(PrimeExpr::Super);
-                Ok(id)
+                Ok((id, None))
             }
             t!("{") => {
                 self.next();
-                let id = self.parse_object_literal()?;
-                Ok(self.ast.push_node(PrimeExpr::Object(id)))
+                let (id, span) = self.parse_object_literal()?;
+                Ok((self.ast.push_node(PrimeExpr::Object(id)), span))
             }
             t!("[") => {
                 self.next();
                 let array = self.parse_array_literal()?;
-                Ok(self.ast.push_node(PrimeExpr::Array(array)))
+                Ok((self.ast.push_node(PrimeExpr::Array(array)), None))
             }
             t!("function") => {
                 self.next();
@@ -110,21 +113,21 @@ impl<'a> Parser<'a> {
                     FunctionKind::Simple
                 };
                 let func = self.parse_function(FunctionCtx::Expression, kind)?;
-                Ok(self.ast.push_node(PrimeExpr::Function(func)))
+                Ok((self.ast.push_node(PrimeExpr::Function(func)), None))
             }
-            t!("async") => self.parse_async_function(),
+            t!("async") => self.parse_async_function().map(|x| (x, None)),
             t!("class") => {
                 self.next();
                 let class = self.parse_class(false)?;
-                Ok(self.ast.push_node(PrimeExpr::Class(class)))
+                Ok((self.ast.push_node(PrimeExpr::Class(class)), None))
             }
             t!("(") => {
                 self.next();
-                self.parse_covered_expression()
+                self.parse_covered_expression().map(|x| (x, None))
             }
             TokenKind::UnreservedKeyword(_) => {
-                let id = self.parse_ident()?;
-                Ok(self.ast.push_node(PrimeExpr::Ident(id)))
+                let id = self.parse_symbol()?;
+                Ok((self.ast.push_node(PrimeExpr::Ident(id)), None))
             }
             x => {
                 unexpected!(
@@ -220,13 +223,16 @@ impl<'a> Parser<'a> {
     /// ```javascript
     /// { /* start here */ foo: "bar" }
     /// ```
-    fn parse_object_literal(&mut self) -> Result<ObjectLiteral> {
+    ///
+    /// Returns both the parsed object literal as well the span of the first '=' if the object
+    /// literal contains a covered binding initalizer.
+    fn parse_object_literal(&mut self) -> Result<(ObjectLiteral, Option<Span>)> {
         let token = peek_expect!(self);
         if let t!("}") = token.kind() {
             self.next();
-            return Ok(ObjectLiteral::Empty);
+            return Ok((ObjectLiteral::Empty, None));
         }
-        let property = self.parse_property_definition()?;
+        let (property, mut span) = self.parse_property_definition()?;
         let mut last = self.ast.append_list(property, None);
         let res = ObjectLiteral::Item(last);
         loop {
@@ -241,7 +247,8 @@ impl<'a> Parser<'a> {
                     if let Some(t!("}")) = self.peek_kind() {
                         break;
                     }
-                    let property = self.parse_property_definition()?;
+                    let (property, new_span) = self.parse_property_definition()?;
+                    span = span.or(new_span);
                     last = self.ast.append_list(property, Some(last));
                 }
                 x => {
@@ -249,7 +256,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        Ok(res)
+        Ok((res, span))
     }
 
     /// Returns wether the token can be parsed as a property name.
@@ -269,31 +276,35 @@ impl<'a> Parser<'a> {
     /// ```javascript
     /// { /* start here */ foo: 1, "bar": 2 }
     /// ```
-    fn parse_property_definition(&mut self) -> Result<NodeId<PropertyDefinition>> {
+    fn parse_property_definition(&mut self) -> Result<(NodeId<PropertyDefinition>, Option<Span>)> {
         let token = peek_expect!(self);
         let property = match token.kind() {
             t!("...") => {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
                 let id = self.ast.push_node(PropertyDefinition::Rest(expr));
-                return Ok(id);
+                return Ok((id, None));
             }
             t!("*") => {
                 self.next();
                 let property = self.parse_property_name()?;
                 let func = self.parse_function(FunctionCtx::Method, FunctionKind::Generator)?;
-                return Ok(self
-                    .ast
-                    .push_node(PropertyDefinition::Method { property, func }));
+                return Ok((
+                    self.ast
+                        .push_node(PropertyDefinition::Method { property, func }),
+                    None,
+                ));
             }
             t!("get") => {
                 self.next();
                 if Self::is_property_name(peek_expect!(self, "}").kind()) {
                     let property = self.parse_property_name()?;
                     let func = self.parse_getter()?;
-                    return Ok(self
-                        .ast
-                        .push_node(PropertyDefinition::Getter { property, func }));
+                    return Ok((
+                        self.ast
+                            .push_node(PropertyDefinition::Getter { property, func }),
+                        None,
+                    ));
                 }
                 PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("get")))
             }
@@ -302,9 +313,11 @@ impl<'a> Parser<'a> {
                 if Self::is_property_name(peek_expect!(self, "}").kind()) {
                     let property = self.parse_property_name()?;
                     let func = self.parse_setter()?;
-                    return Ok(self
-                        .ast
-                        .push_node(PropertyDefinition::Setter { property, func }));
+                    return Ok((
+                        self.ast
+                            .push_node(PropertyDefinition::Setter { property, func }),
+                        None,
+                    ));
                 }
                 PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("set")))
             }
@@ -321,9 +334,11 @@ impl<'a> Parser<'a> {
                     };
                     let property = self.parse_property_name()?;
                     let func = self.parse_function(FunctionCtx::Method, kind)?;
-                    return Ok(self
-                        .ast
-                        .push_node(PropertyDefinition::Method { property, func }));
+                    return Ok((
+                        self.ast
+                            .push_node(PropertyDefinition::Method { property, func }),
+                        None,
+                    ));
                 }
             }
             _ => self.parse_property_name()?,
@@ -336,31 +351,39 @@ impl<'a> Parser<'a> {
                 let id = self
                     .ast
                     .push_node(PropertyDefinition::Define { property, expr });
-                Ok(id)
+                Ok((id, None))
             }
             t!("=") => {
                 if let PropertyName::Ident(x) = property {
-                    self.next();
+                    let span = self.next().unwrap().span;
                     let expr = self.parse_assignment_expr()?;
+                    let symbol = self.ast.push_node(Symbol {
+                        name: x,
+                        span: token.span,
+                    });
+
                     let id = self.ast.push_node(PropertyDefinition::Covered {
-                        ident: x,
+                        symbol,
                         initializer: expr,
                     });
-                    Ok(id)
+                    Ok((id, Some(span)))
                 } else {
                     unexpected!(self, t!("="), ":")
                 }
             }
             t!("(") => {
                 let func = self.parse_function(FunctionCtx::Method, FunctionKind::Simple)?;
-                Ok(self
-                    .ast
-                    .push_node(PropertyDefinition::Method { property, func }))
+                Ok((
+                    self.ast
+                        .push_node(PropertyDefinition::Method { property, func }),
+                    None,
+                ))
             }
             x => {
-                if let PropertyName::Ident(x) = property {
-                    let id = self.ast.push_node(PropertyDefinition::Ident(x));
-                    Ok(id)
+                if let PropertyName::Ident(name) = property {
+                    let span = self.ast.push_node(token.span);
+                    let id = self.ast.push_node(PropertyDefinition::Ident { name, span });
+                    Ok((id, None))
                 } else {
                     unexpected!(self, x, ":")
                 }
@@ -457,7 +480,7 @@ impl<'a> Parser<'a> {
         match self.ast[expr] {
             Expr::Prime { expr } => match self.ast[expr] {
                 PrimeExpr::Ident(name) => Some(BindingElement::SingleName {
-                    name,
+                    symbol: name,
                     initializer: None,
                 }),
                 PrimeExpr::Object(x) => {
@@ -514,13 +537,20 @@ impl<'a> Parser<'a> {
         loop {
             let item_node = self.ast[item].item;
             let prop = match self.ast[item_node] {
-                PropertyDefinition::Ident(name) => BindingProperty::Binding {
-                    name,
-                    initializer: None,
-                },
+                PropertyDefinition::Ident { name, span } => {
+                    let span = self.ast[span];
+                    BindingProperty::Binding {
+                        symbol: self.ast.push_node(Symbol { name, span }),
+                        initializer: None,
+                    }
+                }
+
                 // TODO: make sure this is a syntax error in actual object literals
-                PropertyDefinition::Covered { ident, initializer } => BindingProperty::Binding {
-                    name: ident,
+                PropertyDefinition::Covered {
+                    symbol: ident,
+                    initializer,
+                } => BindingProperty::Binding {
+                    symbol: ident,
                     initializer: Some(initializer),
                 },
                 PropertyDefinition::Define { property, expr } => {
@@ -694,9 +724,9 @@ impl<'a> Parser<'a> {
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
             }
             _ => {
-                let name = self.parse_ident()?;
+                let symbol = self.parse_symbol()?;
                 let element = self.ast.push_node(BindingElement::SingleName {
-                    name,
+                    symbol,
                     initializer: None,
                 });
                 let element = self.ast.append_list(element, None);
@@ -719,7 +749,7 @@ mod test {
     fn basic_string() {
         create_test_parser!("\"hello world\"", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 assert!(matches!(parser.ast[x], ast::PrimeExpr::String(_)))
             }
             Err(_) => {
@@ -732,7 +762,7 @@ mod test {
     fn basic_number() {
         create_test_parser!("3", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 assert!(matches!(parser.ast[x], ast::PrimeExpr::Number(_)))
             }
             Err(_) => {
@@ -745,7 +775,7 @@ mod test {
     fn basic_ident() {
         create_test_parser!("hello", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 assert!(matches!(parser.ast[x], ast::PrimeExpr::Ident(_)))
             }
             Err(_) => {
@@ -758,7 +788,7 @@ mod test {
     fn basic_object() {
         create_test_parser!("{}", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 assert!(matches!(
                     parser.ast[x],
                     ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
@@ -774,12 +804,12 @@ mod test {
     fn object_with_identifier() {
         create_test_parser!("{ hello }", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 let PrimeExpr::Object(ObjectLiteral::Item(node)) = parser.ast[x] else {
                     panic!("not object");
                 };
                 let item = parser.ast[node].item;
-                assert!(matches!(parser.ast[item], PropertyDefinition::Ident(_)));
+                assert!(matches!(parser.ast[item], PropertyDefinition::Ident { .. }));
             }
             Err(_) => {
                 panic!()
@@ -791,8 +821,22 @@ mod test {
     fn basic_array() {
         create_test_parser!("[]", parser);
         match parser.parse_prime() {
-            Ok(x) => {
+            Ok((x, _)) => {
                 assert!(matches!(parser.ast[x], ast::PrimeExpr::Array(_)))
+            }
+            Err(_) => {
+                panic!()
+            }
+        }
+    }
+
+    #[test]
+    fn object_literal_covered() {
+        create_test_parser!("{ a = 3 }", parser);
+        match parser.parse_prime() {
+            Ok((x, span)) => {
+                assert!(span.is_some());
+                assert!(matches!(parser.ast[x], ast::PrimeExpr::Object(_)))
             }
             Err(_) => {
                 panic!()

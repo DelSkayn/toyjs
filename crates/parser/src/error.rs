@@ -6,7 +6,7 @@ use common::{
     result::ContextError,
     source::{self, Source},
     span::Span,
-    string::String,
+    string::{Ascii, String},
 };
 use token::TokenKind;
 
@@ -30,6 +30,7 @@ pub enum ErrorKind {
     NotAssignable,
     InvalidDestructuringAssigment,
     InvalidToken,
+    CoveredObjectLiteral,
 }
 
 /// A parser error.
@@ -157,6 +158,23 @@ impl Error {
                 source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
+            }
+            ErrorKind::CoveredObjectLiteral => {
+                write!(w, "invalid object literal")?;
+                writeln!(w)?;
+                write!(w, " --> ")?;
+                source.render_span_location(w, self.origin)?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(
+                        Ascii::const_from_str(
+                            "This is only valid syntax in destructuring patterns.",
+                        )
+                        .into(),
+                    ),
+                )?;
             }
         }
         Ok(())

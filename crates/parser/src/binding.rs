@@ -1,5 +1,6 @@
 use ast::{
-    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId, PropertyName,
+    BindingElement, BindingPattern, BindingProperty, IdentOrPattern, ListHead, NodeId,
+    PropertyName, Symbol,
 };
 use common::string::{String, StringId};
 use token::{t, TokenKind};
@@ -15,7 +16,7 @@ impl<'a> Parser<'a> {
                 Ok(self.ast.push_node(IdentOrPattern::Pattern(pattern)))
             }
             _ => {
-                let ident = self.parse_ident()?;
+                let ident = self.parse_symbol()?;
                 Ok(self.ast.push_node(IdentOrPattern::Ident(ident)))
             }
         }
@@ -40,6 +41,13 @@ impl<'a> Parser<'a> {
         };
 
         Ok(self.lexer.data.strings.intern(&text))
+    }
+
+    pub fn parse_symbol(&mut self) -> Result<NodeId<Symbol>> {
+        let name = self.parse_ident()?;
+        let span = *self.last_span();
+        let res = self.ast.push_node(Symbol { name, span });
+        Ok(res)
     }
 
     pub fn parse_ident(&mut self) -> Result<StringId> {
@@ -155,9 +163,10 @@ impl<'a> Parser<'a> {
                 }
                 t!("...") => {
                     self.next();
-                    let ident = self.parse_ident()?;
+                    let symbol = self.parse_symbol()?;
+
                     expect!(self, "}");
-                    rest = Some(ident);
+                    rest = Some(symbol);
                     break;
                 }
                 _ => {
@@ -210,6 +219,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 let ident = self.parse_ident_name()?;
+                let span = *self.last_span();
                 if self.eat(t!(":")) {
                     let name = PropertyName::Ident(ident);
                     let element = self.parse_binding_element()?;
@@ -220,8 +230,11 @@ impl<'a> Parser<'a> {
                         .eat(t!("="))
                         .then(|| self.parse_assignment_expr())
                         .transpose()?;
+
+                    let symbol = self.ast.push_node(Symbol { name: ident, span });
+
                     Ok(BindingProperty::Binding {
-                        name: ident,
+                        symbol,
                         initializer,
                     })
                 }
@@ -283,12 +296,15 @@ impl<'a> Parser<'a> {
                 })
             }
             _ => {
-                let name = self.parse_ident()?;
+                let symbol = self.parse_symbol()?;
                 let initializer = self
                     .eat(t!("="))
                     .then(|| self.parse_assignment_expr())
                     .transpose()?;
-                Ok(BindingElement::SingleName { name, initializer })
+                Ok(BindingElement::SingleName {
+                    symbol,
+                    initializer,
+                })
             }
         }
     }

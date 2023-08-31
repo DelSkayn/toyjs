@@ -128,14 +128,21 @@ impl<'a> Parser<'a> {
                     if self.ast[expr].next.is_some() {
                         unexpected!(self, t!(":"), ";");
                     }
-                    let Expr::Prime { expr } = self.ast[self.ast[expr].item] else {
+                    let prime = self.ast[expr].item;
+                    let Expr::Prime { expr } = self.ast[prime] else {
                         unexpected!(self, t!(":"), ";");
                     };
                     let PrimeExpr::Ident(label) = self.ast[expr] else {
                         unexpected!(self, t!(":"), ";");
                     };
+                    self.ast.free_node(expr);
+                    self.ast.free_node(prime);
                     let stmt = self.parse_stmt(false)?;
-                    self.ast.push_node(Stmt::Labeled { label, stmt })
+                    let res = self.ast.push_node(Stmt::Labeled {
+                        label: self.ast[label].name,
+                        stmt,
+                    });
+                    res
                 } else {
                     self.semicolon()?;
                     self.ast.push_node(Stmt::Expr { expr })
@@ -435,7 +442,7 @@ impl<'a> Parser<'a> {
                     },
                     message: None,
                 },
-                self.last_span().clone(),
+                *self.last_span(),
             ));
         }
 
