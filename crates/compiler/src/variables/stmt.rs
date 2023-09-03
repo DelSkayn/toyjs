@@ -1,10 +1,10 @@
 use ast::{BindingElement, BindingPattern, BindingProperty, ForLoopHead, ListHead, NodeId};
 
-use crate::{Compiler, Result};
+use crate::{variables::ScopeKind, Result};
 
-use super::Kind;
+use super::{Kind, VariablesBuilder};
 
-impl<'a> Compiler<'a> {
+impl<'a> VariablesBuilder<'a> {
     pub(super) fn resolve_stmts(&mut self, stmt: ListHead<ast::Stmt>) -> Result<()> {
         let ListHead::Present(mut head) = stmt else {
             return Ok(());
@@ -27,7 +27,9 @@ impl<'a> Compiler<'a> {
             | ast::Stmt::Continue { .. }
             | ast::Stmt::Debugger => {}
             ast::Stmt::Block { list } => {
+                self.push_scope(super::ScopeKind::Block(stmt));
                 self.resolve_stmts(list)?;
+                self.pop_scope()?;
             }
             ast::Stmt::VariableDecl { kind, mut decl } => {
                 let kind = match kind {
@@ -155,7 +157,10 @@ impl<'a> Compiler<'a> {
 
         match self.ast[decl] {
             ast::IdentOrPattern::Ident(x) => {
-                self.variables.declare(x, kind, decl)?;
+                let symbol = self.declare(x, kind, decl)?;
+                if let Some(init) = initializer {
+                    self.store_symbol(symbol, init);
+                }
             }
             ast::IdentOrPattern::Pattern(pattern) => {
                 self.resolve_binding_pattern(kind, decl, pattern, initializer)?;
@@ -190,7 +195,7 @@ impl<'a> Compiler<'a> {
                 }
 
                 if let Some(rest) = rest {
-                    self.variables.declare(rest, kind, decl)?;
+                    self.declare(rest, kind, decl)?;
                 }
             }
             BindingPattern::Array { elements, rest } => {
@@ -227,7 +232,7 @@ impl<'a> Compiler<'a> {
                 symbol,
                 initializer,
             } => {
-                self.variables.declare(symbol, kind, decl)?;
+                self.declare(symbol, kind, decl)?;
             }
             BindingProperty::Property { element, .. } => {
                 self.resolve_binding_element(kind, decl, element, initializer)?;
@@ -248,7 +253,7 @@ impl<'a> Compiler<'a> {
                 symbol: name,
                 initializer,
             } => {
-                self.variables.declare(name, kind, decl)?;
+                self.declare(name, kind, decl)?;
             }
             BindingElement::Pattern {
                 pattern,
@@ -259,6 +264,8 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn resolve_func(&mut self, func: NodeId<ast::Function>) -> Result<()> {
+        self.push_scope(ScopeKind::Function(func));
+        self.pop_scope()?;
         to_do!()
     }
 

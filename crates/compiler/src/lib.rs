@@ -3,11 +3,13 @@
 
 use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction};
-use common::{id, structs::Interners};
+use common::{
+    id, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
+};
 use core::fmt;
 use registers::Registers;
 use std::{backtrace::Backtrace, result::Result as StdResult};
-use variables::Variables;
+use variables::{Variables, VariablesBuilder};
 
 macro_rules! to_do {
     () => {
@@ -29,16 +31,68 @@ id!(pub struct InstructionId(u32));
 pub type Result<T> = StdResult<T, Error>;
 #[derive(Debug)]
 pub enum Error {
-    ExceededLimits,
+    ExceededLimits(Limits),
     NotImplemented(Backtrace),
+    Redeclared { span: Span, first_declared: Span },
+}
+
+#[derive(Debug)]
+pub enum Limits {
+    InstructionCount,
+    JumpOffset,
+    TooManyScopes,
+}
+
+impl fmt::Display for Limits {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Limits::InstructionCount => write!(f, "Too many instructions"),
+            Limits::JumpOffset => {
+                write!(f, "Tried to generate jump which exceeded max jump offset")
+            }
+            Limits::TooManyScopes => write!(f, "Exceeded the limit of variable scopes"),
+        }
+    }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::ExceededLimits => write!(f, "Code exceeded interpreter limits"),
+            Error::ExceededLimits(limit) => {
+                write!(f, "Code exceeded interpreter limits: {limit}")
+            }
             Error::NotImplemented(b) => {
                 write!(f, "Compiler hit path which was not yet implemented:\n{b}")
+            }
+            Error::Redeclared { .. } => {
+                writeln!(f, "Already existing variable was redeclared")
+            }
+        }
+    }
+}
+
+impl ContextError<Source> for Error {
+    fn display(&self, f: &mut fmt::Formatter, ctx: &Source) -> fmt::Result {
+        match self {
+            Error::ExceededLimits(limit) => {
+                write!(f, "Code exceeded interpreter limits: {limit}")
+            }
+            Error::NotImplemented(b) => {
+                write!(f, "Compiler hit path which was not yet implemented:\n{b}")
+            }
+            Error::Redeclared {
+                span,
+                first_declared,
+            } => {
+                write!(f, "Already existing variable was redeclared")?;
+                ctx.render_string_block(f, *span, None)
+                    .map_err(|_| fmt::Error)?;
+                ctx.render_string_block(
+                    f,
+                    *first_declared,
+                    Some(Ascii::const_from_str("Was first declared here").into()),
+                )
+                .map_err(|_| fmt::Error)
             }
         }
     }
@@ -65,13 +119,21 @@ impl<'a> Compiler<'a> {
 
     pub fn push(&mut self, instr: Instruction) -> Result<InstructionId> {
         let res = self.instructions.len();
-        let id = InstructionId(res.try_into().map_err(|_| Error::ExceededLimits)?);
+        let id = InstructionId(
+            res.try_into()
+                .map_err(|_| Error::ExceededLimits(Limits::InstructionCount))?,
+        );
         self.instructions.push(instr);
         Ok(id)
     }
 
     pub fn compile_script(mut self, script: ListHead<ast::Stmt>) -> Result<ByteCode> {
-        self.resolve_variables(script)?;
+        let mut variables = VariablesBuilder::new(self.ast);
+        variables.push_scope(variables::ScopeKind::Global);
+        variables.resolve_variables(script)?;
+        variables.pop_scope()?;
+
+        self.variables = dbg!(variables.build());
 
         let mut expr = None;
         if let ListHead::Present(s) = script {

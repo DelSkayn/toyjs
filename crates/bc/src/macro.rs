@@ -69,7 +69,7 @@ macro_rules! instructions {
                         Self::$ir_name $({$($field,)*})* => {
                             write!(f,"{:15} ",stringify!($ir_name))?;
                             $($(
-                                write!(f,"{:>4}:{:<2} ",stringify!($field),$field)?;
+                                write!(f,"{:>6}:{:<6} ",stringify!($field),$field)?;
                             )*)*
                             Ok(())
                         }

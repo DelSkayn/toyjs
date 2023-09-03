@@ -138,11 +138,10 @@ impl<'a> Parser<'a> {
                     self.ast.free_node(expr);
                     self.ast.free_node(prime);
                     let stmt = self.parse_stmt(false)?;
-                    let res = self.ast.push_node(Stmt::Labeled {
+                    self.ast.push_node(Stmt::Labeled {
                         label: self.ast[label].name,
                         stmt,
-                    });
-                    res
+                    })
                 } else {
                     self.semicolon()?;
                     self.ast.push_node(Stmt::Expr { expr })

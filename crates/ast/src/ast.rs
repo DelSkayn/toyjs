@@ -26,7 +26,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use common::any_vec::AnyVec;
+use common::{any_vec::AnyVec, id::Id};
 
 static TOO_MANY_NODES: &str = "Too many nodes in storage to fit 32 bit id.";
 
@@ -46,6 +46,12 @@ fn panic_no_storage<T>() -> ! {
 pub struct NodeId<T> {
     id: NonZeroU32,
     marker: PhantomData<T>,
+}
+
+impl<T> NodeId<T> {
+    pub fn id(self) -> u32 {
+        u32::from(self.id) - 1
+    }
 }
 
 impl<T> fmt::Debug for NodeId<T> {
@@ -81,6 +87,29 @@ impl<T> Ord for NodeId<T> {
         self.id.cmp(&other.id)
     }
 }
+
+impl<T> TryFrom<usize> for NodeId<T> {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        let v = value.checked_add(1).ok_or(())?.try_into().map_err(|_| ())?;
+        // We added one to an usized value so it is always non-zero.
+        let id = unsafe { NonZeroU32::new_unchecked(v) };
+        Ok(Self {
+            id,
+            marker: PhantomData,
+        })
+    }
+}
+impl<T> TryInto<usize> for NodeId<T> {
+    type Error = <u32 as TryInto<usize>>::Error;
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        let v = u32::from(self.id) - 1;
+        v.try_into()
+    }
+}
+impl<T> Id for NodeId<T> {}
 
 /// An id of a `List<T>` node.
 ///

@@ -3,12 +3,12 @@ use std::collections::VecDeque;
 use bc::{ByteCode, Function, Instruction, LongOffset, Offset};
 use common::span::Span;
 
-use crate::{Compiler, Error};
+use crate::{Compiler, Error, Limits};
 
 impl<'a> Compiler<'a> {
     pub fn into_bc(mut self) -> Result<ByteCode, Error> {
         if self.instructions.len() > isize::MAX as usize {
-            return Err(Error::ExceededLimits);
+            return Err(Error::ExceededLimits(Limits::InstructionCount));
         }
         // First calculate size prefix sums.
         // Also keep track of jump instructions.
@@ -61,7 +61,7 @@ impl<'a> Compiler<'a> {
             });
 
             if error {
-                return Err(Error::ExceededLimits);
+                return Err(Error::ExceededLimits(Limits::JumpOffset));
             }
 
             let Some(cur_upgrade) = upgrades.pop_back() else {
@@ -109,7 +109,10 @@ impl<'a> Compiler<'a> {
             instr.write(&mut bytes);
         }
 
-        let len: u32 = bytes.len().try_into().map_err(|_| Error::ExceededLimits)?;
+        let len: u32 = bytes
+            .len()
+            .try_into()
+            .map_err(|_| Error::ExceededLimits(Limits::InstructionCount))?;
 
         Ok(ByteCode {
             functions: vec![Function {

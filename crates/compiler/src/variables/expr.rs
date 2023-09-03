@@ -1,7 +1,9 @@
-use crate::{Compiler, Result};
+use crate::Result;
 use ast::{ListId, NodeId};
 
-impl<'a> Compiler<'a> {
+use super::VariablesBuilder;
+
+impl<'a> VariablesBuilder<'a> {
     pub(super) fn resolve_exprs(&mut self, mut expr: ListId<ast::Expr>) -> Result<()> {
         loop {
             self.resolve_expr(self.ast[expr].item)?;
@@ -42,7 +44,7 @@ impl<'a> Compiler<'a> {
                 | ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
                 | ast::PrimeExpr::Super => {}
                 ast::PrimeExpr::Ident(name) => {
-                    self.variables.load(name, expr)?;
+                    self.load(name, expr)?;
                 }
                 ast::PrimeExpr::Function(func) => self.resolve_func(func)?,
                 ast::PrimeExpr::Class(class) => self.resolve_class(class)?,
@@ -57,7 +59,7 @@ impl<'a> Compiler<'a> {
                     let item = self.ast[def].item;
                     match self.ast[item] {
                         ast::PropertyDefinition::Ident { .. } => {}
-                        ast::PropertyDefinition::Covered { initializer, .. } => {
+                        ast::PropertyDefinition::Covered { .. } => {
                             panic!("A covered object should not make it to the compiler");
                         }
                         ast::PropertyDefinition::Define { expr, .. } => self.resolve_expr(expr)?,

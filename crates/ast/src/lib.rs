@@ -1120,6 +1120,9 @@ pub enum PropertyDefinition {
         name: StringId,
         span: NodeId<Span>,
     },
+    /// A destructing assignment will first be parsed as an object literal and then later refined.
+    /// This production is not valid for object literals but is for a destructing assignment and
+    /// therefore should never be part of a fully parsed object literal.
     Covered {
         symbol: NodeId<Symbol>,
         initializer: NodeId<Expr>,

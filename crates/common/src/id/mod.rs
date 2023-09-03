@@ -1,7 +1,8 @@
 use std::{
     marker::PhantomData,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, RangeBounds},
     slice::{Iter, IterMut},
+    vec::Drain,
 };
 
 /// A macro which implements a newtype index.
@@ -78,6 +79,21 @@ impl<K, T> KeyedVec<K, T> {
     pub fn is_empty(&self) -> bool {
         self.vec.is_empty()
     }
+
+    pub fn drain<R>(&mut self, range: R) -> Drain<'_, T>
+    where
+        R: RangeBounds<usize>,
+    {
+        self.vec.drain(range)
+    }
+
+    pub fn as_inner(&self) -> &Vec<T> {
+        &self.vec
+    }
+
+    pub fn as_inner_mut(&mut self) -> &mut Vec<T> {
+        &mut self.vec
+    }
 }
 
 impl<K: Id, T> KeyedVec<K, T> {
@@ -95,6 +111,13 @@ impl<K: Id, T> KeyedVec<K, T> {
         };
         self.vec.push(value);
         Ok(res)
+    }
+
+    pub fn next_id(&mut self) -> K {
+        let Ok(x) = K::try_from(self.len()) else {
+            panic!("could not convert index to usize")
+        };
+        x
     }
 }
 
