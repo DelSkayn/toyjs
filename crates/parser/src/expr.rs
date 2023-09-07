@@ -376,7 +376,7 @@ impl<'a> Parser<'a> {
             }
         }
         expect!(self, ")");
-        Ok(prev)
+        Ok(head)
     }
 
     fn is_assignable(&self, expr: NodeId<ast::Expr>) -> bool {

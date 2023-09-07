@@ -7,7 +7,7 @@ use std::ops::Range;
 /// A span containing range information mostly used for tokens.
 ///
 // Not marked as copy for future proving.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Hash, Default)]
 pub struct Span {
     /// The offset into a code unit range.
     offset: u32,

@@ -6,6 +6,7 @@ use crate::{Error, Limits};
 use super::Result;
 
 mod expr;
+mod render;
 mod stmt;
 
 id!(pub struct ScopeId(u32));
@@ -23,6 +24,7 @@ pub enum Kind {
     Const,
     /// Variable is used without ever being declared.
     Unresolved,
+    Arg,
 }
 
 impl From<ast::VariableKind> for Kind {
@@ -86,6 +88,36 @@ impl Variables {
             symbols: KeyedVec::new(),
             ast_to_symbol: KeyedVec::new(),
         }
+    }
+
+    pub fn scopes(&self) -> &KeyedVec<ScopeId, Scope> {
+        &self.scopes
+    }
+
+    pub fn symbols(&self) -> &KeyedVec<SymbolId, Symbol> {
+        &self.symbols
+    }
+
+    pub fn child_scopes(&self, id: ScopeId) -> &[ScopeId] {
+        let scope = &self.scopes[id];
+        let offset = scope.child_list_offset as usize;
+        let len = scope.num_childeren as usize;
+
+        &self.scope_children[offset..(offset + len)]
+    }
+
+    pub fn declared_vars(&self, id: ScopeId) -> &[SymbolId] {
+        let scope = &self.scopes[id];
+        let offset = scope.symbol_offset as usize;
+        let len = scope.num_declarations as usize;
+
+        &self.scope_symbols[offset..(offset + len)]
+    }
+}
+
+impl Default for Variables {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -153,6 +185,9 @@ impl VariablesBuilder<'_> {
         // Don't really care about 16 bit.
         let num_childeren: usize = cur_scope_ref.num_childeren.try_into().unwrap();
         let num_declarations: usize = cur_scope_ref.num_declarations.try_into().unwrap();
+        // This conversion should always be valid since we can't have more than u32::MAX symbols.
+        cur_scope_ref.symbol_offset = self.variables.scope_symbols.len() as u32;
+        cur_scope_ref.child_list_offset = self.variables.scope_children.len() as u32;
 
         let len = self.scope_stack.len();
         self.variables
@@ -173,7 +208,7 @@ impl VariablesBuilder<'_> {
         &mut self,
         name: NodeId<ast::Symbol>,
         mut kind: Kind,
-        at: NodeId<ast::IdentOrPattern>,
+        at: Option<NodeId<ast::IdentOrPattern>>,
     ) -> Result<SymbolId> {
         let current_scope = self
             .current_scope
@@ -190,14 +225,14 @@ impl VariablesBuilder<'_> {
             ident,
             kind,
             captured: false,
-            declared: Some(at),
+            declared: at,
             defined: None,
             last_use: None,
         });
 
         self.symbol_stack.push(res);
         self.variables.scopes[current_scope].num_declarations += 1;
-        assert_eq!(self.variables.ast_to_symbol.next_id(), name);
+        assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
         self.variables.ast_to_symbol.push(res);
 
         Ok(res)
@@ -206,7 +241,7 @@ impl VariablesBuilder<'_> {
     fn resolve_variable_in(&self, name: StringId, mut scope: ScopeId) -> Option<SymbolId> {
         let mut variable_offset = self.symbol_stack.len();
         loop {
-            let num_childeren = self.variables.scopes[scope].num_childeren as usize;
+            let num_childeren = self.variables.scopes[scope].num_declarations as usize;
             variable_offset -= num_childeren;
             // reverse so we access symbols in order.
             for v in self.symbol_stack[variable_offset..(variable_offset + num_childeren)]
@@ -248,8 +283,11 @@ impl VariablesBuilder<'_> {
         let current_scope = self
             .current_scope
             .expect("tried to load a variable without a scope");
-        if let Some(x) = self.resolve_variable_in(self.ast[name].name, current_scope) {
-            let symbol = &mut self.variables.symbols[x];
+        if let Some(symbol) = self.resolve_variable_in(self.ast[name].name, current_scope) {
+            assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
+            self.variables.ast_to_symbol.push(symbol);
+
+            let symbol = &mut self.variables.symbols[symbol];
             symbol.last_use = Some(at);
         } else {
             let symbol = self.add_unresolved(name);
@@ -264,6 +302,9 @@ impl VariablesBuilder<'_> {
             .current_scope
             .expect("tried to store a variable without a scope");
         if let Some(symbol) = self.resolve_variable_in(self.ast[name].name, current_scope) {
+            assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
+            self.variables.ast_to_symbol.push(symbol);
+
             self.store_symbol(symbol, from);
         } else {
             let symbol = self.add_unresolved(name);

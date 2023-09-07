@@ -24,7 +24,7 @@ mod prime;
 mod proc;
 mod registers;
 mod stmt;
-mod variables;
+pub mod variables;
 
 id!(pub struct InstructionId(u32));
 
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
         variables.resolve_variables(script)?;
         variables.pop_scope()?;
 
-        self.variables = dbg!(variables.build());
+        self.variables = variables.build();
 
         let mut expr = None;
         if let ListHead::Present(s) = script {

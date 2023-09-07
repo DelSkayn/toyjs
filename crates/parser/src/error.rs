@@ -31,6 +31,7 @@ pub enum ErrorKind {
     InvalidDestructuringAssigment,
     InvalidToken,
     CoveredObjectLiteral,
+    ConstNotInitialized,
 }
 
 /// A parser error.
@@ -174,6 +175,18 @@ impl Error {
                         )
                         .into(),
                     ),
+                )?;
+            }
+            ErrorKind::ConstNotInitialized => {
+                write!(w, "Const variable not initialized")?;
+                writeln!(w)?;
+                write!(w, " --> ")?;
+                source.render_span_location(w, self.origin)?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
                 )?;
             }
         }

@@ -556,6 +556,7 @@ impl RenderAst for Parameters {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum ArrowFunctionBody {
     Expr(NodeId<Expr>),
     Stmt(ListHead<Stmt>),
@@ -603,6 +604,7 @@ impl FunctionKind {
     }
 }
 
+#[derive(Debug)]
 pub enum Function {
     Arrow {
         is_strict: bool,
@@ -614,7 +616,7 @@ pub enum Function {
     Base {
         is_strict: bool,
         kind: FunctionKind,
-        name: Option<StringId>,
+        name: Option<NodeId<Symbol>>,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ListHead<Stmt>,

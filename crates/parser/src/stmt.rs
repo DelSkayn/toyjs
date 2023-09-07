@@ -5,8 +5,8 @@ use ast::{
 use token::t;
 
 use crate::{
-    alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Parser,
-    ParserState, Result,
+    alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Error,
+    Parser, ParserState, Result,
 };
 
 impl<'a> Parser<'a> {
@@ -526,21 +526,38 @@ impl<'a> Parser<'a> {
     /// const { c } = foo;
     /// ```
     pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
+        let span = self.peek().map(|x| x.span).unwrap_or_default();
+
         let decl = self.parse_ident_or_pattern()?;
+        let decl_span = span.covers(self.last_span());
+
         let initializer = self
             .eat(t!("="))
             .then(|| self.parse_assignment_expr())
             .transpose()?;
+
+        if kind == VariableKind::Const && initializer.is_none() {
+            return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+        }
+
         let decl = self.ast.push_node(VariableDecl { decl, initializer });
 
         let head = self.ast.append_list(decl, None);
         let mut prev = head;
         while self.eat(t!(",")) {
+            let span = self.peek().map(|x| x.span).unwrap_or_default();
             let decl = self.parse_ident_or_pattern()?;
+            let decl_span = span.covers(self.last_span());
+
             let initializer = self
                 .eat(t!("="))
                 .then(|| self.parse_assignment_expr())
                 .transpose()?;
+
+            if kind == VariableKind::Const && initializer.is_none() {
+                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+            }
+
             let decl = self.ast.push_node(VariableDecl { decl, initializer });
             prev = self.ast.append_list(decl, Some(prev));
         }

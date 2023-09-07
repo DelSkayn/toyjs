@@ -1,6 +1,9 @@
-use ast::{BindingElement, BindingPattern, BindingProperty, ForLoopHead, ListHead, NodeId};
+use ast::{
+    BindingElement, BindingPattern, BindingProperty, ForLoopHead, Function, ListHead, ListId,
+    NodeId,
+};
 
-use crate::{variables::ScopeKind, Result};
+use crate::{variables::ScopeKind, Error, Result};
 
 use super::{Kind, VariablesBuilder};
 
@@ -85,6 +88,9 @@ impl<'a> VariablesBuilder<'a> {
             } => {
                 self.resolve_stmts(block)?;
                 if let Some(catch) = catch {
+                    if let Some(binding) = self.ast[catch].binding {
+                        self.resolve_decl(Kind::Let, binding, None)?;
+                    }
                     self.resolve_stmts(self.ast[catch].block)?;
                 }
                 if let Some(finally) = finally {
@@ -108,7 +114,33 @@ impl<'a> VariablesBuilder<'a> {
 
     pub fn resolve_for_head(&mut self, head: NodeId<ForLoopHead>) -> Result<()> {
         match self.ast[head] {
-            ForLoopHead::CStyle { decl, cond, post } => todo!(),
+            ForLoopHead::CStyle { decl, cond, post } => {
+                match decl {
+                    ast::CstyleDecl::Expr(x) => {
+                        self.resolve_exprs(x)?;
+                    }
+                    ast::CstyleDecl::Decl { kind, decl } => {
+                        let mut head = Some(decl);
+                        while let Some(item) = head {
+                            let id = self.ast[item].item;
+                            self.resolve_decl(
+                                kind.into(),
+                                self.ast[id].decl,
+                                self.ast[id].initializer,
+                            )?;
+                            head = self.ast[item].next;
+                        }
+                    }
+                    ast::CstyleDecl::Empty => {}
+                }
+
+                if let Some(cond) = cond {
+                    self.resolve_exprs(cond)?;
+                }
+                if let Some(post) = post {
+                    self.resolve_exprs(post)?;
+                }
+            }
             ForLoopHead::In { decl, mut expr } => {
                 match decl {
                     ast::InOfDecl::Expr(x) => self.resolve_expr(x)?,
@@ -149,21 +181,16 @@ impl<'a> VariablesBuilder<'a> {
         decl: NodeId<ast::IdentOrPattern>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
-        if let Kind::Const = kind {
-            if initializer.is_none() {
-                to_do!()
-            }
-        }
-
         match self.ast[decl] {
             ast::IdentOrPattern::Ident(x) => {
-                let symbol = self.declare(x, kind, decl)?;
+                let symbol = self.declare(x, kind, Some(decl))?;
                 if let Some(init) = initializer {
                     self.store_symbol(symbol, init);
+                    self.resolve_expr(init)?;
                 }
             }
             ast::IdentOrPattern::Pattern(pattern) => {
-                self.resolve_binding_pattern(kind, decl, pattern, initializer)?;
+                self.resolve_binding_pattern(kind, Some(decl), pattern, initializer)?;
             }
         }
         Ok(())
@@ -172,7 +199,7 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_pattern(
         &mut self,
         kind: Kind,
-        decl: NodeId<ast::IdentOrPattern>,
+        decl: Option<NodeId<ast::IdentOrPattern>>,
         pattern: NodeId<BindingPattern>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
@@ -223,7 +250,7 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_property(
         &mut self,
         kind: Kind,
-        decl: NodeId<ast::IdentOrPattern>,
+        decl: Option<NodeId<ast::IdentOrPattern>>,
         property: NodeId<BindingProperty>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
@@ -244,7 +271,7 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_element(
         &mut self,
         kind: Kind,
-        decl: NodeId<ast::IdentOrPattern>,
+        decl: Option<NodeId<ast::IdentOrPattern>>,
         element: NodeId<BindingElement>,
         initializer: Option<NodeId<ast::Expr>>,
     ) -> Result<()> {
@@ -263,10 +290,57 @@ impl<'a> VariablesBuilder<'a> {
         Ok(())
     }
 
-    pub fn resolve_func(&mut self, func: NodeId<ast::Function>) -> Result<()> {
-        self.push_scope(ScopeKind::Function(func));
-        self.pop_scope()?;
-        to_do!()
+    pub fn resolve_func(&mut self, func: NodeId<Function>) -> Result<()> {
+        let function = &self.ast[func];
+        match *function {
+            Function::Arrow {
+                params,
+                rest_param,
+                body,
+                ..
+            } => {
+                self.push_scope(ScopeKind::Function(func));
+                let mut head: Option<ListId<ast::BindingElement>> = params.into();
+                while let Some(item) = head {
+                    let elem = self.ast[item].item;
+                    head = self.ast[item].next;
+                    self.resolve_binding_element(Kind::Arg, None, elem, None)?;
+                }
+                if let Some(rest) = rest_param {
+                    self.resolve_decl(Kind::Arg, rest, None)?;
+                }
+                match body {
+                    ast::ArrowFunctionBody::Expr(x) => self.resolve_expr(x)?,
+                    ast::ArrowFunctionBody::Stmt(body) => self.resolve_stmts(body)?,
+                }
+                self.pop_scope()?;
+                Ok(())
+            }
+            Function::Base {
+                name,
+                params,
+                rest_param,
+                body,
+                ..
+            } => {
+                if let Some(name) = name {
+                    self.declare(name, Kind::Function, None)?;
+                }
+                self.push_scope(ScopeKind::Function(func));
+                let mut head: Option<ListId<ast::BindingElement>> = params.into();
+                while let Some(item) = head {
+                    let elem = self.ast[item].item;
+                    head = self.ast[item].next;
+                    self.resolve_binding_element(Kind::Arg, None, elem, None)?;
+                }
+                if let Some(rest) = rest_param {
+                    self.resolve_decl(Kind::Arg, rest, None)?;
+                }
+                self.resolve_stmts(body)?;
+                self.pop_scope()?;
+                Ok(())
+            }
+        }
     }
 
     pub fn resolve_class(&mut self, func: NodeId<ast::Class>) -> Result<()> {

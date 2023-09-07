@@ -1,5 +1,5 @@
 use crate::Result;
-use ast::{ListId, NodeId};
+use ast::{BinaryOp, ListId, NodeId};
 
 use super::VariablesBuilder;
 
@@ -18,20 +18,31 @@ impl<'a> VariablesBuilder<'a> {
     }
     pub(super) fn resolve_expr(&mut self, expr: NodeId<ast::Expr>) -> Result<()> {
         match self.ast[expr] {
-            ast::Expr::Binary { left, right, .. } => {
-                self.resolve_expr(left)?;
+            ast::Expr::Binary { left, right, op } => {
+                if let BinaryOp::Assign(_) = op {
+                    self.resolve_assign_expr(left, right)?
+                } else {
+                    self.resolve_expr(left)?;
+                }
                 self.resolve_expr(right)?;
             }
             ast::Expr::Index { index, expr } => {
-                self.resolve_expr(index)?;
                 self.resolve_expr(expr)?;
+                self.resolve_expr(index)?;
             }
             ast::Expr::Prefix { expr, .. }
             | ast::Expr::Postfix { expr, .. }
             | ast::Expr::Dot { expr, .. }
-            | ast::Expr::Call { expr, .. }
             | ast::Expr::Yield { expr, .. } => {
                 self.resolve_expr(expr)?;
+            }
+            ast::Expr::Call { expr, args } => {
+                self.resolve_expr(expr)?;
+                let mut head = args;
+                while let Some(id) = head {
+                    self.resolve_expr(self.ast[id].data.expr)?;
+                    head = self.ast[id].next;
+                }
             }
             ast::Expr::Prime { expr: prime } => match self.ast[prime] {
                 ast::PrimeExpr::Number(_)
@@ -101,5 +112,44 @@ impl<'a> VariablesBuilder<'a> {
             ast::Expr::Destructure { pattern, expr } => to_do!(),
         }
         Ok(())
+    }
+
+    pub fn resolve_assign_expr(
+        &mut self,
+        expr: NodeId<ast::Expr>,
+        from: NodeId<ast::Expr>,
+    ) -> Result<()> {
+        match self.ast[expr] {
+            ast::Expr::Binary { .. }
+            | ast::Expr::Prefix { .. }
+            | ast::Expr::Postfix { .. }
+            | ast::Expr::Tenary(_)
+            | ast::Expr::Call { .. }
+            | ast::Expr::TaggedTemplate { .. } => unreachable!(),
+            ast::Expr::Index { index, expr } => {
+                self.resolve_expr(expr)?;
+                self.resolve_expr(index)
+            }
+            ast::Expr::Dot { ident, expr } => self.resolve_expr(expr),
+            ast::Expr::Prime { expr } => match self.ast[expr] {
+                ast::PrimeExpr::Number(_)
+                | ast::PrimeExpr::String(_)
+                | ast::PrimeExpr::Template(_)
+                | ast::PrimeExpr::Regex(_)
+                | ast::PrimeExpr::Boolean(_)
+                | ast::PrimeExpr::Function(_)
+                | ast::PrimeExpr::Class(_)
+                | ast::PrimeExpr::Object(_)
+                | ast::PrimeExpr::Array(_)
+                | ast::PrimeExpr::NewTarget
+                | ast::PrimeExpr::Null
+                | ast::PrimeExpr::This
+                | ast::PrimeExpr::Super
+                | ast::PrimeExpr::Covered(_) => unreachable!(),
+                ast::PrimeExpr::Ident(s) => self.store(s, from),
+            },
+            ast::Expr::Yield { star, expr } => todo!(),
+            ast::Expr::Destructure { pattern, expr } => todo!(),
+        }
     }
 }

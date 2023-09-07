@@ -34,11 +34,13 @@ impl<'a> Parser<'a> {
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
         let name = match ctx {
-            FunctionCtx::Stmt => Some(self.parse_ident()?),
+            FunctionCtx::Stmt => Some(self.parse_symbol()?),
             FunctionCtx::Expression => {
                 let token = peek_expect!(self, "ident");
                 match token.kind() {
-                    TokenKind::UnreservedKeyword(_) | TokenKind::Ident => Some(self.parse_ident()?),
+                    TokenKind::UnreservedKeyword(_) | TokenKind::Ident => {
+                        Some(self.parse_symbol()?)
+                    }
                     t!("(") => None,
                     _ => {
                         unexpected!(self, token.kind(), "ident");

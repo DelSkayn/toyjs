@@ -129,6 +129,7 @@ impl RenderAst for NumberId {
 
 impl<T: RenderAst + Any> RenderAst for NodeId<T> {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
+        write!(w, "[{}]", self.id())?;
         ctx.tree[*self].render(ctx, w)
     }
 }
