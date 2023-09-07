@@ -3,7 +3,7 @@ use ast::{
     NodeId,
 };
 
-use crate::{variables::ScopeKind, Error, Result};
+use crate::{variables::ScopeKind, Result};
 
 use super::{Kind, VariablesBuilder};
 
@@ -141,36 +141,24 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_exprs(post)?;
                 }
             }
-            ForLoopHead::In { decl, mut expr } => {
+            ForLoopHead::In { decl, expr } => {
                 match decl {
                     ast::InOfDecl::Expr(x) => self.resolve_expr(x)?,
                     ast::InOfDecl::Decl { kind, binding } => {
-                        // find the last expression.
-                        let mut head = expr;
-                        while let Some(next) = self.ast[head].next {
-                            head = next;
-                        }
-                        self.resolve_decl(kind.into(), binding, Some(self.ast[head].item))?;
+                        self.resolve_decl(kind.into(), binding, None)?;
                     }
                 }
-                loop {
-                    self.resolve_expr(self.ast[expr].item)?;
-                    if let Some(next) = self.ast[expr].next {
-                        expr = next;
-                    } else {
-                        break;
-                    }
-                }
+                self.resolve_exprs(expr)?;
             }
-            ForLoopHead::Of { decl, expr } => {
-                match decl {
-                    ast::InOfDecl::Expr(x) => self.resolve_expr(x)?,
-                    ast::InOfDecl::Decl { kind, binding } => {
-                        self.resolve_decl(kind.into(), binding, Some(expr))?;
-                    }
+            ForLoopHead::Of { decl, expr } => match decl {
+                ast::InOfDecl::Expr(x) => {
+                    self.resolve_expr(x)?;
+                    self.resolve_expr(expr)?;
                 }
-                self.resolve_expr(expr)?;
-            }
+                ast::InOfDecl::Decl { kind, binding } => {
+                    self.resolve_decl(kind.into(), binding, Some(expr))?;
+                }
+            },
         }
         Ok(())
     }
@@ -191,6 +179,9 @@ impl<'a> VariablesBuilder<'a> {
             }
             ast::IdentOrPattern::Pattern(pattern) => {
                 self.resolve_binding_pattern(kind, Some(decl), pattern, initializer)?;
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
             }
         }
         Ok(())
@@ -281,6 +272,9 @@ impl<'a> VariablesBuilder<'a> {
                 initializer,
             } => {
                 self.declare(name, kind, decl)?;
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
             }
             BindingElement::Pattern {
                 pattern,

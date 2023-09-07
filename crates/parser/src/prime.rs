@@ -1,5 +1,5 @@
 use ast::{
-    ArrayLiteral, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
+    ArrayLiteralEntry, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
     BindingProperty, Expr, Function, FunctionKind, IdentOrPattern, ListHead, ListId, NodeId,
     ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Symbol, Template,
 };
@@ -415,10 +415,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_literal(&mut self) -> Result<NodeId<ArrayLiteral>> {
+    fn parse_array_literal(&mut self) -> Result<ListHead<ArrayLiteralEntry>> {
         let mut prev = None;
-        let mut head = None;
-        let mut rest = None;
+        let mut head = ListHead::Empty;
 
         loop {
             let token = peek_expect!(self, "]");
@@ -428,18 +427,34 @@ impl<'a> Parser<'a> {
                 }
                 t!(",") => {
                     self.next();
-                    prev = Some(self.ast.append_node_list(None, prev));
-                    head = head.or(prev);
+                    let node = self.ast.push_node(ArrayLiteralEntry {
+                        expr: None,
+                        is_spread: false,
+                    });
+                    prev = Some(self.ast.append_list(node, prev));
+                    head = head.or(prev.into());
                 }
                 t!("...") => {
                     self.next();
                     let expr = self.parse_assignment_expr()?;
-                    rest = Some(expr);
+                    let node = self.ast.push_node(ArrayLiteralEntry {
+                        expr: Some(expr),
+                        is_spread: true,
+                    });
+                    prev = Some(self.ast.append_list(node, prev));
+                    head = head.or(prev.into());
+                    if !self.eat(t!(",")) {
+                        break;
+                    }
                 }
                 _ => {
                     let expr = self.parse_assignment_expr()?;
-                    prev = Some(self.ast.append_node_list(Some(expr), prev));
-                    head = head.or(prev);
+                    let node = self.ast.push_node(ArrayLiteralEntry {
+                        expr: Some(expr),
+                        is_spread: false,
+                    });
+                    prev = Some(self.ast.append_list(node, prev));
+                    head = head.or(prev.into());
                     if !self.eat(t!(",")) {
                         break;
                     }
@@ -447,11 +462,7 @@ impl<'a> Parser<'a> {
             }
         }
         expect!(self, "]");
-
-        Ok(self.ast.push_node(ArrayLiteral {
-            elements: head,
-            spread: rest,
-        }))
+        Ok(head)
     }
 
     fn reparse_arrow_function(
@@ -593,22 +604,37 @@ impl<'a> Parser<'a> {
         Some(BindingPattern::Object { properties, rest })
     }
 
-    pub fn reparse_array_lit(&mut self, expr: NodeId<ArrayLiteral>) -> Option<BindingPattern> {
-        let rest = if let Some(x) = self.ast[expr].spread {
-            let rest = self.reparse_ident_or_pattern(x)?;
-            Some(self.ast.push_node(rest))
-        } else {
-            None
+    pub fn reparse_array_lit(
+        &mut self,
+        expr: ListHead<ArrayLiteralEntry>,
+    ) -> Option<BindingPattern> {
+        let ListHead::Present(head) = expr else {
+            return Some(BindingPattern::Array {
+                elements: None,
+                rest: None,
+            });
         };
 
-        let mut cur = self.ast[expr].elements;
+        let mut cur = Some(head);
         let mut head = None;
         let mut prev = None;
+        let mut rest = None;
 
         while let Some(c) = cur {
-            let element = if let Some(x) = self.ast[c].data {
-                let elem = self.reparse_binding_element(x)?;
-                Some(self.ast.push_node(elem))
+            let item = self.ast[c].item;
+            let element = if let Some(x) = self.ast[item].expr {
+                if self.ast[item].is_spread {
+                    if self.ast[c].next.is_some() {
+                        return None;
+                    } else {
+                        let elem = self.reparse_ident_or_pattern(x)?;
+                        rest = Some(self.ast.push_node(elem));
+                        break;
+                    }
+                } else {
+                    let elem = self.reparse_binding_element(x)?;
+                    Some(self.ast.push_node(elem))
+                }
             } else {
                 None
             };

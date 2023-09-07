@@ -88,15 +88,13 @@ impl<'a> VariablesBuilder<'a> {
                     }
                 },
                 ast::PrimeExpr::Array(x) => {
-                    let mut elements = self.ast[x].elements;
+                    let mut elements: Option<ListId<ast::ArrayLiteralEntry>> = x.into();
                     while let Some(elem) = elements {
-                        if let Some(expr) = self.ast[elem].data {
+                        let item = self.ast[elem].item;
+                        if let Some(expr) = self.ast[item].expr {
                             self.resolve_expr(expr)?;
                         }
                         elements = self.ast[elem].next;
-                    }
-                    if let Some(spread) = self.ast[x].spread {
-                        self.resolve_expr(spread)?;
                     }
                 }
             },

@@ -27,7 +27,7 @@ pub type AstStorage = (
     ),
     Vec<Function>,
     (Vec<Class>, Vec<ClassMember>),
-    (Vec<ArrayLiteral>, Vec<PropertyDefinition>),
+    (Vec<ArrayLiteralEntry>, Vec<PropertyDefinition>),
     (Vec<Symbol>, Vec<Span>),
 );
 
@@ -433,7 +433,7 @@ impl RenderAst for CstyleDecl {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum InOfDecl {
     Expr(NodeId<Expr>),
     Decl {
@@ -990,15 +990,19 @@ impl RenderAst for Tenary {
 }
 
 pub struct ArrayLiteral {
-    pub elements: Option<NodeId<NodeList<Option<NodeId<Expr>>>>>,
-    pub spread: Option<NodeId<Expr>>,
+    pub elements: ListHead<ArrayLiteralEntry>,
 }
 
-impl RenderAst for ArrayLiteral {
+pub struct ArrayLiteralEntry {
+    pub expr: Option<NodeId<Expr>>,
+    pub is_spread: bool,
+}
+
+impl RenderAst for ArrayLiteralEntry {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
-        ctx.render_struct("ArrayLiteral", w)?
-            .field("elements", &self.elements)?
-            .field("spread", &self.spread)?
+        ctx.render_struct("ArrayLiteralEntry", w)?
+            .field("expr", &self.expr)?
+            .field_debug("is_spread", &self.is_spread)?
             .finish();
 
         Ok(())
@@ -1016,7 +1020,7 @@ pub enum PrimeExpr {
     Function(NodeId<Function>),
     Class(NodeId<Class>),
     Object(ObjectLiteral),
-    Array(NodeId<ArrayLiteral>),
+    Array(ListHead<ArrayLiteralEntry>),
     NewTarget,
     Null,
     This,

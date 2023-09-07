@@ -57,7 +57,7 @@ impl<T> NodeId<T> {
 impl<T> fmt::Debug for NodeId<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeId")
-            .field("id", &self.id)
+            .field("id", &self.id())
             .field("marker", &self.marker)
             .finish()
     }
