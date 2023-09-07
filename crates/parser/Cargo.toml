@@ -24,9 +24,9 @@ iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
 name = "scripts"
 harness = false
 
-#[[bench]]
-#name = "iai_scripts"
-#harness = false
+[[bench]]
+name = "iai_scripts"
+harness = false
 
 [[example]]
 name = "parser"

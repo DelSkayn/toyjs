@@ -651,6 +651,8 @@ name = "toyjs_compiler"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "criterion",
+ "iai",
  "toyjs_ast",
  "toyjs_bc",
  "toyjs_common",

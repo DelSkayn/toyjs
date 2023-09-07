@@ -14,35 +14,35 @@ pub fn bench_parser(source: &str) {
     let _ = black_box(parser.parse_script()).expect("parsing failed");
 }
 
-fn jquery() {
-    bench_parser(include_str!("jquery.js"));
+fn jquery_parser() {
+    bench_parser(include_str!("../../../bench/jquery.js"));
 }
 
-fn jquery_minified() {
-    bench_parser(include_str!("jquery.min.js"));
+fn jquery_minified_parser() {
+    bench_parser(include_str!("../../../bench/jquery.min.js"));
 }
 
-fn axios() {
-    bench_parser(include_str!("axios.js"));
+fn axios_parser() {
+    bench_parser(include_str!("../../../bench/axios.js"));
 }
 
-fn axios_minified() {
-    bench_parser(include_str!("axios.min.js"));
+fn axios_minified_parser() {
+    bench_parser(include_str!("../../../bench/axios.min.js"));
 }
 
-fn typescript() {
-    bench_parser(include_str!("typescript.js"));
+fn typescript_parser() {
+    bench_parser(include_str!("../../../bench/typescript.js"));
 }
 
-fn typescript_minified() {
-    bench_parser(include_str!("typescript.min.js"));
+fn typescript_minified_parser() {
+    bench_parser(include_str!("../../../bench/typescript.min.js"));
 }
 
 iai::main!(
-    jquery,
-    jquery_minified,
-    axios,
-    axios_minified,
-    typescript,
-    typescript_minified
+    jquery_parser,
+    jquery_minified_parser,
+    axios_parser,
+    axios_minified_parser,
+    typescript_parser,
+    typescript_minified_parser
 );

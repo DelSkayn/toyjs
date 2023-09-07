@@ -18,10 +18,18 @@ pub fn bench_parser(name: &str, source: &str, c: &mut Criterion) {
 }
 
 pub fn scripts(c: &mut Criterion) {
-    bench_parser("jquery", include_str!("jquery.js"), c);
-    bench_parser("jquery_minified", include_str!("jquery.min.js"), c);
-    bench_parser("axios", include_str!("axios.js"), c);
-    bench_parser("axios_minified", include_str!("axios.min.js"), c);
+    bench_parser("jquery_parser", include_str!("../../../bench/jquery.js"), c);
+    bench_parser(
+        "jquery_minified_parser",
+        include_str!("../../../bench/jquery.min.js"),
+        c,
+    );
+    bench_parser("axios_parser", include_str!("../../../bench/axios.js"), c);
+    bench_parser(
+        "axios_minified_parser",
+        include_str!("../../../bench/axios.min.js"),
+        c,
+    );
 }
 
 criterion_group!(benches, scripts);

@@ -11,12 +11,24 @@ bc = { package = "toyjs_bc", version = "0.1.0", path = "../bc" }
 bytemuck = { version = "1.13.1", features = ["derive"] }
 common = { package = "toyjs_common", version = "0.1.0", path = "../common" }
 
+[dev-dependencies]
+criterion = "0.4.0"
+iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
+lexer = { path = "../lexer", package = "toyjs_lexer" }
+parser = { package = "toyjs_parser", version = "0.1.0", path = "../parser" }
+
 [features]
 slow_checks = ["bc/slow_checks"]
+
+[[bench]]
+name = "scripts_resolve"
+harness = false
+
+[[bench]]
+name = "iai_scripts_resolve"
+harness = false
 
 [[example]]
 name = "compiler"
 
-[dev-dependencies]
-lexer = { path = "../lexer", package = "toyjs_lexer" }
-parser = { package = "toyjs_parser", version = "0.1.0", path = "../parser" }
+
