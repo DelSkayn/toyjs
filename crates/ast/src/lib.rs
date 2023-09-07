@@ -663,7 +663,7 @@ impl RenderAst for Function {
 }
 
 pub struct Class {
-    pub name: Option<StringId>,
+    pub name: Option<NodeId<Symbol>>,
     pub heritage: Option<NodeId<Expr>>,
     pub body: ListHead<ClassMember>,
 }

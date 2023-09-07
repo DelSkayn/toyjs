@@ -77,7 +77,20 @@ impl<'a> VariablesBuilder<'a> {
                 cond,
                 cases,
                 default,
-            } => to_do!(),
+            } => {
+                self.resolve_exprs(cond)?;
+                let mut head: Option<ListId<ast::CaseItem>> = Option::from(cases);
+                while let Some(list) = head {
+                    let item = self.ast[list].item;
+                    self.resolve_exprs(self.ast[item].expr)?;
+                    self.resolve_stmts(self.ast[item].stmts)?;
+                    head = self.ast[list].next;
+                }
+
+                if let Some(default) = default {
+                    self.resolve_stmts(default)?;
+                }
+            }
             ast::Stmt::Throw { expr } => {
                 self.resolve_exprs(expr)?;
             }
@@ -251,6 +264,9 @@ impl<'a> VariablesBuilder<'a> {
                 initializer,
             } => {
                 self.declare(symbol, kind, decl)?;
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
             }
             BindingProperty::Property { element, .. } => {
                 self.resolve_binding_element(kind, decl, element, initializer)?;
@@ -279,7 +295,12 @@ impl<'a> VariablesBuilder<'a> {
             BindingElement::Pattern {
                 pattern,
                 initializer,
-            } => self.resolve_binding_pattern(kind, decl, pattern, initializer)?,
+            } => {
+                self.resolve_binding_pattern(kind, decl, pattern, initializer)?;
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
+            }
         }
         Ok(())
     }
@@ -337,7 +358,57 @@ impl<'a> VariablesBuilder<'a> {
         }
     }
 
-    pub fn resolve_class(&mut self, func: NodeId<ast::Class>) -> Result<()> {
-        to_do!()
+    pub fn resolve_class(&mut self, class: NodeId<ast::Class>) -> Result<()> {
+        if let Some(name) = self.ast[class].name {
+            self.declare(name, Kind::Function, None)?;
+        }
+        if let Some(heritage) = self.ast[class].heritage {
+            self.resolve_expr(heritage)?;
+        }
+
+        let mut cur: Option<ListId<ast::ClassMember>> = self.ast[class].body.into();
+        while let Some(c) = cur {
+            cur = self.ast[c].next;
+            let item = self.ast[c].item;
+            match self.ast[item] {
+                ast::ClassMember::StaticBlock { stmts } => {
+                    self.push_scope(ScopeKind::Static(item));
+                    self.resolve_stmts(stmts)?;
+                    self.pop_scope()?;
+                }
+
+                ast::ClassMember::Method { property, func, .. }
+                | ast::ClassMember::Getter { property, func, .. }
+                | ast::ClassMember::Setter { property, func, .. } => {
+                    match property {
+                        ast::PropertyName::Ident(_)
+                        | ast::PropertyName::String(_)
+                        | ast::PropertyName::Number(_) => {}
+                        ast::PropertyName::Computed(x) => {
+                            self.resolve_expr(x)?;
+                        }
+                    }
+                    self.resolve_func(func)?;
+                }
+                ast::ClassMember::Field {
+                    property,
+                    initializer,
+                    ..
+                } => {
+                    match property {
+                        ast::PropertyName::Ident(_)
+                        | ast::PropertyName::String(_)
+                        | ast::PropertyName::Number(_) => {}
+                        ast::PropertyName::Computed(x) => {
+                            self.resolve_expr(x)?;
+                        }
+                    }
+                    if let Some(init) = initializer {
+                        self.resolve_expr(init)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }

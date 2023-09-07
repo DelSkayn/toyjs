@@ -90,9 +90,20 @@ impl<K, T> KeyedVec<K, T> {
     pub fn as_inner(&self) -> &Vec<T> {
         &self.vec
     }
+}
 
-    pub fn as_inner_mut(&mut self) -> &mut Vec<T> {
-        &mut self.vec
+impl<K: Id, T: Clone> KeyedVec<K, T> {
+    /// Resizes the vector so it contains value up till the key and then inserts the value.
+    pub fn insert_grow(&mut self, key: K, value: T, fill: T) {
+        let Ok(idx) = key.try_into() else {
+            panic!("could not convert key to usize")
+        };
+        if self.len() <= idx {
+            self.vec.resize(idx, fill);
+            self.vec.push(value);
+        } else {
+            self.vec[idx] = value;
+        }
     }
 }
 

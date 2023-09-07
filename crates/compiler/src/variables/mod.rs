@@ -67,6 +67,7 @@ pub struct Scope {
 pub enum ScopeKind {
     Function(NodeId<ast::Function>),
     Block(NodeId<ast::Stmt>),
+    Static(NodeId<ast::ClassMember>),
     Global,
 }
 
@@ -76,7 +77,7 @@ pub struct Variables {
     pub scope_children: Vec<ScopeId>,
     pub scope_symbols: Vec<SymbolId>,
     pub symbols: KeyedVec<SymbolId, Symbol>,
-    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, SymbolId>,
+    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, Option<SymbolId>>,
 }
 
 impl Variables {
@@ -143,6 +144,29 @@ impl<'a> VariablesBuilder<'a> {
 
 impl VariablesBuilder<'_> {
     pub fn build(self) -> Variables {
+        if cfg!(debug_assertions) {
+            let mut missing_variables = false;
+            for (idx, v) in self.variables.ast_to_symbol.iter().enumerate() {
+                if v.is_none() {
+                    println!(
+                        "missed symbol [{:?}]",
+                        NodeId::<ast::Symbol>::try_from(idx).unwrap()
+                    );
+                    missing_variables = true;
+                }
+            }
+            if missing_variables {
+                panic!("missed symbols during symbol resolution step");
+            }
+        }
+        debug_assert_eq!(
+            self.variables
+                .ast_to_symbol
+                .iter()
+                .position(|x| x.is_none()),
+            None,
+            "Missed a symbol during variable resolving"
+        );
         assert_eq!(
             self.current_scope, None,
             "Tried to finish building variables while a scope was still on the stack"
@@ -232,8 +256,9 @@ impl VariablesBuilder<'_> {
 
         self.symbol_stack.push(res);
         self.variables.scopes[current_scope].num_declarations += 1;
-        assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
-        self.variables.ast_to_symbol.push(res);
+        self.variables
+            .ast_to_symbol
+            .insert_grow(name, Some(res), None);
 
         Ok(res)
     }
@@ -274,8 +299,9 @@ impl VariablesBuilder<'_> {
 
         self.symbol_stack.push(res);
         self.variables.scopes[current_scope].num_declarations += 1;
-        assert_eq!(self.variables.ast_to_symbol.next_id(), name);
-        self.variables.ast_to_symbol.push(res);
+        self.variables
+            .ast_to_symbol
+            .insert_grow(name, Some(res), None);
         res
     }
 
@@ -284,9 +310,9 @@ impl VariablesBuilder<'_> {
             .current_scope
             .expect("tried to load a variable without a scope");
         if let Some(symbol) = self.resolve_variable_in(self.ast[name].name, current_scope) {
-            assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
-            self.variables.ast_to_symbol.push(symbol);
-
+            self.variables
+                .ast_to_symbol
+                .insert_grow(name, Some(symbol), None);
             let symbol = &mut self.variables.symbols[symbol];
             symbol.last_use = Some(at);
         } else {
@@ -302,9 +328,9 @@ impl VariablesBuilder<'_> {
             .current_scope
             .expect("tried to store a variable without a scope");
         if let Some(symbol) = self.resolve_variable_in(self.ast[name].name, current_scope) {
-            assert_eq!(self.variables.ast_to_symbol.next_id().id(), name.id());
-            self.variables.ast_to_symbol.push(symbol);
-
+            self.variables
+                .ast_to_symbol
+                .insert_grow(name, Some(symbol), None);
             self.store_symbol(symbol, from);
         } else {
             let symbol = self.add_unresolved(name);

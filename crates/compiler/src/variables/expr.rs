@@ -1,7 +1,7 @@
 use crate::Result;
 use ast::{BinaryOp, ListId, NodeId};
 
-use super::VariablesBuilder;
+use super::{Kind, VariablesBuilder};
 
 impl<'a> VariablesBuilder<'a> {
     pub(super) fn resolve_exprs(&mut self, mut expr: ListId<ast::Expr>) -> Result<()> {
@@ -73,10 +73,28 @@ impl<'a> VariablesBuilder<'a> {
                         ast::PropertyDefinition::Covered { .. } => {
                             panic!("A covered object should not make it to the compiler");
                         }
-                        ast::PropertyDefinition::Define { expr, .. } => self.resolve_expr(expr)?,
-                        ast::PropertyDefinition::Method { func, .. }
-                        | ast::PropertyDefinition::Getter { func, .. }
-                        | ast::PropertyDefinition::Setter { func, .. } => {
+                        ast::PropertyDefinition::Define { expr, property } => {
+                            match property {
+                                ast::PropertyName::Ident(_)
+                                | ast::PropertyName::String(_)
+                                | ast::PropertyName::Number(_) => {}
+                                ast::PropertyName::Computed(x) => {
+                                    self.resolve_expr(x)?;
+                                }
+                            }
+                            self.resolve_expr(expr)?;
+                        }
+                        ast::PropertyDefinition::Method { func, property }
+                        | ast::PropertyDefinition::Getter { func, property }
+                        | ast::PropertyDefinition::Setter { func, property } => {
+                            match property {
+                                ast::PropertyName::Ident(_)
+                                | ast::PropertyName::String(_)
+                                | ast::PropertyName::Number(_) => {}
+                                ast::PropertyName::Computed(x) => {
+                                    self.resolve_expr(x)?;
+                                }
+                            };
                             self.resolve_func(func)?
                         }
                         ast::PropertyDefinition::Rest(expr) => self.resolve_expr(expr)?,
@@ -107,7 +125,10 @@ impl<'a> VariablesBuilder<'a> {
                 self.resolve_expr(tag)?;
                 // TODO template
             }
-            ast::Expr::Destructure { pattern, expr } => to_do!(),
+            ast::Expr::Destructure { pattern, expr } => {
+                self.resolve_binding_pattern(Kind::Unresolved, None, pattern, Some(expr))?;
+                self.resolve_expr(expr)?;
+            }
         }
         Ok(())
     }
@@ -147,7 +168,10 @@ impl<'a> VariablesBuilder<'a> {
                 ast::PrimeExpr::Ident(s) => self.store(s, from),
             },
             ast::Expr::Yield { star, expr } => todo!(),
-            ast::Expr::Destructure { pattern, expr } => todo!(),
+            ast::Expr::Destructure { pattern, expr } => {
+                self.resolve_binding_pattern(Kind::Unresolved, None, pattern, Some(expr))?;
+                self.resolve_expr(expr)
+            }
         }
     }
 }

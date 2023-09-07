@@ -13,12 +13,33 @@ pub struct RenderVariables<'a> {
 }
 
 impl RenderVariables<'_> {
-    fn fmt_scope(&self, scope: ScopeId, indent: usize, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt_scope(
+        &self,
+        scope: ScopeId,
+        mut indent: usize,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         match self.variables.scopes()[scope].kind {
-            super::ScopeKind::Function(_) => writeln!(f, "{:indent$}> FUNCTION", "")?,
+            super::ScopeKind::Function(x) => {
+                write!(f, "{:indent$}> FUNCTION", "")?;
+                if let ast::Function::Base {
+                    name: Some(symbol), ..
+                } = self.ast[x]
+                {
+                    writeln!(
+                        f,
+                        " {}",
+                        self.interners.strings.get(self.ast[symbol].name).unwrap()
+                    )?;
+                } else {
+                    writeln!(f,)?;
+                }
+            }
             super::ScopeKind::Block(_) => writeln!(f, "{:indent$}> BLOCK", "")?,
+            super::ScopeKind::Static(_) => writeln!(f, "{:indent$}> STATIC INIT", "")?,
             super::ScopeKind::Global => writeln!(f, "{:indent$}> GLOBAL", "")?,
         }
+        indent += 2;
         for s in self.variables.declared_vars(scope).iter().copied() {
             let ident = self.variables.symbols()[s].ident;
             writeln!(
@@ -38,7 +59,7 @@ impl RenderVariables<'_> {
             )?;
         }
         for s in self.variables.child_scopes(scope).iter().copied() {
-            self.fmt_scope(s, indent + 2, f)?;
+            self.fmt_scope(s, indent, f)?;
         }
         Ok(())
     }

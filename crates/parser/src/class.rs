@@ -7,11 +7,11 @@ use crate::{expect, function::FunctionCtx, peek_expect, Parser, Result};
 impl<'a> Parser<'a> {
     pub fn parse_class(&mut self, stmt: bool) -> Result<NodeId<Class>> {
         let name = if stmt {
-            Some(self.parse_ident()?)
+            Some(self.parse_symbol()?)
         } else {
             match peek_expect!(self, "{").kind() {
                 t!("extends") | t!("{") => None,
-                _ => Some(self.parse_ident()?),
+                _ => Some(self.parse_symbol()?),
             }
         };
         let heritage = self

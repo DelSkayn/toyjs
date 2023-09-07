@@ -135,13 +135,12 @@ impl<'a> Parser<'a> {
                     let PrimeExpr::Ident(label) = self.ast[expr] else {
                         unexpected!(self, t!(":"), ";");
                     };
+                    let name = self.ast[label].name;
+                    self.ast.free_node(label);
                     self.ast.free_node(expr);
                     self.ast.free_node(prime);
                     let stmt = self.parse_stmt(false)?;
-                    self.ast.push_node(Stmt::Labeled {
-                        label: self.ast[label].name,
-                        stmt,
-                    })
+                    self.ast.push_node(Stmt::Labeled { label: name, stmt })
                 } else {
                     self.semicolon()?;
                     self.ast.push_node(Stmt::Expr { expr })
