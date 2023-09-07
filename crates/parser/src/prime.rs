@@ -688,7 +688,7 @@ impl<'a> Parser<'a> {
             let mut prev = None;
 
             while !self.eat(t!("}")) {
-                let stmt = self.parse_stmt(false)?;
+                let stmt = self.parse_stmt()?;
                 if prev.is_none()
                     && !self.state.contains(ParserState::Strict)
                     && self.is_strict_directive(stmt)
