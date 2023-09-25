@@ -2,7 +2,13 @@
 
 #![allow(dead_code)]
 
-pub use hashbrown as hashmap;
+pub mod hashmap {
+    use core::hash::BuildHasherDefault;
+    pub use hashbrown::hash_map;
+    use hashbrown::HashMap as BrownMap;
+
+    pub type HashMap<K, V> = BrownMap<K, V, BuildHasherDefault<ahash::AHasher>>;
+}
 
 mod mac;
 pub use mac::*;

@@ -93,7 +93,7 @@ impl<'a> VariablesBuilder<'a> {
             function_symbol_stack: KeyedVec::new(),
             use_stack: Vec::new(),
             current_scope: None,
-            lookup: HashMap::new(),
+            lookup: HashMap::default(),
         }
     }
 }

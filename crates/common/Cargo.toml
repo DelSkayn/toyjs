@@ -11,6 +11,7 @@ slow_checks = []
 
 
 [dependencies]
+ahash = { version = "0.8.3", default-features = false }
 bytemuck = { version = "1.13.1", features = ["derive"] }
 hashbrown = "0.13.2"
 unicode-ident = "1.0.8"

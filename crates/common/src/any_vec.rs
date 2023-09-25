@@ -1,5 +1,6 @@
 use std::any::{Any, TypeId};
 
+#[inline]
 pub fn coerce_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
     if TypeId::of::<F>() == TypeId::of::<T>() {
         Some(unsafe { std::mem::transmute::<&F, &T>(f) })
@@ -8,6 +9,7 @@ pub fn coerce_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
     }
 }
 
+#[inline]
 pub fn coerce_mut<F: Any, T: Any>(f: &mut F) -> Option<&mut T> {
     if TypeId::of::<F>() == TypeId::of::<T>() {
         Some(unsafe { std::mem::transmute::<&mut F, &mut T>(f) })

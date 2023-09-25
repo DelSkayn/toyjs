@@ -24,9 +24,9 @@ slow_checks = ["bc/slow_checks"]
 name = "scripts_resolve"
 harness = false
 
-[[bench]]
-name = "iai_scripts_resolve"
-harness = false
+#[[bench]]
+#name = "iai_scripts_resolve"
+#harness = false
 
 [[example]]
 name = "compiler"
