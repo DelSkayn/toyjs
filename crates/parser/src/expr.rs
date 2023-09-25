@@ -3,7 +3,7 @@ use ast::{
     PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
 };
 use common::span::Span;
-use token::{t, AssignOperator, TokenKind};
+use token::{t, TokenKind};
 
 use crate::{
     expect, next_expect, peek_expect, unexpected, Error, ErrorKind, Parser, ParserState, Result,
@@ -23,8 +23,7 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
         | t!("&=")
         | t!("^=")
         | t!("|=")
-        | t!("**=")
-        | t!("=>") => Some((2, 1)),
+        | t!("**=") => Some((2, 1)),
         t!("?") => Some((4, 3)),
         t!("??") => Some((6, 5)),
         t!("||") => Some((7, 8)),
@@ -298,7 +297,7 @@ impl<'a> Parser<'a> {
                 let lhs_span = start_span.covers(self.last_span());
                 // Found a covered initializer in an object literal.
                 // If the next token isn't `=` this would be invalid.
-                if let Some(TokenKind::AssignOperator(AssignOperator::Assign)) = self.peek_kind() {
+                if let Some(t!("=")) = self.peek_kind() {
                     self.next();
                     // This should always succeed, otherwise a span was returned when the prime
                     // expression wasn't an object literal with a covered initializer.
@@ -400,11 +399,11 @@ impl<'a> Parser<'a> {
                 | PrimeExpr::Class(_)
                 | PrimeExpr::Object(_)
                 | PrimeExpr::Array(_)
+                | PrimeExpr::This
                 | PrimeExpr::Null
+                | PrimeExpr::NewTarget
                 | PrimeExpr::Covered(_) => false,
-                PrimeExpr::Ident(_) | PrimeExpr::NewTarget | PrimeExpr::This | PrimeExpr::Super => {
-                    true
-                }
+                PrimeExpr::Ident(_) | PrimeExpr::Super => true,
             },
         }
     }

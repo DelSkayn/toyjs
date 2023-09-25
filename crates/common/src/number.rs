@@ -39,10 +39,10 @@ macro_rules! impl_num{
 
 impl_num!(u8, i8, u16, i16, u32, i32, u64, i64, f32, f64);
 
-use crate::id;
+use crate::key;
 use std::hash::{Hash, Hasher};
 
-id!(pub struct NumberId(u32));
+key!(pub struct NumberId(u32));
 
 /// A wrapper around f64 which implements bitwise equility and hashing.
 #[derive(Clone, Copy, Debug)]

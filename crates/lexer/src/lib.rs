@@ -65,8 +65,9 @@ impl<'a> Lexer<'a> {
     /// Pop the next code from the list
     #[inline]
     fn next_unit(&mut self) -> Option<u16> {
-        self.end += 1;
-        self.peek.take().or_else(|| self.units.next())
+        let res = self.peek.take().or_else(|| self.units.next());
+        self.end += res.is_some() as usize;
+        res
     }
 
     /// Peek the next code on the list without consuming it.
@@ -426,7 +427,8 @@ impl<'a> Lexer<'a> {
         debug_assert!(!c.is_ascii());
 
         let kind = match c {
-            chars::ZWNBSP
+            chars::NBSP
+            | chars::ZWNBSP
             | '\u{1680}'
             | '\u{2000}'
             | '\u{2001}'

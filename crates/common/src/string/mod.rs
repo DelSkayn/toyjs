@@ -11,9 +11,9 @@ pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Units, Utf16, Utf16Chars}
 mod builder;
 pub use builder::StringBuilder;
 
-use crate::id;
+use crate::key;
 
-id!(pub struct StringId(u32));
+key!(pub struct StringId(u32));
 
 /// An immutable string data type for a utf-16 string.
 /// Can store strings as ascii if they don't contain non ascii code points.

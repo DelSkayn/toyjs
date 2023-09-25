@@ -48,6 +48,11 @@ bitflags::bitflags! {
     }
 }
 
+pub struct ParsedScript {
+    pub strict: bool,
+    pub stmt: ListHead<Stmt>,
+}
+
 impl<'a> Parser<'a> {
     /// Create a new parser.
     pub fn new(lexer: Lexer<'a>) -> Self {
@@ -168,7 +173,7 @@ impl<'a> Parser<'a> {
     #[inline]
     fn no_line_terminator(&mut self) -> Result<()> {
         if self.ate_line_terminator {
-            unexpected!(self, self.peek.clone().unwrap().kind() => "new line before this token is not allowed");
+            unexpected!(self, self.peek.clone().expect("no_line_terminator should be called before consuming the next token").kind() => "a new line before this token is not allowed");
         }
         Ok(())
     }
@@ -189,20 +194,22 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a javascript script.
-    pub fn parse_script(&mut self) -> Result<ListHead<Stmt>> {
+    pub fn parse_script(&mut self) -> Result<ParsedScript> {
         let mut head = ListHead::Empty;
         let mut prev = None;
+        let mut strict = false;
         while self.peek().is_some() {
             let stmt = self.parse_stmt()?;
             if !self.state.contains(ParserState::Strict)
                 && head.is_empty()
                 && self.is_strict_directive(stmt)
             {
+                strict = true;
                 self.state.insert(ParserState::Strict);
             }
             prev = Some(self.ast.append_list(stmt, prev));
             head = head.or(prev.into())
         }
-        Ok(head)
+        Ok(ParsedScript { stmt: head, strict })
     }
 }

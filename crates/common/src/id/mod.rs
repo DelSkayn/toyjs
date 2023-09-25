@@ -7,8 +7,10 @@ use std::{
 
 /// A macro which implements a newtype index.
 #[macro_export]
-macro_rules! id {
-    ($v:vis struct $name:ident($data:ty)) => {
+macro_rules! key {
+    ($(#[$m:meta])* $v:vis struct $name:ident($data:ty)) => {
+
+        $(#[ $m ])*
         #[derive(Clone, Copy, Eq, PartialEq, Hash, bytemuck::Pod, bytemuck::Zeroable, Debug)]
         #[repr(transparent)]
         $v struct $name($data);

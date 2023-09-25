@@ -1,10 +1,7 @@
 use bytemuck::{AnyBitPattern, NoUninit};
-use common::{id, span::Span, string::String};
-use core::hash::Hash;
+use common::{span::Span, string::String};
 
 mod r#macro;
-
-id!(pub struct StringId(u32));
 
 /// A token produced by the lexer.
 #[derive(Clone, Eq, PartialEq, Debug)]

@@ -4,7 +4,7 @@
 use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction};
 use common::{
-    id, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
+    key, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
 };
 use core::fmt;
 use registers::Registers;
@@ -26,7 +26,7 @@ mod registers;
 mod stmt;
 pub mod variables;
 
-id!(pub struct InstructionId(u32));
+key!(pub struct InstructionId(u32));
 
 pub type Result<T> = StdResult<T, Error>;
 #[derive(Debug)]
@@ -41,6 +41,7 @@ pub enum Limits {
     InstructionCount,
     JumpOffset,
     TooManyScopes,
+    TooManyVariables,
 }
 
 impl fmt::Display for Limits {
@@ -50,7 +51,8 @@ impl fmt::Display for Limits {
             Limits::JumpOffset => {
                 write!(f, "Tried to generate jump which exceeded max jump offset")
             }
-            Limits::TooManyScopes => write!(f, "Exceeded the limit of variable scopes"),
+            Limits::TooManyScopes => write!(f, "Exceeded the limit of variable scopes count"),
+            Limits::TooManyVariables => write!(f, "Exceeded the limit of variable count"),
         }
     }
 }
@@ -84,9 +86,11 @@ impl ContextError<Source> for Error {
                 span,
                 first_declared,
             } => {
-                write!(f, "Already existing variable was redeclared")?;
+                writeln!(f, "Already existing variable was redeclared")?;
                 ctx.render_string_block(f, *span, None)
                     .map_err(|_| fmt::Error)?;
+                writeln!(f)?;
+                writeln!(f)?;
                 ctx.render_string_block(
                     f,
                     *first_declared,
@@ -127,16 +131,18 @@ impl<'a> Compiler<'a> {
         Ok(id)
     }
 
-    pub fn compile_script(mut self, script: ListHead<ast::Stmt>) -> Result<ByteCode> {
+    pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
         let mut variables = VariablesBuilder::new(self.ast);
-        variables.push_scope(variables::ScopeKind::Global);
-        variables.resolve_variables(script)?;
+        variables
+            .push_scope(variables::ScopeKind::Global { strict })
+            .unwrap();
+        variables.resolve_variables(stmt)?;
         variables.pop_scope()?;
 
         self.variables = variables.build();
 
         let mut expr = None;
-        if let ListHead::Present(s) = script {
+        if let ListHead::Present(s) = stmt {
             let mut s = Some(s);
             while let Some(stmt_item) = s {
                 let stmt = &self.ast[stmt_item];

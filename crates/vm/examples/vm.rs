@@ -47,7 +47,7 @@ fn run<'gc, 'own>(
     let res = parser.parse_script()?;
     let mut ast = parser.into_ast();
     let compiler = Compiler::new(&mut interners, &mut ast);
-    let bc = compiler.compile_script(res)?;
+    let bc = compiler.compile_script(res.strict, res.stmt)?;
     let bc = gc.add(bc);
 
     let vm = Vm::new();

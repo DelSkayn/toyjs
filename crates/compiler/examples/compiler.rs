@@ -42,7 +42,7 @@ fn compile(source: &Source) -> Result<bc::ByteCode, Error> {
     let res = parser.parse_script()?;
     let mut ast = parser.into_ast();
     let compiler = Compiler::new(&mut interners, &mut ast);
-    Ok(compiler.compile_script(res)?)
+    Ok(compiler.compile_script(res.strict, res.stmt)?)
 }
 
 fn main() -> Result<(), io::Error> {

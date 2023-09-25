@@ -16,8 +16,10 @@ pub fn bench(name: &str, source: &str, c: &mut Criterion) {
     c.bench_function(name, |b| {
         b.iter(|| {
             let mut variables = VariablesBuilder::new(black_box(&mut ast));
-            variables.push_scope(ScopeKind::Global);
-            variables.resolve_variables(res).unwrap();
+            variables
+                .push_scope(ScopeKind::Global { strict: res.strict })
+                .unwrap();
+            variables.resolve_variables(res.stmt).unwrap();
             variables.pop_scope().unwrap();
             black_box(variables.build());
         })

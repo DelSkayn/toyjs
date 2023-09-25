@@ -10,8 +10,8 @@ use common::{
 use token::{t, TokenKind};
 
 use crate::{
-    alter_state, expect, function::FunctionCtx, next_expect, peek_expect, unexpected, Parser,
-    ParserState, Result,
+    alter_state, expect, function::FunctionCtx, next_expect, peek_expect, unexpected, Error,
+    ErrorKind, Parser, ParserState, Result,
 };
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
@@ -29,6 +29,7 @@ impl<'a> Parser<'a> {
             t!("ident") => {
                 let symbol = self.parse_symbol()?;
                 if let Some(t!("=>")) = self.peek_kind() {
+                    self.no_line_terminator()?;
                     self.next();
                     let param = self.ast.push_node(BindingElement::SingleName {
                         symbol,
@@ -75,6 +76,9 @@ impl<'a> Parser<'a> {
             t!("/") | t!("/=") => {
                 self.next();
                 let token = self.lexer.relex_regex(token);
+                if let token::TokenKind::Unknown = token.kind() {
+                    return Err(Error::new(ErrorKind::InvalidToken, token.span));
+                }
                 let id = self
                     .ast
                     .push_node(PrimeExpr::Regex(token.kind_and_data.data_id().unwrap()));
@@ -126,8 +130,22 @@ impl<'a> Parser<'a> {
                 self.parse_covered_expression().map(|x| (x, None))
             }
             TokenKind::UnreservedKeyword(_) => {
-                let id = self.parse_symbol()?;
-                Ok((self.ast.push_node(PrimeExpr::Ident(id)), None))
+                let symbol = self.parse_symbol()?;
+                if let Some(t!("=>")) = self.peek_kind() {
+                    self.no_line_terminator()?;
+                    self.next();
+                    let param = self.ast.push_node(BindingElement::SingleName {
+                        symbol,
+                        initializer: None,
+                    });
+                    let params = ListHead::Present(self.ast.append_list(param, None));
+                    let function = self.parse_arrow_function(params, None, FunctionKind::Simple)?;
+                    let id = self.ast.push_node(PrimeExpr::Function(function));
+                    Ok((id, None))
+                } else {
+                    let id = self.ast.push_node(PrimeExpr::Ident(symbol));
+                    Ok((id, None))
+                }
             }
             x => {
                 unexpected!(
@@ -170,10 +188,14 @@ impl<'a> Parser<'a> {
 
         // spread operator or an empty head always indicate an arrow function.
         if rest.is_some() || head.is_empty() {
+            self.peek();
+            self.no_line_terminator()?;
+            // TODO: Improve error message.
             expect!(self, "=>");
             return self.reparse_arrow_function(head, rest);
         }
         if let Some(t!("=>")) = self.peek_kind() {
+            self.no_line_terminator()?;
             self.next();
             self.reparse_arrow_function(head, None)
         } else {
@@ -465,7 +487,7 @@ impl<'a> Parser<'a> {
         Ok(head)
     }
 
-    fn reparse_arrow_function(
+    pub fn reparse_arrow_function(
         &mut self,
         expr: ListHead<Expr>,
         rest: Option<NodeId<IdentOrPattern>>,
@@ -675,7 +697,6 @@ impl<'a> Parser<'a> {
         rest_param: Option<NodeId<IdentOrPattern>>,
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
-        self.no_line_terminator()?;
         let state = self.state;
 
         self.state.set(
@@ -745,6 +766,9 @@ impl<'a> Parser<'a> {
                         head = head.or(prev.into());
                     }
                 }
+                self.peek();
+                // TODO: Improve error her if no => is found
+                self.no_line_terminator()?;
                 expect!(self, "=>");
                 let func = self.parse_arrow_function(head, rest, FunctionKind::Async)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))
@@ -757,6 +781,9 @@ impl<'a> Parser<'a> {
                 });
                 let element = self.ast.append_list(element, None);
                 let element = ListHead::Present(element);
+                self.peek();
+                // TODO: Improve error her if no => is found
+                self.no_line_terminator()?;
                 expect!(self, "=>");
                 let func = self.parse_arrow_function(element, None, FunctionKind::Async)?;
                 Ok(self.ast.push_node(PrimeExpr::Function(func)))

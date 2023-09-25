@@ -37,7 +37,7 @@ fn main() -> Result<(), io::Error> {
                 &parser.lexer.data.strings,
                 &parser.lexer.data.numbers,
             );
-            println!("{}", x.display(ctx))
+            println!("{}", x.stmt.display(ctx))
         }
         Err(e) => {
             eprintln!("{}", e)

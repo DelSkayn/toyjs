@@ -1,7 +1,7 @@
 use crate::Result;
 use ast::{BinaryOp, ListId, NodeId};
 
-use super::{Kind, VariablesBuilder};
+use super::{stmt::BindingKind, VariablesBuilder};
 
 impl<'a> VariablesBuilder<'a> {
     pub(super) fn resolve_exprs(&mut self, mut expr: ListId<ast::Expr>) -> Result<()> {
@@ -55,7 +55,7 @@ impl<'a> VariablesBuilder<'a> {
                 | ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
                 | ast::PrimeExpr::Super => {}
                 ast::PrimeExpr::Ident(name) => {
-                    self.load(name, expr)?;
+                    self.load(name, expr);
                 }
                 ast::PrimeExpr::Function(func) => self.resolve_func(func)?,
                 ast::PrimeExpr::Class(class) => self.resolve_class(class)?,
@@ -121,12 +121,15 @@ impl<'a> VariablesBuilder<'a> {
                 self.resolve_expr(self.ast[x].then)?;
                 self.resolve_expr(self.ast[x].r#else)?;
             }
-            ast::Expr::TaggedTemplate { tag, .. } => {
+            ast::Expr::TaggedTemplate { tag, mut template } => {
                 self.resolve_expr(tag)?;
-                // TODO template
+                while let ast::Template::Head { expr, next, .. } = self.ast[template] {
+                    self.resolve_exprs(expr)?;
+                    template = next;
+                }
             }
             ast::Expr::Destructure { pattern, expr } => {
-                self.resolve_binding_pattern(Kind::Unresolved, None, pattern, Some(expr))?;
+                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)?;
                 self.resolve_expr(expr)?;
             }
         }
@@ -165,11 +168,14 @@ impl<'a> VariablesBuilder<'a> {
                 | ast::PrimeExpr::This
                 | ast::PrimeExpr::Super
                 | ast::PrimeExpr::Covered(_) => unreachable!(),
-                ast::PrimeExpr::Ident(s) => self.store(s, from),
+                ast::PrimeExpr::Ident(s) => {
+                    self.store(s, from);
+                    Ok(())
+                }
             },
             ast::Expr::Yield { star, expr } => todo!(),
             ast::Expr::Destructure { pattern, expr } => {
-                self.resolve_binding_pattern(Kind::Unresolved, None, pattern, Some(expr))?;
+                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)?;
                 self.resolve_expr(expr)
             }
         }

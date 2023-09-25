@@ -613,10 +613,18 @@ pub enum Function {
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ArrowFunctionBody,
     },
-    Base {
+    Declared {
         is_strict: bool,
         kind: FunctionKind,
-        name: Option<NodeId<Symbol>>,
+        name: NodeId<Symbol>,
+        params: ListHead<BindingElement>,
+        rest_param: Option<NodeId<IdentOrPattern>>,
+        body: ListHead<Stmt>,
+    },
+    Expr {
+        is_strict: bool,
+        kind: FunctionKind,
+        name: Option<StringId>,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ListHead<Stmt>,
@@ -640,7 +648,7 @@ impl RenderAst for Function {
                 .field("rest_param", rest_param)?
                 .field("body", body)?
                 .finish(),
-            Function::Base {
+            Function::Declared {
                 ref is_strict,
                 ref kind,
                 ref name,
@@ -648,7 +656,23 @@ impl RenderAst for Function {
                 ref rest_param,
                 ref body,
             } => ctx
-                .render_struct("Function::Base", w)?
+                .render_struct("Function::Declared", w)?
+                .field_debug("is_strict", is_strict)?
+                .field_debug("kind", kind)?
+                .field("name", name)?
+                .field("params", params)?
+                .field("rest_param", rest_param)?
+                .field("body", body)?
+                .finish(),
+            Function::Expr {
+                ref is_strict,
+                ref kind,
+                ref name,
+                ref params,
+                ref rest_param,
+                ref body,
+            } => ctx
+                .render_struct("Function::Expr", w)?
                 .field_debug("is_strict", is_strict)?
                 .field_debug("kind", kind)?
                 .field("name", name)?

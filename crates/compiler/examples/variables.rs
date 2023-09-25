@@ -43,8 +43,10 @@ fn compile(source: &Source) -> Result<(), Error> {
     let res = parser.parse_script()?;
     let mut ast = parser.into_ast();
     let mut variables = variables::VariablesBuilder::new(&mut ast);
-    variables.push_scope(variables::ScopeKind::Global);
-    variables.resolve_variables(res)?;
+    variables
+        .push_scope(variables::ScopeKind::Global { strict: res.strict })
+        .unwrap();
+    variables.resolve_variables(res.stmt)?;
     let root = variables.pop_scope()?;
     let vars = variables.build();
     let elapsed = before.elapsed();
@@ -69,7 +71,7 @@ fn main() -> Result<(), io::Error> {
             eprintln!("parse error {}", e.supply_context(&source))
         }
         Err(Error::Compile(e)) => {
-            eprintln!("compile_error {}", e)
+            eprintln!("compile_error {}", e.supply_context(&source))
         }
     }
     Ok(())

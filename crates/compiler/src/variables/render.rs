@@ -22,22 +22,27 @@ impl RenderVariables<'_> {
         match self.variables.scopes()[scope].kind {
             super::ScopeKind::Function(x) => {
                 write!(f, "{:indent$}> FUNCTION", "")?;
-                if let ast::Function::Base {
-                    name: Some(symbol), ..
-                } = self.ast[x]
-                {
-                    writeln!(
-                        f,
-                        " {}",
-                        self.interners.strings.get(self.ast[symbol].name).unwrap()
-                    )?;
-                } else {
-                    writeln!(f,)?;
+                match self.ast[x] {
+                    ast::Function::Declared { name: symbol, .. } => {
+                        writeln!(
+                            f,
+                            " {}",
+                            self.interners.strings.get(self.ast[symbol].name).unwrap()
+                        )?;
+                    }
+                    ast::Function::Expr {
+                        name: Some(name), ..
+                    } => {
+                        writeln!(f, " {}", self.interners.strings.get(name).unwrap())?;
+                    }
+                    _ => {
+                        writeln!(f,)?;
+                    }
                 }
             }
             super::ScopeKind::Block(_) => writeln!(f, "{:indent$}> BLOCK", "")?,
             super::ScopeKind::Static(_) => writeln!(f, "{:indent$}> STATIC INIT", "")?,
-            super::ScopeKind::Global => writeln!(f, "{:indent$}> GLOBAL", "")?,
+            super::ScopeKind::Global { .. } => writeln!(f, "{:indent$}> GLOBAL", "")?,
         }
         indent += 2;
         for s in self.variables.declared_vars(scope).iter().copied() {

@@ -6,6 +6,8 @@ pub mod chars {
     pub const ZWNJ: char = '\u{200C}';
     /// Zero width Joiner
     pub const ZWJ: char = '\u{200D}';
+    /// no-break space
+    pub const NBSP: char = '\u{00A0}';
     /// Zero width no-break space
     pub const ZWNBSP: char = '\u{FEFF}';
     /// Character tabulation

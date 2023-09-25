@@ -13,8 +13,10 @@ pub fn bench(source: &str) {
     let res = parser.parse_script().expect("parsing failed");
     let mut ast = parser.into_ast();
     let mut variables = VariablesBuilder::new(black_box(&mut ast));
-    variables.push_scope(ScopeKind::Global);
-    variables.resolve_variables(res).unwrap();
+    variables
+        .push_scope(ScopeKind::Global { strict: res.strict })
+        .unwrap();
+    variables.resolve_variables(res.stmt).unwrap();
     variables.pop_scope().unwrap();
     black_box(variables.build());
 }

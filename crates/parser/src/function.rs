@@ -1,4 +1,5 @@
-use ast::{Function, FunctionKind, ListHead, NodeId, Stmt};
+use ast::{Function, FunctionKind, ListHead, NodeId, Stmt, Symbol};
+use common::string::StringId;
 use token::{t, TokenKind};
 
 use crate::{alter_state, expect, peek_expect, unexpected, Parser, ParserState, Result};
@@ -12,6 +13,11 @@ pub enum FunctionCtx {
     Stmt,
     Expression,
     Method,
+}
+
+enum FunctionName {
+    Expr(Option<StringId>),
+    Declared(NodeId<Symbol>),
 }
 
 impl<'a> Parser<'a> {
@@ -34,20 +40,20 @@ impl<'a> Parser<'a> {
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
         let name = match ctx {
-            FunctionCtx::Stmt => Some(self.parse_symbol()?),
+            FunctionCtx::Stmt => FunctionName::Declared(self.parse_symbol()?),
             FunctionCtx::Expression => {
                 let token = peek_expect!(self, "ident");
                 match token.kind() {
                     TokenKind::UnreservedKeyword(_) | TokenKind::Ident => {
-                        Some(self.parse_symbol()?)
+                        FunctionName::Expr(Some(self.parse_ident_name()?))
                     }
-                    t!("(") => None,
+                    t!("(") => FunctionName::Expr(None),
                     _ => {
                         unexpected!(self, token.kind(), "ident");
                     }
                 }
             }
-            FunctionCtx::Method => None,
+            FunctionCtx::Method => FunctionName::Expr(None),
         };
 
         expect!(self, "(");
@@ -86,14 +92,24 @@ impl<'a> Parser<'a> {
             let body = self.parse_function_body()?;
         });
 
-        let function = self.ast.push_node(Function::Base {
-            name,
-            kind,
-            params: param_head,
-            rest_param,
-            body: body.body,
-            is_strict: body.is_strict,
-        });
+        let function = match name {
+            FunctionName::Expr(name) => self.ast.push_node(Function::Expr {
+                name,
+                kind,
+                params: param_head,
+                rest_param,
+                body: body.body,
+                is_strict: body.is_strict,
+            }),
+            FunctionName::Declared(name) => self.ast.push_node(Function::Declared {
+                name,
+                kind,
+                params: param_head,
+                rest_param,
+                body: body.body,
+                is_strict: body.is_strict,
+            }),
+        };
         Ok(function)
     }
 
@@ -102,7 +118,7 @@ impl<'a> Parser<'a> {
         expect!(self,"(" => "expected start of getter parameters");
         expect!(self,")" => "getter can't have any parameters");
         let body = self.parse_function_body()?;
-        Ok(self.ast.push_node(Function::Base {
+        Ok(self.ast.push_node(Function::Expr {
             is_strict: body.is_strict,
             kind: FunctionKind::Simple,
             name: None,
@@ -121,7 +137,7 @@ impl<'a> Parser<'a> {
         expect!(self,")" => "setter must have a single parameter");
 
         let body = self.parse_function_body()?;
-        Ok(self.ast.push_node(Function::Base {
+        Ok(self.ast.push_node(Function::Expr {
             is_strict: body.is_strict,
             kind: FunctionKind::Simple,
             name: None,
