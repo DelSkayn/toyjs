@@ -19,6 +19,7 @@ macro_rules! to_do {
     };
 }
 
+mod decl;
 mod expr;
 mod prime;
 mod proc;
@@ -106,7 +107,6 @@ pub struct Compiler<'a> {
     instructions: Vec<Instruction>,
     interners: &'a mut Interners,
     ast: &'a mut Ast,
-    variables: Variables,
     registers: Registers,
 }
 
@@ -116,8 +116,7 @@ impl<'a> Compiler<'a> {
             instructions: Vec::new(),
             interners,
             ast,
-            variables: Variables::new(),
-            registers: Registers::new(),
+            registers: Registers::new(Variables::new()),
         }
     }
 
@@ -139,7 +138,7 @@ impl<'a> Compiler<'a> {
         variables.resolve_variables(stmt)?;
         variables.pop_scope()?;
 
-        self.variables = variables.build();
+        self.registers = Registers::new(variables.build());
 
         let mut expr = None;
         if let ListHead::Present(s) = stmt {

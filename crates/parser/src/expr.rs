@@ -326,10 +326,10 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 lhs = self.parse_postfix_op(l_bp, lhs)?;
-                continue;
-            }
-
-            if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+            } else {
+                let Some((l_bp, r_bp)) = infix_binding_power(op) else {
+                    break;
+                };
                 // In is not allowed in some contexts.
                 if !self.state.contains(ParserState::In) && t!("in") == op {
                     break;
@@ -339,9 +339,7 @@ impl<'a> Parser<'a> {
                 }
                 lhs = self.parse_infix_op(r_bp, lhs, lhs_span)?;
                 lhs_span = start_span.covers(self.last_span());
-                continue;
             }
-            break;
         }
         Ok(lhs)
     }

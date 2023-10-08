@@ -908,6 +908,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Destructure {
+        // TODO: Change destructuring assignment to use assigment expression.
         pattern: NodeId<BindingPattern>,
         expr: NodeId<Expr>,
     },

@@ -8,6 +8,9 @@ mod render;
 key!(pub struct ScopeId(u32));
 key!(pub struct SymbolId(u32));
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct SymbolUseOrder(pub u32);
+
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub enum Kind {
     /// Defined with the side effect of introducing new global variables.
@@ -57,7 +60,7 @@ pub struct Symbol {
     /// How is the variable declared.
     kind: Kind,
     /// When the variable is first declared.
-    declared: Option<NodeId<ast::IdentOrPattern>>,
+    declared: Option<NodeId<ast::Symbol>>,
     /// When the variable is defined.
     defined: Option<NodeId<ast::Expr>>,
     /// When the variable is last used.
@@ -68,10 +71,15 @@ pub struct Symbol {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Scope {
+    /// The parent of the scope
     parent: Option<ScopeId>,
+    /// What type of kind
     kind: ScopeKind,
+    /// How many children this scope has.
     num_childeren: u32,
+    /// The offset into the child array where you can find the childeren of this array.
     child_offset: u32,
+    /// The number of declarations.
     num_declarations: u32,
     symbol_offset: u32,
 }
@@ -90,6 +98,12 @@ impl ScopeKind {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct UseInfo {
+    use_order: SymbolUseOrder,
+    id: Option<SymbolId>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Variables {
     pub scopes: KeyedVec<ScopeId, Scope>,
@@ -97,7 +111,7 @@ pub struct Variables {
     pub scope_symbols: Vec<SymbolId>,
     pub symbols: KeyedVec<SymbolId, Symbol>,
     /// A list which maps a ast symbol to a resolved symbol.
-    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, Option<SymbolId>>,
+    pub use_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
 }
 
 impl Variables {
@@ -107,7 +121,7 @@ impl Variables {
             scope_children: Vec::new(),
             scope_symbols: Vec::new(),
             symbols: KeyedVec::new(),
-            ast_to_symbol: KeyedVec::new(),
+            use_to_symbol: KeyedVec::new(),
         }
     }
 

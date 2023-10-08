@@ -18,6 +18,7 @@ pub mod id;
 pub mod interner;
 pub mod number;
 pub mod result;
+//pub mod smaller_vec;
 pub mod source;
 pub mod span;
 pub mod string;

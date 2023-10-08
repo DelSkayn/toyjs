@@ -61,7 +61,7 @@ unsafe impl<'own> Trace<'own> for ByteCode {
 /// A newtype for a register index.
 ///
 /// An instruction can directly access upto 127 register and 126 arguments.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct Reg(pub i8);
 
