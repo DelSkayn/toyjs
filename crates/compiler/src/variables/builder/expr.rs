@@ -27,8 +27,8 @@ impl<'a> VariablesBuilder<'a> {
                 self.resolve_expr(right)?;
             }
             ast::Expr::Index { index, expr } => {
-                self.resolve_expr(expr)?;
                 self.resolve_expr(index)?;
+                self.resolve_expr(expr)?;
             }
             ast::Expr::Prefix { expr, .. }
             | ast::Expr::Postfix { expr, .. }
@@ -175,8 +175,8 @@ impl<'a> VariablesBuilder<'a> {
             },
             ast::Expr::Yield { star, expr } => todo!(),
             ast::Expr::Destructure { pattern, expr } => {
-                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)?;
-                self.resolve_expr(expr)
+                self.resolve_expr(expr)?;
+                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)
             }
         }
     }

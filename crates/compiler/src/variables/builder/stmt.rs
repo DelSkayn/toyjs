@@ -56,6 +56,11 @@ impl<'a> VariablesBuilder<'a> {
                 };
                 loop {
                     let item = self.ast[decl].item;
+
+                    if let Some(initializer) = self.ast[item].initializer {
+                        self.resolve_expr(initializer)?;
+                    }
+
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind,
@@ -63,10 +68,6 @@ impl<'a> VariablesBuilder<'a> {
                         },
                         self.ast[item].decl,
                     )?;
-
-                    if let Some(initializer) = self.ast[item].initializer {
-                        self.resolve_expr(initializer)?;
-                    }
 
                     if let Some(x) = self.ast[decl].next {
                         decl = x;
@@ -174,6 +175,11 @@ impl<'a> VariablesBuilder<'a> {
                         let mut head = Some(decl);
                         while let Some(item) = head {
                             let id = self.ast[item].item;
+
+                            if let Some(init) = self.ast[id].initializer {
+                                self.resolve_expr(init)?;
+                            }
+
                             self.resolve_decl(
                                 BindingKind::Decl {
                                     kind: kind.into(),
@@ -181,10 +187,6 @@ impl<'a> VariablesBuilder<'a> {
                                 },
                                 self.ast[id].decl,
                             )?;
-
-                            if let Some(init) = self.ast[id].initializer {
-                                self.resolve_expr(init)?;
-                            }
 
                             head = self.ast[item].next;
                         }
@@ -248,6 +250,7 @@ impl<'a> VariablesBuilder<'a> {
             ast::IdentOrPattern::Ident(x) => match kind {
                 BindingKind::Decl { kind, initializer } => {
                     let symbol = self.declare(x, kind, Some(decl))?;
+
                     if let Some(init) = initializer {
                         self.store_symbol(symbol, init);
                     }
@@ -329,6 +332,9 @@ impl<'a> VariablesBuilder<'a> {
                 symbol,
                 initializer,
             } => {
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
                 match kind {
                     BindingKind::Decl {
                         kind,
@@ -342,9 +348,6 @@ impl<'a> VariablesBuilder<'a> {
                     BindingKind::Destructure { expr } => {
                         self.store(symbol, expr);
                     }
-                }
-                if let Some(init) = initializer {
-                    self.resolve_expr(init)?;
                 }
             }
             BindingProperty::Property { name, element } => {
@@ -368,6 +371,10 @@ impl<'a> VariablesBuilder<'a> {
                 symbol: name,
                 initializer,
             } => {
+                if let Some(init) = initializer {
+                    self.resolve_expr(init)?;
+                }
+
                 match kind {
                     BindingKind::Decl {
                         kind,
@@ -381,9 +388,6 @@ impl<'a> VariablesBuilder<'a> {
                     BindingKind::Destructure { expr } => {
                         self.store(name, expr);
                     }
-                }
-                if let Some(init) = initializer {
-                    self.resolve_expr(init)?;
                 }
             }
             BindingElement::Pattern {
@@ -546,6 +550,9 @@ impl<'a> VariablesBuilder<'a> {
                     initializer,
                     ..
                 } => {
+                    if let Some(init) = initializer {
+                        self.resolve_expr(init)?;
+                    }
                     match property {
                         ast::PropertyName::Ident(_)
                         | ast::PropertyName::String(_)
@@ -553,9 +560,6 @@ impl<'a> VariablesBuilder<'a> {
                         ast::PropertyName::Computed(x) => {
                             self.resolve_expr(x)?;
                         }
-                    }
-                    if let Some(init) = initializer {
-                        self.resolve_expr(init)?;
                     }
                 }
             }
