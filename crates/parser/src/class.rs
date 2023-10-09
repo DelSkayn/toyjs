@@ -2,14 +2,14 @@ use ast::{Class, ClassMember, FunctionKind, ListHead, NodeId, PropertyName};
 use common::string::String;
 use token::t;
 
-use crate::{expect, function::FunctionCtx, peek_expect, Parser, Result};
+use crate::{expect, function::FunctionCtx, Parser, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_class(&mut self, stmt: bool) -> Result<NodeId<Class>> {
         let name = if stmt {
             Some(self.parse_symbol()?)
         } else {
-            match peek_expect!(self, "{").kind() {
+            match self.peek_kind() {
                 t!("extends") | t!("{") => None,
                 _ => Some(self.parse_symbol()?),
             }
@@ -25,10 +25,10 @@ impl<'a> Parser<'a> {
         while !self.eat(t!("}")) {
             let is_static = self.eat(t!("static"));
 
-            let property = match peek_expect!(self, "ident").kind() {
+            let property = match self.peek_kind() {
                 t!("get") => {
                     self.next();
-                    if Self::is_property_name(peek_expect!(self, "ident", ";").kind()) {
+                    if Self::is_property_name(self.peek_kind()) {
                         let property = self.parse_property_name()?;
                         let func = self.parse_getter()?;
                         let item = self.ast.push_node(ClassMember::Getter {
@@ -47,7 +47,7 @@ impl<'a> Parser<'a> {
                 }
                 t!("set") => {
                     self.next();
-                    if Self::is_property_name(peek_expect!(self, "ident", ";").kind()) {
+                    if Self::is_property_name(self.peek_kind()) {
                         let property = self.parse_property_name()?;
                         let func = self.parse_setter()?;
                         let item = self.ast.push_node(ClassMember::Setter {
@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
                 _ => self.parse_property_name()?,
             };
 
-            let item = match peek_expect!(self, "(", ";").kind() {
+            let item = match self.peek_kind() {
                 t!("(") => {
                     let func = self.parse_function(FunctionCtx::Method, FunctionKind::Simple)?;
                     self.ast.push_node(ClassMember::Method {

@@ -5,9 +5,7 @@ use ast::{
 use common::span::Span;
 use token::{t, TokenKind};
 
-use crate::{
-    expect, next_expect, peek_expect, unexpected, Error, ErrorKind, Parser, ParserState, Result,
-};
+use crate::{expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -96,9 +94,7 @@ impl<'a> Parser<'a> {
     /// Parsers any prefix operator, called in a pratt parser.
     /// Only call if the next token is prefix operator.
     fn parse_prefix_op(&mut self, r_bp: u8) -> Result<NodeId<Expr>> {
-        let token = self
-            .peek()
-            .expect("`parse_prefix_op` should only be called if next token is present");
+        let token = self.peek();
 
         let operator = match token.kind() {
             t!("delete") => PrefixOp::Delete,
@@ -107,7 +103,7 @@ impl<'a> Parser<'a> {
             t!("new") => {
                 self.next();
                 if self.eat(t!(".")) {
-                    let token = next_expect!(self, "target");
+                    let token = self.next();
                     if token.kind() != t!("target") {
                         unexpected!(self, token.kind(), "target");
                     }
@@ -148,9 +144,7 @@ impl<'a> Parser<'a> {
     /// Parsers any postfix operator, called in a pratt parser.
     /// Only call if the next token is postfix operator.
     fn parse_postfix_op(&mut self, _l_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
-        let token = self
-            .peek()
-            .expect("`parse_postfix_op` should only be called if next token is present");
+        let token = self.peek();
 
         let op = match token.kind() {
             t!("++") => PostfixOp::AddOne,
@@ -192,9 +186,7 @@ impl<'a> Parser<'a> {
         lhs: NodeId<Expr>,
         lhs_span: Span,
     ) -> Result<NodeId<Expr>> {
-        let token = self
-            .next()
-            .expect("`parse_postfix_op` should only be called if next token is present");
+        let token = self.next();
 
         let op = match token.kind() {
             t!("??") => BinaryOp::Base(BaseOp::NullCoalessing),
@@ -287,8 +279,8 @@ impl<'a> Parser<'a> {
 
     /// The pratt parser, uses binding power to parse operator with correct precedence.
     fn pratt_parse_expr(&mut self, min_bp: u8) -> Result<NodeId<Expr>> {
-        let start_span = self.peek().map(|x| x.span).unwrap_or_else(Span::empty);
-        let mut lhs = if let Some(((), r_bp)) = self.peek_kind().and_then(prefix_binding_power) {
+        let start_span = self.peek().span;
+        let mut lhs = if let Some(((), r_bp)) = prefix_binding_power(self.peek_kind()) {
             self.parse_prefix_op(r_bp)?
         } else {
             let (expr, span) = self.parse_prime()?;
@@ -297,7 +289,7 @@ impl<'a> Parser<'a> {
                 let lhs_span = start_span.covers(self.last_span());
                 // Found a covered initializer in an object literal.
                 // If the next token isn't `=` this would be invalid.
-                if let Some(t!("=")) = self.peek_kind() {
+                if let t!("=") = self.peek_kind() {
                     self.next();
                     // This should always succeed, otherwise a span was returned when the prime
                     // expression wasn't an object literal with a covered initializer.
@@ -320,7 +312,8 @@ impl<'a> Parser<'a> {
         };
 
         let mut lhs_span = start_span.covers(self.last_span());
-        while let Some(op) = self.peek_kind() {
+        loop {
+            let op = self.peek_kind();
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;
@@ -354,7 +347,7 @@ impl<'a> Parser<'a> {
 
         loop {
             let mut is_spread = false;
-            match peek_expect!(self, ")").kind() {
+            match self.peek_kind() {
                 t!(")") => break,
                 t!("...") => {
                     self.next();

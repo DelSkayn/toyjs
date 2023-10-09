@@ -2,7 +2,7 @@ use ast::{Function, FunctionKind, ListHead, NodeId, Stmt, Symbol};
 use common::string::StringId;
 use token::{t, TokenKind};
 
-use crate::{alter_state, expect, peek_expect, unexpected, Parser, ParserState, Result};
+use crate::{alter_state, expect, unexpected, Parser, ParserState, Result};
 
 pub struct FunctionBody {
     pub body: ListHead<Stmt>,
@@ -42,7 +42,7 @@ impl<'a> Parser<'a> {
         let name = match ctx {
             FunctionCtx::Stmt => FunctionName::Declared(self.parse_symbol()?),
             FunctionCtx::Expression => {
-                let token = peek_expect!(self, "ident");
+                let token = self.peek();
                 match token.kind() {
                     TokenKind::UnreservedKeyword(_) | TokenKind::Ident => {
                         FunctionName::Expr(Some(self.parse_ident_name()?))
@@ -61,8 +61,7 @@ impl<'a> Parser<'a> {
         let mut param_prev = None;
         let mut rest_param = None;
         loop {
-            let next = peek_expect!(self, ")");
-            match next.kind() {
+            match self.peek_kind() {
                 t!(")") => {
                     break;
                 }
@@ -159,7 +158,7 @@ impl<'a> Parser<'a> {
         let mut prev = None;
 
         loop {
-            if let t!("}") = peek_expect!(self, "}").kind() {
+            if let t!("}") = self.peek_kind() {
                 self.next();
                 break;
             }

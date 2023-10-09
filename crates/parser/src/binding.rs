@@ -5,12 +5,11 @@ use ast::{
 use common::string::{String, StringId};
 use token::{t, TokenKind};
 
-use crate::{expect, next_expect, peek_expect, unexpected, Parser, ParserState, Result};
+use crate::{expect, unexpected, Parser, ParserState, Result};
 
 impl<'a> Parser<'a> {
     pub fn parse_ident_or_pattern(&mut self) -> Result<NodeId<IdentOrPattern>> {
-        let first = peek_expect!(self, "ident", "{", "[");
-        match first.kind() {
+        match self.peek_kind() {
             t!("{") | t!("[") => {
                 let pattern = self.parse_pattern()?;
                 Ok(self.ast.push_node(IdentOrPattern::Pattern(pattern)))
@@ -23,8 +22,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_pattern(&mut self) -> Result<NodeId<BindingPattern>> {
-        let first = next_expect!(self, "{", "[");
-        match first.kind() {
+        match self.next().kind() {
             t!("{") => self.parse_object_pattern(),
             t!("[") => self.parse_array_pattern(),
             x => unexpected!(self, x, "{", "["),
@@ -32,7 +30,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_ident_name(&mut self) -> Result<StringId> {
-        let next = next_expect!(self);
+        let next = self.next();
         let text = match next.kind() {
             t!("ident") => return Ok(next.data_id().unwrap()),
             TokenKind::Keyword(x) => x.to_string(),
@@ -51,7 +49,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_ident(&mut self) -> Result<StringId> {
-        let next = next_expect!(self);
+        let next = self.next();
         match next.kind() {
             t!("ident") => Ok(next.data_id().unwrap()),
             t!("yield") => {
@@ -155,8 +153,7 @@ impl<'a> Parser<'a> {
         let mut prev = None;
         let mut rest = None;
         loop {
-            let next = peek_expect!(self, "}");
-            match next.kind() {
+            match self.peek_kind() {
                 t!("}") => {
                     self.next();
                     break;
@@ -189,7 +186,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_binding_property(&mut self) -> Result<BindingProperty> {
-        let next = peek_expect!(self);
+        let next = self.peek();
         match next.kind() {
             t!("string") => {
                 self.next();
@@ -247,8 +244,7 @@ impl<'a> Parser<'a> {
         let mut prev = None;
         let mut rest = None;
         loop {
-            let next = peek_expect!(self, "]");
-            match next.kind() {
+            match self.peek_kind() {
                 t!("]") => {
                     break;
                 }
@@ -282,8 +278,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_binding_element(&mut self) -> Result<BindingElement> {
-        let next = peek_expect!(self);
-        match next.kind() {
+        match self.peek_kind() {
             t!("{") | t!("[") => {
                 let pattern = self.parse_pattern()?;
                 let initializer = self

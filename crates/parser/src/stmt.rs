@@ -12,9 +12,7 @@ use crate::{
 impl<'a> Parser<'a> {
     /// Parses ECMA spec `Declaration`, `Statement` and other `...Statement` productions
     pub fn parse_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        let Some(token) = self.peek() else {
-            return Ok(self.ast.push_node(Stmt::Empty));
-        };
+        let token = self.peek();
         let expr = match token.kind() {
             t!("{") => {
                 self.next();
@@ -156,8 +154,7 @@ impl<'a> Parser<'a> {
         let mut prev = None;
 
         loop {
-            let token = peek_expect!(self,"}" => "expected statement block to close.");
-            if let t!("}") = token.kind() {
+            if let t!("}") = self.peek_kind() {
                 self.next();
                 return Ok(head);
             }
@@ -249,13 +246,13 @@ impl<'a> Parser<'a> {
     /// ```
     pub fn parse_c_style_for(&mut self, decl: CstyleDecl) -> Result<NodeId<Stmt>> {
         expect!(self, ";");
-        let cond = if let t!(";") = peek_expect!(self, ";").kind() {
+        let cond = if let t!(";") = self.peek_kind() {
             None
         } else {
             Some(self.parse_expr()?)
         };
         expect!(self, ";");
-        let post = if let t!(")") = peek_expect!(self, ")").kind() {
+        let post = if let t!(")") = self.peek_kind() {
             None
         } else {
             Some(self.parse_expr()?)
@@ -272,11 +269,10 @@ impl<'a> Parser<'a> {
     pub fn parse_for_stmt(&mut self) -> Result<NodeId<Stmt>> {
         //TODO await loop
         expect!(self, "(");
-
-        let next = peek_expect!(self);
-        let decl = match next.kind() {
+        let next = self.peek_kind();
+        let decl = match next {
             t!("let") | t!("var") | t!("const") => {
-                let kind = match next.kind() {
+                let kind = match next {
                     t!("let") => VariableKind::Let,
                     t!("var") => VariableKind::Var,
                     t!("const") => VariableKind::Const,
@@ -284,7 +280,7 @@ impl<'a> Parser<'a> {
                 };
                 self.next();
                 let binding = self.parse_ident_or_pattern()?;
-                if let t!("=") | t!(",") = peek_expect!(self).kind() {
+                if let t!("=") | t!(",") = self.peek_kind() {
                     let decl = self.parse_c_style_decl(binding)?;
                     return self.parse_c_style_for(CstyleDecl::Decl { kind, decl });
                 } else {
@@ -356,7 +352,7 @@ impl<'a> Parser<'a> {
         let mut prev = None;
         let mut default = None;
         loop {
-            let case = match peek_expect!(self, "case", "default", "}").kind() {
+            let case = match self.peek_kind() {
                 t!("case") => {
                     self.next();
                     Some(self.parse_expr()?)
@@ -519,7 +515,7 @@ impl<'a> Parser<'a> {
     /// const { c } = foo;
     /// ```
     pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
-        let span = self.peek().map(|x| x.span).unwrap_or_default();
+        let span = self.peek().span;
 
         let decl = self.parse_ident_or_pattern()?;
         let decl_span = span.covers(self.last_span());
@@ -538,7 +534,7 @@ impl<'a> Parser<'a> {
         let head = self.ast.append_list(decl, None);
         let mut prev = head;
         while self.eat(t!(",")) {
-            let span = self.peek().map(|x| x.span).unwrap_or_default();
+            let span = self.peek().span;
             let decl = self.parse_ident_or_pattern()?;
             let decl_span = span.covers(self.last_span());
 

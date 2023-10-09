@@ -89,49 +89,52 @@ impl<'a> Parser<'a> {
 
     /// Return the next token from the lexer which is not whitespace.
     #[inline(always)]
-    fn retrieve_next_token(&mut self) -> Option<Token> {
+    fn retrieve_next_token(&mut self) -> Token {
         self.ate_line_terminator = false;
-        while let Some(x) = self.lexer.next_token() {
-            match x.kind_and_data.kind() {
-                t!(" ") | t!("//") => {}
+        loop {
+            let token = self.lexer.next_token();
+            match token.kind_and_data.kind() {
                 t!("\n") => {
                     self.ate_line_terminator = true;
                 }
-                _ => return Some(x),
+                _ => return token,
             }
         }
-        None
     }
 
     /// Return the next token
     #[inline]
-    fn next(&mut self) -> Option<Token> {
-        let res = self.peek.take().or_else(|| self.retrieve_next_token());
-        if let Some(x) = res.as_ref() {
-            self.last_span = x.span;
-        }
+    fn next(&mut self) -> Token {
+        let res = self
+            .peek
+            .take()
+            .unwrap_or_else(|| self.retrieve_next_token());
+        self.last_span = res.span;
         res
     }
 
     /// Returns the next token in the list without advancing the token iterator..
     #[inline]
-    fn peek(&mut self) -> Option<Token> {
-        if let Some(x) = self.peek.as_ref() {
-            return Some(x.clone());
+    fn peek(&mut self) -> Token {
+        if let Some(peek) = self.peek.clone() {
+            peek
+        } else {
+            let res = self.retrieve_next_token();
+            self.peek = Some(res.clone());
+            res
         }
-        self.peek = self.retrieve_next_token();
-        self.peek.clone()
     }
 
     /// Returns the next token in the list w
     /// ithout advancing the token iterator..
     #[inline]
-    fn peek_kind(&mut self) -> Option<TokenKind> {
-        if let Some(x) = self.peek.as_ref().map(|x| x.kind_and_data.kind()) {
-            Some(x)
+    fn peek_kind(&mut self) -> TokenKind {
+        if let Some(peek) = self.peek.as_ref() {
+            peek.kind()
         } else {
-            self.peek = self.retrieve_next_token();
-            self.peek.as_ref().map(|x| x.kind_and_data.kind())
+            let res = self.retrieve_next_token();
+            self.peek = Some(res.clone());
+            res.kind()
         }
     }
 
@@ -139,7 +142,7 @@ impl<'a> Parser<'a> {
     /// Returns true if a token was eaten.
     #[inline]
     fn eat(&mut self, which: TokenKind) -> bool {
-        if self.peek().map(|x| x.kind_and_data.kind()) == Some(which) {
+        if self.peek().kind_and_data.kind() == which {
             self.peek = None;
             true
         } else {
@@ -151,12 +154,12 @@ impl<'a> Parser<'a> {
     #[inline]
     fn eat_semicolon(&mut self) -> bool {
         match self.peek_kind() {
-            Some(t!(";")) => {
+            t!(";") => {
                 self.peek = None;
                 true
             }
-            Some(t!("}")) | None => true,
-            Some(_) => self.ate_line_terminator,
+            t!("}") | t!("eof") => true,
+            _ => self.ate_line_terminator,
         }
     }
 
@@ -198,7 +201,11 @@ impl<'a> Parser<'a> {
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut strict = false;
-        while self.peek().is_some() {
+        loop {
+            let peek = self.peek();
+            if peek.kind() == t!("eof") {
+                break;
+            }
             let stmt = self.parse_stmt()?;
             if !self.state.contains(ParserState::Strict)
                 && head.is_empty()

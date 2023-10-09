@@ -10,8 +10,8 @@ use common::{
 use token::{t, TokenKind};
 
 use crate::{
-    alter_state, expect, function::FunctionCtx, next_expect, peek_expect, unexpected, Error,
-    ErrorKind, Parser, ParserState, Result,
+    alter_state, expect, function::FunctionCtx, unexpected, Error, ErrorKind, Parser, ParserState,
+    Result,
 };
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
@@ -20,15 +20,11 @@ static AWAIT_STR: &Ascii = Ascii::const_from_str("await");
 impl<'a> Parser<'a> {
     /// Parsers a primary expression or a expression without any operators.
     pub(crate) fn parse_prime(&mut self) -> Result<(NodeId<PrimeExpr>, Option<Span>)> {
-        let token = peek_expect!(
-            self, "ident", "123", "string", "true", "false", "regex", "null", "this", "{", "[",
-            "(", "function"
-        );
-
+        let token = self.peek();
         match token.kind() {
             t!("ident") => {
                 let symbol = self.parse_symbol()?;
-                if let Some(t!("=>")) = self.peek_kind() {
+                if let t!("=>") = self.peek_kind() {
                     self.no_line_terminator()?;
                     self.next();
                     let param = self.ast.push_node(BindingElement::SingleName {
@@ -131,7 +127,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::UnreservedKeyword(_) => {
                 let symbol = self.parse_symbol()?;
-                if let Some(t!("=>")) = self.peek_kind() {
+                if let t!("=>") = self.peek_kind() {
                     self.no_line_terminator()?;
                     self.next();
                     let param = self.ast.push_node(BindingElement::SingleName {
@@ -169,7 +165,7 @@ impl<'a> Parser<'a> {
         let mut head = ListHead::Empty;
         let mut prev = None;
         let mut rest = None;
-        while t!(")") != peek_expect!(self, ")").kind() {
+        while t!(")") != self.peek_kind() {
             if self.eat(t!("...")) {
                 rest = Some(self.parse_ident_or_pattern()?);
                 break;
@@ -194,7 +190,7 @@ impl<'a> Parser<'a> {
             expect!(self, "=>");
             return self.reparse_arrow_function(head, rest);
         }
-        if let Some(t!("=>")) = self.peek_kind() {
+        if let t!("=>") = self.peek_kind() {
             self.no_line_terminator()?;
             self.next();
             self.reparse_arrow_function(head, None)
@@ -209,7 +205,7 @@ impl<'a> Parser<'a> {
 
     /// Parses a template expression, e.g.:
     pub fn parse_template(&mut self) -> Result<NodeId<Template>> {
-        let token = next_expect!(self, "} `");
+        let token = self.next();
         match token.kind() {
             t!("``") => {
                 let text = token.data_id().unwrap();
@@ -249,8 +245,7 @@ impl<'a> Parser<'a> {
     /// Returns both the parsed object literal as well the span of the first '=' if the object
     /// literal contains a covered binding initalizer.
     fn parse_object_literal(&mut self) -> Result<(ObjectLiteral, Option<Span>)> {
-        let token = peek_expect!(self);
-        if let t!("}") = token.kind() {
+        if let t!("}") = self.peek_kind() {
             self.next();
             return Ok((ObjectLiteral::Empty, None));
         }
@@ -258,15 +253,14 @@ impl<'a> Parser<'a> {
         let mut last = self.ast.append_list(property, None);
         let res = ObjectLiteral::Item(last);
         loop {
-            let token = peek_expect!(self, ",", "}");
-            match token.kind() {
+            match self.peek_kind() {
                 t!("}") => {
                     self.next();
                     break;
                 }
                 t!(",") => {
                     self.next();
-                    if let Some(t!("}")) = self.peek_kind() {
+                    if let t!("}") = self.peek_kind() {
                         break;
                     }
                     let (property, new_span) = self.parse_property_definition()?;
@@ -299,7 +293,7 @@ impl<'a> Parser<'a> {
     /// { /* start here */ foo: 1, "bar": 2 }
     /// ```
     fn parse_property_definition(&mut self) -> Result<(NodeId<PropertyDefinition>, Option<Span>)> {
-        let token = peek_expect!(self);
+        let token = self.peek();
         let property = match token.kind() {
             t!("...") => {
                 self.next();
@@ -319,7 +313,7 @@ impl<'a> Parser<'a> {
             }
             t!("get") => {
                 self.next();
-                if Self::is_property_name(peek_expect!(self, "}").kind()) {
+                if Self::is_property_name(self.peek_kind()) {
                     let property = self.parse_property_name()?;
                     let func = self.parse_getter()?;
                     return Ok((
@@ -332,7 +326,7 @@ impl<'a> Parser<'a> {
             }
             t!("set") => {
                 self.next();
-                if Self::is_property_name(peek_expect!(self, "}").kind()) {
+                if Self::is_property_name(self.peek_kind()) {
                     let property = self.parse_property_name()?;
                     let func = self.parse_setter()?;
                     return Ok((
@@ -345,7 +339,7 @@ impl<'a> Parser<'a> {
             }
             t!("async") => {
                 self.next();
-                if let t!(":") = peek_expect!(self, ":").kind() {
+                if let t!(":") = self.peek_kind() {
                     PropertyName::Ident(self.lexer.data.strings.intern(&String::new_const("async")))
                 } else {
                     self.no_line_terminator()?;
@@ -366,7 +360,7 @@ impl<'a> Parser<'a> {
             _ => self.parse_property_name()?,
         };
 
-        match peek_expect!(self, "}", ":").kind() {
+        match self.peek_kind() {
             t!(":") => {
                 self.next();
                 let expr = self.parse_assignment_expr()?;
@@ -377,7 +371,7 @@ impl<'a> Parser<'a> {
             }
             t!("=") => {
                 if let PropertyName::Ident(x) = property {
-                    let span = self.next().unwrap().span;
+                    let span = self.next().span;
                     let expr = self.parse_assignment_expr()?;
                     let symbol = self.ast.push_node(Symbol {
                         name: x,
@@ -414,7 +408,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_property_name(&mut self) -> Result<PropertyName> {
-        let token = peek_expect!(self, "ident", "[", "string", "123");
+        let token = self.peek();
         match token.kind() {
             t!("string") => {
                 self.next();
@@ -442,8 +436,7 @@ impl<'a> Parser<'a> {
         let mut head = ListHead::Empty;
 
         loop {
-            let token = peek_expect!(self, "]");
-            match token.kind() {
+            match self.peek_kind() {
                 t!("]") => {
                     break;
                 }
@@ -703,7 +696,7 @@ impl<'a> Parser<'a> {
             ParserState::AwaitIdent,
             matches!(kind, FunctionKind::Simple | FunctionKind::Generator),
         );
-        let body = if let t!("{") = peek_expect!(self, "{").kind() {
+        let body = if let t!("{") = self.peek_kind() {
             self.next();
             let mut head = ListHead::Empty;
             let mut prev = None;
@@ -737,10 +730,10 @@ impl<'a> Parser<'a> {
 
     fn parse_async_function(&mut self) -> Result<NodeId<PrimeExpr>> {
         self.next();
-        let token = peek_expect!(self, "function");
+        let token = self.peek_kind();
         self.no_line_terminator()?;
         // TODO not sure if this the right way to do it.
-        match token.kind() {
+        match token {
             t!("function") => {
                 self.next();
                 let kind = if self.eat(t!("*")) {
