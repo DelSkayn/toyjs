@@ -12,13 +12,8 @@ use super::VariablesBuilder;
 
 #[derive(Clone, Copy)]
 pub enum BindingKind {
-    Decl {
-        kind: Kind,
-        initializer: Option<NodeId<ast::Expr>>,
-    },
-    Destructure {
-        expr: NodeId<ast::Expr>,
-    },
+    Decl { kind: Kind, is_initialized: bool },
+    Destructure { expr: NodeId<ast::Expr> },
 }
 
 impl<'a> VariablesBuilder<'a> {
@@ -64,7 +59,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind,
-                            initializer: self.ast[item].initializer,
+                            is_initialized: self.ast[item].initializer.is_some(),
                         },
                         self.ast[item].decl,
                     )?;
@@ -135,7 +130,7 @@ impl<'a> VariablesBuilder<'a> {
                         self.resolve_decl(
                             BindingKind::Decl {
                                 kind: Kind::Let,
-                                initializer: None,
+                                is_initialized: true,
                             },
                             binding,
                         )?;
@@ -183,7 +178,7 @@ impl<'a> VariablesBuilder<'a> {
                             self.resolve_decl(
                                 BindingKind::Decl {
                                     kind: kind.into(),
-                                    initializer: self.ast[id].initializer,
+                                    is_initialized: self.ast[id].initializer.is_some(),
                                 },
                                 self.ast[id].decl,
                             )?;
@@ -214,7 +209,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: kind.into(),
-                            initializer: Some(self.ast[node].item),
+                            is_initialized: true,
                         },
                         binding,
                     )?;
@@ -230,7 +225,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: kind.into(),
-                            initializer: Some(expr),
+                            is_initialized: true,
                         },
                         binding,
                     )?;
@@ -248,19 +243,18 @@ impl<'a> VariablesBuilder<'a> {
     ) -> Result<()> {
         match self.ast[decl] {
             ast::IdentOrPattern::Ident(x) => match kind {
-                BindingKind::Decl { kind, initializer } => {
-                    let symbol = self.declare(x, kind, Some(decl))?;
-
-                    if let Some(init) = initializer {
-                        self.store_symbol(symbol, init);
-                    }
+                BindingKind::Decl {
+                    kind,
+                    is_initialized,
+                } => {
+                    let symbol = self.declare(x, kind, is_initialized)?;
                 }
                 BindingKind::Destructure { expr } => {
                     self.store(x, expr);
                 }
             },
             ast::IdentOrPattern::Pattern(pattern) => {
-                self.resolve_binding_pattern(kind, Some(decl), pattern)?;
+                self.resolve_binding_pattern(kind, pattern)?;
             }
         }
         Ok(())
@@ -269,14 +263,13 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_pattern(
         &mut self,
         kind: BindingKind,
-        decl: Option<NodeId<ast::IdentOrPattern>>,
         pattern: NodeId<BindingPattern>,
     ) -> Result<()> {
         match self.ast[pattern] {
             BindingPattern::Object { properties, rest } => {
                 if let ListHead::Present(mut head) = properties {
                     loop {
-                        self.resolve_binding_property(kind, decl, self.ast[head].item)?;
+                        self.resolve_binding_property(kind, self.ast[head].item)?;
                         if let Some(x) = self.ast[head].next {
                             head = x;
                         } else {
@@ -287,11 +280,11 @@ impl<'a> VariablesBuilder<'a> {
 
                 if let Some(rest) = rest {
                     match kind {
-                        BindingKind::Decl { kind, initializer } => {
-                            let symbol = self.declare(rest, kind, decl)?;
-                            if let Some(init) = initializer {
-                                self.store_symbol(symbol, init);
-                            }
+                        BindingKind::Decl {
+                            kind,
+                            is_initialized,
+                        } => {
+                            let symbol = self.declare(rest, kind, is_initialized)?;
                         }
                         BindingKind::Destructure { expr } => {
                             self.store(rest, expr);
@@ -303,7 +296,7 @@ impl<'a> VariablesBuilder<'a> {
                 if let Some(mut head) = elements {
                     loop {
                         if let Some(elem) = self.ast[head].data {
-                            self.resolve_binding_element(kind, decl, elem)?;
+                            self.resolve_binding_element(kind, elem)?;
                         }
                         if let Some(x) = self.ast[head].next {
                             head = x;
@@ -324,7 +317,6 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_property(
         &mut self,
         kind: BindingKind,
-        decl: Option<NodeId<ast::IdentOrPattern>>,
         property: NodeId<BindingProperty>,
     ) -> Result<()> {
         match self.ast[property] {
@@ -338,12 +330,10 @@ impl<'a> VariablesBuilder<'a> {
                 match kind {
                     BindingKind::Decl {
                         kind,
-                        initializer: decl_init,
+                        is_initialized,
                     } => {
-                        let symbol = self.declare(symbol, kind, decl)?;
-                        if let Some(init) = decl_init.or(decl_init) {
-                            self.store_symbol(symbol, init)
-                        }
+                        let symbol =
+                            self.declare(symbol, kind, is_initialized || initializer.is_some())?;
                     }
                     BindingKind::Destructure { expr } => {
                         self.store(symbol, expr);
@@ -354,7 +344,7 @@ impl<'a> VariablesBuilder<'a> {
                 if let ast::PropertyName::Computed(x) = name {
                     self.resolve_expr(x)?;
                 }
-                self.resolve_binding_element(kind, decl, element)?;
+                self.resolve_binding_element(kind, element)?;
             }
         }
         Ok(())
@@ -363,7 +353,6 @@ impl<'a> VariablesBuilder<'a> {
     pub fn resolve_binding_element(
         &mut self,
         kind: BindingKind,
-        decl: Option<NodeId<ast::IdentOrPattern>>,
         element: NodeId<BindingElement>,
     ) -> Result<()> {
         match self.ast[element] {
@@ -378,12 +367,10 @@ impl<'a> VariablesBuilder<'a> {
                 match kind {
                     BindingKind::Decl {
                         kind,
-                        initializer: decl_init,
+                        is_initialized,
                     } => {
-                        let symbol = self.declare(name, kind, decl)?;
-                        if let Some(init) = decl_init.or(initializer) {
-                            self.store_symbol(symbol, init);
-                        }
+                        let symbol =
+                            self.declare(name, kind, is_initialized || initializer.is_some())?;
                     }
                     BindingKind::Destructure { expr } => {
                         self.store(name, expr);
@@ -394,7 +381,7 @@ impl<'a> VariablesBuilder<'a> {
                 pattern,
                 initializer,
             } => {
-                self.resolve_binding_pattern(kind, decl, pattern)?;
+                self.resolve_binding_pattern(kind, pattern)?;
                 if let Some(init) = initializer {
                     self.resolve_expr(init)?;
                 }
@@ -420,9 +407,8 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_binding_element(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
-                        None,
                         elem,
                     )?;
                 }
@@ -430,7 +416,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
                         rest,
                     )?;
@@ -449,7 +435,7 @@ impl<'a> VariablesBuilder<'a> {
                 body,
                 ..
             } => {
-                self.declare(name, Kind::Function, None)?;
+                self.declare(name, Kind::Function, true)?;
                 self.push_scope(ScopeKind::Function(func))?;
                 let mut head: Option<ListId<ast::BindingElement>> = params.into();
                 while let Some(item) = head {
@@ -458,9 +444,8 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_binding_element(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
-                        None,
                         elem,
                     )?;
                 }
@@ -468,7 +453,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
                         rest,
                     )?;
@@ -491,9 +476,8 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_binding_element(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
-                        None,
                         elem,
                     )?;
                 }
@@ -501,7 +485,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: Kind::Arg,
-                            initializer: None,
+                            is_initialized: true,
                         },
                         rest,
                     )?;
@@ -515,7 +499,7 @@ impl<'a> VariablesBuilder<'a> {
 
     pub fn resolve_class(&mut self, class: NodeId<ast::Class>) -> Result<()> {
         if let Some(name) = self.ast[class].name {
-            self.declare(name, Kind::Function, None)?;
+            self.declare(name, Kind::Function, true)?;
         }
         if let Some(heritage) = self.ast[class].heritage {
             self.resolve_expr(heritage)?;

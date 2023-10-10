@@ -1,19 +1,24 @@
 use std::num::NonZeroU32;
 
-use crate::{variables::Variables, Result};
-use ast::{Ast, NodeId};
+use crate::{
+    variables::{SymbolUseOrder, Variables},
+    Limits, Result,
+};
+use ast::NodeId;
 use bc::{limits::MAX_REGISTERS, FarReg, Reg};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegisterState {
     Free,
-    Tmp { valid: NodeId<ast::Expr> },
+    Tmp,
+    Symbol(SymbolUseOrder),
 }
 
 pub struct Registers {
     state: [RegisterState; MAX_REGISTERS],
     variables: Variables,
     max_used: Reg,
+    last_use: SymbolUseOrder,
 }
 
 /// An enum which encodes where an expression should be placed.
@@ -47,6 +52,7 @@ impl Registers {
             state: [RegisterState::Free; MAX_REGISTERS],
             variables,
             max_used: Reg::this_reg(),
+            last_use: SymbolUseOrder(0),
         }
     }
 
@@ -55,51 +61,51 @@ impl Registers {
         self.max_used = Reg::this_reg()
     }
 
-    pub fn read(
-        &mut self,
-        ast: &Ast,
-        symbol: NodeId<ast::Symbol>,
-        valid_from: NodeId<ast::Expr>,
-    ) -> Result<Reg> {
-        to_do!()
-        /*
-        let free = self.state.iter().position(|x| match x{
+    pub fn alloc_tmp(&mut self) -> Result<Reg> {
+        let free = self.state.iter().position(|x| match *x {
             RegisterState::Free => true,
-            RegisterState::Tmp { valid }
-        })
-
-        for (idx, r) in self.state.iter_mut() {
-            match self.
-        }
-            */
-    }
-
-    pub fn store(&mut self, ast: &Ast, ident: NodeId<ast::Symbol>) -> Result<Write> {
-        to_do!()
-    }
-
-    pub fn dst(&mut self, expr: NodeId<ast::Expr>) -> Result<Reg> {
-        to_do!()
-    }
-
-    pub fn alloc_tmp(
-        &mut self,
-        current: NodeId<ast::Expr>,
-        valid: NodeId<ast::Expr>,
-    ) -> Result<Reg> {
-        let free = self.state.iter().position(|x| match x {
-            RegisterState::Free => true,
-            RegisterState::Tmp { valid } => *valid < current,
+            RegisterState::Tmp => false,
+            RegisterState::Symbol(x) => x < self.last_use,
         });
 
         if let Some(free) = free {
-            self.state[free] = RegisterState::Tmp { valid };
+            self.state[free] = RegisterState::Tmp;
             let free = free as i8;
             self.max_used = self.max_used.max(Reg(free));
             return Ok(Reg(free));
         }
 
+        Err(crate::Error::ExceededLimits(Limits::Registers))
+    }
+
+    pub fn alloc_symbol(&mut self, symbol: NodeId<ast::Symbol>) -> Result<Reg> {
+        let free = self.state.iter().position(|x| match *x {
+            RegisterState::Free => true,
+            RegisterState::Tmp => false,
+            RegisterState::Symbol(x) => x < self.last_use,
+        });
+
+        let symbol_id = self.variables.use_to_symbol[symbol].id.unwrap();
+        //self.variables.symbols[symbol_id].last_use
+        //
         to_do!()
+
+        /*
+        if let Some(free) = free {
+            self.state[free] = RegisterState::Symbol(until);
+            let free = free as i8;
+            self.max_used = self.max_used.max(Reg(free));
+            return Ok(Reg(free));
+        }
+
+        Err(crate::Error::ExceededLimits(Limits::Registers))
+            */
+    }
+
+    pub fn free_tmp(&mut self, reg: Reg) {
+        if self.state[reg.0 as usize] == RegisterState::Tmp {
+            self.state[reg.0 as usize] = RegisterState::Free;
+        }
     }
 
     pub fn free(&mut self, reg: Reg) {

@@ -54,19 +54,19 @@ impl From<ast::VariableKind> for Kind {
 #[derive(Clone, Copy, Debug)]
 pub struct Symbol {
     /// The identifier of the variable.
-    ident: StringId,
+    pub ident: StringId,
     /// Is the variable captured by a closure.
-    captured: bool,
+    pub captured: bool,
     /// How is the variable declared.
-    kind: Kind,
+    pub kind: Kind,
     /// When the variable is first declared.
-    declared: Option<NodeId<ast::Symbol>>,
+    pub declared: Option<SymbolUseOrder>,
     /// When the variable is defined.
-    defined: Option<NodeId<ast::Expr>>,
+    pub defined: Option<SymbolUseOrder>,
     /// When the variable is last used.
-    last_use: Option<NodeId<ast::Expr>>,
+    pub last_use: Option<SymbolUseOrder>,
     /// The scope the symbol was declared in.
-    scope: ScopeId,
+    pub scope: ScopeId,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -100,8 +100,8 @@ impl ScopeKind {
 
 #[derive(Clone, Copy, Debug)]
 pub struct UseInfo {
-    use_order: SymbolUseOrder,
-    id: Option<SymbolId>,
+    pub use_order: SymbolUseOrder,
+    pub id: Option<SymbolId>,
 }
 
 #[derive(Clone, Debug)]

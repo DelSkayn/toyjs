@@ -9,10 +9,10 @@ impl<'a> Compiler<'a> {
         symbol: NodeId<ast::IdentOrPattern>,
     ) -> Result<Option<Reg>> {
         match self.ast[symbol] {
-            ast::IdentOrPattern::Ident(x) => match self.registers.store(self.ast, x) {
-                Ok(_) => todo!(),
-                Err(_) => todo!(),
-            },
+            ast::IdentOrPattern::Ident(x) => {
+                let symbol_reg = self.registers.alloc_symbol(x);
+                to_do!()
+            }
             ast::IdentOrPattern::Pattern(_) => Ok(None),
         }
     }

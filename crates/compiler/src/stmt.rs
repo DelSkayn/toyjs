@@ -25,7 +25,7 @@ impl<'a> Compiler<'a> {
                     let item = self.ast[decl].item;
                     if let Some(x) = self.ast[item].initializer {
                         let decl = self.ast[item].decl;
-                        let reg = self.compile_expr(x, x)?;
+                        //let reg = self.compile_expr(x, x)?;
                         //self.registers.store(&self.ast, ident);
                         //res = Some(reg);
                         todo!()

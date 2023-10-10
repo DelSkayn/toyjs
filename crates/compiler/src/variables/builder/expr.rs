@@ -55,7 +55,7 @@ impl<'a> VariablesBuilder<'a> {
                 | ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
                 | ast::PrimeExpr::Super => {}
                 ast::PrimeExpr::Ident(name) => {
-                    self.load(name, expr);
+                    self.load(name);
                 }
                 ast::PrimeExpr::Function(func) => self.resolve_func(func)?,
                 ast::PrimeExpr::Class(class) => self.resolve_class(class)?,
@@ -129,7 +129,7 @@ impl<'a> VariablesBuilder<'a> {
                 }
             }
             ast::Expr::Destructure { pattern, expr } => {
-                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)?;
+                self.resolve_binding_pattern(BindingKind::Destructure { expr }, pattern)?;
                 self.resolve_expr(expr)?;
             }
         }
@@ -176,7 +176,7 @@ impl<'a> VariablesBuilder<'a> {
             ast::Expr::Yield { star, expr } => todo!(),
             ast::Expr::Destructure { pattern, expr } => {
                 self.resolve_expr(expr)?;
-                self.resolve_binding_pattern(BindingKind::Destructure { expr }, None, pattern)
+                self.resolve_binding_pattern(BindingKind::Destructure { expr }, pattern)
             }
         }
     }

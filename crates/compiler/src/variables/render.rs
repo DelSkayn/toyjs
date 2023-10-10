@@ -55,11 +55,11 @@ impl RenderVariables<'_> {
                 self.variables.symbols()[s].kind,
                 self.variables.symbols()[s]
                     .defined
-                    .map(|x| x.id() as isize)
+                    .map(|x| x.0 as isize)
                     .unwrap_or(-1),
                 self.variables.symbols()[s]
                     .last_use
-                    .map(|x| x.id() as isize)
+                    .map(|x| x.0 as isize)
                     .unwrap_or(-1)
             )?;
         }

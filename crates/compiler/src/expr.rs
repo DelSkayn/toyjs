@@ -6,32 +6,34 @@ use crate::{Compiler, Result};
 impl<'a> Compiler<'a> {
     pub fn compile_exprs(
         &mut self,
-        valid: Option<NodeId<ast::Expr>>,
+        placement: Option<Reg>,
         mut expr: ListId<ast::Expr>,
     ) -> Result<Reg> {
         loop {
             let item = self.ast[expr].item;
-            let res = self.compile_expr(valid.unwrap_or(item), self.ast[expr].item)?;
-            if let Some(e) = self.ast[expr].next {
-                self.registers.free(res);
-                expr = e;
+            if let Some(x) = self.ast[expr].next {
+                self.compile_expr(None, self.ast[expr].item)?;
+                expr = x;
             } else {
-                return Ok(res);
+                let dst = placement
+                    .map(Ok)
+                    .unwrap_or_else(|| self.registers.alloc_tmp())?;
+                return self.compile_expr(placement, self.ast[expr].item);
             }
         }
     }
 
-    pub fn compile_expr(
-        &mut self,
-        valid: NodeId<ast::Expr>,
-        expr: NodeId<ast::Expr>,
-    ) -> Result<Reg> {
+    pub fn compile_expr(&mut self, placement: Option<Reg>, expr: NodeId<ast::Expr>) -> Result<Reg> {
         match self.ast[expr] {
             ast::Expr::Binary { op, left, right } => match op {
                 ast::BinaryOp::Base(op) => {
-                    let left = self.compile_expr(right, left)?;
-                    let right = self.compile_expr(right, right)?;
-                    let dst = self.registers.alloc_tmp(expr, valid)?;
+                    let left = self.compile_expr(None, left)?;
+                    let right = self.compile_expr(None, right)?;
+                    self.registers.free_tmp(left);
+                    self.registers.free_tmp(right);
+                    let dst = placement
+                        .map(Ok)
+                        .unwrap_or_else(|| self.registers.alloc_tmp())?;
                     match op {
                         ast::BaseOp::NullCoalessing => to_do!(),
                         ast::BaseOp::TenaryNull => to_do!(),
@@ -130,7 +132,7 @@ impl<'a> Compiler<'a> {
             ast::Expr::Index { index, expr } => to_do!(),
             ast::Expr::Dot { ident, expr } => to_do!(),
             ast::Expr::Call { args, expr } => to_do!(),
-            ast::Expr::Prime { expr } => self.compile_prime(valid, expr),
+            ast::Expr::Prime { expr } => self.compile_prime(placement, expr),
             ast::Expr::Yield { star, expr } => to_do!(),
             ast::Expr::Destructure { pattern, expr } => to_do!(),
             ast::Expr::TaggedTemplate { tag, template } => to_do!(),

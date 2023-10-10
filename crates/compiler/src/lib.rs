@@ -43,6 +43,7 @@ pub enum Limits {
     JumpOffset,
     TooManyScopes,
     TooManyVariables,
+    Registers,
 }
 
 impl fmt::Display for Limits {
@@ -54,6 +55,7 @@ impl fmt::Display for Limits {
             }
             Limits::TooManyScopes => write!(f, "Exceeded the limit of variable scopes count"),
             Limits::TooManyVariables => write!(f, "Exceeded the limit of variable count"),
+            Limits::Registers => write!(f, "Ran out of registers to allocate"),
         }
     }
 }
