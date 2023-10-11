@@ -129,10 +129,8 @@ pub enum TokenKind {
     Comma,
     /// `\n`
     LineTerminator,
-    /// `// comment ` or `/* comment */`
-    Comment,
-    Whitespace,
     Unknown,
+    Eof,
 }
 
 /// A template token

@@ -250,7 +250,7 @@ impl<'a> VariablesBuilder<'a> {
                     let symbol = self.declare(x, kind, is_initialized)?;
                 }
                 BindingKind::Destructure { expr } => {
-                    self.store(x, expr);
+                    self.store(x);
                 }
             },
             ast::IdentOrPattern::Pattern(pattern) => {
@@ -287,7 +287,7 @@ impl<'a> VariablesBuilder<'a> {
                             let symbol = self.declare(rest, kind, is_initialized)?;
                         }
                         BindingKind::Destructure { expr } => {
-                            self.store(rest, expr);
+                            self.store(rest);
                         }
                     }
                 }
@@ -336,7 +336,7 @@ impl<'a> VariablesBuilder<'a> {
                             self.declare(symbol, kind, is_initialized || initializer.is_some())?;
                     }
                     BindingKind::Destructure { expr } => {
-                        self.store(symbol, expr);
+                        self.store(symbol);
                     }
                 }
             }
@@ -373,7 +373,7 @@ impl<'a> VariablesBuilder<'a> {
                             self.declare(name, kind, is_initialized || initializer.is_some())?;
                     }
                     BindingKind::Destructure { expr } => {
-                        self.store(name, expr);
+                        self.store(name);
                     }
                 }
             }

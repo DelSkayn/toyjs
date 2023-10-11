@@ -5,7 +5,7 @@ use ast::{
 use common::span::Span;
 use token::{t, TokenKind};
 
-use crate::{expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
+use crate::{dbg_tree, expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -284,7 +284,6 @@ impl<'a> Parser<'a> {
             self.parse_prefix_op(r_bp)?
         } else {
             let (expr, span) = self.parse_prime()?;
-
             if let Some(span) = span {
                 let lhs_span = start_span.covers(self.last_span());
                 // Found a covered initializer in an object literal.
@@ -301,10 +300,7 @@ impl<'a> Parser<'a> {
                     });
                     return Ok(res);
                 } else {
-                    return Err(Error {
-                        kind: ErrorKind::CoveredObjectLiteral,
-                        origin: span,
-                    });
+                    return Err(Error::new(ErrorKind::CoveredObjectLiteral, span));
                 }
             }
 

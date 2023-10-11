@@ -169,7 +169,7 @@ impl<'a> VariablesBuilder<'a> {
                 | ast::PrimeExpr::Super
                 | ast::PrimeExpr::Covered(_) => unreachable!(),
                 ast::PrimeExpr::Ident(s) => {
-                    self.store(s, from);
+                    self.store(s);
                     Ok(())
                 }
             },

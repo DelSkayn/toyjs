@@ -160,12 +160,13 @@ impl<'a> Lexer<'a> {
     fn lex_whitespace(&mut self) -> Token {
         while self
             .peek_unit()
-            .map(|x| units::WHITE_SPACE_CONST.into_iter().any(|y| x == y))
+            .map(|x| units::WHITE_SPACE_CONST.contains(&x))
             .unwrap_or(false)
         {
             self.next_unit();
         }
-        self.finish_token(t!(" "))
+        self.start = self.end;
+        self.next_token()
     }
 
     fn lex_comment(&mut self) -> Token {
@@ -176,7 +177,8 @@ impl<'a> Lexer<'a> {
         {
             self.next_unit();
         }
-        self.finish_token(t!("//"))
+        self.start = self.end;
+        self.next_token()
     }
 
     fn lex_multiline_comment(&mut self) -> Token {
@@ -186,8 +188,9 @@ impl<'a> Lexer<'a> {
         loop {
             match self.next_unit() {
                 Some(STAR) => {
+                    // TODO: check for line terminator
                     if let Some(SLASH) = self.next_unit() {
-                        return self.finish_token(t!("//"));
+                        return self.next_token();
                     }
                 }
                 Some(_) => {}
@@ -473,9 +476,14 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    pub fn next_token(&mut self) -> Option<Token> {
-        let unit = self.overread.take().or(self.next_unit())?;
-        let res = if unit.is_ascii() {
+    pub fn next_token(&mut self) -> Token {
+        let Some(unit) = self.overread.take().or(self.next_unit()) else {
+            return Token {
+                span: Span::from_range(self.end.saturating_sub(1)..self.end),
+                kind_and_data: TokenKindData::new::<u32>(TokenKind::Eof, None),
+            };
+        };
+        if unit.is_ascii() {
             self.lex_ascii(unit as u8)
         } else {
             let char = unit.decode_utf16_with(|| {
@@ -487,8 +495,7 @@ impl<'a> Lexer<'a> {
                 trailing
             });
             self.lex_char(char)
-        };
-        Some(res)
+        }
     }
 }
 
@@ -497,7 +504,11 @@ impl Iterator for Lexer<'_> {
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
+        let res = self.next_token();
+        if res.kind() == TokenKind::Eof {
+            return None;
+        }
+        Some(res)
     }
 }
 
@@ -539,13 +550,6 @@ mod test {
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!(" "), None),
-                span: Span::new(3, 1),
-            }),
-        );
-        assert_eq!(
-            lexer.next(),
-            Some(Token {
                 kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
                 span: Span::new(4, 1),
             }),
@@ -555,13 +559,6 @@ mod test {
             Some(Token {
                 kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
                 span: Span::new(5, 1),
-            }),
-        );
-        assert_eq!(
-            lexer.next(),
-            Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!(" "), None),
-                span: Span::new(6, 2),
             }),
         );
         assert_eq!(

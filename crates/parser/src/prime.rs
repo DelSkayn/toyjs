@@ -10,8 +10,8 @@ use common::{
 use token::{t, TokenKind};
 
 use crate::{
-    alter_state, expect, function::FunctionCtx, unexpected, Error, ErrorKind, Parser, ParserState,
-    Result,
+    alter_state, dbg_tree, expect, function::FunctionCtx, unexpected, Error, ErrorKind, Parser,
+    ParserState, Result,
 };
 
 static YIELD_STR: &Ascii = Ascii::const_from_str("yield");
@@ -261,6 +261,7 @@ impl<'a> Parser<'a> {
                 t!(",") => {
                     self.next();
                     if let t!("}") = self.peek_kind() {
+                        self.next();
                         break;
                     }
                     let (property, new_span) = self.parse_property_definition()?;

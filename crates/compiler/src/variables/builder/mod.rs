@@ -49,8 +49,8 @@ key!(pub struct ScopeStackId(u32));
 #[derive(Clone, Copy)]
 struct SymbolStackValue {
     previously_declared: Option<LookupValue>,
-    id: SymbolId,
-    ast: NodeId<ast::Symbol>,
+    symbol_id: SymbolId,
+    ast_node: NodeId<ast::Symbol>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -187,8 +187,8 @@ impl VariablesBuilder<'_> {
             self.block_symbol_stack.drain(offset..)
         };
         for s in iter {
-            self.variables.scope_symbols.push(s.id);
-            let name = self.ast[s.ast].name;
+            self.variables.scope_symbols.push(s.symbol_id);
+            let name = self.ast[s.ast_node].name;
             if let Some(prev) = s.previously_declared {
                 self.lookup.insert(name, prev);
             } else {
@@ -203,8 +203,8 @@ impl VariablesBuilder<'_> {
 
     fn redeclared(&self, symbol: NodeId<ast::Symbol>, previously: LookupValue) -> Error {
         let ast = match previously {
-            LookupValue::Function(x) => self.function_symbol_stack[x].ast,
-            LookupValue::Block(x) => self.block_symbol_stack[x].ast,
+            LookupValue::Function(x) => self.function_symbol_stack[x].ast_node,
+            LookupValue::Block(x) => self.block_symbol_stack[x].ast_node,
             // The hashmap should not contain any unresolved symbols except for a short duration
             // when popping a scope.
             LookupValue::Unresolved(_) => unreachable!(),
@@ -236,7 +236,7 @@ impl VariablesBuilder<'_> {
 
     pub fn declare(
         &mut self,
-        name: NodeId<ast::Symbol>,
+        ast_node: NodeId<ast::Symbol>,
         mut kind: Kind,
         initialized: bool,
     ) -> Result<SymbolId> {
@@ -256,28 +256,37 @@ impl VariablesBuilder<'_> {
             }
         }
 
-        let ident = self.ast[name].name;
+        let ident = self.ast[ast_node].name;
 
-        let previously_declared = match self.lookup.entry(ident) {
-            Entry::Occupied(mut x) => {
-                let lookup = *x.get();
+        match self.lookup.entry(ident) {
+            Entry::Occupied(mut entry) => {
+                let lookup = *entry.get();
                 let collision = match lookup {
-                    LookupValue::Function(x) => self.function_symbol_stack[x].id,
-                    LookupValue::Block(x) => self.block_symbol_stack[x].id,
+                    LookupValue::Function(x) => self.function_symbol_stack[x].symbol_id,
+                    LookupValue::Block(x) => self.block_symbol_stack[x].symbol_id,
                     LookupValue::Unresolved(symbol_id) => {
-                        if kind.is_function_scoped()
+                        let id = if kind.is_function_scoped()
                             || self.variables.scopes[current_scope]
                                 .kind
                                 .is_function_scope()
                         {
-                            let id = LookupValue::Function(self.function_symbol_stack.next_id());
-                            x.insert(id);
+                            let id = self.function_symbol_stack.push(SymbolStackValue {
+                                previously_declared: Some(lookup),
+                                symbol_id,
+                                ast_node,
+                            });
+                            LookupValue::Function(id)
                         } else {
-                            let id = LookupValue::Block(self.block_symbol_stack.next_id());
-                            x.insert(id);
-                        }
+                            let id = self.block_symbol_stack.push(SymbolStackValue {
+                                previously_declared: Some(lookup),
+                                symbol_id,
+                                ast_node,
+                            });
+                            LookupValue::Block(id)
+                        };
+                        entry.insert(id);
 
-                        let use_order = self.map_use(name, symbol_id);
+                        let use_order = self.map_use(ast_node, symbol_id);
                         let symbol = &mut self.variables.symbols[symbol_id];
                         symbol.kind = kind;
                         symbol.declared = Some(use_order);
@@ -297,9 +306,9 @@ impl VariablesBuilder<'_> {
                     {
                         // redeclaration, dissallowed for let like declarations.
                         // Return an error.
-                        return Err(self.redeclared(name, lookup));
+                        return Err(self.redeclared(ast_node, lookup));
                     } else {
-                        let use_order = self.map_use(name, collision);
+                        let use_order = self.map_use(ast_node, collision);
                         if initialized {
                             self.variables.symbols[collision]
                                 .defined
@@ -309,73 +318,72 @@ impl VariablesBuilder<'_> {
                     }
                 }
 
-                if kind.is_function_scoped()
+                let symbol_id = self.variables.symbols.next_id();
+                let lookup = if kind.is_function_scoped()
                     || self.variables.scopes[current_scope]
                         .kind
                         .is_function_scope()
                 {
-                    let id = LookupValue::Function(self.function_symbol_stack.next_id());
-                    x.insert(id);
+                    let id = self.function_symbol_stack.push(SymbolStackValue {
+                        previously_declared: Some(lookup),
+                        symbol_id,
+                        ast_node,
+                    });
+                    LookupValue::Function(id)
                 } else {
-                    let id = LookupValue::Block(self.block_symbol_stack.next_id());
-                    x.insert(id);
-                }
-                Some(lookup)
+                    let id = self.block_symbol_stack.push(SymbolStackValue {
+                        previously_declared: Some(lookup),
+                        symbol_id,
+                        ast_node,
+                    });
+                    LookupValue::Block(id)
+                };
+                entry.insert(lookup);
             }
-            Entry::Vacant(x) => {
-                if kind.is_function_scoped()
+            Entry::Vacant(entry) => {
+                let symbol_id = self.variables.symbols.next_id();
+                let lookup = if kind.is_function_scoped()
                     || self.variables.scopes[current_scope]
                         .kind
                         .is_function_scope()
                 {
-                    let id = LookupValue::Function(self.function_symbol_stack.next_id());
-                    x.insert(id);
+                    let stack_id = self.function_symbol_stack.push(SymbolStackValue {
+                        previously_declared: None,
+                        symbol_id,
+                        ast_node,
+                    });
+                    LookupValue::Function(stack_id)
                 } else {
-                    let id = LookupValue::Block(self.block_symbol_stack.next_id());
-                    x.insert(id);
-                }
-                None
+                    let stack_id = self.block_symbol_stack.push(SymbolStackValue {
+                        previously_declared: None,
+                        symbol_id,
+                        ast_node,
+                    });
+                    LookupValue::Block(stack_id)
+                };
+                entry.insert(lookup);
             }
         };
 
-        let res = self.variables.symbols.next_id();
-        let declared = self.map_use(name, res);
+        let symbol_id = self.variables.symbols.next_id();
+        let use_order = self.map_use(ast_node, symbol_id);
         self.variables.symbols.push(Symbol {
             ident,
             kind,
             captured: false,
-            declared: Some(declared),
-            defined: initialized.then_some(declared),
+            declared: Some(use_order),
+            defined: initialized.then_some(use_order),
             last_use: None,
             scope: current_scope,
         });
-
-        if kind.is_function_scoped()
-            || self.variables.scopes[current_scope]
-                .kind
-                .is_function_scope()
-        {
-            self.function_symbol_stack.push(SymbolStackValue {
-                previously_declared,
-                id: res,
-                ast: name,
-            });
-        } else {
-            self.block_symbol_stack.push(SymbolStackValue {
-                previously_declared,
-                id: res,
-                ast: name,
-            });
-        }
         self.variables.scopes[current_scope].num_declarations += 1;
-
-        Ok(res)
+        Ok(symbol_id)
     }
 
-    fn unresolved_symbol(&mut self, symbol: NodeId<ast::Symbol>) -> SymbolId {
+    fn unresolved_symbol(&mut self, ast_node: NodeId<ast::Symbol>) -> SymbolId {
         let scope = self.current_scope.unwrap();
-        let id = self.variables.symbols.push(Symbol {
-            ident: self.ast[symbol].name,
+        let symbol_id = self.variables.symbols.push(Symbol {
+            ident: self.ast[ast_node].name,
             captured: false,
             kind: Kind::Unresolved,
             declared: None,
@@ -383,33 +391,37 @@ impl VariablesBuilder<'_> {
             last_use: None,
             scope,
         });
-        self.map_use(symbol, id);
-        id
+        self.map_use(ast_node, symbol_id);
+        symbol_id
     }
 
-    pub fn load(&mut self, use_symbol: NodeId<ast::Symbol>) {
+    pub fn load(&mut self, ast_node: NodeId<ast::Symbol>) {
         let current_scope = self
             .current_scope
             .expect("tried to load a variable without a scope");
 
-        match self.lookup.entry(self.ast[use_symbol].name) {
-            Entry::Occupied(x) => match x.get() {
-                LookupValue::Block(x) => {
-                    let id = self.block_symbol_stack[*x].id;
-                    self.variables.symbols[id].last_use = Some(self.map_use(use_symbol, id));
+        match self.lookup.entry(self.ast[ast_node].name) {
+            Entry::Occupied(entry) => match *entry.get() {
+                LookupValue::Block(stack_id) => {
+                    let symbol_id = self.block_symbol_stack[stack_id].symbol_id;
+                    self.variables.symbols[symbol_id].last_use =
+                        Some(self.map_use(ast_node, symbol_id));
                 }
-                LookupValue::Function(x) => {
-                    let id = self.function_symbol_stack[*x].id;
-                    self.variables.symbols[id].last_use = Some(self.map_use(use_symbol, id));
+                LookupValue::Function(stack_id) => {
+                    let id = self.function_symbol_stack[stack_id].symbol_id;
+                    self.variables.symbols[id].last_use = Some(self.map_use(ast_node, id));
                 }
-                LookupValue::Unresolved(x) => {}
+                LookupValue::Unresolved(symbol_id) => {
+                    self.variables.symbols[symbol_id].last_use =
+                        Some(self.map_use(ast_node, symbol_id));
+                }
             },
-            Entry::Vacant(x) => {
-                let id = self.variables.symbols.next_id();
-                x.insert(LookupValue::Unresolved(id));
-                let first_use = self.map_use(use_symbol, id);
+            Entry::Vacant(entry) => {
+                let symbol_id = self.variables.symbols.next_id();
+                entry.insert(LookupValue::Unresolved(symbol_id));
+                let first_use = self.map_use(ast_node, symbol_id);
                 self.variables.symbols.push(Symbol {
-                    ident: self.ast[use_symbol].name,
+                    ident: self.ast[ast_node].name,
                     captured: false,
                     kind: Kind::Unresolved,
                     declared: None,
@@ -421,33 +433,37 @@ impl VariablesBuilder<'_> {
         }
     }
 
-    pub fn store(&mut self, symbol: NodeId<ast::Symbol>, at: NodeId<ast::Expr>) {
+    pub fn store(&mut self, ast_node: NodeId<ast::Symbol>) {
         let current_scope = self
             .current_scope
             .expect("tried to load a variable without a scope");
 
-        match self.lookup.entry(self.ast[symbol].name) {
-            Entry::Occupied(x) => match *x.get() {
-                LookupValue::Block(x) => {
-                    let id = self.block_symbol_stack[x].id;
-                    let use_order = self.map_use(symbol, id);
+        match self.lookup.entry(self.ast[ast_node].name) {
+            Entry::Occupied(entry) => match *entry.get() {
+                LookupValue::Block(stack_id) => {
+                    let id = self.block_symbol_stack[stack_id].symbol_id;
+                    let use_order = self.map_use(ast_node, id);
                     self.variables.symbols[id].defined.get_or_insert(use_order);
                 }
-                LookupValue::Function(x) => {
-                    let id = self.function_symbol_stack[x].id;
-                    let use_order = self.map_use(symbol, id);
-                    self.variables.symbols[id].defined.get_or_insert(use_order);
+                LookupValue::Function(stack_id) => {
+                    let symbol_id = self.function_symbol_stack[stack_id].symbol_id;
+                    let use_order = self.map_use(ast_node, symbol_id);
+                    self.variables.symbols[symbol_id]
+                        .defined
+                        .get_or_insert(use_order);
                 }
-                LookupValue::Unresolved(x) => {
-                    let use_order = self.map_use(symbol, x);
-                    self.variables.symbols[x].defined.get_or_insert(use_order);
+                LookupValue::Unresolved(symbol_id) => {
+                    let use_order = self.map_use(ast_node, symbol_id);
+                    self.variables.symbols[symbol_id]
+                        .defined
+                        .get_or_insert(use_order);
                 }
             },
             Entry::Vacant(x) => {
                 let id = self.variables.symbols.next_id();
-                let defined = self.map_use(symbol, id);
+                let defined = self.map_use(ast_node, id);
                 self.variables.symbols.push(Symbol {
-                    ident: self.ast[symbol].name,
+                    ident: self.ast[ast_node].name,
                     captured: false,
                     kind: Kind::Unresolved,
                     declared: None,

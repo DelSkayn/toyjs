@@ -353,9 +353,6 @@ macro_rules! t {
     ("//") => {
         $crate::TokenKind::Comment
     };
-    (" ") => {
-        $crate::TokenKind::Whitespace
-    };
     ("``") => {
         $crate::TokenKind::Template($crate::Template::NoSubstitute)
     };
@@ -367,5 +364,8 @@ macro_rules! t {
     };
     ("} `") => {
         $crate::TokenKind::Template($crate::Template::End)
+    };
+    ("eof") => {
+        $crate::TokenKind::Eof
     };
 }
