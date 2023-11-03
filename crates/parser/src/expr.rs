@@ -5,7 +5,7 @@ use ast::{
 use common::span::Span;
 use token::{t, TokenKind};
 
-use crate::{dbg_tree, expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
+use crate::{expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {

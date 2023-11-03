@@ -31,6 +31,7 @@ impl From<fmt::Error> for Error {
 impl Source {
     pub fn render_span_location<W: fmt::Write>(&self, w: &mut W, span: Span) -> Result<(), Error> {
         let location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
+        write!(w, "@[")?;
 
         if let Some(ref name) = self.name {
             write!(w, "{}:", name)?
@@ -44,6 +45,7 @@ impl Source {
             location.start.line + 1,
             location.start.column + 1
         )?;
+        write!(w, "]")?;
 
         Ok(())
     }
@@ -87,7 +89,9 @@ impl Source {
         for _ in 0..line_number_length {
             write!(w, " ")?
         }
-        writeln!(w, "  |")?;
+        write!(w, "  ╭")?;
+        self.render_span_location(w, span)?;
+        writeln!(w)?;
 
         if line_length > MAX_LINE_CHARS {
             // The length of the line is to long
@@ -110,7 +114,7 @@ impl Source {
                 .enumerate()
                 .for_each(|(idx, c)| buffer[idx] = c);
 
-            write!(w, " {} | ...", line_name)?;
+            write!(w, " {} │ ...", line_name)?;
             for i in (0..front).rev() {
                 write!(w, "{}", buffer[i])?;
             }
@@ -128,26 +132,26 @@ impl Source {
                 write!(w, " ")?
             }
             // write the next line with the pointing part
-            write!(w, "  |    ")?;
+            write!(w, "  ╰────")?;
             for _ in 0..front {
-                write!(w, " ")?;
+                write!(w, "─")?;
             }
             for _ in 0..token_lenght {
                 write!(w, "^")?;
             }
         } else {
             // Write initial `2 | foo.bar`
-            write!(w, " {} | ", line_name)?;
+            write!(w, " {} │ ", line_name)?;
             writeln!(w, "{}", line)?;
 
             // Write `  | ^ invalid identifier`
             for _ in 0..line_number_length {
                 write!(w, " ")?
             }
-            write!(w, "  | ")?;
+            write!(w, "  ╰─")?;
 
             for _ in 0..(location.start.column - offset as u32) {
-                write!(w, " ")?
+                write!(w, "─")?
             }
 
             for _ in 0..token_lenght {

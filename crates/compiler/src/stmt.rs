@@ -61,7 +61,7 @@ impl<'a> Compiler<'a> {
                     self.instructions.push(bc::Instruction::Ret { src: res });
                     Ok(None)
                 } else {
-                    self.instructions.push(bc::Instruction::RetUndefind {});
+                    self.instructions.push(bc::Instruction::RetUndefined {});
                     Ok(None)
                 }
             }

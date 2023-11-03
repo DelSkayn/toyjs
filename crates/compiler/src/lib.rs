@@ -155,7 +155,7 @@ impl<'a> Compiler<'a> {
         if let Some(x) = expr {
             self.push(Instruction::Ret { src: x })?;
         } else {
-            self.push(Instruction::RetUndefind {})?;
+            self.push(Instruction::RetUndefined {})?;
         }
 
         self.into_bc()

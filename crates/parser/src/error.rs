@@ -69,6 +69,7 @@ impl Error {
         #[cfg(feature = "trace_error")]
         writeln!(w, "{}", self.trace)?;
 
+        writeln!(w)?;
         match self.kind {
             ErrorKind::UnexpectedEnd {
                 ref expected,
@@ -85,9 +86,6 @@ impl Error {
                         write!(w, ", expected: {:?}", &expected[0])?;
                     }
                 }
-                writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
@@ -112,9 +110,6 @@ impl Error {
                     }
                 }
                 writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
-                writeln!(w)?;
                 source.render_string_block(
                     w,
                     self.origin,
@@ -127,9 +122,6 @@ impl Error {
             } => {
                 write!(w, "token `{:?}` is not allowed in this context", found)?;
                 writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
-                writeln!(w)?;
                 source.render_string_block(
                     w,
                     self.origin,
@@ -139,32 +131,20 @@ impl Error {
             ErrorKind::NotAssignable => {
                 write!(w, "left hand side expression is not assignable")?;
                 writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
-                writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidDestructuringAssigment => {
                 write!(w, "invalid destructuring assignment target")?;
-                writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidToken => {
                 write!(w, "invalid token")?;
                 writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
-                writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::CoveredObjectLiteral => {
                 write!(w, "invalid object literal")?;
-                writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
@@ -178,10 +158,7 @@ impl Error {
                 )?;
             }
             ErrorKind::ConstNotInitialized => {
-                write!(w, "Const variable not initialized")?;
-                writeln!(w)?;
-                write!(w, " --> ")?;
-                source.render_span_location(w, self.origin)?;
+                write!(w, "const variable not initialized")?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,

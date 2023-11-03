@@ -26,6 +26,16 @@ instructions! {
     /// Load a bytecode function into dst
     LoadFunction{ dst: Reg, cons: FunctionId },
 
+    /// Create a new object and load it into register reg.
+    NewObject{ dst: Reg},
+    /// Create a new array like object and load it into register reg.
+    NewArray{ dst: Reg},
+
+    /// `dst = obj[key]`, or index into obj with key and store into dst
+    IndexLoad{ dst: Reg, obj: Reg, key: Reg },
+    /// `obj[key] = src` or set the value of obj at key to the value in src.
+    IndexStore{ obj: Reg, key: Reg, src: Reg },
+
     /// Copy the value from src into dst.
     Move{ dst: Reg , src: Reg},
     /// Copy the value from src into dst allowing reaching far furter then regular move.
@@ -116,7 +126,7 @@ instructions! {
     Catch{ dst: Reg },
 
     /// Return from the current function with a undefined value.
-    RetUndefind{},
+    RetUndefined{},
     /// Return from the current function with a the value in the src register.
     Ret{ src: Reg },
 
