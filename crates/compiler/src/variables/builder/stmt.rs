@@ -8,7 +8,7 @@ use crate::{
     Result,
 };
 
-use super::VariablesBuilder;
+use super::{loop_stack::LoopPoint, VariablesBuilder};
 
 #[derive(Clone, Copy)]
 pub enum BindingKind {
@@ -39,7 +39,7 @@ impl<'a> VariablesBuilder<'a> {
             | ast::Stmt::Continue { .. }
             | ast::Stmt::Debugger => {}
             ast::Stmt::Block { list } => {
-                self.push_scope(ScopeKind::Block(stmt))?;
+                self.push_scope(ScopeKind::Block)?;
                 self.resolve_stmts(list)?;
                 self.pop_scope()?;
             }
@@ -75,8 +75,12 @@ impl<'a> VariablesBuilder<'a> {
                 self.resolve_exprs(expr)?;
             }
             ast::Stmt::DoWhile { body, cond } => {
+                self.push_scope(ScopeKind::Block)?;
+                let loop_point = self.mark_loop();
                 self.resolve_stmt(body)?;
                 self.resolve_exprs(cond)?;
+                self.finish_loop(loop_point);
+                self.pop_scope()?;
             }
             ast::Stmt::If { cond, body, r#else } => {
                 self.resolve_exprs(cond)?;
@@ -86,13 +90,18 @@ impl<'a> VariablesBuilder<'a> {
                 }
             }
             ast::Stmt::While { cond, body } => {
+                self.push_scope(ScopeKind::Block)?;
+                let loop_point = self.mark_loop();
                 self.resolve_exprs(cond)?;
                 self.resolve_stmt(body)?;
+                self.finish_loop(loop_point);
+                self.pop_scope()?;
             }
             ast::Stmt::For { head, body } => {
-                self.push_scope(ScopeKind::Block(stmt))?;
-                self.resolve_for_head(head)?;
+                self.push_scope(ScopeKind::Block)?;
+                let loop_point = self.resolve_for_head_pre(head)?;
                 self.resolve_stmt(body)?;
+                self.resolve_for_head_post(head, loop_point)?;
                 self.pop_scope()?;
             }
             ast::Stmt::Switch {
@@ -100,7 +109,7 @@ impl<'a> VariablesBuilder<'a> {
                 cases,
                 default,
             } => {
-                self.push_scope(ScopeKind::Block(stmt))?;
+                self.push_scope(ScopeKind::Block)?;
                 self.resolve_exprs(cond)?;
                 let mut head: Option<ListId<ast::CaseItem>> = Option::from(cases);
                 while let Some(list) = head {
@@ -125,7 +134,7 @@ impl<'a> VariablesBuilder<'a> {
             } => {
                 self.resolve_stmts(block)?;
                 if let Some(catch) = catch {
-                    self.push_scope(ScopeKind::Block(stmt))?;
+                    self.push_scope(ScopeKind::Block)?;
                     if let Some(binding) = self.ast[catch].binding {
                         self.resolve_decl(
                             BindingKind::Decl {
@@ -139,7 +148,7 @@ impl<'a> VariablesBuilder<'a> {
                     self.pop_scope()?;
                 }
                 if let Some(finally) = finally {
-                    self.push_scope(ScopeKind::Block(stmt))?;
+                    self.push_scope(ScopeKind::Block)?;
                     self.resolve_stmts(finally)?;
                     self.pop_scope()?;
                 }
@@ -159,7 +168,7 @@ impl<'a> VariablesBuilder<'a> {
         Ok(())
     }
 
-    pub fn resolve_for_head(&mut self, head: NodeId<ForLoopHead>) -> Result<()> {
+    pub fn resolve_for_head_pre(&mut self, head: NodeId<ForLoopHead>) -> Result<LoopPoint> {
         match self.ast[head] {
             ForLoopHead::CStyle { decl, cond, post } => {
                 match decl {
@@ -189,23 +198,26 @@ impl<'a> VariablesBuilder<'a> {
                     ast::CstyleDecl::Empty => {}
                 }
 
+                self.push_scope(ScopeKind::Block)?;
+                let loop_point = self.mark_loop();
                 if let Some(cond) = cond {
                     self.resolve_exprs(cond)?;
                 }
-                if let Some(post) = post {
-                    self.resolve_exprs(post)?;
-                }
+                Ok(loop_point)
             }
             ForLoopHead::In { decl, expr } => match decl {
                 ast::InOfDecl::Expr(x) => {
                     self.resolve_expr(x)?;
                     self.resolve_exprs(expr)?;
+                    self.push_scope(ScopeKind::Block)?;
+                    Ok(self.mark_loop())
                 }
                 ast::InOfDecl::Decl { kind, binding } => {
-                    let mut node = expr;
-                    while let Some(x) = self.ast[node].next {
-                        node = x;
-                    }
+                    self.resolve_exprs(expr)?;
+
+                    self.push_scope(ScopeKind::Block)?;
+                    let loop_point = self.mark_loop();
+
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: kind.into(),
@@ -213,15 +225,22 @@ impl<'a> VariablesBuilder<'a> {
                         },
                         binding,
                     )?;
-                    self.resolve_exprs(expr)?;
+
+                    Ok(loop_point)
                 }
             },
             ForLoopHead::Of { decl, expr } => match decl {
                 ast::InOfDecl::Expr(x) => {
                     self.resolve_expr(x)?;
                     self.resolve_expr(expr)?;
+                    self.push_scope(ScopeKind::Block)?;
+                    Ok(self.mark_loop())
                 }
                 ast::InOfDecl::Decl { kind, binding } => {
+                    self.resolve_expr(expr)?;
+
+                    self.push_scope(ScopeKind::Block)?;
+                    let loop_point = self.mark_loop();
                     self.resolve_decl(
                         BindingKind::Decl {
                             kind: kind.into(),
@@ -229,10 +248,30 @@ impl<'a> VariablesBuilder<'a> {
                         },
                         binding,
                     )?;
-                    self.resolve_expr(expr)?;
+
+                    Ok(loop_point)
                 }
             },
         }
+    }
+
+    pub fn resolve_for_head_post(
+        &mut self,
+        head: NodeId<ForLoopHead>,
+        loop_point: LoopPoint,
+    ) -> Result<()> {
+        // TODO: make sure that condition variables are still accessable after loop.
+        match self.ast[head] {
+            ForLoopHead::CStyle { post, .. } => {
+                if let Some(post) = post {
+                    self.resolve_exprs(post)?;
+                }
+            }
+
+            ForLoopHead::In { .. } | ForLoopHead::Of { .. } => {}
+        }
+        self.finish_loop(loop_point);
+        self.pop_scope();
         Ok(())
     }
 
@@ -511,7 +550,7 @@ impl<'a> VariablesBuilder<'a> {
             let item = self.ast[c].item;
             match self.ast[item] {
                 ast::ClassMember::StaticBlock { stmts } => {
-                    self.push_scope(ScopeKind::Static(item))?;
+                    self.push_scope(ScopeKind::Static)?;
                     self.resolve_stmts(stmts)?;
                     self.pop_scope()?;
                 }

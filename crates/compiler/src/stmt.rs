@@ -19,21 +19,14 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
-            ast::Stmt::VariableDecl { mut decl, .. } => {
-                let res = None;
+            ast::Stmt::VariableDecl { mut decl, kind } => {
                 loop {
                     let item = self.ast[decl].item;
-                    if let Some(x) = self.ast[item].initializer {
-                        let decl = self.ast[item].decl;
-                        //let reg = self.compile_expr(x, x)?;
-                        //self.registers.store(&self.ast, ident);
-                        //res = Some(reg);
-                        todo!()
-                    };
+                    self.compile_variable_decl(kind, item)?;
                     let Some(x) = self.ast[decl].next else { break };
                     decl = x
                 }
-                Ok(res)
+                Ok(None)
             }
             ast::Stmt::Empty => Ok(None),
             ast::Stmt::Expr { expr } => self.compile_exprs(None, expr).map(Some),
@@ -71,6 +64,4 @@ impl<'a> Compiler<'a> {
             ast::Stmt::Debugger => Ok(None),
         }
     }
-
-    fn compile_decl(&mut self, decl: NodeId<ast::IdentOrPattern>, from: Option<Reg>) {}
 }

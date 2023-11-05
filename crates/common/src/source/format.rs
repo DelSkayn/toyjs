@@ -31,7 +31,7 @@ impl From<fmt::Error> for Error {
 impl Source {
     pub fn render_span_location<W: fmt::Write>(&self, w: &mut W, span: Span) -> Result<(), Error> {
         let location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
-        write!(w, "@[")?;
+        write!(w, "┤")?;
 
         if let Some(ref name) = self.name {
             write!(w, "{}:", name)?
@@ -45,7 +45,7 @@ impl Source {
             location.start.line + 1,
             location.start.column + 1
         )?;
-        write!(w, "]")?;
+        write!(w, "│")?;
 
         Ok(())
     }
@@ -89,7 +89,7 @@ impl Source {
         for _ in 0..line_number_length {
             write!(w, " ")?
         }
-        write!(w, "  ╭")?;
+        write!(w, "  ╭─")?;
         self.render_span_location(w, span)?;
         writeln!(w)?;
 

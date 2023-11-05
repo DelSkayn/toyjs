@@ -2,6 +2,7 @@ use ast::{
     CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern, InOfDecl,
     List, ListHead, ListId, NodeId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
+use common::span::Span;
 use token::t;
 
 use crate::{
@@ -218,23 +219,48 @@ impl<'a> Parser<'a> {
     /// ```
     pub fn parse_c_style_decl(
         &mut self,
+        kind: VariableKind,
         decl: NodeId<IdentOrPattern>,
+        decl_span: Span,
     ) -> Result<ListId<VariableDecl>> {
         let initializer = self
             .eat(t!("="))
             .then(|| self.parse_assignment_expr())
             .transpose()?;
+
+        if initializer.is_none() {
+            if kind == VariableKind::Const {
+                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+            }
+            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+            }
+        }
+
         let decl = self.ast.push_node(VariableDecl { decl, initializer });
 
         let head = self.ast.append_list(decl, None);
         let mut prev = head;
         while self.eat(t!(",")) {
+            let start = *self.last_span();
             let decl = self.parse_ident_or_pattern()?;
+            let decl_span = start.covers(self.last_span());
             let initializer = self
                 .eat(t!("="))
                 .then(|| self.parse_assignment_expr())
                 .transpose()?;
+
+            if initializer.is_none() {
+                if kind == VariableKind::Const {
+                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+                }
+                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+                }
+            }
+
             let decl = self.ast.push_node(VariableDecl { decl, initializer });
+
             prev = self.ast.append_list(decl, Some(prev));
         }
         Ok(head)
@@ -279,11 +305,20 @@ impl<'a> Parser<'a> {
                     _ => unreachable!(),
                 };
                 self.next();
+                self.peek(); // peek to advance the last span to the next token.
+                let start = *self.last_span();
                 let binding = self.parse_ident_or_pattern()?;
+                let binding_span = start.covers(self.last_span());
                 if let t!("=") | t!(",") = self.peek_kind() {
-                    let decl = self.parse_c_style_decl(binding)?;
+                    let decl = self.parse_c_style_decl(kind, binding, binding_span)?;
                     return self.parse_c_style_for(CstyleDecl::Decl { kind, decl });
                 } else {
+                    if let IdentOrPattern::Pattern(_) = self.ast[binding] {
+                        return Err(Error::new(
+                            ErrorKind::DestructringNotInitalized,
+                            binding_span,
+                        ));
+                    }
                     InOfDecl::Decl { kind, binding }
                 }
             }
@@ -525,8 +560,13 @@ impl<'a> Parser<'a> {
             .then(|| self.parse_assignment_expr())
             .transpose()?;
 
-        if kind == VariableKind::Const && initializer.is_none() {
-            return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+        if initializer.is_none() {
+            if kind == VariableKind::Const {
+                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+            }
+            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+            }
         }
 
         let decl = self.ast.push_node(VariableDecl { decl, initializer });
@@ -543,8 +583,13 @@ impl<'a> Parser<'a> {
                 .then(|| self.parse_assignment_expr())
                 .transpose()?;
 
-            if kind == VariableKind::Const && initializer.is_none() {
-                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+            if initializer.is_none() {
+                if kind == VariableKind::Const {
+                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+                }
+                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+                }
             }
 
             let decl = self.ast.push_node(VariableDecl { decl, initializer });

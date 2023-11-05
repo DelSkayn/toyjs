@@ -2,6 +2,7 @@ use common::{number::NumberId, span::Span, string::StringId};
 use core::fmt;
 
 mod ast;
+mod visitor;
 pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList, NodeListId};
 
 mod render;
@@ -826,6 +827,13 @@ pub enum AssignOp {
     BitwiseAnd,
     BitwiseOr,
     BitwiseXor,
+}
+
+impl AssignOp {
+    /// Returns true if the operation requires a load.
+    pub fn loads(self) -> bool {
+        self != AssignOp::Assign
+    }
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]

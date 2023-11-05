@@ -5,11 +5,24 @@ mod builder;
 pub use builder::VariablesBuilder;
 mod render;
 
-key!(pub struct ScopeId(u32));
+key!(
+#[derive(Ord,PartialOrd)]
+pub struct ScopeId(u32)
+);
 key!(pub struct SymbolId(u32));
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SymbolUseOrder(pub u32);
+
+impl SymbolUseOrder {
+    pub fn first() -> SymbolUseOrder {
+        SymbolUseOrder(0)
+    }
+
+    pub fn last() -> SymbolUseOrder {
+        SymbolUseOrder(u32::MAX)
+    }
+}
 
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 pub enum Kind {
@@ -87,8 +100,8 @@ pub struct Scope {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScopeKind {
     Function(NodeId<ast::Function>),
-    Block(NodeId<ast::Stmt>),
-    Static(NodeId<ast::ClassMember>),
+    Block,
+    Static,
     Global { strict: bool },
 }
 

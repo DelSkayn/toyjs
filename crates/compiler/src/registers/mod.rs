@@ -2,10 +2,9 @@ use std::num::NonZeroU32;
 
 use crate::{
     variables::{SymbolUseOrder, Variables},
-    Limits, Result,
+    Error, Limits, Result,
 };
-use ast::NodeId;
-use bc::{limits::MAX_REGISTERS, FarReg, Reg};
+use bc::{limits::MAX_REGISTERS, Reg};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegisterState {
@@ -15,101 +14,98 @@ pub enum RegisterState {
 }
 
 pub struct Registers {
-    state: [RegisterState; MAX_REGISTERS],
+    registers_used: u128,
+    reservation: [SymbolUseOrder; MAX_REGISTERS],
     variables: Variables,
     max_used: Reg,
-    last_use: SymbolUseOrder,
-}
-
-/// An enum which encodes where an expression should be placed.
-pub enum Placement {
-    // The expression is a intermediate result and muste be valid until atleast the given id.
-    Temporary(NodeId<ast::Expr>),
-    // The expression is a new value for a variable, it must be stored in the variable.
-    Variable(()),
-}
-
-pub enum Read {
-    // The value is available in register.
-    Available(Reg),
-    // The value must be popped into the given register by emitting times pop instructions into the
-    // to register.
-    Pop { to: Reg, times: NonZeroU32 },
-    // The value is spilled and not at the top of the stack,
-    Far { from: FarReg, to: Reg },
-}
-
-pub enum Write {
-    // A register is readily available
-    Available(Reg),
-    // A register must be spilled to make place.
-    Spil(Reg),
+    time: SymbolUseOrder,
+    earliest_reservation: SymbolUseOrder,
 }
 
 impl Registers {
     pub fn new(variables: Variables) -> Self {
         Registers {
-            state: [RegisterState::Free; MAX_REGISTERS],
+            registers_used: 0u128,
+            reservation: [SymbolUseOrder(0); MAX_REGISTERS],
             variables,
             max_used: Reg::this_reg(),
-            last_use: SymbolUseOrder(0),
+            time: SymbolUseOrder::first(),
+            earliest_reservation: SymbolUseOrder::last(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.state.fill(RegisterState::Free);
+        self.registers_used = 0;
         self.max_used = Reg::this_reg()
     }
 
-    pub fn alloc_tmp(&mut self) -> Result<Reg> {
-        let free = self.state.iter().position(|x| match *x {
-            RegisterState::Free => true,
-            RegisterState::Tmp => false,
-            RegisterState::Symbol(x) => x < self.last_use,
-        });
-
-        if let Some(free) = free {
-            self.state[free] = RegisterState::Tmp;
-            let free = free as i8;
-            self.max_used = self.max_used.max(Reg(free));
-            return Ok(Reg(free));
-        }
-
-        Err(crate::Error::ExceededLimits(Limits::Registers))
+    pub fn advance(&mut self, new_use: SymbolUseOrder) {
+        debug_assert!(self.time <= new_use);
+        self.time = new_use;
     }
 
-    pub fn alloc_symbol(&mut self, symbol: NodeId<ast::Symbol>) -> Result<Reg> {
-        let free = self.state.iter().position(|x| match *x {
-            RegisterState::Free => true,
-            RegisterState::Tmp => false,
-            RegisterState::Symbol(x) => x < self.last_use,
-        });
-
-        let symbol_id = self.variables.use_to_symbol[symbol].id.unwrap();
-        //self.variables.symbols[symbol_id].last_use
-        //
-        to_do!()
-
-        /*
-        if let Some(free) = free {
-            self.state[free] = RegisterState::Symbol(until);
-            let free = free as i8;
-            self.max_used = self.max_used.max(Reg(free));
-            return Ok(Reg(free));
+    /// Evict registers which have outlifed there reservation.
+    pub fn evict(&mut self) {
+        if self.earliest_reservation > self.time {
+            // no eviction required.
+            return;
         }
 
-        Err(crate::Error::ExceededLimits(Limits::Registers))
-            */
+        self.earliest_reservation = SymbolUseOrder::last();
+        let mut register_map = self.registers_used;
+        // a bit scan, might actually be slower then a normal loop.
+        // TODO: profile
+        loop {
+            let idx = register_map.leading_zeros();
+            let cur = self.reservation[idx as usize];
+            if cur <= self.time {
+                self.registers_used &= !(1 << idx);
+            } else {
+                self.earliest_reservation = cur.min(self.earliest_reservation);
+            }
+            register_map &= register_map - 1;
+            if register_map == 0 {
+                break;
+            }
+        }
+    }
+
+    pub fn next_free(&mut self) -> Result<Reg> {
+        self.evict();
+
+        let available = self.registers_used.leading_ones();
+        if available == 128 {
+            return Err(Error::ExceededLimits(Limits::Registers));
+        }
+        Ok(Reg(available as i8))
+    }
+
+    pub fn reserve_tmp(&mut self, reg: Reg) {
+        debug_assert_eq!(self.registers_used & (1 << reg.0), 0);
+        self.registers_used |= 1 << reg.0;
+        self.reservation[reg.0 as usize] = SymbolUseOrder::last();
+    }
+
+    pub fn alloc_tmp(&mut self) -> Result<Reg> {
+        let reg = self.next_free()?;
+        self.reserve_tmp(reg);
+        Ok(reg)
     }
 
     pub fn free_tmp(&mut self, reg: Reg) {
-        if self.state[reg.0 as usize] == RegisterState::Tmp {
-            self.state[reg.0 as usize] = RegisterState::Free;
-        }
+        debug_assert_eq!(self.reservation[reg.0 as usize], SymbolUseOrder::last());
+        self.registers_used &= !(1 << reg.0);
     }
 
-    pub fn free(&mut self, reg: Reg) {
-        debug_assert_ne!(self.state[reg.0 as usize], RegisterState::Free);
-        self.state[reg.0 as usize] = RegisterState::Free;
+    pub fn reserve_until(&mut self, reg: Reg, until: SymbolUseOrder) {
+        debug_assert_eq!(self.registers_used & (1 << reg.0), 0);
+        self.registers_used |= 1 << reg.0;
+        self.reservation[reg.0 as usize] = until;
+    }
+
+    pub fn alloc_until(&mut self, until: SymbolUseOrder) -> Result<Reg> {
+        let reg = self.next_free()?;
+        self.reserve_until(reg, until);
+        Ok(reg)
     }
 }

@@ -40,8 +40,8 @@ impl RenderVariables<'_> {
                     }
                 }
             }
-            super::ScopeKind::Block(_) => writeln!(f, "{:indent$}> BLOCK", "")?,
-            super::ScopeKind::Static(_) => writeln!(f, "{:indent$}> STATIC INIT", "")?,
+            super::ScopeKind::Block => writeln!(f, "{:indent$}> BLOCK", "")?,
+            super::ScopeKind::Static => writeln!(f, "{:indent$}> STATIC INIT", "")?,
             super::ScopeKind::Global { .. } => writeln!(f, "{:indent$}> GLOBAL", "")?,
         }
         indent += 2;
@@ -49,8 +49,9 @@ impl RenderVariables<'_> {
             let ident = self.variables.symbols()[s].ident;
             writeln!(
                 f,
-                "{:indent$}- {} KIND: {:?} FROM {} TO {}",
+                "{:indent$}- {}={} KIND: {:?} FROM {} TO {}",
                 "",
+                s.0,
                 self.interners.strings.get(ident).unwrap(),
                 self.variables.symbols()[s].kind,
                 self.variables.symbols()[s]

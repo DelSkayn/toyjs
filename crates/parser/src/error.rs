@@ -32,6 +32,7 @@ pub enum ErrorKind {
     InvalidToken,
     CoveredObjectLiteral,
     ConstNotInitialized,
+    DestructringNotInitalized,
 }
 
 /// A parser error.
@@ -86,7 +87,7 @@ impl Error {
                         write!(w, ", expected: {:?}", &expected[0])?;
                     }
                 }
-                writeln!(w)?;
+                writeln!(w, ".")?;
                 source.render_string_block(
                     w,
                     self.origin,
@@ -98,7 +99,7 @@ impl Error {
                 ref found,
                 ref message,
             } => {
-                write!(w, "unexpected token `{:?}`", found)?;
+                write!(w, "Unexpected token `{:?}`", found)?;
                 if !expected.is_empty() {
                     if expected.len() > 1 {
                         write!(w, ", expected one of:")?;
@@ -109,7 +110,7 @@ impl Error {
                         write!(w, ", expected: {:?}", &expected[0])?;
                     }
                 }
-                writeln!(w)?;
+                writeln!(w, ".")?;
                 source.render_string_block(
                     w,
                     self.origin,
@@ -120,7 +121,7 @@ impl Error {
                 ref found,
                 ref message,
             } => {
-                write!(w, "token `{:?}` is not allowed in this context", found)?;
+                write!(w, "Token `{:?}` is not allowed in this context", found)?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
@@ -129,22 +130,22 @@ impl Error {
                 )?;
             }
             ErrorKind::NotAssignable => {
-                write!(w, "left hand side expression is not assignable")?;
+                write!(w, "Left hand side expression is not assignable.")?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidDestructuringAssigment => {
-                write!(w, "invalid destructuring assignment target")?;
+                write!(w, "Invalid destructuring assignment target.")?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::InvalidToken => {
-                write!(w, "invalid token")?;
+                write!(w, "Invalid token.")?;
                 writeln!(w)?;
                 source.render_string_block(w, self.origin, None)?;
             }
             ErrorKind::CoveredObjectLiteral => {
-                write!(w, "invalid object literal")?;
+                write!(w, "Invalid object literal.")?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,
@@ -158,7 +159,16 @@ impl Error {
                 )?;
             }
             ErrorKind::ConstNotInitialized => {
-                write!(w, "const variable not initialized")?;
+                write!(w, "Const declaration not initialized.")?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
+                )?;
+            }
+            ErrorKind::DestructringNotInitalized => {
+                write!(w, "Destructuring declaration not initialized.")?;
                 writeln!(w)?;
                 source.render_string_block(
                     w,

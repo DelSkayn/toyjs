@@ -19,8 +19,11 @@ impl<'a> VariablesBuilder<'a> {
     pub(super) fn resolve_expr(&mut self, expr: NodeId<ast::Expr>) -> Result<()> {
         match self.ast[expr] {
             ast::Expr::Binary { left, right, op } => {
-                if let BinaryOp::Assign(_) = op {
-                    self.resolve_assign_expr(left, right)?
+                if let BinaryOp::Assign(op) = op {
+                    self.resolve_assign_expr(left, right)?;
+                    if op.loads() {
+                        self.resolve_expr(left)?;
+                    }
                 } else {
                     self.resolve_expr(left)?;
                 }
@@ -55,7 +58,7 @@ impl<'a> VariablesBuilder<'a> {
                 | ast::PrimeExpr::Object(ast::ObjectLiteral::Empty)
                 | ast::PrimeExpr::Super => {}
                 ast::PrimeExpr::Ident(name) => {
-                    self.load(name);
+                    self.load(dbg!(name));
                 }
                 ast::PrimeExpr::Function(func) => self.resolve_func(func)?,
                 ast::PrimeExpr::Class(class) => self.resolve_class(class)?,

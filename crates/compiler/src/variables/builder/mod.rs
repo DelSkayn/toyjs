@@ -35,11 +35,14 @@ use common::{
 
 use crate::{Error, Limits, Result};
 
+use self::loop_stack::{LoopPoint, LoopStack};
+
 use super::{
     Kind, Scope, ScopeId, ScopeKind, Symbol, SymbolId, SymbolUseOrder, UseInfo, Variables,
 };
 
 mod expr;
+mod loop_stack;
 mod stmt;
 
 key!(pub struct FunctionSymbolStackId(u32));
@@ -73,6 +76,8 @@ pub struct VariablesBuilder<'a> {
     function_symbol_stack: KeyedVec<FunctionSymbolStackId, SymbolStackValue>,
     block_symbol_stack: KeyedVec<BlockSymbolStackId, SymbolStackValue>,
     current_scope: Option<ScopeId>,
+    last_function_scope: Option<ScopeId>,
+    loop_stack: LoopStack,
     /// Maps a name to an index into the symbol stack.
     lookup: HashMap<StringId, LookupValue>,
     next_use_id: u32,
@@ -87,6 +92,8 @@ impl<'a> VariablesBuilder<'a> {
             block_symbol_stack: KeyedVec::new(),
             function_symbol_stack: KeyedVec::new(),
             current_scope: None,
+            last_function_scope: None,
+            loop_stack: LoopStack::new(),
             lookup: HashMap::default(),
             next_use_id: 0,
         }
@@ -138,6 +145,9 @@ impl VariablesBuilder<'_> {
 
         self.scope_stack.push(id);
         self.current_scope = Some(id);
+        if kind.is_function_scope() {
+            self.last_function_scope = Some(id);
+        }
         Ok(id)
     }
 
@@ -196,8 +206,14 @@ impl VariablesBuilder<'_> {
             }
         }
 
+        // set new function scope.
+        let current_scope = &self.variables.scopes[current_scope_id];
+        if current_scope.kind.is_function_scope() {
+            self.last_function_scope = current_scope.parent.map(|x| self.variables.function_of(x));
+        }
+
         // set new current scope.
-        self.current_scope = self.variables.scopes[current_scope_id].parent;
+        self.current_scope = current_scope.parent;
         Ok(current_scope_id)
     }
 
@@ -400,21 +416,11 @@ impl VariablesBuilder<'_> {
             .current_scope
             .expect("tried to load a variable without a scope");
 
-        match self.lookup.entry(self.ast[ast_node].name) {
+        let id = match self.lookup.entry(self.ast[ast_node].name) {
             Entry::Occupied(entry) => match *entry.get() {
-                LookupValue::Block(stack_id) => {
-                    let symbol_id = self.block_symbol_stack[stack_id].symbol_id;
-                    self.variables.symbols[symbol_id].last_use =
-                        Some(self.map_use(ast_node, symbol_id));
-                }
-                LookupValue::Function(stack_id) => {
-                    let id = self.function_symbol_stack[stack_id].symbol_id;
-                    self.variables.symbols[id].last_use = Some(self.map_use(ast_node, id));
-                }
-                LookupValue::Unresolved(symbol_id) => {
-                    self.variables.symbols[symbol_id].last_use =
-                        Some(self.map_use(ast_node, symbol_id));
-                }
+                LookupValue::Block(stack_id) => self.block_symbol_stack[stack_id].symbol_id,
+                LookupValue::Function(stack_id) => self.function_symbol_stack[stack_id].symbol_id,
+                LookupValue::Unresolved(symbol_id) => symbol_id,
             },
             Entry::Vacant(entry) => {
                 let symbol_id = self.variables.symbols.next_id();
@@ -429,8 +435,17 @@ impl VariablesBuilder<'_> {
                     last_use: Some(first_use),
                     scope: current_scope,
                 });
+                return;
             }
+        };
+        let r#use = self.map_use(ast_node, id);
+        let symbol = &mut self.variables.symbols[id];
+        // Used across a function boundery.
+        if symbol.scope < self.last_function_scope.unwrap() {
+            symbol.captured = true;
         }
+        symbol.last_use = Some(r#use);
+        self.loop_stack.use_symbol(id);
     }
 
     pub fn store(&mut self, ast_node: NodeId<ast::Symbol>) {
@@ -488,5 +503,19 @@ impl VariablesBuilder<'_> {
             head = next;
         }
         Ok(())
+    }
+
+    pub fn mark_loop(&mut self) -> LoopPoint {
+        self.loop_stack.mark_point()
+    }
+
+    pub fn finish_loop(&mut self, loop_point: LoopPoint) {
+        let order = SymbolUseOrder(self.next_use_id.saturating_sub(1));
+        self.loop_stack.resolve_point(
+            &mut self.variables,
+            order,
+            loop_point,
+            self.current_scope.unwrap(),
+        )
     }
 }
