@@ -195,7 +195,11 @@ impl<T> From<ListHead<T>> for Option<ListId<T>> {
 impl<T> Eq for ListHead<T> {}
 impl<T> PartialEq for ListHead<T> {
     fn eq(&self, other: &Self) -> bool {
-        self == other
+        match (self, other) {
+            (ListHead::Present(a), ListHead::Present(b)) => a == b,
+            (ListHead::Empty, ListHead::Empty) => true,
+            _ => false,
+        }
     }
 }
 impl<T> Copy for ListHead<T> {}
