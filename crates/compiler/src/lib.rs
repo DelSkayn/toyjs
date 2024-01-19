@@ -9,7 +9,7 @@ use common::{
 use core::fmt;
 use registers::Registers;
 use std::{backtrace::Backtrace, result::Result as StdResult};
-use variables::{Variables, VariablesBuilder};
+use variables::{Variables, VariablesResolver};
 
 macro_rules! to_do {
     () => {
@@ -133,7 +133,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
-        let mut variables = VariablesBuilder::new(self.ast);
+        let mut variables = VariablesResolver::new(self.ast);
         variables
             .push_scope(variables::ScopeKind::Global { strict })
             .unwrap();

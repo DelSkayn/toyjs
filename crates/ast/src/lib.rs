@@ -2,7 +2,7 @@ use common::{number::NumberId, span::Span, string::StringId};
 use core::fmt;
 
 mod ast;
-mod visitor;
+pub mod visitor;
 pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList, NodeListId};
 
 mod render;
@@ -625,7 +625,7 @@ pub enum Function {
     Expr {
         is_strict: bool,
         kind: FunctionKind,
-        name: Option<StringId>,
+        name: Option<NodeId<Symbol>>,
         params: ListHead<BindingElement>,
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ListHead<Stmt>,

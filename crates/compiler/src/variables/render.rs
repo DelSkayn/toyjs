@@ -31,9 +31,13 @@ impl RenderVariables<'_> {
                         )?;
                     }
                     ast::Function::Expr {
-                        name: Some(name), ..
+                        name: Some(symbol), ..
                     } => {
-                        writeln!(f, " {}", self.interners.strings.get(name).unwrap())?;
+                        writeln!(
+                            f,
+                            " {}",
+                            self.interners.strings.get(self.ast[symbol].name).unwrap()
+                        )?;
                     }
                     _ => {
                         writeln!(f,)?;

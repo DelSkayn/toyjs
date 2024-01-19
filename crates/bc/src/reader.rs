@@ -79,6 +79,17 @@ impl<'a> BcValid<'a> {
         let offset = unsafe { ptr.offset_from(self.first) };
         offset >= 0 && offset as usize <= self.offset
     }
+
+    /// # Safety
+    ///
+    /// TODO
+    pub unsafe fn detach(self) -> BcValid<'static> {
+        BcValid {
+            first: self.first,
+            offset: self.offset,
+            bc: PhantomData,
+        }
+    }
 }
 
 /// An instruction reader for the fast, unsafe reading of instruction buffers.
@@ -107,7 +118,7 @@ impl<'a> ByteCodeReader<'a> {
         ByteCodeReader {
             ip: self.ip,
             #[cfg(feature = "slow_checks")]
-            validate: self.validate,
+            validate: self.validate.detach(),
             bc: PhantomData,
         }
     }

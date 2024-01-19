@@ -42,7 +42,7 @@ fn compile(source: &Source) -> Result<(), Error> {
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script()?;
     let mut ast = parser.into_ast();
-    let mut variables = variables::VariablesBuilder::new(&mut ast);
+    let mut variables = variables::VariablesResolver::new(&mut ast);
     variables
         .push_scope(variables::ScopeKind::Global { strict: res.strict })
         .unwrap();

@@ -116,7 +116,7 @@ instructions! {
     /// Jump to instruction with offset dst if cond is falsish.
     LongJumpFalse{ cond: Reg, dst: LongOffset},
 
-    /// Throw the error value in src
+    /// Throw the error value in src.
     Throw{ src: Reg },
     /// Push a error handler onto the stack which jumps to dst if an error was thrown.
     Try{ dst: Offset },
@@ -124,7 +124,7 @@ instructions! {
     TryLong{ dst: LongOffset },
     /// Remove the error handler from the stack.
     Untry{},
-    ///  Retrieve the thrown error value and store it in dst
+    ///  Retrieve the thrown error value and store it in dst.
     Catch{ dst: Reg },
 
     /// Return from the current function with a undefined value.
@@ -132,12 +132,12 @@ instructions! {
     /// Return from the current function with a the value in the src register.
     Ret{ src: Reg },
 
-    /// Call the function in func and store its result in ret..
+    /// Call the function in func and store its result in ret.
     Call{func: Reg, ret: Reg},
-    /// Call the function with a specific number of arguments store its result in ret..
+    /// Call the function with a specific number of arguments store its result in ret.
     Call1{func: Reg, ret: Reg, arg: Reg},
-    /// Call the function with a specific number of arguments store its result in ret..
+    /// Call the function with a specific number of arguments store its result in ret.
     Call2{func: Reg, ret: Reg, arg1: Reg, arg2: Reg},
-    /// Call the function with a specific number of arguments store its result in ret..
+    /// Call the function with a specific number of arguments store its result in ret.
     Call3{func: Reg, ret: Reg, arg1: Reg, arg2: Reg, arg3: Reg},
 }

@@ -1,8 +1,8 @@
 use ast::NodeId;
 use common::{id::KeyedVec, key, string::StringId};
 
-mod builder;
-pub use builder::VariablesBuilder;
+mod resolve;
+pub use resolve::VariablesResolver;
 mod render;
 
 key!(

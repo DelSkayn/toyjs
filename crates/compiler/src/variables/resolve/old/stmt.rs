@@ -271,7 +271,7 @@ impl<'a> VariablesBuilder<'a> {
             ForLoopHead::In { .. } | ForLoopHead::Of { .. } => {}
         }
         self.finish_loop(loop_point);
-        self.pop_scope();
+        self.pop_scope()?;
         Ok(())
     }
 

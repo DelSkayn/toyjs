@@ -2,7 +2,7 @@ use common::{string::String, structs::Interners};
 use iai::black_box;
 use lexer::Lexer;
 use parser::Parser;
-use toyjs_compiler::variables::{ScopeKind, VariablesBuilder};
+use toyjs_compiler::variables::{ScopeKind, VariablesResolver};
 
 pub fn bench(source: &str) {
     let source = String::from_std_str(source);
@@ -12,7 +12,7 @@ pub fn bench(source: &str) {
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script().expect("parsing failed");
     let mut ast = parser.into_ast();
-    let mut variables = VariablesBuilder::new(black_box(&mut ast));
+    let mut variables = VariablesResolver::new(black_box(&mut ast));
     variables
         .push_scope(ScopeKind::Global { strict: res.strict })
         .unwrap();

@@ -1,5 +1,3 @@
-use std::num::NonZeroU32;
-
 use crate::{
     variables::{SymbolUseOrder, Variables},
     Error, Limits, Result,

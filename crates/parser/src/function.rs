@@ -15,11 +15,6 @@ pub enum FunctionCtx {
     Method,
 }
 
-enum FunctionName {
-    Expr(Option<StringId>),
-    Declared(NodeId<Symbol>),
-}
-
 impl<'a> Parser<'a> {
     /// Parses the parameters and body of a function:
     /// ```javascript
@@ -40,20 +35,20 @@ impl<'a> Parser<'a> {
         kind: FunctionKind,
     ) -> Result<NodeId<Function>> {
         let name = match ctx {
-            FunctionCtx::Stmt => FunctionName::Declared(self.parse_symbol()?),
+            FunctionCtx::Stmt => Some(self.parse_symbol()?),
             FunctionCtx::Expression => {
                 let token = self.peek();
                 match token.kind() {
                     TokenKind::UnreservedKeyword(_) | TokenKind::Ident => {
-                        FunctionName::Expr(Some(self.parse_ident_name()?))
+                        Some(self.parse_symbol()?)
                     }
-                    t!("(") => FunctionName::Expr(None),
+                    t!("(") => None,
                     _ => {
                         unexpected!(self, token.kind(), "ident");
                     }
                 }
             }
-            FunctionCtx::Method => FunctionName::Expr(None),
+            FunctionCtx::Method => None,
         };
 
         expect!(self, "(");
@@ -91,8 +86,8 @@ impl<'a> Parser<'a> {
             let body = self.parse_function_body()?;
         });
 
-        let function = match name {
-            FunctionName::Expr(name) => self.ast.push_node(Function::Expr {
+        let function = match ctx {
+            FunctionCtx::Method | FunctionCtx::Expression => self.ast.push_node(Function::Expr {
                 name,
                 kind,
                 params: param_head,
@@ -100,8 +95,8 @@ impl<'a> Parser<'a> {
                 body: body.body,
                 is_strict: body.is_strict,
             }),
-            FunctionName::Declared(name) => self.ast.push_node(Function::Declared {
-                name,
+            FunctionCtx::Stmt => self.ast.push_node(Function::Declared {
+                name: name.unwrap(),
                 kind,
                 params: param_head,
                 rest_param,

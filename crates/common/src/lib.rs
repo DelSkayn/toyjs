@@ -11,7 +11,6 @@ pub mod hashmap {
 }
 
 mod mac;
-pub use mac::*;
 
 pub mod any_vec;
 pub mod id;
