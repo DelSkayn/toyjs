@@ -173,3 +173,38 @@ impl<K: Id, T> IndexMut<K> for KeyedVec<K, T> {
         }
     }
 }
+
+pub struct BinaryVec<K, T>(Vec<(K, T)>);
+
+impl<K: Ord + Copy, V> BinaryVec<K, V> {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub fn insert_after(&mut self, key: K, value: V) {
+        if let Some(x) = self.0.last() {
+            assert!(x.0 < key);
+        }
+        self.0.push((key, value));
+    }
+
+    pub fn get(&self, key: &K) -> Option<&V> {
+        let idx = self.0.binary_search_by_key(key, |x| x.0).ok()?;
+        Some(&self.0[idx].1)
+    }
+
+    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+        let idx = self.0.binary_search_by_key(key, |x| x.0).ok()?;
+        Some(&mut self.0[idx].1)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
+        self.0.iter()
+    }
+}
+
+impl<K: Ord + Copy, V> Default for BinaryVec<K, V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}

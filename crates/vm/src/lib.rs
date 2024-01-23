@@ -14,8 +14,8 @@ pub mod value;
 
 pub struct Error;
 
-pub trait Evaluator {
-    fn evaluate(&self, source: String, context: Option<()>) -> Result<ByteCode, Error>;
+pub trait Compiler {
+    fn compile(&self, source: String, context: Option<()>) -> Result<ByteCode, Error>;
 }
 
 pub type GcVm<'gc, 'own> = Gc<'gc, 'own, Vm>;
@@ -25,7 +25,7 @@ pub struct Vm {
     // Interned strings.
     interner: Interner<String, StringId>,
 
-    evaluator: Option<Box<dyn Evaluator>>,
+    compiler: Option<Box<dyn Compiler>>,
 }
 
 impl Vm {
@@ -33,7 +33,7 @@ impl Vm {
         Vm {
             jobs: (),
             interner: Interner::new(),
-            evaluator: None,
+            compiler: None,
         }
     }
 }

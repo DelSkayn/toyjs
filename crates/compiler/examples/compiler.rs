@@ -1,6 +1,3 @@
-use common::{result::ContextError, source::Source, string::String, structs::Interners};
-use lexer::Lexer;
-use parser::Parser;
 use std::{
     env,
     fs::File,
@@ -8,6 +5,9 @@ use std::{
     time::Instant,
 };
 
+use common::{result::ContextError, source::Source, string::String, structs::Interners};
+use lexer::Lexer;
+use parser::Parser;
 use toyjs_compiler::Compiler;
 
 pub enum Error {

@@ -1,8 +1,9 @@
+use bc::{limits::MAX_REGISTERS, Reg};
+
 use crate::{
     variables::{SymbolUseOrder, Variables},
     Error, Limits, Result,
 };
-use bc::{limits::MAX_REGISTERS, Reg};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegisterState {

@@ -1,5 +1,4 @@
-use ast::{Function, FunctionKind, ListHead, NodeId, Stmt, Symbol};
-use common::string::StringId;
+use ast::{Function, FunctionKind, ListHead, NodeId, Stmt};
 use token::{t, TokenKind};
 
 use crate::{alter_state, expect, unexpected, Parser, ParserState, Result};

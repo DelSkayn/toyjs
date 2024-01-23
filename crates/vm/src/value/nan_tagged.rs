@@ -1,15 +1,14 @@
 //use common::atom::Atom;
 
-use dreck::{marker::Invariant, Gc, Marker, Trace};
-
-use crate::object::GcObject;
-
 //TODO rediscover implementation and document.
 
 //mod tagged_union;
 //pub use tagged_union::TaggedValue;
-
 use std::{cmp, fmt, marker::PhantomData, ptr::NonNull};
+
+use dreck::{marker::Invariant, Gc, Marker, Trace};
+
+use crate::object::GcObject;
 
 pub const VALUE_EMPTY: u64 = 0x0;
 pub const VALUE_NULL: u64 = 0x02;

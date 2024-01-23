@@ -117,7 +117,7 @@ impl<R: RenderAst> RenderAst for &R {
 
 impl RenderAst for StringId {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
-        writeln!(w, "\"{}\"", ctx.strings[*self])
+        writeln!(w, "{:?}={:?}", *self, ctx.strings[*self].as_str())
     }
 }
 

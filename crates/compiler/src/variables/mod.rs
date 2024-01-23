@@ -1,7 +1,8 @@
 use ast::NodeId;
-use common::{id::KeyedVec, key, string::StringId};
+use common::{hashmap::hash_map::HashMap, id::KeyedVec, key, string::StringId};
 
 mod resolve;
+mod resolve2;
 pub use resolve::VariablesResolver;
 mod render;
 
@@ -80,6 +81,9 @@ pub struct Symbol {
     pub last_use: Option<SymbolUseOrder>,
     /// The scope the symbol was declared in.
     pub scope: ScopeId,
+    /// A symbol in a super scope with a same name.
+    pub shadows: Option<SymbolId>,
+    pub ast_node: NodeId<ast::Symbol>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,12 +93,12 @@ pub struct Scope {
     /// What type of kind
     kind: ScopeKind,
     /// How many children this scope has.
-    num_childeren: u32,
+    num_scope_children: u32,
     /// The offset into the child array where you can find the childeren of this array.
-    child_offset: u32,
+    scope_child_offset: u32,
     /// The number of declarations.
-    num_declarations: u32,
-    symbol_offset: u32,
+    num_decl_children: u32,
+    decl_child_offset: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -148,23 +152,53 @@ impl Variables {
 
     pub fn child_scopes(&self, id: ScopeId) -> &[ScopeId] {
         let scope = &self.scopes[id];
-        let offset = scope.child_offset as usize;
-        let len = scope.num_childeren as usize;
+        let offset = scope.scope_child_offset as usize;
+        let len = scope.num_scope_children as usize;
 
         &self.scope_children[offset..(offset + len)]
     }
 
     pub fn declared_vars(&self, id: ScopeId) -> &[SymbolId] {
         let scope = &self.scopes[id];
-        let offset = scope.symbol_offset as usize;
-        let len = scope.num_declarations as usize;
+        let offset = scope.decl_child_offset as usize;
+        let len = scope.num_decl_children as usize;
 
         &self.scope_symbols[offset..(offset + len)]
     }
 
+    pub fn new_symbol(&mut self, origin: NodeId<ast::Symbol>, sym: Symbol) -> SymbolId {
+        let id = self.symbols.push(sym);
+        self.use_to_symbol.insert_grow(
+            origin,
+            UseInfo {
+                use_order: SymbolUseOrder(0),
+                id: Some(id),
+            },
+            UseInfo {
+                use_order: SymbolUseOrder(0),
+                id: None,
+            },
+        );
+        id
+    }
+
+    pub fn resolve_use(&mut self, origin: NodeId<ast::Symbol>, to: SymbolId) {
+        self.use_to_symbol.insert_grow(
+            origin,
+            UseInfo {
+                use_order: SymbolUseOrder(0),
+                id: Some(to),
+            },
+            UseInfo {
+                use_order: SymbolUseOrder(0),
+                id: None,
+            },
+        );
+    }
+
     /// Returns the function like scope of this scope.
     ///
-    /// This can be itself if the scope is already a function like scope else it is the first
+    /// This can be itself if the scope is already a function else it is the first
     /// parent scope which is either a function scope or the global scope.
     pub fn function_of(&self, mut scope: ScopeId) -> ScopeId {
         loop {

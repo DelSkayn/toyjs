@@ -1,8 +1,9 @@
 //! An interner mapping equivalent to a single id.
 
 use core::hash::Hash;
-use hashbrown::{Equivalent, HashMap};
 use std::ops::Index;
+
+use hashbrown::{Equivalent, HashMap};
 
 #[derive(Clone)]
 pub struct Interner<K: Hash + Eq, I> {

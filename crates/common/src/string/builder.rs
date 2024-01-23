@@ -1,8 +1,7 @@
 use core::fmt;
 
-use crate::unicode::{CharExt, Utf16Ext};
-
 use super::{Ascii, Encoding, String, Utf16};
+use crate::unicode::{CharExt, Utf16Ext};
 
 pub struct StringBuilder {
     pub ascii: Vec<u8>,

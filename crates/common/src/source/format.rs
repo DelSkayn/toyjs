@@ -1,9 +1,8 @@
 use core::fmt;
 use std::error::Error as ErrorTrait;
 
-use crate::{span::Span, string::Encoding, unicode::units};
-
 use super::Source;
+use crate::{span::Span, string::Encoding, unicode::units};
 
 #[derive(Debug)]
 pub enum Error {

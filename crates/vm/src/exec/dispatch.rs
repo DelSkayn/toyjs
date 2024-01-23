@@ -1,9 +1,8 @@
 use bc::{ByteCodeReader, Reg};
 use dreck::Owner;
 
-use crate::value::Value;
-
 use super::ExecutionFrame;
+use crate::value::Value;
 
 impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
     pub(crate) unsafe fn dispatch(

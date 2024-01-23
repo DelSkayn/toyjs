@@ -1,14 +1,15 @@
-use common::{result::ContextError, source::Source, string::String, structs::Interners};
-use compiler::Compiler;
-use dreck::{dreck, Arena, Owner};
-use lexer::Lexer;
-use parser::Parser;
 use std::{
     env,
     fs::File,
     io::{self, Read},
     time::Instant,
 };
+
+use common::{result::ContextError, source::Source, string::String, structs::Interners};
+use compiler::Compiler;
+use dreck::{dreck, Arena, Owner};
+use lexer::Lexer;
+use parser::Parser;
 use toyjs_vm::{exec::ExecutionFrame, object::Object, value::Value, Context, Vm};
 
 pub enum Error {

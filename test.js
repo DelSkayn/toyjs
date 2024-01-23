@@ -1,6 +1,11 @@
-let a = 1;
-for(let b = 1;b < 10;b++){
-  a += 1;
-  let c = 1;
-  c += 1;
+let t = 1;
+{
+  t = 1;
+  function foo(t){
+  }
+  ((t) => {})
+  {
+    //let t = 1;
+  }
+  var t = 1;
 }

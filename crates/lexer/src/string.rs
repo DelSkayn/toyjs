@@ -14,7 +14,7 @@ impl<'a> Lexer<'a> {
 
     pub(super) fn lex_escape_unicode(&mut self) -> bool {
         let Some(first) = self.peek_unit() else {
-            return false
+            return false;
         };
         if first == b'{' as u16 {
             self.next_unit();
@@ -34,7 +34,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             let Some(char) = char::from_u32(mv) else {
-                return false
+                return false;
             };
             let (lead, trail) = char.encode_utf16_code_point();
             self.builder.push(lead);
@@ -44,19 +44,19 @@ impl<'a> Lexer<'a> {
             true
         } else {
             let Some(first) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-                return false
+                return false;
             };
             self.next_unit();
             let Some(second) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-                return false
+                return false;
             };
             self.next_unit();
             let Some(third) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-                return false
+                return false;
             };
             self.next_unit();
             let Some(fourth) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-                return false
+                return false;
             };
             self.next_unit();
             let first = first as u32;
@@ -78,11 +78,11 @@ impl<'a> Lexer<'a> {
 
     fn lex_escape_hex(&mut self) -> bool {
         let Some(first) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-            return false
+            return false;
         };
         self.next_unit();
         let Some(last) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
-            return false
+            return false;
         };
         self.next_unit();
         let first = first as u16;
@@ -105,7 +105,7 @@ impl<'a> Lexer<'a> {
         const U: u16 = b'u' as u16;
 
         let Some(unit) = self.next_unit() else {
-            return false
+            return false;
         };
         match unit {
             units::LF | units::CR | units::LS | units::PS => return true,
@@ -134,7 +134,7 @@ impl<'a> Lexer<'a> {
         loop {
             let Some(unit) = self.next_unit() else {
                 self.builder.clear();
-                return self.finish_token(TokenKind::Unknown)
+                return self.finish_token(TokenKind::Unknown);
             };
 
             if unit == start {

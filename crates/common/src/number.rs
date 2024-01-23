@@ -39,8 +39,9 @@ macro_rules! impl_num{
 
 impl_num!(u8, i8, u16, i16, u32, i32, u64, i64, f32, f64);
 
-use crate::key;
 use std::hash::{Hash, Hasher};
+
+use crate::key;
 
 key!(pub struct NumberId(u32));
 

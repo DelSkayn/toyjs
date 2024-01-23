@@ -1,7 +1,6 @@
 use common::unicode::{self, chars, CharExt, Utf16Ext};
-use token::{t, Keyword, Token, TokenKind, UnreservedKeyword};
-
 use phf::phf_map;
+use token::{t, Keyword, Token, TokenKind, UnreservedKeyword};
 
 use crate::Lexer;
 

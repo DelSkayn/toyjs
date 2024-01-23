@@ -1,10 +1,11 @@
-use common::{number::NumberId, string::String, structs::Interners};
 use std::{
     env,
     fs::File,
     io::{self, Read},
     time::Instant,
 };
+
+use common::{number::NumberId, string::String, structs::Interners};
 use token::{t, TokenKind};
 use toyjs_lexer::Lexer;
 
@@ -42,11 +43,19 @@ fn main() -> Result<(), io::Error> {
         );
         print!("\t\t\t'{}'", source.encoding().slice(span));
         if kind == t!("ident") {
-            let data = t.kind_and_data.data_id();
-            println!(" = '{}'", lexer.data.strings.get(data.unwrap()).unwrap());
+            let data = t.kind_and_data.data_id().unwrap();
+            println!(
+                " = {:?} = '{}'",
+                data,
+                lexer.data.strings.get(data).unwrap()
+            );
         } else if kind == t!("string") {
-            let data = t.kind_and_data.data_id();
-            println!(" = \"{}\"", lexer.data.strings.get(data.unwrap()).unwrap());
+            let data = t.kind_and_data.data_id().unwrap();
+            println!(
+                " = {:?}={:?}",
+                data,
+                lexer.data.strings.get(data).unwrap().as_str()
+            );
         } else if kind == t!("123") {
             let data = t.kind_and_data.data_id::<NumberId>();
             println!(" = {:e}", lexer.data.numbers[data.unwrap()].0);

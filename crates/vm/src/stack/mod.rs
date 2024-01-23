@@ -13,17 +13,17 @@
 //!                                             
 //! ```
 
+use core::fmt;
+use std::{mem::MaybeUninit, num::NonZeroU32, ptr::NonNull};
+
 use bc::{ByteCodeReader, Reg};
 use common::{slow_assert, slow_assert_ne};
-use core::fmt;
 use dreck::{Marker, Trace};
-use std::{mem::MaybeUninit, num::NonZeroU32, ptr::NonNull};
 
 mod buffer;
 
-use crate::{object::GcObject, value::Value};
-
 use self::buffer::RawBuffer;
+use crate::{object::GcObject, value::Value};
 
 #[derive(Debug)]
 pub struct StackSizeError;

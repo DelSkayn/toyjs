@@ -1,5 +1,6 @@
-use common::{number::NumberId, span::Span, string::StringId};
 use core::fmt;
+
+use common::{number::NumberId, span::Span, string::StringId};
 
 mod ast;
 pub mod visitor;

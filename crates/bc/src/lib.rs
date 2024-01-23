@@ -1,7 +1,8 @@
+use std::fmt;
+
 use bytemuck::{Pod, TransparentWrapper, Zeroable};
 use common::span::Span;
 use dreck::Trace;
-use std::fmt;
 
 mod instructions;
 pub use instructions::*;

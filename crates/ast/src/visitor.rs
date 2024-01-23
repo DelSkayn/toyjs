@@ -232,11 +232,12 @@ pub trait Visitor<E> {
             Expr::Yield { expr, .. } => {
                 self.super_expr(expr)?;
             }
-            Expr::Destructure { expr, .. } => {
+            Expr::Destructure { expr, pattern } => {
                 self.super_expr(expr)?;
+                self.super_binding_pattern(pattern)?;
             }
-            Expr::TaggedTemplate { template, .. } => {
-                self.super_expr(expr)?;
+            Expr::TaggedTemplate { template, tag } => {
+                self.super_expr(tag)?;
                 self.super_template(template)?;
             }
         }
@@ -387,7 +388,7 @@ pub trait Visitor<E> {
                     CstyleDecl::Decl { decl, .. } => {
                         self.super_variable_decl_list(decl)?;
                     }
-                    CstyleDecl::Empty => todo!(),
+                    CstyleDecl::Empty => {}
                 }
                 if let Some(cond) = cond {
                     self.super_expr_list(cond)?;
@@ -408,7 +409,7 @@ pub trait Visitor<E> {
                 self.super_expr(expr)?;
             }
         }
-        todo!()
+        Ok(())
     }
 
     fn super_head_post(&mut self, head: NodeId<ForLoopHead>) -> Result<(), E> {

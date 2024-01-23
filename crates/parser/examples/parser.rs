@@ -1,12 +1,13 @@
-use ast::{RenderAst, RenderCtx};
-use common::{result::ContextResultExt, string::String, structs::Interners};
-use lexer::Lexer;
 use std::{
     env,
     fs::File,
     io::{self, Read},
     time::Instant,
 };
+
+use ast::{RenderAst, RenderCtx};
+use common::{result::ContextResultExt, string::String, structs::Interners};
+use lexer::Lexer;
 use toyjs_parser::Parser;
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {

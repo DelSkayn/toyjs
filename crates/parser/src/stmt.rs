@@ -313,12 +313,6 @@ impl<'a> Parser<'a> {
                     let decl = self.parse_c_style_decl(kind, binding, binding_span)?;
                     return self.parse_c_style_for(CstyleDecl::Decl { kind, decl });
                 } else {
-                    if let IdentOrPattern::Pattern(_) = self.ast[binding] {
-                        return Err(Error::new(
-                            ErrorKind::DestructringNotInitalized,
-                            binding_span,
-                        ));
-                    }
                     InOfDecl::Decl { kind, binding }
                 }
             }

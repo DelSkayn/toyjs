@@ -1,6 +1,3 @@
-use common::{result::ContextError, source::Source, string::String, structs::Interners};
-use lexer::Lexer;
-use parser::Parser;
 use std::{
     env,
     fs::File,
@@ -8,7 +5,11 @@ use std::{
     time::Instant,
 };
 
-use toyjs_compiler::variables;
+use ast::{visitor::Visitor, ListHead};
+use common::{result::ContextError, source::Source, string::String, structs::Interners};
+use lexer::Lexer;
+use parser::Parser;
+use toyjs_compiler::variables::{self, Variables};
 
 pub enum Error {
     Parse(parser::Error),
@@ -42,16 +43,19 @@ fn compile(source: &Source) -> Result<(), Error> {
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script()?;
     let mut ast = parser.into_ast();
-    let mut variables = variables::VariablesResolver::new(&mut ast);
-    variables
+    let mut variables = Variables::new();
+    let mut resolver = variables::VariablesResolver::new(&mut ast, &mut variables);
+    resolver
         .push_scope(variables::ScopeKind::Global { strict: res.strict })
         .unwrap();
-    variables.resolve_variables(res.stmt)?;
-    let root = variables.pop_scope()?;
-    let vars = variables.build();
+    if let ListHead::Present(stmt) = res.stmt {
+        resolver.super_stmt_list(stmt)?;
+    }
+    let root = resolver.pop_scope()?;
+    resolver.finish();
     let elapsed = before.elapsed();
 
-    println!("{}", vars.render(root, &ast, &interners));
+    println!("{}", variables.render(root, &ast, &interners));
     println!("compiled in {:.4} seconds", elapsed.as_secs_f64());
 
     Ok(())

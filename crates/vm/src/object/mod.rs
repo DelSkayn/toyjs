@@ -1,10 +1,11 @@
-use bc::{ByteCode, FunctionId};
-use dreck::{Gc, Trace};
 use std::{
     any::Any,
     collections::{HashMap, HashSet},
     hint::unreachable_unchecked,
 };
+
+use bc::{ByteCode, FunctionId};
+use dreck::{Gc, Trace};
 
 use crate::value::Value;
 

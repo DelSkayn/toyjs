@@ -3,12 +3,11 @@ use std::{
     ops::Index,
 };
 
+use super::Utf16Error;
 use crate::{
     span::Span,
     unicode::{units, Utf16Ext},
 };
-
-use super::Utf16Error;
 
 /// A string of utf16 characters encoded as u16 guarenteed to be a valid utf16 sequence
 #[derive(Eq, PartialEq, Hash)]

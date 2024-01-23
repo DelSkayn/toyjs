@@ -30,3 +30,10 @@ macro_rules! slow_assert_eq {
         }
     };
 }
+
+#[macro_export]
+macro_rules! print_backtrace {
+    () => {
+        eprintln!("{}", ::std::backtrace::Backtrace::force_capture());
+    };
+}

@@ -130,13 +130,13 @@ impl Source {
 
 #[cfg(test)]
 mod test {
+    use std::str;
+
+    use super::Source;
     use crate::{
         source::{Location, SpanLocation},
         span::Span,
     };
-
-    use super::Source;
-    use std::str;
 
     #[test]
     fn locate() {

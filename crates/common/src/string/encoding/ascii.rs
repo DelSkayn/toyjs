@@ -1,8 +1,8 @@
-use crate::span::Span;
 use core::fmt;
 use std::ops::Index;
 
 use super::Utf16Error;
+use crate::span::Span;
 
 /// A string of ascii characters encoded as u8.
 #[derive(Eq, PartialEq, Hash)]

@@ -1,14 +1,15 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use ast::{Ast, ListHead};
+use core::fmt;
+use std::{backtrace::Backtrace, result::Result as StdResult};
+
+use ast::{visitor::Visitor, Ast, ListHead};
 use bc::{ByteCode, Instruction};
 use common::{
     key, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
 };
-use core::fmt;
 use registers::Registers;
-use std::{backtrace::Backtrace, result::Result as StdResult};
 use variables::{Variables, VariablesResolver};
 
 macro_rules! to_do {
@@ -133,14 +134,18 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
-        let mut variables = VariablesResolver::new(self.ast);
-        variables
+        let mut variables = Variables::new();
+        let mut resolver = VariablesResolver::new(self.ast, &mut variables);
+        resolver
             .push_scope(variables::ScopeKind::Global { strict })
             .unwrap();
-        variables.resolve_variables(stmt)?;
-        variables.pop_scope()?;
+        if let ListHead::Present(stmt) = stmt {
+            resolver.super_stmt_list(stmt)?;
+        }
+        resolver.pop_scope()?;
+        resolver.finish();
 
-        self.registers = Registers::new(variables.build());
+        self.registers = Registers::new(variables);
 
         let mut expr = None;
         if let ListHead::Present(s) = stmt {
