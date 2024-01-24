@@ -1,163 +1,246 @@
-use super::{is_radix, ErrorKind, LexResult, Lexer, Token};
-use token::{Literal, Number, TokenKind};
+use common::string::Units;
+use token::{t, Token, TokenKind};
 
-impl<'a, 'b> Lexer<'a, 'b> {
-    fn token_num(&mut self, kind: Number) -> Token {
-        self.token(TokenKind::Literal(Literal::Number(kind)))
+use crate::Lexer;
+
+impl<'a> Lexer<'a> {
+    fn lex_radix(&mut self, radix: u8) -> Token {
+        // Implementation derived from V8 implementation.
+
+        while let Some(x) = self.peek_byte() {
+            if x != b'0' {
+                break;
+            }
+            self.next_unit();
+        }
+
+        let mut number: u64 = 0;
+        let mut exponent: u32 = 0;
+
+        while let Some(x) = self
+            .peek_byte()
+            .and_then(|x| {
+                if x.is_ascii() {
+                    char::from_u32(x as u32)
+                } else {
+                    None
+                }
+            })
+            .and_then(|x| x.to_digit(radix as u32))
+        {
+            self.next_unit();
+            number = number * (radix as u64) + (x as u64);
+            let mut overflow = number >> 53;
+            if overflow > 0 {
+                let mut overflow_bits = 1i32;
+                while overflow > 1 {
+                    overflow_bits += 1;
+                    overflow >>= 1;
+                }
+
+                let dropped_bits_mask = (1 << overflow_bits) - 1;
+                let dropped_bits = (number as i32) & dropped_bits_mask;
+                number >>= overflow_bits;
+                exponent = overflow_bits as u32;
+
+                let mut zero_tail = true;
+                while let Some(x) = self
+                    .peek_byte()
+                    .and_then(|x| {
+                        if x.is_ascii() {
+                            char::from_u32(x as u32)
+                        } else {
+                            None
+                        }
+                    })
+                    .and_then(|x| x.to_digit(radix as u32))
+                {
+                    self.next_unit();
+                    zero_tail = zero_tail && x == 0;
+                    exponent += radix.ilog2();
+                }
+
+                let middle_value = 1 << (overflow_bits - 1);
+                if dropped_bits > middle_value
+                    || dropped_bits == middle_value && ((number & 1) != 0 || !zero_tail)
+                {
+                    number += 1;
+                }
+
+                if number & (1u64 << 53) != 0 {
+                    exponent += 1;
+                    number >>= 1;
+                }
+                break;
+            }
+        }
+
+        debug_assert!(number < 1u64 << 53);
+        debug_assert!(number as f64 as u64 == number);
+
+        if exponent == 0 {
+            let id = self.finish_number(number as f64);
+            self.finish_token_number(t!("123"), Some(id))
+        } else {
+            let number = (number as f64) * 2f64.powi(exponent as i32);
+            let id = self.finish_number(number);
+            self.finish_token_number(t!("123"), Some(id))
+        }
     }
 
-    /// Lex a number
-    ///
-    /// Start should be the first byte of the number.
-    pub(super) fn lex_number(&mut self, start: u8) -> LexResult<Token> {
-        let str_start = self.offset - 1;
+    /// Lex the mantissa or the '.345' part of number '12.345'
+    fn lex_mantissa(&mut self) -> bool {
+        let mut once = false;
+        while self
+            .peek_byte()
+            .map(|x| x.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            once = true;
+            self.next_unit();
+        }
+        // A mantissa must have atleast a single digit.
+        if !once {
+            return false;
+        }
+        if let Some(b'e' | b'E') = self.peek_byte() {
+            self.next_unit();
+            return self.lex_exponent();
+        }
+        true
+    }
 
-        if start == b'0' {
-            // Number might be a octal, binary, hex, or big number
+    /// Lex the exponent or `e-34` parr for number `12e-34`
+    fn lex_exponent(&mut self) -> bool {
+        let Some(first) = self.peek_byte() else {
+            // A exponent must have atleast a single digit.
+            return false;
+        };
+
+        if first != b'-' && first != b'+' && !first.is_ascii_digit() {
+            return false;
+        }
+
+        self.next_unit();
+
+        while self
+            .peek_byte()
+            .map(|x| x.is_ascii_digit())
+            .unwrap_or(false)
+        {
+            self.next_unit();
+        }
+        true
+    }
+
+    fn lex_bigint(&mut self, start: &[u8], iter: Units) -> Token {
+        for s in start {
+            self.builder.ascii.push(*s);
+        }
+        for c in iter {
+            let c = c as u8;
+            if c == b'n' {
+                break;
+            }
+            self.builder.ascii.push(c);
+        }
+        let id = self.finish_string();
+        self.finish_token_string(t!("123n"), Some(id))
+    }
+
+    fn parse_number(&mut self, start: &[u8], mut iter: Units) -> Token {
+        let len = self.end - self.start;
+        debug_assert!(self.builder.ascii.is_empty());
+        for s in start {
+            self.builder.ascii.push(*s);
+        }
+        let buf_len = self.builder.ascii.len();
+        for _ in buf_len..len {
+            // Unwrap because we should have already parsed the bytes.
+            let char = iter.next().unwrap() as u8;
+            if char == b'_' {
+                continue;
+            }
+            // Should be valid as the we already lexed the number.
+            debug_assert!(char.is_ascii());
+            self.builder.ascii.push(char)
+        }
+        // SAFETY: We pushed only ascii characters so the buffer contains a valid utf-8 string.
+        let str = unsafe { std::str::from_utf8_unchecked(&self.builder.ascii) };
+        // Should always succeed since we alread parse the number.
+        let Ok(number) = str.parse() else {
+            panic!("invalid number: {} at {}", str, self.end);
+        };
+        self.builder.ascii.clear();
+        let id = self.finish_number(number);
+        self.finish_token_number(t!("123"), Some(id))
+    }
+
+    pub(super) fn lex_number(&mut self, start: &[u8]) -> Token {
+        // used for reparsing bigints.
+        let iter = self.units.clone();
+
+        if start[0] == b'0' {
             match self.peek_byte() {
-                None => return Ok(self.token_num(Number::Integer(0))),
-                // Number is a big int, Very much TODO.
+                None => {
+                    let id = self.finish_number(0.0);
+                    return self.finish_token_number(t!("123"), Some(id));
+                }
                 Some(b'n') => {
-                    self.eat_byte();
-                    let s = self.interner.intern("0");
-                    return Ok(self.token_num(Number::Big(s)));
+                    self.next_unit();
+                    self.builder.push(b'0' as u16);
+                    let id = self.finish_string();
+                    return self.finish_token_string(t!("123n"), Some(id));
                 }
                 Some(b'b' | b'B') => {
-                    self.eat_byte();
-                    return self.lex_non_decimal(2, str_start);
+                    self.next_unit();
+                    return self.lex_radix(2);
                 }
                 Some(b'o' | b'O') => {
-                    self.eat_byte();
-                    return self.lex_non_decimal(8, str_start);
+                    self.next_unit();
+                    return self.lex_radix(8);
                 }
                 Some(b'x' | b'X') => {
-                    self.eat_byte();
-                    return self.lex_non_decimal(16, str_start);
+                    self.next_unit();
+                    return self.lex_radix(16);
                 }
+                Some(b'_') => return self.finish_token(TokenKind::Unknown),
                 _ => {}
             }
         }
-        if start == b'.' {
-            // Number has a fractional part.
-            return self.lex_number_mantissa(str_start);
-        }
 
-        // Lex the integer part.
-        while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
-            self.eat_byte();
-        }
-        let mut big = false;
-        match self.peek_byte() {
-            Some(b'.') => {
-                // Number has a fractional part.
-                self.eat_byte();
-                return self.lex_number_mantissa(str_start);
-            }
-            Some(b'e' | b'E') => {
-                // Number has an exponent.
-                self.eat_byte();
-                return self.lex_number_exponent(str_start);
-            }
-            Some(b'n') => {
-                // Number is a bigint.
-                self.eat_byte();
-                big = true;
-            }
-            _ => (),
-        }
-
-        if big {
-            // We have no good way to lex big numbers yet so for now we just handle them with
-            // strings.
-            let s = &self.source.source()[str_start..self.offset];
-            let s = self.interner.intern(s);
-            Ok(self.token_num(Number::Big(s)))
+        let success = if start[0] == b'.' {
+            self.lex_mantissa()
         } else {
-            self.lex_number_string(str_start)
-        }
-    }
-
-    /// Parses the portion of the source string that number contains as a integer.
-    ///
-    /// For now we use a external crate to parse the number. This libraries might parse
-    /// numbers different then that spec requires but for now it is good enough.
-    ///
-    /// `str_start` should be the byte offset of the start of the number token.
-    fn lex_number_string(&mut self, str_start: usize) -> LexResult<Token> {
-        //TODO Check lexical_core's compatiblity with ECMA spec.
-        let num: f64 =
-            lexical_core::parse(&self.source.source().as_bytes()[str_start..self.offset]).unwrap();
-        // Check if the number fits in a i32 the javascript integer type.
-        if ((num as i32) as f64).to_bits() == num.to_bits() {
-            Ok(self.token_num(Number::Integer(num as i32)))
-        } else {
-            Ok(self.token_num(Number::Float(num)))
-        }
-    }
-
-    /// Lex a numbers mantissa ie the `.345` part of a number like `12.345`
-    /// The `.` should already be eaten when this is called.
-    ///
-    /// `str_start` should be the byte offset of the start of the number token.
-    fn lex_number_mantissa(&mut self, str_start: usize) -> LexResult<Token> {
-        while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
-            self.eat_byte();
-        }
-        if let Some(b'e' | b'E') = self.peek_byte() {
-            // Number has a exponent.
-            self.next_byte();
-            return self.lex_number_exponent(str_start);
-        }
-        self.lex_number_string(str_start)
-    }
-
-    /// Lex a numbers exponent ie the `E23` part of a number like `1E23`
-    /// The `E` or `e` should already be eaten when this is called.
-    ///
-    /// `str_start` should be the byte offset of the start of the number token.
-    fn lex_number_exponent(&mut self, str_start: usize) -> LexResult<Token> {
-        let start = self.peek_byte();
-        if start.is_none() {
-            return Err(ErrorKind::InvalidNumber);
-        }
-        let start = start.unwrap();
-        // An exponent number can start with `-`, `+` or a digit.
-        if start == b'-' || start == b'+' || start.is_ascii_digit() {
-            self.next_byte();
-            while self.peek_byte().as_ref().map_or(false, u8::is_ascii_digit) {
-                self.next_byte();
+            while self
+                .peek_byte()
+                .map(|x| x.is_ascii_digit() || x == b'_')
+                .unwrap_or(false)
+            {
+                self.next_unit();
             }
-            return self.lex_number_string(str_start);
-        }
-        Err(ErrorKind::InvalidNumber)
-    }
 
-    /// Lexes a hex, octal, or binary number.
-    /// Radix should be the radix of the number to be parsed ie 16,8, or 2 respectively.
-    ///
-    /// `str_start` should be the byte offset of the start of the number token.
-    fn lex_non_decimal(&mut self, radix: u8, str_start: usize) -> LexResult<Token> {
-        while self.peek_byte().map_or(false, |c| is_radix(c, radix)) {
-            self.next_byte();
-        }
-        let mut big = false;
-        if let Some(b'n') = self.peek_byte() {
-            self.next_byte();
-            big = true;
-        }
-        let s = &self.source.source()[str_start + 2..self.offset];
-        if big {
-            let s = self.interner.intern(s);
-            Ok(self.token_num(Number::Big(s)))
-        } else {
-            //FIXME: dont think this is correct way of parsing.
-            //TODO Not sure what past me thought was incorrect here, figure that out.
-            let num = u64::from_str_radix(s, radix as u32).map_err(|_| ErrorKind::InvalidNumber)?;
-            if num as i32 as u64 == num {
-                Ok(self.token_num(Number::Integer(num as i32)))
-            } else {
-                Ok(self.token_num(Number::Float(num as f64)))
+            match self.peek_byte() {
+                Some(b'.') => {
+                    self.next_unit();
+                    self.lex_mantissa()
+                }
+                Some(b'e' | b'E') => {
+                    self.next_unit();
+                    self.lex_exponent()
+                }
+                Some(b'n') => {
+                    self.next_unit();
+                    return self.lex_bigint(start, iter);
+                }
+                _ => true,
             }
+        };
+
+        if !success {
+            return self.finish_token(TokenKind::Unknown);
         }
+
+        self.parse_number(start, iter)
     }
 }

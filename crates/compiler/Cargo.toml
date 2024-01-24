@@ -1,12 +1,34 @@
 [package]
 name = "toyjs_compiler"
 version = "0.1.0"
-authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-common = { package="toyjs_common",path = "../common/" }
-ast = { package="toyjs_ast",path = "../ast/" }
-vm = { package="toyjs_vm",path = "../vm/" }
+ast = { package = "toyjs_ast", version = "0.1.0", path = "../ast" }
+bc = { package = "toyjs_bc", version = "0.1.0", path = "../bc" }
+bytemuck = { version = "1.13.1", features = ["derive"] }
+common = { package = "toyjs_common", version = "0.1.0", path = "../common" }
+
+[dev-dependencies]
+criterion = "0.4.0"
+iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
+lexer = { path = "../lexer", package = "toyjs_lexer" }
+parser = { package = "toyjs_parser", version = "0.1.0", path = "../parser" }
+
+[features]
+slow_checks = ["bc/slow_checks"]
+
+[[bench]]
+name = "scripts_resolve"
+harness = false
+
+#[[bench]]
+#name = "iai_scripts_resolve"
+#harness = false
+
+[[example]]
+name = "compiler"
+
+

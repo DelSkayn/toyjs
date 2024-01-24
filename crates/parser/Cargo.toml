@@ -1,26 +1,32 @@
 [package]
 name = "toyjs_parser"
 version = "0.1.0"
-authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-
-
 [dependencies]
-common = { package="toyjs_common",path = "../common/" }
-token = { package="toyjs_token",path = "../token/" }
-lexer = { package="toyjs_lexer",path = "../lexer/" }
-ast = { package="toyjs_ast",path = "../ast/" }
+ast = { version = "0.1.0", path = "../ast", package = "toyjs_ast" }
+bitflags = "2.4.0"
+bytemuck = { version = "1.13.1", features = ["derive"] }
+common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
+lexer = { version = "0.1.0", path = "../lexer", package = "toyjs_lexer" }
+token = { version = "0.1.0", path = "../token", package = "toyjs_token" }
+
+[features]
+trace_error = []
 
 [dev-dependencies]
-criterion = "0.3.5"
-
-[[bin]]
-name = "dump_ast"
+criterion = "0.4.0"
+iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
 
 [[bench]]
-name = "parser"
+name = "scripts"
 harness = false
 
+#[[bench]]
+#name = "iai_scripts"
+#harness = false
+
+[[example]]
+name = "parser"

@@ -1,194 +1,222 @@
 #![allow(dead_code)]
-#![feature(allocator_api)]
 
-use ast::symbol_table::{SymbolTable, SymbolTableBuilder};
-use common::source::Span;
+use ast::{Ast, Expr, ListHead, NodeId, PrimeExpr, Stmt};
+use common::{span::Span, string::String};
 use lexer::Lexer;
 use token::{t, Token, TokenKind};
 
-use std::{alloc::Allocator, result::Result as StdResult};
-
-#[macro_use]
 mod macros;
 
+mod binding;
+mod class;
 mod error;
-pub use error::{Error, ErrorKind};
-
 mod expr;
+mod function;
 mod prime;
 mod stmt;
 
-pub type Result<T> = StdResult<T, Error>;
+pub use error::{Error, ErrorKind};
+/// Result type used troughout the parser
+pub type Result<T> = std::result::Result<T, Error>;
 
-/// Parser state.
-///
-/// Certain keywords like `break` and `return` are only allowed inside blocks in
-/// a certain context. This keeps struct of that context.
-#[derive(Default, Clone)]
-pub struct State {
-    r#return: bool,
-    r#break: bool,
-    r#continue: bool,
-}
-
-/// The toyjs parser. Takes a set of tokens and produces an AST
-pub struct Parser<'source, 'atoms, A: Allocator> {
-    lexer: Lexer<'source, 'atoms>,
+/// The toyjs javascript parser.
+pub struct Parser<'a> {
+    /// The lexer used during parsing
+    pub lexer: Lexer<'a>,
+    /// The ast, in which the source parsed.
+    pub ast: Ast,
     peek: Option<Token>,
-    peek_lt: Option<Token>,
     last_span: Span,
-    symbol_table: SymbolTableBuilder<'source, A>,
-    state: State,
-    alloc: A,
+    ate_line_terminator: bool,
+    state: ParserState,
 }
 
-impl<'source, 'atoms, A: Allocator + Clone> Parser<'source, 'atoms, A> {
-    pub fn parse_script(
-        lexer: Lexer<'source, 'atoms>,
-        symbol_table: &'source mut SymbolTable<A>,
-        alloc: A,
-    ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
+bitflags::bitflags! {
+    /// Parser state.
+    ///
+    /// Javascript syntax has a bunch of parameterized productions. This struct tracks the state of
+    /// those parameters.
+    #[repr(transparent)]
+    #[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
+    pub struct ParserState: u8 {
+        const Strict     = 0b100000;
+        const YieldIdent = 0b010000;
+        const AwaitIdent = 0b001000;
+        const In         = 0b000100;
+        const Break      = 0b000010;
+        const Continue   = 0b000001;
+    }
+}
+
+pub struct ParsedScript {
+    pub strict: bool,
+    pub stmt: ListHead<Stmt>,
+}
+
+impl<'a> Parser<'a> {
+    /// Create a new parser.
+    pub fn new(lexer: Lexer<'a>) -> Self {
         Parser {
             lexer,
+            ast: Ast::default(),
             peek: None,
-            peek_lt: None,
-            last_span: Span { low: 0, hi: 0 },
-            symbol_table: SymbolTableBuilder::new_script(symbol_table),
-            alloc,
-            state: State {
-                r#return: false,
-                r#break: false,
-                r#continue: false,
-            },
+            last_span: Span::empty(),
+            ate_line_terminator: false,
+            state: ParserState::In | ParserState::YieldIdent | ParserState::AwaitIdent,
         }
-        .do_parse_script()
     }
 
-    pub fn parse_module(
-        lexer: Lexer<'source, 'atoms>,
-        symbol_table: &'source mut SymbolTable<A>,
-        alloc: A,
-    ) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
-        Parser {
-            lexer,
-            peek: None,
-            peek_lt: None,
-            last_span: Span { low: 0, hi: 0 },
-            symbol_table: SymbolTableBuilder::new_module(symbol_table),
-            alloc,
-            state: State {
-                r#return: false,
-                r#break: false,
-                r#continue: false,
-            },
-        }
-        .do_parse_module()
+    pub fn ast(&self) -> &Ast {
+        &self.ast
     }
 
-    fn alter_state<Fa, Fc, R>(&mut self, fa: Fa, fc: Fc) -> R
-    where
-        Fa: FnOnce(&mut State),
-        Fc: FnOnce(&mut Self) -> R,
-    {
-        let clone = self.state.clone();
-        fa(&mut self.state);
-        let res = fc(self);
-        self.state = clone;
+    pub fn ast_mut(&mut self) -> &mut Ast {
+        &mut self.ast
+    }
+
+    pub fn into_ast(self) -> Ast {
+        self.ast
+    }
+
+    // Return the span
+    fn last_span(&self) -> &Span {
+        if let Some(x) = self.peek.as_ref().map(|x| &x.span) {
+            x
+        } else {
+            &self.last_span
+        }
+    }
+
+    /// Return the next token from the lexer which is not whitespace.
+    #[inline(always)]
+    fn retrieve_next_token(&mut self) -> Token {
+        self.ate_line_terminator = false;
+        loop {
+            let token = self.lexer.next_token();
+            match token.kind_and_data.kind() {
+                t!("\n") => {
+                    self.ate_line_terminator = true;
+                }
+                _ => return token,
+            }
+        }
+    }
+
+    /// Return the next token
+    #[inline]
+    fn next(&mut self) -> Token {
+        let res = self
+            .peek
+            .take()
+            .unwrap_or_else(|| self.retrieve_next_token());
+        self.last_span = res.span;
         res
     }
 
-    fn next(&mut self) -> Result<Option<Token>> {
-        loop {
-            match self.next_lt()? {
-                Some(x) if x.kind == t!("\n") => continue,
-                x => return Ok(x),
-            }
-        }
-    }
-
-    fn next_lt(&mut self) -> Result<Option<Token>> {
-        if let Some(x) = self.peek_lt.take().or_else(|| self.peek.take()) {
-            Ok(Some(x))
+    /// Returns the next token in the list without advancing the token iterator..
+    #[inline]
+    fn peek(&mut self) -> Token {
+        if let Some(peek) = self.peek.clone() {
+            peek
         } else {
-            Ok(self.lexer.next()?.map(|e| {
-                self.last_span = e.span;
-                e
-            }))
+            let res = self.retrieve_next_token();
+            self.peek = Some(res.clone());
+            res
         }
     }
 
-    fn peek_lt(&mut self) -> Result<Option<Token>> {
-        if let Some(x) = self.peek_lt.or(self.peek) {
-            Ok(Some(x))
+    /// Returns the next token in the list w
+    /// ithout advancing the token iterator..
+    #[inline]
+    fn peek_kind(&mut self) -> TokenKind {
+        if let Some(peek) = self.peek.as_ref() {
+            peek.kind()
         } else {
-            let next = self.lexer.next()?.map(|e| {
-                self.last_span = e.span;
-                e
-            });
-            self.peek = next;
-            Ok(next)
+            let res = self.retrieve_next_token();
+            self.peek = Some(res.clone());
+            res.kind()
         }
     }
 
-    fn peek(&mut self) -> Result<Option<Token>> {
-        if let Some(x) = self.peek {
-            if x.kind != t!("\n") {
-                return Ok(Some(x));
-            }
+    /// Eat a token if it is of a specific type.
+    /// Returns true if a token was eaten.
+    #[inline]
+    fn eat(&mut self, which: TokenKind) -> bool {
+        if self.peek().kind_and_data.kind() == which {
+            self.peek = None;
+            true
+        } else {
+            false
         }
-        self.peek = None;
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    #[inline]
+    fn eat_semicolon(&mut self) -> bool {
+        match self.peek_kind() {
+            t!(";") => {
+                self.peek = None;
+                true
+            }
+            t!("}") | t!("eof") => true,
+            _ => self.ate_line_terminator,
+        }
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    #[inline]
+    fn semicolon(&mut self) -> Result<()> {
+        if !self.eat_semicolon() {
+            unexpected!(self, self.peek.clone().unwrap().kind(), ";");
+        }
+        Ok(())
+    }
+
+    /// Mark a spot where a semicolon should be inserted.
+    #[inline]
+    fn no_line_terminator(&mut self) -> Result<()> {
+        if self.ate_line_terminator {
+            unexpected!(self, self.peek.clone().expect("no_line_terminator should be called before consuming the next token").kind() => "a new line before this token is not allowed");
+        }
+        Ok(())
+    }
+
+    /// Checks if a statement contains the strict directive `"use strict"`.
+    #[inline]
+    pub fn is_strict_directive(&self, stmt: NodeId<Stmt>) -> bool {
+        let Stmt::Expr { expr } = self.ast[stmt] else {
+            return false;
+        };
+        let Expr::Prime { expr } = self.ast[self.ast[expr].item] else {
+            return false;
+        };
+        let PrimeExpr::String(id) = self.ast[expr] else {
+            return false;
+        };
+        self.lexer.data.strings[id] == String::new_const("use strict")
+    }
+
+    /// Parse a javascript script.
+    pub fn parse_script(&mut self) -> Result<ParsedScript> {
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+        let mut strict = false;
         loop {
-            match self.lexer.next()? {
-                None => return Ok(None),
-                Some(x) => {
-                    if x.kind == t!("\n") {
-                        self.peek_lt = Some(x);
-                    } else {
-                        self.last_span = x.span;
-                        self.peek = Some(x);
-                        return Ok(Some(x));
-                    }
-                }
+            let peek = self.peek();
+            if peek.kind() == t!("eof") {
+                break;
             }
-        }
-    }
-
-    /// Short hand for `peek().map(|e| e.kind)`
-    fn peek_kind(&mut self) -> Result<Option<TokenKind>> {
-        Ok(self.peek()?.map(|e| e.kind))
-    }
-
-    /// Consume the next token if it is equal to the given kind
-    fn eat(&mut self, kind: TokenKind) -> Result<bool> {
-        match self.peek()? {
-            None => Ok(false),
-            Some(x) => {
-                if x.kind == kind {
-                    self.peek = None;
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
+            let stmt = self.parse_stmt()?;
+            if !self.state.contains(ParserState::Strict)
+                && head.is_empty()
+                && self.is_strict_directive(stmt)
+            {
+                strict = true;
+                self.state.insert(ParserState::Strict);
             }
+            prev = Some(self.ast.append_list(stmt, prev));
+            head = head.or(prev.into())
         }
-    }
-
-    fn do_parse_script(mut self) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
-        #[cfg(debug_assertions)]
-        let start_scope = self.symbol_table.current_scope();
-
-        let mut stmts = Vec::new_in(self.alloc.clone());
-        while self.peek()?.is_some() {
-            stmts.push(self.parse_stmt()?);
-        }
-
-        #[cfg(debug_assertions)]
-        assert_eq!(start_scope, self.symbol_table.current_scope());
-
-        Ok((ast::Script(stmts), self.symbol_table))
-    }
-
-    fn do_parse_module(self) -> Result<(ast::Script<A>, SymbolTableBuilder<'source, A>)> {
-        todo!("parsing module")
+        Ok(ParsedScript { stmt: head, strict })
     }
 }

@@ -1,63 +1,39 @@
-use core::fmt;
+use std::{
+    any::Any,
+    collections::{HashMap, HashSet},
+    hint::unreachable_unchecked,
+};
 
-use crate::gc::{self, Arena, Gc, Rebind, Trace, Tracer};
+use bc::{ByteCode, FunctionId};
+use dreck::{Gc, Trace};
 
-mod elements;
-mod function;
-mod index;
-mod properties;
+use crate::value::Value;
 
-use elements::Elements;
-pub use function::{FunctionKind, SharedFn, StaticFn, VmFunction};
-use properties::Properties;
-pub use properties::{Accessor, Property, PropertyFlags, PropertyValue};
-
-bitflags::bitflags! {
-    pub struct ObjectFlags: u8{
-        const EXTENDABLE = 0b1;
-        const CONSTRUCTOR = 0b10;
-
-        const ORDINARY = Self::EXTENDABLE.bits;
-    }
+pub struct BcFunction<'gc, 'own> {
+    pub id: FunctionId,
+    pub bc: Gc<'gc, 'own, ByteCode>,
 }
 
-pub type GcObject<'gc, 'cell> = Gc<'gc, 'cell, Object<'gc, 'cell>>;
+pub type NativeFunc<'gc, 'own> = Box<dyn Fn() -> Result<Value<'gc, 'own>, Value<'gc, 'own>>>;
 
-pub enum ObjectKind<'gc, 'cell> {
-    Ordinary,
+pub trait UserData<'own>: Trace<'own> + Any {}
+
+pub enum ObjectSlot<'gc, 'own> {
+    Generic,
     Array,
+    Symbol,
     Error,
-    VmFn(VmFunction<'gc, 'cell>),
-    SharedFn(SharedFn),
-    StaticFn(StaticFn),
-    Boolean(bool),
-    Number(f64),
-    String(Gc<'gc, 'cell, String>),
-    //ForInIterator(ForInIterator),
+    Map(HashMap<Value<'gc, 'own>, Value<'gc, 'own>>),
+    Set(HashSet<Value<'gc, 'own>>),
+    NativeFunction(NativeFunc<'gc, 'own>),
+    BcFunction(BcFunction<'gc, 'own>),
+    Proxy(()),
+    UserData(Box<dyn UserData<'own>>),
 }
 
-impl<'gc, 'cell> fmt::Debug for ObjectKind<'gc, 'cell> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "ObjectKind::{}",
-            match self {
-                Self::Ordinary => "Ordinary",
-                Self::Array => "Array",
-                Self::Error => "Error",
-                Self::VmFn(_) => "VmFn",
-                Self::SharedFn(_) => "SharedFn",
-                Self::StaticFn(_) => "StaticFn",
-                Self::Boolean(_) => "Boolean",
-                Self::Number(_) => "Number",
-                Self::String(_) => "String",
-                //Self::ForInIterator(_) => "ForInIterator",
-            }
-        )
-    }
-}
+unsafe impl<'gc, 'own> Trace<'own> for ObjectSlot<'gc, 'own> {
+    type Gc<'r> = Object<'r, 'own>;
 
-unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -65,106 +41,97 @@ unsafe impl<'gc, 'cell> Trace for ObjectKind<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, trace: Tracer) {
+    fn trace(&self, marker: dreck::Marker<'own, '_>) {
         match *self {
-            ObjectKind::Ordinary
-            | ObjectKind::Array
-            | ObjectKind::Error
-            | ObjectKind::SharedFn(_)
-            | ObjectKind::StaticFn(_) => {}
-            ObjectKind::Boolean(_) => {}
-            ObjectKind::Number(_) => {}
-            ObjectKind::String(ref x) => {
-                x.trace(trace);
-            }
-            ObjectKind::VmFn(ref x) => {
-                x.trace(trace);
-            }
+            ObjectSlot::Generic
+            | ObjectSlot::Array
+            | ObjectSlot::Symbol
+            | ObjectSlot::Error
+            | ObjectSlot::NativeFunction(_) => {}
+            ObjectSlot::Map(ref x) => x.trace(marker),
+            ObjectSlot::Set(ref x) => x.trace(marker),
+            ObjectSlot::BcFunction(_) => todo!(),
+            ObjectSlot::Proxy(_) => todo!(),
+            ObjectSlot::UserData(_) => todo!(),
         }
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for ObjectKind<'gc, 'cell> {
-    type Output = ObjectKind<'a, 'cell>;
+pub type GcObject<'gc, 'own> = Gc<'gc, 'own, Object<'gc, 'own>>;
+pub struct Object<'gc, 'own> {
+    // TODO: hidden class
+    shape: (),
+    // The prototype for this object.
+    prototype: Option<GcObject<'gc, 'own>>,
+    // TODO: The values of the object indexed with a integer.
+    entries: (),
+    // TODO: The values of the object indexed with any non-integer value..
+    properties: (),
+    // The special value for this object.
+    slot: ObjectSlot<'gc, 'own>,
 }
 
-pub struct Object<'gc, 'cell> {
-    flags: ObjectFlags,
-    prototype: Option<GcObject<'gc, 'cell>>,
-    kind: ObjectKind<'gc, 'cell>,
-    pub(crate) properties: Properties<'gc, 'cell>,
-    pub(crate) elements: Elements<'gc, 'cell>,
+unsafe impl<'gc, 'own> Trace<'own> for Object<'gc, 'own> {
+    type Gc<'r> = Object<'r, 'own>;
+
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, marker: dreck::Marker<'own, '_>) {
+        self.slot.trace(marker)
+    }
 }
 
-impl<'gc, 'cell> Object<'gc, 'cell> {
-    pub fn new(
-        prototype: Option<GcObject<'gc, 'cell>>,
-        flags: ObjectFlags,
-        kind: ObjectKind<'gc, 'cell>,
-    ) -> Self {
+impl<'gc, 'own> Object<'gc, 'own> {
+    pub fn new() -> Self {
         Object {
-            flags,
-            prototype,
-            kind,
-            properties: Properties::new(),
-            elements: Elements::new(),
+            shape: (),
+            prototype: None,
+            entries: (),
+            properties: (),
+            slot: ObjectSlot::Generic,
         }
     }
 
-    pub fn new_gc<'l>(
-        arena: &'l Arena<'_, 'cell>,
-        prototype: Option<GcObject<'_, 'cell>>,
-        flags: ObjectFlags,
-        kind: ObjectKind<'_, 'cell>,
-    ) -> GcObject<'l, 'cell> {
-        unsafe {
-            arena.add(Object {
-                flags,
-                prototype: gc::rebind(prototype),
-                kind: gc::rebind(kind),
-                properties: Properties::new(),
-                elements: Elements::new(),
-            })
+    pub fn entry_function(bc: Gc<'gc, 'own, ByteCode>) -> Self {
+        Object {
+            shape: (),
+            prototype: None,
+            entries: (),
+            properties: (),
+            slot: ObjectSlot::BcFunction(BcFunction {
+                id: FunctionId::entry(),
+                bc,
+            }),
         }
     }
 
-    pub fn flags(&self) -> ObjectFlags {
-        self.flags
+    pub fn bc_function<'a>(&'a self) -> Option<&'a BcFunction<'gc, 'own>> {
+        if let ObjectSlot::BcFunction(ref x) = self.slot {
+            Some(x)
+        } else {
+            None
+        }
     }
 
     /// # Safety
-    /// Accessing function kinds as mutable is unsafe
-    pub unsafe fn kind(&self) -> &ObjectKind<'gc, 'cell> {
-        &self.kind
-    }
-
-    pub fn prototype(&self) -> Option<GcObject<'gc, 'cell>> {
-        self.prototype
-    }
-}
-
-unsafe impl<'gc, 'cell> Trace for Object<'gc, 'cell> {
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        true
-    }
-
-    fn trace(&self, trace: Tracer) {
-        self.prototype.trace(trace);
-        self.kind.trace(trace);
-        self.properties.trace(trace);
-        self.elements.trace(trace);
-    }
-
-    fn finalize(&self, atoms: &common::atom::Atoms) {
-        for p in self.properties.iter() {
-            atoms.decrement(p.atom());
+    ///
+    /// Caller must ensure that the object contains a bc function.
+    pub unsafe fn unchecked_bc_function<'a>(&'a self) -> &'a BcFunction<'gc, 'own> {
+        if let ObjectSlot::BcFunction(ref x) = self.slot {
+            x
+        } else {
+            unreachable_unchecked()
         }
     }
 }
 
-unsafe impl<'a, 'gc, 'cell: 'a> Rebind<'a> for Object<'gc, 'cell> {
-    type Output = Object<'a, 'cell>;
+impl<'gc, 'own> Default for Object<'gc, 'own> {
+    fn default() -> Self {
+        Self::new()
+    }
 }

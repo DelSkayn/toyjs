@@ -1,24 +1,27 @@
-#![feature(allocator_api)]
-#![allow(clippy::new_without_default)]
+//! A library implementing common utitilies used throughout toyjs.
 
-#[macro_use]
-pub mod slotmap;
-pub mod atom;
-pub mod cell_vec;
+#![allow(dead_code)]
+
+pub mod hashmap {
+    use core::hash::BuildHasherDefault;
+
+    pub use hashbrown::hash_map;
+    use hashbrown::HashMap as BrownMap;
+
+    pub type HashMap<K, V> = BrownMap<K, V, BuildHasherDefault<ahash::AHasher>>;
+}
+
+mod mac;
+
+pub mod any_vec;
+pub mod id;
+pub mod interner;
+pub mod number;
+pub mod result;
+//pub mod smaller_vec;
 pub mod source;
-
-pub mod collections {
-    pub use fxhash::FxHashMap as HashMap;
-    pub use fxhash::FxHashSet as HashSet;
-}
-
-#[macro_export]
-macro_rules! const_assert {
-    ($x:expr $(,)?) => {
-        #[allow(unknown_lints, eq_op)]
-        const _: [(); 0 - !{
-            const ASSERT: bool = $x;
-            ASSERT
-        } as usize] = [];
-    };
-}
+pub mod span;
+pub mod string;
+pub mod structs;
+pub mod tagged_ptr;
+pub mod unicode;

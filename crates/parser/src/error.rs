@@ -1,180 +1,181 @@
-use common::{
-    atom::Atoms,
-    source::{Source, Span},
-};
-use lexer::{Error as LexerError, ErrorKind as LexerErrorKind};
-use std::fmt;
-use token::Token;
+use core::fmt;
+#[cfg(feature = "trace_error")]
+use std::backtrace::Backtrace;
 
-#[derive(Debug, Clone)]
+use common::{
+    result::ContextError,
+    source::{self, Source},
+    span::Span,
+    string::{Ascii, String},
+};
+use token::TokenKind;
+
+/// The type of error generated.
+#[derive(Clone, Debug)]
 pub enum ErrorKind {
-    UnexpectedLineTerminator,
-    Todo {
-        file: &'static str,
-        line: u32,
-        token: Option<String>,
+    /// The parser unexpectedly encounted the end of source.
+    UnexpectedEnd {
+        expected: Vec<TokenKind>,
+        message: Option<String>,
     },
-    UnexpectedToken {
-        found: Option<Token>,
-        expected: &'static [&'static str],
-        reason: Option<&'static str>,
+    Unexpected {
+        expected: Vec<TokenKind>,
+        found: TokenKind,
+        message: Option<String>,
     },
-    RedeclaredVariable,
-    LexerError(LexerErrorKind),
+    DisallowedToken {
+        found: TokenKind,
+        message: Option<String>,
+    },
+    NotAssignable,
+    InvalidDestructuringAssigment,
+    InvalidToken,
+    CoveredObjectLiteral,
+    ConstNotInitialized,
+    DestructringNotInitalized,
 }
 
-#[derive(Debug, Clone)]
+/// A parser error.
+#[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
     pub origin: Span,
+    #[cfg(feature = "trace_error")]
+    trace: Backtrace,
+}
+
+impl ContextError<Source> for Error {
+    fn display(&self, f: &mut fmt::Formatter, ctx: &Source) -> fmt::Result {
+        self.format(ctx, f).map_err(|_| fmt::Error)
+    }
 }
 
 impl Error {
-    pub fn format<'a>(self, source: &'a Source, atoms: &'a Atoms) -> FormattedError<'a> {
-        FormattedError {
-            error: self,
-            source,
-            atoms,
-        }
-    }
-}
-
-impl From<LexerError> for Error {
-    fn from(e: LexerError) -> Self {
+    pub fn new(kind: ErrorKind, origin: Span) -> Self {
         Error {
-            kind: ErrorKind::LexerError(e.kind),
-            origin: e.origin,
+            kind,
+            origin,
+            #[cfg(feature = "trace_error")]
+            trace: Backtrace::capture(),
         }
     }
-}
 
-// An error with data required to provide full context in the error.
-pub struct FormattedError<'a> {
-    error: Error,
-    source: &'a Source,
-    atoms: &'a Atoms,
-}
+    pub fn format<W: fmt::Write>(
+        &self,
+        source: &Source,
+        w: &mut W,
+    ) -> Result<(), source::FormatError> {
+        #[cfg(feature = "trace_error")]
+        writeln!(w)?;
+        #[cfg(feature = "trace_error")]
+        writeln!(w, "{}", self.trace)?;
 
-impl fmt::Display for FormattedError<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.format(f)
-    }
-}
-
-impl FormattedError<'_> {
-    // Format an error according to rust like error messages.
-    pub fn format<F: fmt::Write>(&self, mut w: F) -> fmt::Result {
-        write!(w, "error: ")?;
-        match self.error.kind {
-            // Line terminator found where it is explicitly forbiden to have a line terminator
-            ErrorKind::UnexpectedLineTerminator => {
-                writeln!(
-                    w,
-                    "unexpected line terminator, syntax forbids line terminator at this point",
-                )?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
-            }
-            // Todo marked in the parser
-            ErrorKind::Todo {
-                file,
-                ref line,
-                ref token,
+        writeln!(w)?;
+        match self.kind {
+            ErrorKind::UnexpectedEnd {
+                ref expected,
+                ref message,
             } => {
-                write!(
-                    w,
-                    "parser encountered an unimplemented path in: {}:{}, Sorry!",
-                    file, line
-                )?;
-                if let Some(x) = token {
-                    writeln!(w, " token: {}", x)?;
-                } else {
-                    writeln!(w)?;
-                }
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
-            }
-            // Variable was redeclared in the same scope.
-            ErrorKind::RedeclaredVariable => {
-                writeln!(w, "redeclared variable")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source.format_span_block(
-                    &mut w,
-                    self.error.origin,
-                    Some("variable redeclared here"),
-                )?;
-            }
-            // Parser encountered a token it did not expect.
-            ErrorKind::UnexpectedToken {
-                ref found,
-                expected,
-                reason,
-            } => {
-                write!(w, "unexpected token")?;
-                if let Some(x) = found {
-                    write!(w, ": found '{}'", x.kind.format(self.atoms))?;
-                }
-                match expected.len() {
-                    0 => {}
-                    1 => {
-                        write!(w, " expected '{}'", expected[0])?;
-                    }
-                    _ => {
-                        write!(w, " expected one of: [")?;
-                        let mut first = true;
-                        for e in expected.iter() {
-                            if first {
-                                first = false;
-                            } else {
-                                write!(w, ",")?;
-                            }
-                            if e == &"\n" {
-                                write!(w, "\\n")?;
-                            } else {
-                                write!(w, "{}", e)?;
-                            }
+                write!(w, "Source ended unexpectedly")?;
+                if !expected.is_empty() {
+                    if expected.len() > 1 {
+                        write!(w, ", expected one of:")?;
+                        for e in expected {
+                            write!(w, ", {:?}", e)?;
                         }
-                        write!(w, "]")?;
+                    } else {
+                        write!(w, ", expected: {:?}", &expected[0])?;
                     }
                 }
+                writeln!(w, ".")?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    message.as_ref().map(|x| x.encoding()),
+                )?;
+            }
+            ErrorKind::Unexpected {
+                ref expected,
+                ref found,
+                ref message,
+            } => {
+                write!(w, "Unexpected token `{:?}`", found)?;
+                if !expected.is_empty() {
+                    if expected.len() > 1 {
+                        write!(w, ", expected one of:")?;
+                        for e in expected {
+                            write!(w, ", {:?}", e)?;
+                        }
+                    } else {
+                        write!(w, ", expected: {:?}", &expected[0])?;
+                    }
+                }
+                writeln!(w, ".")?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    message.as_ref().map(|x| x.encoding()),
+                )?;
+            }
+            ErrorKind::DisallowedToken {
+                ref found,
+                ref message,
+            } => {
+                write!(w, "Token `{:?}` is not allowed in this context", found)?;
                 writeln!(w)?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, reason)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    message.as_ref().map(|x| x.encoding()),
+                )?;
             }
-            ErrorKind::LexerError(LexerErrorKind::InvalidNumber) => {
-                writeln!(w, "could not parse number")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
+            ErrorKind::NotAssignable => {
+                write!(w, "Left hand side expression is not assignable.")?;
+                writeln!(w)?;
+                source.render_string_block(w, self.origin, None)?;
             }
-            ErrorKind::LexerError(LexerErrorKind::InvalidUnicodeSequence) => {
-                writeln!(w, "invalid unicode escape code")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
+            ErrorKind::InvalidDestructuringAssigment => {
+                write!(w, "Invalid destructuring assignment target.")?;
+                writeln!(w)?;
+                source.render_string_block(w, self.origin, None)?;
             }
-            ErrorKind::LexerError(LexerErrorKind::InvalidEscapeCode) => {
-                writeln!(w, "invalid unicode escape code")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
+            ErrorKind::InvalidToken => {
+                write!(w, "Invalid token.")?;
+                writeln!(w)?;
+                source.render_string_block(w, self.origin, None)?;
             }
-            ErrorKind::LexerError(LexerErrorKind::InvalidToken) => {
-                writeln!(w, "invalid token")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
+            ErrorKind::CoveredObjectLiteral => {
+                write!(w, "Invalid object literal.")?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(
+                        Ascii::const_from_str(
+                            "This is only valid syntax in destructuring patterns.",
+                        )
+                        .into(),
+                    ),
+                )?;
             }
-            ErrorKind::LexerError(LexerErrorKind::UnClosedString) => {
-                writeln!(w, "string not closed")?;
-                self.source.format_span_line(&mut w, self.error.origin)?;
-                self.source
-                    .format_span_block(&mut w, self.error.origin, None)?;
+            ErrorKind::ConstNotInitialized => {
+                write!(w, "Const declaration not initialized.")?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
+                )?;
             }
-            ref x => todo!("error kind: {:?}", x),
+            ErrorKind::DestructringNotInitalized => {
+                write!(w, "Destructuring declaration not initialized.")?;
+                writeln!(w)?;
+                source.render_string_block(
+                    w,
+                    self.origin,
+                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
+                )?;
+            }
         }
         Ok(())
     }

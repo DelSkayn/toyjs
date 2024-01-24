@@ -1,10 +1,11 @@
-use super::{Allocator, Parser, Result};
-
 use ast::{
-    symbol_table::ScopeKind, ArrowBody, AssignOperator, BinaryOperator, Expr, PostfixOperator,
-    PrefixOperator, PrimeExpr,
+    Argument, AssignOp, BaseOp, BinaryOp, BindingPattern, Expr, ListId, NodeId, NodeList,
+    PostfixOp, PrefixOp, PrimeExpr, RenderAst, RenderCtx,
 };
+use common::span::Span;
 use token::{t, TokenKind};
+
+use crate::{expect, unexpected, Error, ErrorKind, Parser, ParserState, Result};
 
 fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
     match kind {
@@ -20,8 +21,7 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
         | t!("&=")
         | t!("^=")
         | t!("|=")
-        | t!("**=")
-        | t!("=>") => Some((2, 1)),
+        | t!("**=") => Some((2, 1)),
         t!("?") => Some((4, 3)),
         t!("??") => Some((6, 5)),
         t!("||") => Some((7, 8)),
@@ -44,302 +44,409 @@ fn infix_binding_power(kind: TokenKind) -> Option<(u8, u8)> {
 fn postfix_binding_power(kind: TokenKind) -> Option<(u8, ())> {
     match kind {
         t!("++") | t!("--") => Some((31, ())),
-        t!("[") | t!(".") | t!("(") => Some((38, ())),
+        t!("[") | t!(".") | t!("(") | t!("``") | t!("` ${") => Some((38, ())),
         _ => None,
     }
 }
 
 fn prefix_binding_power(kind: TokenKind) -> Option<((), u8)> {
     match kind {
-        t!("delete") | t!("void") | t!("typeof") | t!("+") | t!("-") | t!("~") | t!("!") => {
-            Some(((), 29))
-        }
+        t!("await")
+        | t!("delete")
+        | t!("void")
+        | t!("typeof")
+        | t!("+")
+        | t!("-")
+        | t!("~")
+        | t!("!") => Some(((), 29)),
         t!("++") | t!("--") => Some(((), 31)),
         t!("new") => Some(((), 33)),
         _ => None,
     }
 }
 
-impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
-    pub(crate) fn parse_expr(&mut self) -> Result<Vec<Expr<A>, A>> {
-        let mut res = Vec::new_in(self.alloc.clone());
-        loop {
-            res.push(self.parse_single_expr()?);
-            if !self.eat(t!(","))? {
-                break;
-            }
+impl<'a> Parser<'a> {
+    /// Parse the ecma `Expression` production.
+    pub fn parse_expr(&mut self) -> Result<ListId<Expr>> {
+        let item = self.parse_assignment_expr()?;
+
+        let res = self.ast.append_list(item, None);
+        let mut expr = res;
+        while self.eat(t!(",")) {
+            let item = self.parse_assignment_expr()?;
+            expr = self.ast.append_list(item, Some(expr));
         }
         Ok(res)
     }
 
-    pub(crate) fn parse_single_expr(&mut self) -> Result<Expr<A>> {
-        let res = self.parse_ops_rec(0)?;
-        if self.peek_lt()?.map(|x| x.kind) == Some(t!("=>")) {
-            return self.reparse_arrow_function(res);
+    /// Parse the ecma `AssignmentExpression` production.
+    pub(crate) fn parse_assignment_expr(&mut self) -> Result<NodeId<Expr>> {
+        if !self.state.contains(ParserState::YieldIdent) && self.eat(t!("yield")) {
+            let star = self.eat(t!("*"));
+            let expr = self.parse_assignment_expr()?;
+            let res = self.ast.push_node(Expr::Yield { star, expr });
+            return Ok(res);
         }
+        let res = self.pratt_parse_expr(0)?;
         Ok(res)
     }
 
-    fn parse_prefix_op(&mut self, r_bp: u8) -> Result<Expr<A>> {
-        Ok(Expr::UnaryPrefix(
-            match self.next()?.unwrap().kind {
-                t!("delete") => PrefixOperator::Delete,
-                t!("void") => PrefixOperator::Void,
-                t!("typeof") => PrefixOperator::TypeOf,
-                t!("new") => {
-                    if self.eat(t!("."))? {
-                        let peek = self.peek_kind()?;
-                        let tgt = self.lexer.interner.intern("target");
-                        if peek == Some(TokenKind::Ident(tgt)) {
-                            if !self.state.r#return {
-                                unexpected!(self => "new.target expression is not allowed here");
-                            }
-                            self.next()?;
-                            return Ok(Expr::Prime(ast::PrimeExpr::NewTarget));
-                        } else {
-                            unexpected!(self);
-                        }
+    /// Parsers any prefix operator, called in a pratt parser.
+    /// Only call if the next token is prefix operator.
+    fn parse_prefix_op(&mut self, r_bp: u8) -> Result<NodeId<Expr>> {
+        let token = self.peek();
+
+        let operator = match token.kind() {
+            t!("delete") => PrefixOp::Delete,
+            t!("void") => PrefixOp::Void,
+            t!("typeof") => PrefixOp::TypeOf,
+            t!("new") => {
+                self.next();
+                if self.eat(t!(".")) {
+                    let token = self.next();
+                    if token.kind() != t!("target") {
+                        unexpected!(self, token.kind(), "target");
                     }
-                    PrefixOperator::New
+                    let expr = self.ast.push_node(PrimeExpr::NewTarget);
+                    let expr = self.ast.push_node(Expr::Prime { expr });
+                    return Ok(expr);
                 }
-                t!("+") => PrefixOperator::Positive,
-                t!("-") => PrefixOperator::Negative,
-                t!("!") => PrefixOperator::Not,
-                t!("~") => PrefixOperator::BitwiseNot,
-                t!("++") => {
-                    let expr = self.parse_ops_rec(r_bp)?;
-                    if !expr.is_assignable() {
-                        unexpected!(self => "right hand side expression is not assignable")
-                    }
-                    return Ok(Expr::UnaryPrefix(
-                        PrefixOperator::AddOne,
-                        Box::new_in(expr, self.alloc.clone()),
-                    ));
+                let expr = self.pratt_parse_expr(r_bp)?;
+                return Ok(self.ast.push_node(Expr::Prefix {
+                    op: PrefixOp::New,
+                    expr,
+                }));
+            }
+            t!("await") => {
+                if self.state.contains(ParserState::AwaitIdent) {
+                    let (expr, _) = self.parse_prime()?;
+                    return Ok(self.ast.push_node(Expr::Prime { expr }));
+                } else {
+                    PrefixOp::Await
                 }
-                t!("--") => {
-                    let expr = self.parse_ops_rec(r_bp)?;
-                    if !expr.is_assignable() {
-                        unexpected!(self => "right hand side expression is not assignable")
-                    }
-                    return Ok(Expr::UnaryPrefix(
-                        PrefixOperator::SubtractOne,
-                        Box::new_in(expr, self.alloc.clone()),
-                    ));
-                }
-                _ => panic!("not a unary operator"),
-            },
-            Box::new_in(self.parse_ops_rec(r_bp)?, self.alloc.clone()),
-        ))
+            }
+            t!("+") => PrefixOp::Plus,
+            t!("-") => PrefixOp::Minus,
+            t!("!") => PrefixOp::Not,
+            t!("~") => PrefixOp::BitwiseNot,
+            t!("++") => PrefixOp::AddOne,
+            t!("--") => PrefixOp::SubOne,
+            _ => {
+                panic!("`parse_prefix_op` should only be called when the next token is a operator")
+            }
+        };
+        self.next();
+
+        let expr = self.pratt_parse_expr(r_bp)?;
+        Ok(self.ast.push_node(Expr::Prefix { op: operator, expr }))
     }
 
-    fn parse_postfix_op(&mut self, _l_bp: u8, lhs: Expr<A>) -> Result<ast::Expr<A>> {
-        let kind = match self.next()?.unwrap().kind {
-            t!("++") => {
-                if !lhs.is_assignable() {
-                    unexpected!(self => "left hand side expression is not assignable")
-                }
-                PostfixOperator::AddOne
-            }
-            t!("--") => {
-                if !lhs.is_assignable() {
-                    unexpected!(self => "left hand side expression is not assignable")
-                }
-                PostfixOperator::SubtractOne
+    /// Parsers any postfix operator, called in a pratt parser.
+    /// Only call if the next token is postfix operator.
+    fn parse_postfix_op(&mut self, _l_bp: u8, lhs: NodeId<Expr>) -> Result<NodeId<Expr>> {
+        let token = self.peek();
+
+        let op = match token.kind() {
+            t!("++") => PostfixOp::AddOne,
+            t!("--") => PostfixOp::SubOne,
+            t!("[") => {
+                self.next();
+                let index = self.parse_assignment_expr()?;
+                expect!(self, "]");
+                return Ok(self.ast.push_node(Expr::Index { index, expr: lhs }));
             }
             t!(".") => {
-                expect_bind!(self,let index = "ident");
-                PostfixOperator::Dot(index)
+                self.next();
+                let ident = self.parse_ident_name()?;
+                return Ok(self.ast.push_node(Expr::Dot { ident, expr: lhs }));
             }
             t!("(") => {
-                let stmts = if let Some(t!(")")) = self.peek_kind()? {
-                    Vec::new_in(self.alloc.clone())
-                } else {
-                    self.parse_expr()?
-                };
-                expect!(self, ")");
-                PostfixOperator::Call(stmts)
+                self.next();
+                let args = self.parse_arguments()?;
+                return Ok(self.ast.push_node(Expr::Call { args, expr: lhs }));
             }
-            t!("[") => {
-                let expr = self.parse_single_expr()?;
-                expect!(self, "]");
-                PostfixOperator::Index(Box::new_in(expr, self.alloc.clone()))
+            t!("` ${") | t!("``") => {
+                let template = self.parse_template()?;
+                return Ok(self
+                    .ast
+                    .push_node(Expr::TaggedTemplate { tag: lhs, template }));
             }
-            _ => to_do!(self),
+            x => panic!("`parse_postfix_op` called with not a token {:?}", x),
         };
-        Ok(Expr::UnaryPostfix(
-            Box::new_in(lhs, self.alloc.clone()),
-            kind,
-        ))
+        self.next();
+
+        Ok(self.ast.push_node(Expr::Postfix { op, expr: lhs }))
     }
 
-    fn parse_infix_op(&mut self, r_bp: u8, lhs: Expr<A>) -> Result<ast::Expr<A>> {
-        let kind = match self.next()?.unwrap().kind {
-            t!("?") => {
-                let expr = self.parse_ops_rec(r_bp)?;
-                expect!(self, ":");
-                let expr = Box::new_in(expr, self.alloc.clone());
-                BinaryOperator::Ternary(expr)
-            }
-            t!("=>") => return self.reparse_arrow_function(lhs),
-            t!("??") => BinaryOperator::NullCoalessing,
-            t!("?.") => BinaryOperator::TenaryNull,
-            t!("||") => BinaryOperator::Or,
-            t!("&&") => BinaryOperator::And,
-            t!("|") => BinaryOperator::BitwiseOr,
-            t!("&") => BinaryOperator::BitwiseAnd,
-            t!("^") => BinaryOperator::BitwiseXor,
-            t!("+") => BinaryOperator::Add,
-            t!("-") => BinaryOperator::Subtract,
-            t!("*") => BinaryOperator::Multiply,
-            t!("/") => BinaryOperator::Divide,
-            t!("%") => BinaryOperator::Modulo,
-            t!("**") => BinaryOperator::Exponentiate,
-            t!("<") => BinaryOperator::Less,
-            t!("<=") => BinaryOperator::LessEqual,
-            t!(">") => BinaryOperator::Greater,
-            t!(">=") => BinaryOperator::GreaterEqual,
-            t!("<<") => BinaryOperator::ShiftLeft,
-            t!(">>") => BinaryOperator::ShiftRight,
-            t!(">>>") => BinaryOperator::ShiftRightUnsigned,
-            t!("instanceof") => BinaryOperator::InstanceOf,
-            t!("in") => BinaryOperator::In,
-            t!(".") => BinaryOperator::Index,
-            t!("==") => BinaryOperator::Equal,
-            t!("===") => BinaryOperator::StrictEqual,
-            t!("!=") => BinaryOperator::NotEqual,
-            t!("!==") => BinaryOperator::StrictNotEqual,
-            x @ t!("=")
-            | x @ t!("*=")
-            | x @ t!("/=")
-            | x @ t!("%=")
-            | x @ t!("+=")
-            | x @ t!("-=")
-            | x @ t!("<<=")
-            | x @ t!(">>=")
-            | x @ t!(">>>=")
-            | x @ t!("&=")
-            | x @ t!("^=")
-            | x @ t!("|=")
-            | x @ t!("**=") => {
-                let op = match x {
-                    t!("=") => AssignOperator::Assign,
-                    t!("*=") => AssignOperator::Multiply,
-                    t!("/=") => AssignOperator::Divide,
-                    t!("%=") => AssignOperator::Modulo,
-                    t!("+=") => AssignOperator::Add,
-                    t!("-=") => AssignOperator::Subtract,
-                    t!("<<=") => AssignOperator::ShiftLeft,
-                    t!(">>=") => AssignOperator::ShiftRight,
-                    t!(">>>=") => AssignOperator::ShiftRightUnsigned,
-                    t!("&=") => AssignOperator::BitwiseAnd,
-                    t!("^=") => AssignOperator::BitwiseXor,
-                    t!("|=") => AssignOperator::BitwiseOr,
-                    t!("**=") => AssignOperator::Exponentiate,
-                    _ => unreachable!(),
-                };
-                if !lhs.is_assignable() {
-                    unexpected!(self => "left hand side is not assignable");
+    /// Parsers any infix operator, called in a pratt parser.
+    /// Only call if the next token is infix operator.
+    fn parse_infix_op(
+        &mut self,
+        r_bp: u8,
+        lhs: NodeId<Expr>,
+        lhs_span: Span,
+    ) -> Result<NodeId<Expr>> {
+        let token = self.next();
+
+        let op = match token.kind() {
+            t!("??") => BinaryOp::Base(BaseOp::NullCoalessing),
+            t!("?.") => BinaryOp::Base(BaseOp::TenaryNull),
+            t!("||") => BinaryOp::Base(BaseOp::Or),
+            t!("&&") => BinaryOp::Base(BaseOp::And),
+            t!("&") => BinaryOp::Base(BaseOp::BitwiseAnd),
+            t!("|") => BinaryOp::Base(BaseOp::BitwiseOr),
+            t!("^") => BinaryOp::Base(BaseOp::BitwiseXor),
+            t!("+") => BinaryOp::Base(BaseOp::Add),
+            t!("-") => BinaryOp::Base(BaseOp::Sub),
+            t!("*") => BinaryOp::Base(BaseOp::Mul),
+            t!("/") => BinaryOp::Base(BaseOp::Div),
+            t!("%") => BinaryOp::Base(BaseOp::Mod),
+            t!("**") => BinaryOp::Base(BaseOp::Exp),
+            t!("<") => BinaryOp::Base(BaseOp::Less),
+            t!("<=") => BinaryOp::Base(BaseOp::LessEqual),
+            t!(">") => BinaryOp::Base(BaseOp::Greater),
+            t!(">=") => BinaryOp::Base(BaseOp::GreaterEqual),
+            t!("<<") => BinaryOp::Base(BaseOp::ShiftLeft),
+            t!(">>") => BinaryOp::Base(BaseOp::ShiftRight),
+            t!(">>>") => BinaryOp::Base(BaseOp::ShiftRightUnsigned),
+            t!("instanceof") => BinaryOp::Base(BaseOp::InstanceOf),
+            t!("in") => BinaryOp::Base(BaseOp::In),
+            t!("==") => BinaryOp::Base(BaseOp::Equal),
+            t!("===") => BinaryOp::Base(BaseOp::StrictEqual),
+            t!("!=") => BinaryOp::Base(BaseOp::NotEqual),
+            t!("!==") => BinaryOp::Base(BaseOp::StrictNotEqual),
+            t!("=") => {
+                if let Expr::Prime { expr } = self.ast[lhs] {
+                    // Test for destructuring assignment.
+                    if let Some(pattern) = self.reparse_destructuring(lhs_span, expr)? {
+                        let right = self.pratt_parse_expr(r_bp)?;
+                        let res = self.ast.push_node(Expr::Destructure {
+                            pattern,
+                            expr: right,
+                        });
+                        return Ok(res);
+                    }
                 }
-
-                let rhs = self.parse_ops_rec(r_bp)?;
-                return Ok(Expr::Assign(
-                    Box::new_in(lhs, self.alloc.clone()),
-                    op,
-                    Box::new_in(rhs, self.alloc.clone()),
-                ));
+                BinaryOp::Assign(AssignOp::Assign)
             }
-            _ => unreachable!(),
+            t!("+=") => BinaryOp::Assign(AssignOp::Add),
+            t!("-=") => BinaryOp::Assign(AssignOp::Sub),
+            t!("*=") => BinaryOp::Assign(AssignOp::Mul),
+            t!("/=") => BinaryOp::Assign(AssignOp::Div),
+            t!("%=") => BinaryOp::Assign(AssignOp::Mod),
+            t!("**=") => BinaryOp::Assign(AssignOp::Exp),
+            t!("<<=") => BinaryOp::Assign(AssignOp::ShiftLeft),
+            t!(">>=") => BinaryOp::Assign(AssignOp::ShiftRight),
+            t!(">>>=") => BinaryOp::Assign(AssignOp::ShiftRightUnsigned),
+            t!("&=") => BinaryOp::Assign(AssignOp::BitwiseAnd),
+            t!("|=") => BinaryOp::Assign(AssignOp::BitwiseOr),
+            t!("^=") => BinaryOp::Assign(AssignOp::BitwiseXor),
+            t!("?") => {
+                let then = self.parse_assignment_expr()?;
+                expect!(self, ":");
+                let r#else = self.parse_assignment_expr()?;
+                let tenary = self.ast.push_node(ast::Tenary {
+                    cond: lhs,
+                    then,
+                    r#else,
+                });
+                return Ok(self.ast.push_node(Expr::Tenary(tenary)));
+            }
+            _ => {
+                panic!("`parse_infix_op` called without a infix operator")
+            }
         };
-        Ok(Expr::Binary(
-            Box::new_in(lhs, self.alloc.clone()),
-            kind,
-            Box::new_in(self.parse_ops_rec(r_bp)?, self.alloc.clone()),
-        ))
+
+        if let BinaryOp::Assign(_) = op {
+            if !self.is_assignable(lhs) {
+                let ctx = RenderCtx::new(
+                    &self.ast,
+                    &self.lexer.data.strings,
+                    &self.lexer.data.numbers,
+                );
+                println!("{}", lhs.display(ctx));
+                return Err(Error::new(ErrorKind::NotAssignable, lhs_span));
+            }
+        }
+
+        let right = self.pratt_parse_expr(r_bp)?;
+        Ok(self.ast.push_node(Expr::Binary {
+            op,
+            left: lhs,
+            right,
+        }))
     }
 
-    fn parse_ops_rec(&mut self, min_bp: u8) -> Result<Expr<A>> {
-        let mut lhs = if let Some(((), r_bp)) = self.peek_kind()?.and_then(prefix_binding_power) {
+    /// The pratt parser, uses binding power to parse operator with correct precedence.
+    fn pratt_parse_expr(&mut self, min_bp: u8) -> Result<NodeId<Expr>> {
+        let start_span = self.peek().span;
+        let mut lhs = if let Some(((), r_bp)) = prefix_binding_power(self.peek_kind()) {
             self.parse_prefix_op(r_bp)?
         } else {
-            Expr::Prime(self.parse_prime_expr()?)
+            let (expr, span) = self.parse_prime()?;
+            if let Some(span) = span {
+                let lhs_span = start_span.covers(self.last_span());
+                // Found a covered initializer in an object literal.
+                // If the next token isn't `=` this would be invalid.
+                if let t!("=") = self.peek_kind() {
+                    self.next();
+                    // This should always succeed, otherwise a span was returned when the prime
+                    // expression wasn't an object literal with a covered initializer.
+                    let pattern = self.reparse_destructuring(lhs_span, expr)?.unwrap();
+                    let right = self.pratt_parse_expr(min_bp)?;
+                    let res = self.ast.push_node(Expr::Destructure {
+                        pattern,
+                        expr: right,
+                    });
+                    return Ok(res);
+                } else {
+                    return Err(Error::new(ErrorKind::CoveredObjectLiteral, span));
+                }
+            }
+
+            self.ast.push_node(Expr::Prime { expr })
         };
 
-        while let Some(op) = self.peek_kind()? {
+        let mut lhs_span = start_span.covers(self.last_span());
+        loop {
+            let op = self.peek_kind();
             if let Some((l_bp, ())) = postfix_binding_power(op) {
                 if l_bp < min_bp {
                     break;
                 }
                 lhs = self.parse_postfix_op(l_bp, lhs)?;
-                continue;
-            }
-
-            if let Some((l_bp, r_bp)) = infix_binding_power(op) {
+            } else {
+                let Some((l_bp, r_bp)) = infix_binding_power(op) else {
+                    break;
+                };
+                // In is not allowed in some contexts.
+                if !self.state.contains(ParserState::In) && t!("in") == op {
+                    break;
+                }
                 if l_bp < min_bp {
                     break;
                 }
-                lhs = self.parse_infix_op(r_bp, lhs)?;
-                continue;
+                lhs = self.parse_infix_op(r_bp, lhs, lhs_span)?;
+                lhs_span = start_span.covers(self.last_span());
             }
-            break;
         }
         Ok(lhs)
     }
 
-    fn reparse_arrow_function(&mut self, expr: Expr<A>) -> Result<Expr<A>> {
-        let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.reparse_as_param(expr)?;
-        let body = if self.peek_kind()? == Some(t!("{")) {
-            let block = self.alter_state(
-                |s| {
-                    s.r#return = true;
-                    s.r#continue = false;
-                    s.r#break = false;
-                },
-                |this| {
-                    expect!(this, "{");
-                    let mut stmts = Vec::new_in(this.alloc.clone());
-                    while !this.eat(t!("}"))? {
-                        stmts.push(this.parse_stmt()?)
-                    }
-                    Ok(stmts)
-                },
-            )?;
-            ArrowBody::Block(block)
-        } else {
-            let expr = self.parse_single_expr()?;
-            ArrowBody::Expr(Box::new_in(expr, self.alloc.clone()))
-        };
+    /// Parse argument for a function call.
+    /// ```javascript
+    /// foo(/* start here */ 1,2,...b)
+    /// ```
+    fn parse_arguments(&mut self) -> Result<Option<NodeId<NodeList<Argument>>>> {
+        let mut head = None;
+        let mut prev = None;
 
-        debug_assert_eq!(scope, self.symbol_table.current_scope());
-        self.symbol_table.pop_scope();
-
-        Ok(Expr::Prime(PrimeExpr::ArrowFunction(scope, params, body)))
-    }
-
-    fn reparse_as_param(&mut self, expr: Expr<A>) -> Result<ast::Params<A>> {
-        match expr {
-            Expr::Prime(ast::PrimeExpr::Variable(symbol)) => {
-                let symbol = self.symbol_table.reparse_function_param(symbol);
-                let mut res = Vec::new_in(self.alloc.clone());
-                res.push(ast::SymbolOrBinding::Single(symbol));
-                Ok(ast::Params(res, None))
-            }
-            Expr::Prime(ast::PrimeExpr::Covered(exprs)) => {
-                let mut res = Vec::new_in(self.alloc.clone());
-                for e in exprs {
-                    if let Expr::Prime(ast::PrimeExpr::Variable(s)) = e {
-                        let sym = self.symbol_table.reparse_function_param(s);
-                        res.push(ast::SymbolOrBinding::Single(sym));
-                    } else {
-                        unexpected!(self => "could not parse left hand side as arrow function parameters");
-                    }
+        loop {
+            let mut is_spread = false;
+            match self.peek_kind() {
+                t!(")") => break,
+                t!("...") => {
+                    self.next();
+                    is_spread = true;
                 }
-                Ok(ast::Params(res, None))
-            }
-            Expr::Prime(ast::PrimeExpr::ArrowArgs(x)) => Ok(x),
-            _ => {
-                unexpected!(self => "could not parse left hand side as arrow function parameters");
+                _ => {}
+            };
+            let expr = self.parse_assignment_expr()?;
+            prev = Some(
+                self.ast
+                    .append_node_list(Argument { is_spread, expr }, prev),
+            );
+            head = head.or(prev);
+            if !self.eat(t!(",")) {
+                break;
             }
         }
+        expect!(self, ")");
+        Ok(head)
+    }
+
+    fn is_assignable(&self, expr: NodeId<ast::Expr>) -> bool {
+        match self.ast[expr] {
+            Expr::Binary { .. }
+            | Expr::Prefix { .. }
+            | Expr::Postfix { .. }
+            | Expr::Tenary(_)
+            | Expr::Call { .. }
+            | Expr::Yield { .. }
+            | Expr::TaggedTemplate { .. }
+            | Expr::Destructure { .. } => false,
+            Expr::Index { .. } | Expr::Dot { .. } => true,
+            Expr::Prime { expr } => match self.ast[expr] {
+                PrimeExpr::Number(_)
+                | PrimeExpr::String(_)
+                | PrimeExpr::Template(_)
+                | PrimeExpr::Regex(_)
+                | PrimeExpr::Boolean(_)
+                | PrimeExpr::Function(_)
+                | PrimeExpr::Class(_)
+                | PrimeExpr::Object(_)
+                | PrimeExpr::Array(_)
+                | PrimeExpr::This
+                | PrimeExpr::Null
+                | PrimeExpr::NewTarget
+                | PrimeExpr::Covered(_) => false,
+                PrimeExpr::Ident(_) | PrimeExpr::Super => true,
+            },
+        }
+    }
+
+    pub fn reparse_destructuring(
+        &mut self,
+        span: Span,
+        pattern: NodeId<PrimeExpr>,
+    ) -> Result<Option<NodeId<BindingPattern>>> {
+        let pat = match self.ast[pattern] {
+            PrimeExpr::Object(o) => self
+                .reparse_object_lit(o)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
+            PrimeExpr::Array(a) => self
+                .reparse_array_lit(a)
+                .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
+            _ => return Ok(None),
+        };
+        self.ast.free_node(pattern);
+        Ok(Some(self.ast.push_node(pat)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ast::{BaseOp, BinaryOp, Expr, PrimeExpr};
+
+    use crate::create_test_parser;
+
+    #[test]
+    fn basic() {
+        create_test_parser!("1 + 2", parser);
+        let Ok(x) = parser.parse_assignment_expr() else {
+            panic!()
+        };
+        let Expr::Binary { op, left, right } = parser.ast[x] else {
+            panic!()
+        };
+        let BinaryOp::Base(BaseOp::Add) = op else {
+            panic!()
+        };
+        let Expr::Prime { expr: left } = parser.ast[left] else {
+            panic!()
+        };
+        let Expr::Prime { expr: right } = parser.ast[right] else {
+            panic!()
+        };
+        let PrimeExpr::Number(left) = parser.ast[left] else {
+            panic!()
+        };
+        let PrimeExpr::Number(right) = parser.ast[right] else {
+            panic!()
+        };
+        let left = parser.lexer.data.numbers[left];
+        assert_eq!(left.0, 1.0);
+        let right = parser.lexer.data.numbers[right];
+        assert_eq!(right.0, 2.0);
     }
 }

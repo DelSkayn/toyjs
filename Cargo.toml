@@ -1,13 +1,12 @@
 [workspace]
+resolver = "2"
 members = [
     "crates/*",
-    "toyjs",
-    "toyjs_test",
-    "toyjs_web",
+    #"toyjs",
+    #"toyjs_test",
+    #"toyjs_web",
 ]
 
-#[profile.release]
-#debug = true
-
-[profile.test]
-opt-level=3
+[profile.release]
+lto = true
+debug = true

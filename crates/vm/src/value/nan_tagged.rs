@@ -1,24 +1,21 @@
-use common::atom::Atom;
-
-use crate::{
-    cell::Id,
-    gc::{Gc, GcBox, Rebind, Trace, Tracer},
-    GcObject, Object,
-};
+//use common::atom::Atom;
 
 //TODO rediscover implementation and document.
 
 //mod tagged_union;
 //pub use tagged_union::TaggedValue;
+use std::{cmp, fmt, marker::PhantomData, ptr::NonNull};
 
-use std::{cmp, fmt, marker::PhantomData};
+use dreck::{marker::Invariant, Gc, Marker, Trace};
+
+use crate::object::GcObject;
 
 pub const VALUE_EMPTY: u64 = 0x0;
+pub const VALUE_NULL: u64 = 0x02;
 pub const VALUE_DELETED: u64 = 0x5;
 pub const VALUE_FALSE: u64 = 0x06;
 pub const VALUE_TRUE: u64 = 0x07;
 pub const VALUE_UNDEFINED: u64 = 0x0A;
-pub const VALUE_NULL: u64 = 0x02;
 
 pub const TAG_BASE: u64 = 0x0000_0000_0000_0000;
 pub const TAG_OBJECT: u64 = 0x0001_0000_0000_0000;
@@ -39,6 +36,7 @@ pub union ValueUnion {
     float: f64,
     int: i32,
     pub bits: u64,
+    ptr: *mut NonNull<u8>,
 }
 
 impl cmp::Eq for ValueUnion {}
@@ -52,18 +50,18 @@ impl cmp::PartialEq<ValueUnion> for ValueUnion {
 ///
 /// Toyjs uses nan-tagging for its value.
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub struct Value<'gc, 'cell> {
+pub struct Value<'gc, 'own> {
     value: ValueUnion,
     marker: PhantomData<&'gc ()>,
-    id: Id<'cell>,
+    id: Invariant<'own>,
 }
 
-impl<'gc, 'cell> Value<'gc, 'cell> {
+impl<'gc, 'own> Value<'gc, 'own> {
     unsafe fn from_value(v: ValueUnion) -> Self {
         Value {
             value: v,
             marker: PhantomData,
-            id: Id::new(),
+            id: Invariant::new(),
         }
     }
 
@@ -79,7 +77,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn to_static(self) -> Option<Value<'static, 'cell>> {
+    pub fn to_static(self) -> Option<Value<'static, 'own>> {
         unsafe {
             let tag = self.value.bits & TAG_MASK;
             if tag == TAG_OBJECT || tag == TAG_STRING {
@@ -89,7 +87,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
             Some(Value {
                 value: self.value,
                 marker: PhantomData,
-                id: Id::new(),
+                id: Invariant::new(),
             })
         }
     }
@@ -160,9 +158,7 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     /// Is this value a number type.
     #[inline]
     pub fn is_number(self) -> bool {
-        unsafe {
-            self.value.bits >= MIN_NUMBER
-        }
+        unsafe { self.value.bits >= MIN_NUMBER }
     }
 
     /// Is this value a number integer.
@@ -228,14 +224,12 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
 
     #[inline]
     pub fn ensure_float(v: f64) -> Self {
-        unsafe {
-            Value {
-                value: ValueUnion {
-                    bits: v.to_bits() + MIN_FLOAT,
-                },
-                marker: PhantomData,
-                id: Id::new(),
-            }
+        Value {
+            value: ValueUnion {
+                bits: v.to_bits() + MIN_FLOAT,
+            },
+            marker: PhantomData,
+            id: Invariant::new(),
         }
     }
 
@@ -270,11 +264,12 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_string(self) -> Option<Gc<'gc, 'cell, String>> {
+    pub fn into_string(self) -> Option<Gc<'gc, 'own, String>> {
         unsafe {
             if self.is_string() {
                 let ptr = (self.value.bits & PTR_MASK) as *mut _;
-                Some(Gc::from_raw(ptr))
+                let ptr = NonNull::new_unchecked(ptr);
+                Some(Gc::from_gc_box(ptr))
             } else {
                 None
             }
@@ -282,28 +277,31 @@ impl<'gc, 'cell> Value<'gc, 'cell> {
     }
 
     #[inline]
-    pub fn into_object(self) -> Option<GcObject<'gc, 'cell>> {
+    pub fn into_object(self) -> Option<GcObject<'gc, 'own>> {
         unsafe {
             if self.is_object() {
-                let ptr = (self.value.bits & PTR_MASK) as *mut GcBox<'cell, Object<'gc, 'cell>>;
-                Some(Gc::from_raw(ptr))
+                let ptr = (self.value.bits & PTR_MASK) as *mut _;
+                let ptr = NonNull::new_unchecked(ptr);
+                Some(Gc::from_gc_box(ptr))
             } else {
                 None
             }
         }
     }
 
+    /*
     #[inline]
-    pub fn into_atom(self) -> Option<Atom> {
+    pub fn into_atom(self) -> Option<Atom<'gc, 'own>> {
         if self.is_atom() {
-            unsafe { Some(Atom::from_raw(self.value.int as u32)) }
+            unsafe { Some(Atom::from_raw(self.value.ptr.cast())) }
         } else {
             None
         }
     }
+    */
 }
 
-impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
     #[inline]
     fn from(v: bool) -> Self {
         unsafe {
@@ -314,7 +312,7 @@ impl<'gc, 'cell> From<bool> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<i32> for Value<'gc, 'own> {
     #[inline]
     fn from(v: i32) -> Self {
         unsafe {
@@ -325,7 +323,7 @@ impl<'gc, 'cell> From<i32> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<f64> for Value<'gc, 'own> {
     #[inline]
     fn from(v: f64) -> Self {
         if v as i32 as f64 == v {
@@ -336,31 +334,32 @@ impl<'gc, 'cell> From<f64> for Value<'gc, 'cell> {
     }
 }
 
-impl<'gc, 'cell> From<Gc<'gc, 'cell, String>> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<Gc<'gc, 'own, String>> for Value<'gc, 'own> {
     #[inline]
     fn from(v: Gc<String>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_STRING | Gc::into_raw(v) as u64,
+                bits: TAG_STRING | Gc::into_gc_box(v).as_ptr() as u64,
             })
         }
     }
 }
 
-impl<'gc, 'cell> From<GcObject<'gc, 'cell>> for Value<'gc, 'cell> {
+impl<'gc, 'own> From<GcObject<'gc, 'own>> for Value<'gc, 'own> {
     #[inline]
-    fn from(v: Gc<Object>) -> Self {
+    fn from(v: GcObject<'gc, 'own>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_OBJECT | Gc::into_raw(v) as u64,
+                bits: TAG_OBJECT | Gc::into_gc_box(v).as_ptr() as u64,
             })
         }
     }
 }
 
-impl<'gc, 'cell> From<Atom> for Value<'gc, 'cell> {
+/*
+impl<'gc, 'own> From<Atom<'gc, 'own>> for Value<'gc, 'own> {
     #[inline]
-    fn from(v: Atom) -> Self {
+    fn from(v: Atom<'gc, 'own>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
                 bits: TAG_ATOM | v.into_raw() as u32 as u64,
@@ -368,8 +367,11 @@ impl<'gc, 'cell> From<Atom> for Value<'gc, 'cell> {
         }
     }
 }
+*/
 
-unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
+unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
+    type Gc<'r> = Value<'r, 'own>;
+
     fn needs_trace() -> bool
     where
         Self: Sized,
@@ -377,20 +379,19 @@ unsafe impl<'gc, 'cell> Trace for Value<'gc, 'cell> {
         true
     }
 
-    fn trace(&self, tracer: Tracer) {
+    fn trace(&self, tracer: Marker<'own, '_>) {
+        /*
         if let Some(obj) = self.into_object() {
             tracer.mark(obj);
-        } else if let Some(s) = self.into_string() {
+
+        } else */
+        if let Some(s) = self.into_string() {
             tracer.mark(s);
         }
     }
 }
 
-unsafe impl<'a, 'gc, 'cell> Rebind<'a> for Value<'gc, 'cell> {
-    type Output = Value<'a, 'cell>;
-}
-
-impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
+impl<'gc, 'own> fmt::Debug for Value<'gc, 'own> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         unsafe {
             match self.value.bits & TAG_MASK {
@@ -406,10 +407,12 @@ impl<'gc, 'cell> fmt::Debug for Value<'gc, 'cell> {
                 TAG_STRING => f.debug_tuple("JSValue::String").finish(),
                 TAG_OBJECT => f.debug_tuple("JSValue::Object").finish(),
                 TAG_BIGINT => todo!("big int"),
+                /*
                 TAG_ATOM => f
                     .debug_tuple("JSValue::ATOM")
                     .field(&self.into_atom().unwrap())
                     .finish(),
+                    */
                 TAG_INT => f
                     .debug_tuple("JSValue::Int")
                     .field(&self.into_int().unwrap())

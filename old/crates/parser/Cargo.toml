@@ -1,0 +1,26 @@
+[package]
+name = "toyjs_parser"
+version = "0.1.0"
+authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+
+
+[dependencies]
+common = { package="toyjs_common",path = "../common/" }
+token = { package="toyjs_token",path = "../token/" }
+lexer = { package="toyjs_lexer",path = "../lexer/" }
+ast = { package="toyjs_ast",path = "../ast/" }
+
+[dev-dependencies]
+criterion = "0.3.5"
+
+[[bin]]
+name = "dump_ast"
+
+[[bench]]
+name = "parser"
+harness = false
+

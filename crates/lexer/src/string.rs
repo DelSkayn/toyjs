@@ -1,176 +1,206 @@
-use super::{chars, is_radix, ErrorKind, LexResult, Lexer, Token};
-use std::convert::TryInto;
-use token::{Literal, Template, TokenKind};
+use common::unicode::{units, CharExt, Utf16Ext};
+use token::{t, Template, Token, TokenKind};
 
-fn from_ascii_digit(digit: u8) -> u8 {
-    if digit.is_ascii_digit() {
-        return digit - b'0';
-    }
-    if (b'a'..b'f').contains(&digit) {
-        return digit - b'a' + 0xa;
-    }
-    if (b'A'..b'F').contains(&digit) {
-        return digit - b'A' + 0xa;
-    }
-    panic!("invalid digit");
-}
+use crate::Lexer;
 
-impl<'a, 'b> Lexer<'a, 'b> {
-    /// Lex a string token.
-    pub(super) fn lex_string(&mut self, start: u8) -> LexResult<Token> {
-        self.buffer.clear();
-        loop {
-            match self.next_byte().ok_or(ErrorKind::UnClosedString)? {
-                b'\\' => self.lex_escape_code()?,
-                chars::LF | chars::CR => return Err(ErrorKind::UnClosedString),
-                s if s == start => {
-                    let s = self.interner.intern(&self.buffer);
-                    return Ok(self.token(TokenKind::Literal(Literal::String(s))));
-                }
-                x if !x.is_ascii() => match self.next_char(x)? {
-                    chars::LS | chars::PS => return Err(ErrorKind::UnClosedString),
-                    x => self.buffer.push(x),
-                },
-                x => self.buffer.push(x.into()),
-            }
+impl<'a> Lexer<'a> {
+    fn unit_to_hex_digit(unit: u16) -> Option<u8> {
+        if unit.is_ascii() {
+            let unit = unsafe { char::from_u32_unchecked(unit as u32) };
+            return unit.to_digit(16).map(|x| x as u8);
         }
+        None
     }
 
-    pub(super) fn lex_template(&mut self, start: u8) -> LexResult<Token> {
-        self.buffer.clear();
-        loop {
-            match self.next_byte().ok_or(ErrorKind::UnClosedString)? {
-                b'\\' => self.lex_escape_code()?,
-                b'`' if start == b'`' => {
-                    let s = self.interner.intern(&self.buffer);
-                    return Ok(self.token(TokenKind::Template(Template::NoSubstitution(s))));
-                }
-                b'`' => {
-                    let s = self.interner.intern(&self.buffer);
-                    return Ok(self.token(TokenKind::Template(Template::TemplateTail(s))));
-                }
-                b'$' => {
-                    if self.peek_byte().ok_or(ErrorKind::UnClosedString)? == b'{' {
-                        self.next_byte();
-                        let s = self.interner.intern(&self.buffer);
-                        if start == b'`' {
-                            return Ok(self.token(TokenKind::Template(Template::TemplateHead(s))));
-                        } else {
-                            return Ok(self.token(TokenKind::Template(Template::TemplateMiddle(s))));
-                        }
-                    }
-                    self.buffer.push('$');
-                }
-                x if !x.is_ascii() => {
-                    let char = self.next_char(x)?;
-                    self.buffer.push(char);
-                }
-                x => {
-                    self.buffer.push(x.into());
-                }
-            }
-        }
-    }
-
-    fn digit_from_byte(c: u8) -> LexResult<u8> {
-        (c as char)
-            .to_digit(16)
-            .map(|x| x as u8)
-            .ok_or(ErrorKind::InvalidNumber)
-    }
-
-    /// Lexes escape codes in a string.
-    fn lex_escape_code(&mut self) -> LexResult<()> {
-        let next = if let Some(x) = self.next_byte() {
-            x
-        } else {
-            return Err(ErrorKind::InvalidUnicodeSequence);
+    pub(super) fn lex_escape_unicode(&mut self) -> bool {
+        let Some(first) = self.peek_unit() else {
+            return false;
         };
-        match next {
-            b'\\' => self.buffer.push('\\'),
-            b'\'' => self.buffer.push('\''),
-            b'\"' => self.buffer.push('\"'),
-            b'0' => self.buffer.push('\0'),
-            b'b' => self.buffer.push(chars::BS),
-            b't' => self.buffer.push(chars::HT.into()),
-            b'f' => self.buffer.push(chars::FF.into()),
-            b'n' => self.buffer.push(chars::LF.into()),
-            b'v' => self.buffer.push(chars::VT.into()),
-            b'r' => self.buffer.push(chars::CR.into()),
-            chars::LF => {
-                if self.peek_byte() == Some(chars::CR) {
-                    self.next_byte();
-                }
-            }
-            chars::CR => {}
-            b'x' => {
-                // a unicode escape sequence
-                let mut val = 0u8;
-                for _ in 0..2 {
-                    match self.next_byte() {
-                        Some(e) => {
-                            let digit = Self::digit_from_byte(e)?;
-                            val <<= 4;
-                            val |= digit;
-                        }
-                        None => return Err(ErrorKind::InvalidEscapeCode),
-                    }
-                }
-                self.buffer.push(val.into());
-            }
-            b'u' => {
-                // a unicode escape sequence
-                let next = if let Some(x) = self.next_byte() {
-                    x
+        if first == b'{' as u16 {
+            self.next_unit();
+            let mut mv = 0u32;
+            while let Some(x) = self.next_unit() {
+                let v = if let Some(v) = Self::unit_to_hex_digit(x) {
+                    v
+                } else if x == b'}' as u16 {
+                    break;
                 } else {
-                    return Err(ErrorKind::InvalidEscapeCode);
+                    return false;
                 };
-                if next == b'{' {
-                    let mut val = 0u32;
-                    let mut finished = false;
-                    for i in 0..6 {
-                        match self.next_byte() {
-                            Some(b'}') => {
-                                if i == 0 {
-                                    return Err(ErrorKind::InvalidEscapeCode);
-                                }
-                                finished = true;
-                                break;
-                            }
-                            Some(x) if is_radix(x, 16) => {
-                                val <<= 4;
-                                val |= from_ascii_digit(x) as u32;
-                            }
-                            _ => return Err(ErrorKind::InvalidEscapeCode),
-                        }
-                    }
-                    if !finished && self.next_byte() != Some(b'}') {
-                        return Err(ErrorKind::InvalidEscapeCode);
-                    }
-                    let val: char = val.try_into().map_err(|_| ErrorKind::InvalidEscapeCode)?;
-                    self.buffer.push(val);
-                } else {
-                    let mut val = Self::digit_from_byte(next)? as u32;
-                    for _ in 0..3 {
-                        match self.next_byte() {
-                            Some(e) => {
-                                let digit = Self::digit_from_byte(e)?;
-                                val <<= 4;
-                                val |= digit as u32;
-                            }
-                            None => return Err(ErrorKind::InvalidEscapeCode),
-                        }
-                    }
-                    let val: char = val.try_into().map_err(|_| ErrorKind::InvalidEscapeCode)?;
-                    self.buffer.push(val);
+                mv <<= 4;
+                mv += v as u32;
+                if mv > 0x10FFFF {
+                    return false;
                 }
             }
-            x if !x.is_ascii() => match self.next_char(x)? {
-                chars::LS | chars::PS => {}
-                _ => return Err(ErrorKind::InvalidEscapeCode),
-            },
-            _ => return Err(ErrorKind::InvalidEscapeCode),
+            let Some(char) = char::from_u32(mv) else {
+                return false;
+            };
+            let (lead, trail) = char.encode_utf16_code_point();
+            self.builder.push(lead);
+            if let Some(trail) = trail {
+                self.builder.push(trail);
+            }
+            true
+        } else {
+            let Some(first) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+                return false;
+            };
+            self.next_unit();
+            let Some(second) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+                return false;
+            };
+            self.next_unit();
+            let Some(third) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+                return false;
+            };
+            self.next_unit();
+            let Some(fourth) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+                return false;
+            };
+            self.next_unit();
+            let first = first as u32;
+            let second = second as u32;
+            let third = third as u32;
+            let fourth = fourth as u32;
+            if let Some(x) = char::from_u32(first << 12 | second << 8 | third << 4 | fourth) {
+                let (lead, trail) = x.encode_utf16_code_point();
+                self.builder.push(lead);
+                if let Some(trail) = trail {
+                    self.builder.push(trail);
+                }
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    fn lex_escape_hex(&mut self) -> bool {
+        let Some(first) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+            return false;
         };
-        Ok(())
+        self.next_unit();
+        let Some(last) = self.peek_unit().and_then(Self::unit_to_hex_digit) else {
+            return false;
+        };
+        self.next_unit();
+        let first = first as u16;
+        let last = last as u16;
+        self.builder.push(first << 4 | last);
+        true
+    }
+
+    pub fn lex_escape(&mut self) -> bool {
+        const SINGLE: u16 = b'\'' as u16;
+        const DOUBLE: u16 = b'\"' as u16;
+        const SLASH: u16 = b'\\' as u16;
+        const B: u16 = b'b' as u16;
+        const T: u16 = b't' as u16;
+        const N: u16 = b'n' as u16;
+        const V: u16 = b'v' as u16;
+        const F: u16 = b'f' as u16;
+        const R: u16 = b'r' as u16;
+        const X: u16 = b'x' as u16;
+        const U: u16 = b'u' as u16;
+
+        let Some(unit) = self.next_unit() else {
+            return false;
+        };
+        match unit {
+            units::LF | units::CR | units::LS | units::PS => return true,
+            SINGLE => self.builder.push(SINGLE),
+            DOUBLE => self.builder.push(DOUBLE),
+            SLASH => self.builder.push(SLASH),
+            B => self.builder.push(0x8),
+            T => self.builder.push(units::TAB),
+            N => self.builder.push(units::LF),
+            V => self.builder.push(units::VT),
+            F => self.builder.push(units::FF),
+            R => self.builder.push(units::CR),
+            X => return self.lex_escape_hex(),
+            U => return self.lex_escape_hex(),
+            x => {
+                self.builder.push(x);
+                return true;
+            }
+        }
+        true
+    }
+
+    pub(super) fn lex_string(&mut self, start: u16) -> Token {
+        const ESCAPE: u16 = b'\\' as u16;
+
+        loop {
+            let Some(unit) = self.next_unit() else {
+                self.builder.clear();
+                return self.finish_token(TokenKind::Unknown);
+            };
+
+            if unit == start {
+                let id = self.finish_string();
+                return self.finish_token_string(t!("string"), Some(id));
+            }
+
+            match unit {
+                units::CR => {
+                    self.builder.clear();
+                    return self.finish_token(TokenKind::Unknown);
+                }
+                units::LF => {
+                    self.builder.clear();
+                    return self.finish_token(TokenKind::Unknown);
+                }
+                ESCAPE => {
+                    if !self.lex_escape() {
+                        self.builder.clear();
+                        return self.finish_token(TokenKind::Unknown);
+                    }
+                }
+                x => self.builder.push(x),
+            }
+        }
+    }
+
+    pub(super) fn lex_template(&mut self, is_start: bool) -> Token {
+        const DOLLAR: u16 = b'$' as u16;
+        const CLOSE: u16 = b'`' as u16;
+        const ESCAPE: u16 = b'\\' as u16;
+        const OPEN_BRACKET: u16 = b'{' as u16;
+
+        while let Some(x) = self.next_unit() {
+            match x {
+                DOLLAR => {
+                    if let Some(OPEN_BRACKET) = self.peek_unit() {
+                        self.next_unit();
+                        let template = if is_start {
+                            Template::Start
+                        } else {
+                            Template::Middle
+                        };
+                        let id = self.finish_string();
+                        return self.finish_token_string(TokenKind::Template(template), Some(id));
+                    } else {
+                        self.builder.push(x);
+                    }
+                }
+                CLOSE => {
+                    let template = if is_start {
+                        Template::NoSubstitute
+                    } else {
+                        Template::End
+                    };
+                    let id = self.finish_string();
+                    return self.finish_token_string(TokenKind::Template(template), Some(id));
+                }
+                ESCAPE => {
+                    if !self.lex_escape() {
+                        return self.finish_token(TokenKind::Unknown);
+                    }
+                }
+                x => self.builder.push(x),
+            }
+        }
+        self.finish_token(TokenKind::Unknown)
     }
 }

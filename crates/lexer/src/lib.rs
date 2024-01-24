@@ -1,526 +1,572 @@
 #![allow(dead_code)]
 
+use bytemuck::Pod;
 use common::{
-    atom::Interner,
-    source::{Source, Span},
+    interner::Interner,
+    number::{Number, NumberId},
+    span::Span,
+    string::{Encoding, String, StringBuilder, StringId, Units},
+    structs::Interners,
+    unicode::{byte, chars, units, CharExt, Utf16Ext},
 };
-use std::{convert::TryFrom, result::Result as StdResult};
-use token::{t, Keyword, Token, TokenKind};
-use unicode_xid::UnicodeXID;
+use token::{t, Token, TokenKind, TokenKindData};
 
-mod chars;
+mod ident;
 mod number;
+mod regex;
 mod string;
-mod utf;
 
-/// An error returned by the lexer.
-/// Although the lexer will generaly just try to continue as much as possible
-/// there are some situations in which the lexer will not be able to continue.
-#[derive(Clone, Copy, Debug)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub origin: Span,
+/// Additional data produced during lexing which is not present in the produced token.
+pub struct LexingData {
+    pub strings: Interner<String, StringId>,
+    pub numbers: Interner<Number, NumberId>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum ErrorKind {
-    InvalidToken,
-    /// Failed to parse a number.
-    InvalidNumber,
-    UnexpectedEnd,
-    /// String was not closed.
-    /// This error is unrecoverable as the lexer can not determin where to restart.
-    UnClosedString,
-    /// Encountered a byte pattern which was not a valid UTF-8 character.
-    InvalidUnicodeSequence,
-    InvalidEscapeCode,
-}
-
-/// An internal error without a span.
-type LexResult<T> = StdResult<T, ErrorKind>;
-
-/// A short hand of a result with a lexer error.
-pub type Result<T> = StdResult<T, Error>;
-
-pub struct Lexer<'a, 'b> {
-    source: &'a Source,
-    pub interner: &'a mut Interner<'b>,
-    offset: usize,
-    span_start: usize,
-    // A buffer for rewriting escaped utf-8 secuences as the right bytes
-    buffer: String,
-}
-
-/// Util function to check if a byte contains a digit of a certain radix.
-/// Only suports radix 2, 8 and 16 i.e. binary, octal, and hexidecimal
-fn is_radix(byte: u8, radix: u8) -> bool {
-    match radix {
-        2 => byte == b'0' || byte == b'1',
-        8 => (b'0'..b'7').contains(&byte),
-        16 => byte.is_ascii_hexdigit(),
-        _ => panic!("invalid radix"),
-    }
-}
-
-impl<'a, 'b> Lexer<'a, 'b> {
-    /// Create a new lexer from source
-    pub fn new(source: &'a Source, interner: &'a mut Interner<'b>) -> Self {
-        Lexer {
-            source,
-            interner,
-            offset: 0,
-            span_start: 0,
-            buffer: String::new(),
+impl LexingData {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        LexingData {
+            strings: Interner::new(),
+            numbers: Interner::new(),
         }
     }
 
-    /// Create a token from a given token kind.
-    ///
-    /// Add a span to token based on the
-    fn token(&mut self, kind: TokenKind) -> Token {
-        let hi = u32::try_from(self.offset).expect("source file to big for span") - 1;
-        let low = u32::try_from(self.span_start).unwrap();
-        self.span_start = self.offset;
+    pub fn push_string(&mut self, encoding: Encoding) -> StringId {
+        self.strings.intern(&encoding)
+    }
+}
+
+/// The toyjs lexer, produces tokens from a source string.
+pub struct Lexer<'a> {
+    units: Units<'a>,
+    start: usize,
+    end: usize,
+    peek: Option<u16>,
+    overread: Option<u16>,
+    builder: StringBuilder,
+    pub data: &'a mut Interners,
+}
+
+impl<'a> Lexer<'a> {
+    pub fn new(units: Encoding<'a>, interners: &'a mut Interners) -> Self {
+        let units = units.units();
+
+        Self {
+            units,
+            start: 0,
+            end: 0,
+            peek: None,
+            overread: None,
+            builder: StringBuilder::new(),
+            data: interners,
+        }
+    }
+
+    /// Pop the next code from the list
+    #[inline]
+    fn next_unit(&mut self) -> Option<u16> {
+        let res = self.peek.take().or_else(|| self.units.next());
+        self.end += res.is_some() as usize;
+        res
+    }
+
+    /// Peek the next code on the list without consuming it.
+    #[inline]
+    fn peek_unit(&mut self) -> Option<u16> {
+        if let Some(x) = self.peek {
+            Some(x)
+        } else {
+            self.peek = self.units.next();
+            self.peek
+        }
+    }
+
+    /// Peek the next code on the list without consuming it.
+    #[inline]
+    fn peek_byte(&mut self) -> Option<u8> {
+        self.peek_unit().and_then(|x| x.try_into().ok())
+    }
+
+    /// Wrap a token kind in a span and update set the next token to start at the end of the
+    /// current.
+    #[inline]
+    fn finish_token_inner<D: Pod>(&mut self, kind: TokenKind, id: Option<D>) -> Token {
+        let span = Span::from_range(self.start..self.end);
+        self.start = self.end;
+
         Token {
-            kind,
-            span: Span { hi, low },
+            kind_and_data: TokenKindData::new(kind, id),
+            span,
         }
     }
 
-    /// Eats a full line commment ie `// Something`
-    fn lex_line_comment(&mut self) -> LexResult<()> {
-        loop {
-            match self.next_byte() {
-                Some(chars::LF) => return Ok(()),
-                Some(chars::CR) => {
-                    if let Some(chars::LF) = self.peek_byte() {
-                        self.eat_byte();
-                    }
-                    return Ok(());
-                }
-                // Match utf-8 chars.
-                Some(x) if !x.is_ascii() => match self.next_char(x)? {
-                    chars::LS | chars::PS | chars::BS => return Ok(()),
-                    _ => {}
-                },
-                None => return Ok(()),
-                _ => {}
+    /// Wrap a token kind in a span and update set the next token to start at the end of the
+    /// current.
+    #[inline]
+    fn finish_token(&mut self, kind: TokenKind) -> Token {
+        self.finish_token_inner::<u32>(kind, None)
+    }
+
+    /// Wrap a token kind in a span and update set the next token to start at the end of the
+    /// current.
+    #[inline]
+    fn finish_token_number(&mut self, kind: TokenKind, id: Option<NumberId>) -> Token {
+        self.finish_token_inner(kind, id)
+    }
+
+    /// Wrap a token kind in a span and update set the next token to start at the end of the
+    /// current.
+    #[inline]
+    fn finish_token_string(&mut self, kind: TokenKind, id: Option<StringId>) -> Token {
+        self.finish_token_inner(kind, id)
+    }
+
+    /// Finish the string in the string buffer and push it into the strings data.
+    /// Returns the id of the strings data.
+    fn finish_string(&mut self) -> StringId {
+        let result = self.builder.encoding();
+        let id = self.data.strings.intern(&result);
+        self.builder.clear();
+        id
+    }
+
+    fn finish_number(&mut self, number: f64) -> NumberId {
+        self.data.numbers.intern(&Number(number))
+    }
+
+    fn lex_slash(&mut self) -> Token {
+        let byte = self.peek_byte();
+        match byte {
+            Some(b'/') => {
+                self.next_unit();
+                self.lex_comment()
             }
+            Some(b'*') => {
+                self.next_unit();
+                self.lex_multiline_comment()
+            }
+            Some(b'=') => {
+                self.next_unit();
+                self.finish_token(t!("/="))
+            }
+            _ => self.finish_token(t!("/")),
         }
     }
 
-    /// Eats a multi line comment ie: `/* Something */`
-    fn lex_multi_line_comment(&mut self) -> LexResult<()> {
-        loop {
-            match self.next_byte() {
-                Some(b'*') => match self.next_byte() {
-                    Some(b'/') => {
-                        self.span_start = self.offset;
-                        return Ok(());
-                    }
-                    None => return Err(ErrorKind::UnexpectedEnd),
-                    _ => {}
-                },
-                None => return Err(ErrorKind::UnexpectedEnd),
-                _ => {}
-            }
+    fn lex_closing_brace(&mut self) -> Token {
+        self.finish_token(t!("}"))
+    }
+
+    fn lex_whitespace(&mut self) -> Token {
+        while self
+            .peek_unit()
+            .map(|x| units::WHITE_SPACE_CONST.contains(&x))
+            .unwrap_or(false)
+        {
+            self.next_unit();
         }
+        self.start = self.end;
+        self.next_token()
     }
 
-    /// Eats all of the next white space.
-    fn lex_whitespace(&mut self) -> LexResult<()> {
-        loop {
-            let next = self.peek_byte();
-            if next.is_none() {
-                break;
-            }
-            match next.unwrap() {
-                chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => self.eat_byte(),
-                x if !x.is_ascii() => match self.peek_char(x)? {
-                    chars::ZWNBSP | chars::ZWNJ | chars::ZWJ => {
-                        self.next_char(x).unwrap();
-                    }
-                    _ => break,
-                },
-                _ => break,
-            }
+    fn lex_comment(&mut self) -> Token {
+        while self
+            .peek_unit()
+            .map(|x| units::LINE_TERMINATOR_CONST.into_iter().all(|y| x != y))
+            .unwrap_or(false)
+        {
+            self.next_unit();
         }
-
-        self.span_start = self.offset;
-        Ok(())
+        self.start = self.end;
+        self.next_token()
     }
 
-    /// Matches an ident to an keyword
-    fn match_keyword(ident: &str) -> Option<Keyword> {
-        let res = match ident {
-            "await" => Keyword::Await,
-            "break" => Keyword::Break,
-            "case" => Keyword::Case,
-            "catch" => Keyword::Catch,
-            "class" => Keyword::Class,
-            "const" => Keyword::Const,
-            "continue" => Keyword::Continue,
-            "debugger" => Keyword::Debugger,
-            "default" => Keyword::Default,
-            "delete" => Keyword::Delete,
-            "do" => Keyword::Do,
-            "else" => Keyword::Else,
-            "enum" => Keyword::Enum,
-            "export" => Keyword::Export,
-            "extends" => Keyword::Extends,
-            "false" => Keyword::False,
-            "finally" => Keyword::Finally,
-            "for" => Keyword::For,
-            "function" => Keyword::Function,
-            "if" => Keyword::If,
-            "import" => Keyword::Import,
-            "in" => Keyword::In,
-            "instanceof" => Keyword::Instanceof,
-            "let" => Keyword::Let,
-            "new" => Keyword::New,
-            "null" => Keyword::Null,
-            "return" => Keyword::Return,
-            "super" => Keyword::Super,
-            "switch" => Keyword::Switch,
-            "this" => Keyword::This,
-            "throw" => Keyword::Throw,
-            "true" => Keyword::True,
-            "try" => Keyword::Try,
-            "typeof" => Keyword::Typeof,
-            "var" => Keyword::Var,
-            "void" => Keyword::Void,
-            "while" => Keyword::While,
-            "with" => Keyword::With,
-            _ => return None,
-        };
-        Some(res)
-    }
+    fn lex_multiline_comment(&mut self) -> Token {
+        const STAR: u16 = b'*' as u16;
+        const SLASH: u16 = b'/' as u16;
 
-    /// Lexes an full identifier.
-    ///
-    /// The lexer should have already lexed the start of an identifier ie code character's marked
-    /// as the start of a identifier by the Unicode Standard Annex.
-    fn lex_ident(&mut self, start: usize) -> LexResult<Token> {
         loop {
-            match self.peek_byte() {
-                Some(b'_') => self.eat_byte(),
-                Some(x) if x.is_ascii_alphanumeric() => self.eat_byte(),
-                Some(x) if !x.is_ascii() => {
-                    if self.peek_char(x)?.is_xid_continue() {
-                        self.next_char(x).unwrap();
-                    } else {
-                        break;
+            match self.next_unit() {
+                Some(STAR) => {
+                    // TODO: check for line terminator
+                    if let Some(SLASH) = self.next_unit() {
+                        return self.next_token();
                     }
                 }
-                Some(_) | None => break,
+                Some(_) => {}
+                None => return self.finish_token(TokenKind::Unknown),
             }
         }
-        if let Some(x) = Self::match_keyword(&self.source.source()[start..self.offset]) {
-            Ok(self.token(TokenKind::Keyword(x)))
-        } else {
-            let string_id = self
-                .interner
-                .intern(&self.source.source()[start..self.offset]);
-            Ok(self.token(TokenKind::Ident(string_id)))
-        }
     }
 
-    /// Returns the next token.
-    ///
-    /// Will return an error if the lexer failed to propely parse a token.
-    ///
-    /// If there are no more tokens to be lexed the lexer will return `Ok(None)`
-    #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Option<Token>> {
-        self.next_inner().map_err(|e| Error {
-            kind: e,
-            origin: Span {
-                hi: u32::try_from(self.offset).expect("source file to big for span"),
-                low: u32::try_from(self.span_start).unwrap(),
-            },
-        })
-    }
-
-    pub fn relex_template_subsituation(&mut self, token: Token) -> Result<Token> {
-        debug_assert_eq!(token.span.hi as usize, self.offset - 1);
-        debug_assert_eq!(token.kind, t!("}"));
-        self.lex_template(b'}').map_err(|e| Error {
-            kind: e,
-            origin: Span {
-                hi: u32::try_from(self.offset).expect("source file to big for span"),
-                low: token.span.low,
-            },
-        })
-    }
-
-    /// Parses the next token.
-    /// Returns an error without Span.
-    fn next_inner(&mut self) -> LexResult<Option<Token>> {
-        let byte = if let Some(x) = self.next_byte() {
-            x
-        } else {
-            return Ok(None);
-        };
-        let token = match byte {
-            chars::LF => self.token(t!("\n")),
-            chars::CR => {
-                if let Some(chars::LF) = self.peek_byte() {
-                    self.eat_byte();
+    #[inline]
+    fn lex_ascii(&mut self, byte: u8) -> Token {
+        let kind = match byte {
+            byte::LF => t!("\n"),
+            byte::CR => {
+                if Some(byte::LF as u16) == self.peek_unit() {
+                    self.next_unit();
                 }
-                self.token(t!("\n"))
+                t!("\n")
             }
-            chars::TAB | chars::VT | chars::FF | chars::SP | chars::NBSP => {
-                self.lex_whitespace()?;
-                return self.next_inner();
+            byte::SP | byte::TAB | byte::VT | byte::FF | byte::NBSP => {
+                return self.lex_whitespace()
             }
-            b';' => self.token(t!(";")),
-            b':' => self.token(t!(":")),
-            b',' => self.token(t!(",")),
-            b'(' => self.token(t!("(")),
-            b')' => self.token(t!(")")),
-            b'{' => self.token(t!("{")),
-            b'}' => self.token(t!("}")),
-            b'[' => self.token(t!("[")),
-            b']' => self.token(t!("]")),
+            b'~' => t!("~"),
+            b';' => t!(";"),
+            b':' => t!(":"),
+            b',' => t!(","),
+            b'(' => t!("("),
+            b')' => t!(")"),
+            b'[' => t!("["),
+            b']' => t!("]"),
+            b'{' => t!("{"),
+            b'}' => t!("}"),
             b'?' => match self.peek_byte() {
                 Some(b'?') => {
-                    self.eat_byte();
-                    self.token(t!("??"))
+                    self.next_unit();
+                    t!("??")
                 }
-                Some(b'.') => {
-                    self.eat_byte();
-                    todo!("token ?.")
-                    /*
-                    if self.peek_byte().map(Self::is_digit).unwrap_or(false) {
-                        self.cur -= 1;
-                        self.token(t!("?"))
-                    } else {
-                        self.token(t!("?."))
-                    }
-                    */
-                }
-                _ => self.token(t!("?")),
+                _ => t!("?"),
             },
             b'+' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("+="))
+                    self.next_unit();
+                    t!("+=")
                 }
                 Some(b'+') => {
-                    self.eat_byte();
-                    self.token(t!("++"))
+                    self.next_unit();
+                    t!("++")
                 }
-                _ => self.token(t!("+")),
+                _ => t!("+"),
             },
             b'-' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("-="))
+                    self.next_unit();
+                    t!("-=")
                 }
                 Some(b'-') => {
-                    self.eat_byte();
-                    self.token(t!("--"))
+                    self.next_unit();
+                    t!("--")
                 }
-                _ => self.token(t!("-")),
+                _ => t!("-"),
             },
-
             b'*' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("*="))
+                    self.next_unit();
+                    t!("*=")
                 }
                 Some(b'*') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat_byte();
-                            self.token(t!("**="))
+                            self.next_unit();
+                            t!("**=")
                         }
-                        _ => self.token(t!("**")),
+                        _ => t!("**"),
                     }
                 }
-                _ => self.token(t!("*")),
+                _ => t!("*"),
             },
-
             b'/' => match self.peek_byte() {
-                Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("/="))
-                }
                 Some(b'/') => {
-                    self.lex_line_comment()?;
-                    return self.next_inner();
+                    self.next_unit();
+                    return self.lex_comment();
                 }
                 Some(b'*') => {
-                    self.lex_multi_line_comment()?;
-                    return self.next_inner();
+                    self.next_unit();
+                    return self.lex_multiline_comment();
                 }
-                _ => self.token(t!("/")),
+                Some(b'=') => {
+                    self.next_unit();
+                    t!("/=")
+                }
+                _ => t!("/"),
             },
-            b'~' => self.token(t!("~")),
             b'%' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("%="))
+                    self.next_unit();
+                    t!("%=")
                 }
-                _ => self.token(t!("%")),
+                _ => t!("%"),
             },
             b'<' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("<="))
+                    self.next_unit();
+                    t!("<=")
                 }
                 Some(b'<') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat_byte();
-                            self.token(t!("<<="))
+                            self.next_unit();
+                            t!("<<=")
                         }
-                        _ => self.token(t!("<<")),
+                        _ => t!("<<"),
                     }
                 }
-                _ => self.token(t!("<")),
+                _ => t!("<"),
             },
             b'>' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!(">="))
+                    self.next_unit();
+                    t!(">=")
                 }
                 Some(b'>') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat_byte();
-                            self.token(t!(">>="))
+                            self.next_unit();
+                            t!(">>=")
                         }
                         Some(b'>') => {
-                            self.eat_byte();
+                            self.next_unit();
                             match self.peek_byte() {
                                 Some(b'=') => {
-                                    self.eat_byte();
-                                    self.token(t!(">>>="))
+                                    self.next_unit();
+                                    t!(">>>=")
                                 }
-                                _ => self.token(t!(">>>")),
+                                _ => t!(">>>"),
                             }
                         }
-                        _ => self.token(t!(">>")),
+                        _ => t!(">>"),
                     }
                 }
-                _ => self.token(t!(">")),
+                _ => t!(">"),
             },
             b'=' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat_byte();
-                            self.token(t!("==="))
+                            self.next_unit();
+                            t!("===")
                         }
-                        _ => self.token(t!("==")),
+                        _ => t!("=="),
                     }
                 }
                 Some(b'>') => {
-                    self.eat_byte();
-                    self.token(t!("=>"))
+                    self.next_unit();
+                    t!("=>")
                 }
-                _ => self.token(t!("=")),
+                _ => t!("="),
             },
             b'!' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'=') => {
-                            self.eat_byte();
-                            self.token(t!("!=="))
+                            self.next_unit();
+                            t!("!==")
                         }
-                        _ => self.token(t!("!=")),
+                        _ => t!("!="),
                     }
                 }
-                _ => self.token(t!("!")),
+                _ => t!("!"),
             },
             b'&' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("&="))
+                    self.next_unit();
+                    t!("&=")
                 }
                 Some(b'&') => {
-                    self.eat_byte();
-                    self.token(t!("&&"))
+                    self.next_unit();
+                    t!("&&")
                 }
-                _ => self.token(t!("&")),
+                _ => t!("&"),
             },
             b'|' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("|="))
+                    self.next_unit();
+                    t!("|=")
                 }
                 Some(b'|') => {
-                    self.eat_byte();
-                    self.token(t!("||"))
+                    self.next_unit();
+                    t!("||")
                 }
-                _ => self.token(t!("|")),
+                _ => t!("|"),
             },
             b'^' => match self.peek_byte() {
                 Some(b'=') => {
-                    self.eat_byte();
-                    self.token(t!("^="))
+                    self.next_unit();
+                    t!("^=")
                 }
-                _ => self.token(t!("^")),
+                _ => t!("^"),
             },
             b'.' => match self.peek_byte() {
                 Some(b'.') => {
-                    self.eat_byte();
+                    self.next_unit();
                     match self.peek_byte() {
                         Some(b'.') => {
-                            self.eat_byte();
-                            self.token(t!("..."))
+                            self.next_unit();
+                            t!("...")
                         }
-                        _ => self.token(t!("..")),
+                        _ => t!(".."),
                     }
                 }
-                Some(x) if x.is_ascii_digit() => self.lex_number(b'.')?,
-                _ => self.token(t!(".")),
+                Some(x) if x.is_ascii_digit() => return self.lex_number(&[b'.', x]),
+                _ => t!("."),
             },
             // These characters are not offical identifier starters according to unicode
             // but are specified by ecmascript as such.
-            b'$' | b'_' => self.lex_ident(self.offset - 1)?,
-
-            b'\\' => todo!("token \\ "),
-            b'\'' => self.lex_string(b'\'')?,
-            b'\"' => self.lex_string(b'\"')?,
-            b'`' => self.lex_template(b'`')?,
-            x if x.is_ascii_digit() => self.lex_number(x)?,
-            x if x.is_ascii_alphabetic() => self.lex_ident(self.offset - 1)?,
-            // The lexers parses bytes by default as most code contains just simple ascii bytes.
-            // If the lexer encounters a non-ascii character we parse that in a different path.
-            x if !x.is_ascii() => return self.match_char(x),
-            _ => return Err(ErrorKind::InvalidToken),
+            b'$' => return self.lex_ident('$'),
+            b'_' => return self.lex_ident('_'),
+            b'\\' => return self.lex_ident('\\'),
+            b'\'' => return self.lex_string(b'\'' as u16),
+            b'\"' => return self.lex_string(b'\"' as u16),
+            b'`' => return self.lex_template(true),
+            x if x.is_ascii_alphabetic() => {
+                return self.lex_ident(char::from_u32(x as u32).unwrap())
+            }
+            x if x.is_ascii_digit() => return self.lex_number(&[x]),
+            _ => TokenKind::Unknown,
         };
-
-        Ok(Some(token))
+        self.finish_token(kind)
     }
 
-    /// Eats a single byte
-    ///
-    /// Moves cursor by a single byte.
-    fn eat_byte(&mut self) {
-        self.offset += 1;
+    /// Lex a full width character, don't handle ascii characters here as they should already be
+    /// handled.
+    fn lex_char(&mut self, c: char) -> Token {
+        debug_assert!(!c.is_ascii());
+
+        let kind = match c {
+            chars::NBSP
+            | chars::ZWNBSP
+            | '\u{1680}'
+            | '\u{2000}'
+            | '\u{2001}'
+            | '\u{2002}'
+            | '\u{2003}'
+            | '\u{2004}'
+            | '\u{2005}'
+            | '\u{2006}'
+            | '\u{2007}'
+            | '\u{2008}'
+            | '\u{2009}'
+            | '\u{200A}'
+            | '\u{202F}'
+            | '\u{205F}'
+            | '\u{3000}' => return self.lex_whitespace(),
+            chars::LS | chars::PS => t!("\n"),
+            x if x.is_xid_start() => return self.lex_ident(x),
+            _ => TokenKind::Unknown,
+        };
+        self.finish_token(kind)
     }
 
-    /// Eats a single byte and returns the byte.
-    ///
-    /// Moves cursor by a single byte.
-    fn next_byte(&mut self) -> Option<u8> {
-        let byte = *self.source.source().as_bytes().get(self.offset)?;
-        self.offset += 1;
-        Some(byte)
+    /// Redoes lexing for a `/` or `/=` token changing it to be parsed as a regex.
+    pub fn relex_regex(&mut self, token: Token) -> Token {
+        debug_assert!(matches!(token.kind(), t!("/") | t!("/=")));
+        debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
+        self.start = token.span.offset();
+        if let t!("/=") = token.kind() {
+            self.builder.push(b'=' as u16);
+            self.lex_regex(false)
+        } else {
+            self.lex_regex(true)
+        }
     }
 
-    /// Peek the next byte.
-    ///
-    /// Will not move the cursor.
-    fn peek_byte(&mut self) -> Option<u8> {
-        self.source.source().as_bytes().get(self.offset).copied()
+    /// Redoes lexing for a `}` token changing it to be parsed as a regex.
+    pub fn relex_template(&mut self, token: Token) -> Token {
+        debug_assert_eq!(token.kind(), t!("}"));
+        debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
+        self.start = token.span.offset();
+        self.lex_template(false)
+    }
+
+    #[inline]
+    pub fn next_token(&mut self) -> Token {
+        let Some(unit) = self.overread.take().or(self.next_unit()) else {
+            return Token {
+                span: Span::from_range(self.end.saturating_sub(1)..self.end),
+                kind_and_data: TokenKindData::new::<u32>(TokenKind::Eof, None),
+            };
+        };
+        if unit.is_ascii() {
+            self.lex_ascii(unit as u8)
+        } else {
+            let char = unit.decode_utf16_with(|| {
+                let Some(trailing) = self.next_unit() else {
+                    // Encoding can only contain valid utf16 or ascii any other text is undefined
+                    // behaviour. So this should be unreachable if safety guarentees where upheld.
+                    unreachable!("lexer source data should be valid utf16.")
+                };
+                trailing
+            });
+            self.lex_char(char)
+        }
+    }
+}
+
+impl Iterator for Lexer<'_> {
+    type Item = Token;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = self.next_token();
+        if res.kind() == TokenKind::Eof {
+            return None;
+        }
+        Some(res)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use common::{source::Source, span::Span, structs::Interners};
+    use token::{t, Token, TokenKindData};
+
+    use crate::Lexer;
+
+    #[test]
+    fn newlines() {
+        let source = b"\n\n\n \n\n  tgt\n\n";
+        let source = Source::new(std::str::from_utf8(source).unwrap(), Some("test"));
+        let mut interners = Interners::default();
+        let mut lexer = Lexer::new(source.source(), &mut interners);
+
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(0, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(1, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(2, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(4, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                span: Span::new(5, 1),
+            }),
+        );
+        assert_eq!(
+            lexer.next(),
+            Some(Token {
+                kind_and_data: TokenKindData::new::<u32>(t!("ident"), Some(0)),
+                span: Span::new(8, 3),
+            }),
+        );
     }
 }

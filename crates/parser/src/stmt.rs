@@ -1,783 +1,599 @@
-use super::{Allocator, Error, ErrorKind, Parser, Result};
 use ast::{
-    symbol_table::{DeclType, ScopeKind},
-    Binding, BindingRestElement, Expr, Literal,
+    CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern, InOfDecl,
+    List, ListHead, ListId, NodeId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
-use token::{t, TokenKind};
+use common::span::Span;
+use token::t;
 
-impl<'a, 'b, A: Allocator + Clone> Parser<'a, 'b, A> {
-    pub(crate) fn parse_stmt(&mut self) -> Result<ast::Stmt<A>> {
-        let peek = match self.peek_kind()? {
-            Some(x) => x,
-            None => return Ok(ast::Stmt::Empty),
-        };
-        let res = match peek {
-            t!("if") => self.parse_if(),
-            t!("while") => self.parse_while(),
-            t!("switch") => self.parse_switch(),
-            t!("do") => self.parse_do_while(),
-            t!("for") => self.parse_for(),
-            t!("let") => self.parse_let_binding(),
-            t!("var") => self.parse_var_binding(),
-            t!("const") => self.parse_const_binding(),
-            t!("return") => self.parse_return(),
-            t!("throw") => self.parse_throw(),
-            t!(";") => {
-                self.next()?;
-                Ok(ast::Stmt::Empty)
+use crate::{
+    alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Error,
+    Parser, ParserState, Result,
+};
+
+impl<'a> Parser<'a> {
+    /// Parses ECMA spec `Declaration`, `Statement` and other `...Statement` productions
+    pub fn parse_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        let token = self.peek();
+        let expr = match token.kind() {
+            t!("{") => {
+                self.next();
+                let list = self.parse_block_stmt()?;
+                self.ast.push_node(Stmt::Block { list })
+            }
+            t!("var") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Var)?
+            }
+            t!("let") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Let)?
+            }
+            t!("const") => {
+                self.next();
+                self.parse_variable_decl(VariableKind::Const)?
+            }
+            t!("if") => {
+                self.next();
+                self.parse_if_stmt()?
+            }
+            t!("while") => {
+                self.next();
+                self.parse_while_stmt()?
+            }
+            t!("do") => {
+                self.next();
+                self.parse_do_while_stmt()?
+            }
+            t!("for") => {
+                self.next();
+                self.parse_for_stmt()?
+            }
+            t!("switch") => {
+                self.next();
+                self.parse_switch_stmt()?
+            }
+            t!("return") => {
+                self.next();
+                self.parse_return_stmt()?
             }
             t!("break") => {
-                if !self.state.r#break {
-                    unexpected!(self => "`break` is disallowed in this scope.");
-                }
-                self.next()?;
-                Ok(ast::Stmt::Break)
+                self.next();
+                self.parse_cntrl_flow_stmt(true)?
             }
             t!("continue") => {
-                if !self.state.r#continue {
-                    unexpected!(self => "`continue` is disallowed in this scope.");
-                }
-                self.next()?;
-                Ok(ast::Stmt::Continue)
+                self.next();
+                self.parse_cntrl_flow_stmt(false)?
             }
-            t!("{") => self.parse_block(),
-            t!("function") => self.parse_function(),
-            t!("try") => self.parse_try(),
+            t!("try") => {
+                self.next();
+                self.parse_try_stmt()?
+            }
+            t!("throw") => {
+                self.next();
+                self.parse_throw_stmt()?
+            }
+            t!("class") => {
+                self.next();
+                let class = self.parse_class(true)?;
+                self.ast.push_node(Stmt::Class { class })
+            }
+            t!("function") => {
+                self.next();
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::Generator
+                } else {
+                    FunctionKind::Simple
+                };
+                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
+                self.ast.push_node(Stmt::Function { func })
+            }
+            t!("async") => {
+                self.next();
+                expect!(self, "function");
+                let kind = if self.eat(t!("*")) {
+                    FunctionKind::AsyncGenerator
+                } else {
+                    FunctionKind::Async
+                };
+                self.no_line_terminator()?;
+                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
+                self.ast.push_node(Stmt::Function { func })
+            }
+            t!("debugger") => {
+                self.next();
+                self.semicolon()?;
+                self.ast.push_node(Stmt::Debugger)
+            }
+            t!("with") => {
+                self.next();
+                self.parse_with_stmt()?
+            }
+            t!(";") => {
+                self.next();
+                self.ast.push_node(Stmt::Empty)
+            }
             _ => {
+                alter_state!(self => {
+                    self.state.insert(ParserState::In);
+                    let expr = self.parse_expr()?;
+                });
+                if self.eat(t!(":")) {
+                    if self.ast[expr].next.is_some() {
+                        unexpected!(self, t!(":"), ";");
+                    }
+                    let prime = self.ast[expr].item;
+                    let Expr::Prime { expr } = self.ast[prime] else {
+                        unexpected!(self, t!(":"), ";");
+                    };
+                    let PrimeExpr::Ident(label) = self.ast[expr] else {
+                        unexpected!(self, t!(":"), ";");
+                    };
+                    let name = self.ast[label].name;
+                    self.ast.free_node(label);
+                    self.ast.free_node(expr);
+                    self.ast.free_node(prime);
+                    let stmt = self.parse_stmt()?;
+                    self.ast.push_node(Stmt::Labeled { label: name, stmt })
+                } else {
+                    self.semicolon()?;
+                    self.ast.push_node(Stmt::Expr { expr })
+                }
+            }
+        };
+
+        Ok(expr)
+    }
+
+    /// Parser a block statement:
+    /// ```javascript
+    /// // starts here {
+    ///     var a = 1;
+    /// }
+    /// ```
+    pub fn parse_block_stmt(&mut self) -> Result<ListHead<Stmt>> {
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+
+        loop {
+            if let t!("}") = self.peek_kind() {
+                self.next();
+                return Ok(head);
+            }
+            let stmt = self.parse_stmt()?;
+
+            let new = self.ast.append_list(stmt, prev);
+            prev = Some(new);
+            head = head.or(ListHead::Present(new));
+        }
+    }
+
+    pub fn parse_if_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        expect!(self, "(");
+        alter_state!(self => {
+            self.state.insert(ParserState::In);
+            let cond = self.parse_expr()?;
+        });
+        expect!(self, ")");
+        let body = self.parse_stmt()?;
+        let r#else = if self.eat(t!("else")) {
+            Some(self.parse_stmt()?)
+        } else {
+            None
+        };
+
+        Ok(self.ast.push_node(Stmt::If { cond, body, r#else }))
+    }
+
+    pub fn parse_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        expect!(self, "(");
+        alter_state!(self => {
+            self.state.insert(ParserState::In);
+        let cond = self.parse_expr()?;
+        });
+        expect!(self, ")");
+
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
+            let body = self.parse_stmt()?;
+        });
+
+        Ok(self.ast.push_node(Stmt::While { cond, body }))
+    }
+
+    pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
+            let body = self.parse_stmt()?;
+        });
+
+        expect!(self, "while");
+        expect!(self, "(");
+        let cond = self.parse_expr()?;
+        expect!(self, ")");
+        Ok(self.ast.push_node(Stmt::DoWhile { cond, body }))
+    }
+
+    /// Parse a c style for loop declaration:
+    /// ```javascript
+    /// for(let i /* start here */ = foo, b = bar; i < 10;i++){ body }
+    /// ```
+    pub fn parse_c_style_decl(
+        &mut self,
+        kind: VariableKind,
+        decl: NodeId<IdentOrPattern>,
+        decl_span: Span,
+    ) -> Result<ListId<VariableDecl>> {
+        let initializer = self
+            .eat(t!("="))
+            .then(|| self.parse_assignment_expr())
+            .transpose()?;
+
+        if initializer.is_none() {
+            if kind == VariableKind::Const {
+                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+            }
+            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+            }
+        }
+
+        let decl = self.ast.push_node(VariableDecl { decl, initializer });
+
+        let head = self.ast.append_list(decl, None);
+        let mut prev = head;
+        while self.eat(t!(",")) {
+            let start = *self.last_span();
+            let decl = self.parse_ident_or_pattern()?;
+            let decl_span = start.covers(self.last_span());
+            let initializer = self
+                .eat(t!("="))
+                .then(|| self.parse_assignment_expr())
+                .transpose()?;
+
+            if initializer.is_none() {
+                if kind == VariableKind::Const {
+                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+                }
+                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+                }
+            }
+
+            let decl = self.ast.push_node(VariableDecl { decl, initializer });
+
+            prev = self.ast.append_list(decl, Some(prev));
+        }
+        Ok(head)
+    }
+
+    /// Parse a c style for loop:
+    /// ```javascript
+    /// for(let i = foo /* start here */; i < 10;i++){ body }
+    /// ```
+    pub fn parse_c_style_for(&mut self, decl: CstyleDecl) -> Result<NodeId<Stmt>> {
+        expect!(self, ";");
+        let cond = if let t!(";") = self.peek_kind() {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+        expect!(self, ";");
+        let post = if let t!(")") = self.peek_kind() {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+        expect!(self, ")");
+        let head = self.ast.push_node(ForLoopHead::CStyle { decl, cond, post });
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
+            let body = self.parse_stmt()?;
+        });
+        Ok(self.ast.push_node(Stmt::For { head, body }))
+    }
+
+    pub fn parse_for_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        //TODO await loop
+        expect!(self, "(");
+        let next = self.peek_kind();
+        let decl = match next {
+            t!("let") | t!("var") | t!("const") => {
+                let kind = match next {
+                    t!("let") => VariableKind::Let,
+                    t!("var") => VariableKind::Var,
+                    t!("const") => VariableKind::Const,
+                    _ => unreachable!(),
+                };
+                self.next();
+                self.peek(); // peek to advance the last span to the next token.
+                let start = *self.last_span();
+                let binding = self.parse_ident_or_pattern()?;
+                let binding_span = start.covers(self.last_span());
+                if let t!("=") | t!(",") = self.peek_kind() {
+                    let decl = self.parse_c_style_decl(kind, binding, binding_span)?;
+                    return self.parse_c_style_for(CstyleDecl::Decl { kind, decl });
+                } else {
+                    InOfDecl::Decl { kind, binding }
+                }
+            }
+            t!(";") => return self.parse_c_style_for(CstyleDecl::Empty),
+            _ => {
+                let state = self.state;
+                self.state.remove(ParserState::In);
+                let expr = self.parse_assignment_expr()?;
+
+                if self.eat(t!(",")) {
+                    let next = Some(self.parse_expr()?);
+                    let expr = self.ast.push_list(List { item: expr, next });
+                    self.state = state;
+                    return self.parse_c_style_for(CstyleDecl::Expr(expr));
+                }
+                self.state = state;
+                InOfDecl::Expr(expr)
+            }
+        };
+
+        let next = peek_expect!(self);
+        let head = match next.kind() {
+            t!(";") => {
+                let decl = match decl {
+                    InOfDecl::Expr(expr) => CstyleDecl::Expr(self.ast.append_list(expr, None)),
+                    InOfDecl::Decl { kind, binding } => {
+                        let decl = self.ast.push_node(VariableDecl {
+                            decl: binding,
+                            initializer: None,
+                        });
+                        let decl = self.ast.append_list(decl, None);
+                        CstyleDecl::Decl { kind, decl }
+                    }
+                };
+                return self.parse_c_style_for(decl);
+            }
+            t!("in") => {
+                self.next();
                 let expr = self.parse_expr()?;
-                match self.peek_lt()?.map(|x| x.kind) {
-                    Some(t!(";")) | Some(t!("\n")) | Some(t!("}")) | None => {}
-                    _ => {
-                        unexpected!(self, "\n", ";" => "expected expression to end");
-                    }
-                }
-                Ok(ast::Stmt::Expr(expr))
+                ForLoopHead::In { decl, expr }
             }
+            t!("of") => {
+                self.next();
+                let expr = self.parse_assignment_expr()?;
+                ForLoopHead::Of { decl, expr }
+            }
+            //TODO 'of'
+            x => unexpected!(self, x, ";", "in"),
         };
-        self.eat(t!(";"))?;
-        res
-    }
+        let head = self.ast.push_node(head);
 
-    fn parse_if(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "if");
-        expect!(self, "(");
-        let expr = self.parse_expr()?;
         expect!(self, ")");
-        let if_stmt = self.parse_stmt()?;
-        let if_stmt = Box::new_in(if_stmt, self.alloc.clone());
-        let else_stmt = if self.eat(t!("else"))? {
-            let else_stmt = self.parse_stmt()?;
-            Some(Box::new_in(else_stmt, self.alloc.clone()))
-        } else {
-            None
-        };
-        Ok(ast::Stmt::If(expr, if_stmt, else_stmt))
+        alter_state!(self => {
+            self.state.insert(ParserState::Break | ParserState::Continue);
+            let body = self.parse_stmt()?;
+        });
+        Ok(self.ast.push_node(Stmt::For { head, body }))
     }
 
-    fn parse_while(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "while");
+    pub fn parse_switch_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "(");
-        let expr = self.parse_expr()?;
-        expect!(self, ")");
-        let stmt = self.alter_state(
-            |x| {
-                x.r#continue = true;
-                x.r#break = true;
-            },
-            Parser::parse_stmt,
-        )?;
-        Ok(ast::Stmt::While(
-            expr,
-            Box::new_in(stmt, self.alloc.clone()),
-        ))
-    }
-
-    fn parse_switch(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "switch");
-        expect!(self, "(");
-        let expr = self.parse_expr()?;
+        let cond = self.parse_expr()?;
         expect!(self, ")");
         expect!(self, "{");
-        let mut clauses = Vec::new_in(self.alloc.clone());
-        let mut r#default = None;
-        self.alter_state(
-            |x| {
-                x.r#break = true;
-            },
-            |this| loop {
-                if this.eat(t!("case"))? {
-                    let expr = this.parse_single_expr()?;
-                    expect!(this, ":");
-                    let mut stmts = Vec::new_in(this.alloc.clone());
-                    loop {
-                        let peek = this.peek_kind()?;
-                        match peek {
-                            Some(t!("case")) | Some(t!("default")) | Some(t!("}")) => break,
-                            _ => {
-                                stmts.push(this.parse_stmt()?);
-                            }
-                        }
+        let mut head = ListHead::Empty;
+        let mut prev = None;
+        let mut default = None;
+        loop {
+            let case = match self.peek_kind() {
+                t!("case") => {
+                    self.next();
+                    Some(self.parse_expr()?)
+                }
+                t!("default") => {
+                    if default.is_some() {
+                        unexpected!(self, t!("default") => "multiple default cases is not allowed")
                     }
-                    clauses.push(ast::Case { expr, stmts });
-                } else if this.eat(t!("default"))? {
-                    expect!(this, ":");
-                    let mut peek = this.peek_kind()?;
-                    let mut stmts = Vec::new_in(this.alloc.clone());
-                    while peek.is_some() && peek.unwrap() != t!("}") {
-                        stmts.push(this.parse_stmt()?);
-                        peek = this.peek_kind()?;
-                    }
-                    r#default = Some(stmts);
-                    return Ok(());
-                } else {
-                    return Ok(());
-                }
-            },
-        )?;
-        if r#default.is_some() && self.peek_kind()? == Some(t!("case")) {
-            unexpected!(self => "`default` must be the last case");
-        }
-        expect!(self, "}" => "switch block not closed");
-        Ok(ast::Stmt::Switch(expr, clauses, r#default))
-    }
-
-    fn parse_do_while(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "do");
-        let stmt = self.alter_state(
-            |x| {
-                x.r#continue = true;
-                x.r#break = true;
-            },
-            Self::parse_stmt,
-        )?;
-        expect!(self, "while");
-        expect!(self, "(");
-        let expr = self.parse_expr()?;
-        expect!(self, ")");
-        Ok(ast::Stmt::DoWhile(
-            Box::new_in(stmt, self.alloc.clone()),
-            expr,
-        ))
-    }
-
-    pub(crate) fn parse_symbol_or_binding(
-        &mut self,
-        decl_type: Option<DeclType>,
-    ) -> Result<ast::SymbolOrBinding<A>> {
-        match self.peek_kind()? {
-            Some(t!("{")) | Some(t!("[")) => {
-                let binding = self.parse_binding(decl_type)?;
-                Ok(ast::SymbolOrBinding::Binding(binding))
-            }
-            Some(t!("ident", ident)) => {
-                self.next()?;
-                let sym = if let Some(decl_type) = decl_type {
-                    self.symbol_table.define(ident, decl_type).ok_or(Error {
-                        kind: ErrorKind::RedeclaredVariable,
-                        origin: self.last_span,
-                    })?
-                } else {
-                    self.symbol_table.use_symbol(ident)
-                };
-                Ok(ast::SymbolOrBinding::Single(sym))
-            }
-            _ => unexpected!(self, "ident", "[", "{" => "expected binding"),
-        }
-    }
-
-    /*
-    pub(crate) fn parse_for_decl(&mut self) -> Result<ast::ForDecl<A>> {
-        match self.peek_kind()?{
-            None => unexpected!(self, "let", "var", "const", "ident", "expression"),
-            Some(t!("let")) => {
-                self.next();
-                let decl = self.parse_symbol_or_binding(Some(DeclType::Let))?;
-                Ok(ast::ForDecl::Decl(decl))
-            }
-            Some(t!("const")) => {
-                self.next();
-                let decl = self.parse_symbol_or_binding(Some(DeclType::Const))?;
-                Ok(ast::ForDecl::Decl(decl))
-            }
-            Some(t!("var")) => {
-                self.next();
-                let decl = self.parse_symbol_or_binding(Some(DeclType::Var))?;
-                Ok(ast::ForDecl::Decl(decl))
-            }
-            _ => {
-                let expr = self.parse_single_expr()?;
-                Ok(ast::ForDecl::Expr(expr))
-            }
-        }
-    }
-    */
-
-    pub(crate) fn parse_for(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "for");
-        expect!(self, "(");
-        let _scope = self.symbol_table.push_scope(ScopeKind::Lexical);
-        let decl = if self.eat(t!(";"))? {
-            None
-        } else {
-            let peek = if let Some(x) = self.peek_kind()? {
-                x
-            } else {
-                unexpected!(self, "let", "var", "const", "ident", "expression")
-            };
-
-            let decl_type = match peek {
-                t!("let") => {
-                    self.next()?;
-                    Some(DeclType::Let)
-                }
-                t!("const") => {
-                    self.next()?;
-                    Some(DeclType::Const)
-                }
-                t!("var") => {
-                    self.next()?;
-                    Some(DeclType::Var)
-                }
-                _ => None,
-            };
-
-            let decl = if let Some(decl) = decl_type {
-                let decl = ast::ForInOfDecl::Define(self.parse_symbol_or_binding(Some(decl))?);
-                let peek = self.peek_kind()?;
-                if peek == Some(t!("in")) {
-                    return self.parse_for_in_of(false, decl);
-                }
-                if peek == Some(t!("of")) {
-                    return self.parse_for_in_of(true, decl);
-                }
-                decl
-            } else {
-                let expr = self.parse_single_expr()?;
-                let peek = self.peek_kind()?;
-                if peek == Some(t!("in")) {
-                    let invalid = match expr {
-                        Expr::Prime(ast::PrimeExpr::Object(_))
-                        | Expr::Prime(ast::PrimeExpr::Array(_)) => false,
-                        ref x => !x.is_assignable(),
-                    };
-                    if invalid {
-                        unexpected!(self => "left hand is not a assignable expression or object or array literal");
-                    }
-                    let decl = ast::ForInOfDecl::Expr(expr);
-                    return self.parse_for_in_of(false, decl);
-                }
-                if peek == Some(t!("of")) {
-                    let invalid = match expr {
-                        Expr::Prime(ast::PrimeExpr::Object(_))
-                        | Expr::Prime(ast::PrimeExpr::Array(_)) => false,
-                        ref x => !x.is_assignable(),
-                    };
-                    if invalid {
-                        unexpected!(self => "left hand is not a assignable expression or object or array literal");
-                    }
-                    let decl = ast::ForInOfDecl::Expr(expr);
-                    return self.parse_for_in_of(true, decl);
-                }
-                ast::ForInOfDecl::Expr(expr)
-            };
-
-            let decl = match decl {
-                ast::ForInOfDecl::Expr(x) => {
-                    let mut expr = Vec::with_capacity_in(1, self.alloc.clone());
-                    expr.push(x);
-                    while self.eat(t!(","))? {
-                        let e = self.parse_single_expr()?;
-                        expr.push(e);
-                    }
-                    ast::CForDecl::Expr(expr)
-                }
-                ast::ForInOfDecl::Define(x) => {
-                    let binding = match x {
-                        ast::SymbolOrBinding::Binding(binding) => {
-                            expect!(self, "=" => "binding declarations must be initialized");
-                            let init = self.parse_single_expr()?;
-                            ast::Define::Binding { binding, init }
-                        }
-                        ast::SymbolOrBinding::Single(symbol) => {
-                            let init = if decl_type == Some(DeclType::Const) {
-                                expect!(self, "=" => "const declarations must be initialized");
-                                Some(self.parse_single_expr()?)
-                            } else {
-                                self.eat(t!("="))?
-                                    .then(|| self.parse_single_expr())
-                                    .transpose()?
-                            };
-                            ast::Define::Single { symbol, init }
-                        }
-                    };
-                    let mut defs = Vec::with_capacity_in(1, self.alloc.clone());
-                    defs.push(binding);
-                    while self.eat(t!(","))? {
-                        let def = self.parse_define(decl_type.unwrap())?;
-                        defs.push(def)
-                    }
-                    ast::CForDecl::Define(defs)
-                }
-            };
-
-            expect!(self, ";");
-            Some(decl)
-        };
-        let cond = if self.eat(t!(";"))? {
-            None
-        } else {
-            let res = self.parse_expr()?;
-            expect!(self, ";");
-            Some(res)
-        };
-        let post = if self.eat(t!(")"))? {
-            None
-        } else {
-            let res = self.parse_expr()?;
-            expect!(self, ")");
-            Some(res)
-        };
-        let stmt = self.alter_state(
-            |x| {
-                x.r#continue = true;
-                x.r#break = true;
-            },
-            Self::parse_stmt,
-        )?;
-
-        debug_assert_eq!(_scope, self.symbol_table.current_scope());
-        self.symbol_table.pop_scope();
-
-        Ok(ast::Stmt::For(ast::For::CStyle(
-            decl,
-            cond,
-            post,
-            Box::new_in(stmt, self.alloc.clone()),
-        )))
-    }
-
-    fn parse_for_in_of(&mut self, is_of: bool, decl: ast::ForInOfDecl<A>) -> Result<ast::Stmt<A>> {
-        if is_of {
-            expect!(self, "of");
-        } else {
-            expect!(self, "in");
-        }
-
-        let e = self.parse_expr()?;
-
-        expect!(self, ")");
-
-        let stmt = self.alter_state(
-            |x| {
-                x.r#continue = true;
-                x.r#break = true;
-            },
-            Self::parse_stmt,
-        )?;
-
-        self.symbol_table.pop_scope();
-
-        if is_of {
-            Ok(ast::Stmt::For(ast::For::ForOf(
-                decl,
-                e,
-                Box::new_in(stmt, self.alloc.clone()),
-            )))
-        } else {
-            Ok(ast::Stmt::For(ast::For::ForIn(
-                decl,
-                e,
-                Box::new_in(stmt, self.alloc.clone()),
-            )))
-        }
-    }
-
-    fn parse_define(&mut self, decl_type: DeclType) -> Result<ast::Define<A>> {
-        match self.peek_kind()? {
-            Some(t!("{")) | Some(t!("[")) => {
-                let binding = self.parse_binding(Some(decl_type))?;
-                expect!(self,"=" => "binding must be initialized");
-                let init = self.parse_single_expr()?;
-                Ok(ast::Define::Binding { binding, init })
-            }
-            Some(TokenKind::Ident(id)) => {
-                self.next()?;
-                let symbol = self.symbol_table.define(id, decl_type).ok_or(Error {
-                    kind: ErrorKind::RedeclaredVariable,
-                    origin: self.last_span,
-                })?;
-                let init = if decl_type == DeclType::Const {
-                    expect!(self,"=" => "const binding must be initialized");
-                    Some(self.parse_single_expr()?)
-                } else if self.eat(t!("="))? {
-                    Some(self.parse_single_expr()?)
-                } else {
+                    self.next();
                     None
-                };
-                Ok(ast::Define::Single { symbol, init })
+                }
+                t!("}") => {
+                    self.next();
+                    return Ok(self.ast.push_node(Stmt::Switch {
+                        cond,
+                        cases: head,
+                        default,
+                    }));
+                }
+                x => unexpected!(self, x, "case", "default", "}"),
+            };
+            expect!(self, ":");
+
+            alter_state!(self => {
+                self.state.insert(ParserState::Break);
+                let mut stmt_head = ListHead::Empty;
+                let mut stmt_prev = None;
+                loop {
+                    match peek_expect!(self).kind() {
+                        t!("case") | t!("default") | t!("}") => break,
+                        _ => {
+                            let stmt = self.parse_stmt()?;
+                            stmt_prev = Some(self.ast.append_list(stmt, stmt_prev));
+                            stmt_head = stmt_head.or(stmt_prev.into())
+                        }
+                    }
+                }
+            });
+
+            if let Some(expr) = case {
+                let node = self.ast.push_node(CaseItem {
+                    expr,
+                    stmts: stmt_head,
+                });
+                prev = Some(self.ast.append_list(node, prev));
+                head = head.or(prev.into())
+            } else {
+                // Default case
+                default = Some(stmt_head)
             }
-            _ => unexpected!(self, "{", "[", "ident"),
         }
     }
 
-    fn parse_let_binding(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "let");
-        let define = self.parse_define(DeclType::Let)?;
-        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
-        vec.push(define);
-        while self.eat(t!(","))? {
-            let define = self.parse_define(DeclType::Let)?;
-            vec.push(define);
+    pub fn parse_return_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        debug_assert!(self.peek.is_none());
+        if self.eat_semicolon() {
+            Ok(self.ast.push_node(Stmt::Return { expr: None }))
+        } else {
+            let expr = Some(self.parse_expr()?);
+            self.semicolon()?;
+            Ok(self.ast.push_node(Stmt::Return { expr }))
         }
-        Ok(ast::Stmt::Let(vec))
     }
 
-    fn parse_var_binding(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "var");
-        let define = self.parse_define(DeclType::Var)?;
-        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
-        vec.push(define);
-        while self.eat(t!(","))? {
-            let define = self.parse_define(DeclType::Var)?;
-            vec.push(define);
-        }
-        Ok(ast::Stmt::Var(vec))
-    }
-
-    fn parse_const_binding(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "const");
-        let define = self.parse_define(DeclType::Const)?;
-        let mut vec = Vec::with_capacity_in(1, self.alloc.clone());
-        vec.push(define);
-        while self.eat(t!(","))? {
-            let define = self.parse_define(DeclType::Const)?;
-            vec.push(define);
-        }
-        Ok(ast::Stmt::Var(vec))
-    }
-
-    fn parse_binding(&mut self, define: Option<DeclType>) -> Result<ast::Binding<A>> {
-        if self.eat(t!("{"))? {
-            let mut properties = Vec::new_in(self.alloc.clone());
-            while !self.eat(t!("}"))? {
-                if self.eat(t!("..."))? {
-                    expect_bind!(self,let id = "ident");
-                    let symbol = if let Some(d) = define {
-                        self.symbol_table.define(id, d).ok_or(Error {
-                            kind: ErrorKind::RedeclaredVariable,
-                            origin: self.last_span,
-                        })?
+    pub fn parse_cntrl_flow_stmt(&mut self, is_break: bool) -> Result<NodeId<Stmt>> {
+        if is_break && !self.state.contains(ParserState::Break)
+            || !is_break && !self.state.contains(ParserState::Continue)
+        {
+            return Err(crate::Error::new(
+                ErrorKind::DisallowedToken {
+                    found: if is_break {
+                        t!("break")
                     } else {
-                        self.symbol_table.use_symbol(id)
-                    };
-                    expect!(self,"}" => "binding pattern should end after rest property");
-                    return Ok(Binding::Object(properties, Some(symbol)));
-                }
-
-                properties.push(self.parse_binding_property(define)?);
-
-                if self.eat(t!(","))? {
-                    if self.peek_kind()? == Some(t!("}")) {
-                        unexpected!(self => "trailing comma");
-                    }
-                }
-            }
-            return Ok(Binding::Object(properties, None));
+                        t!("continue")
+                    },
+                    message: None,
+                },
+                *self.last_span(),
+            ));
         }
-        if self.eat(t!("["))? {
-            let mut elements = Vec::new_in(self.alloc.clone());
-            while !self.eat(t!("]"))? {
-                if self.eat(t!(","))? {
-                    elements.push(None);
-                    if self.eat(t!("]"))? {
-                        elements.push(None);
-                        break;
-                    }
-                    continue;
-                }
 
-                if self.eat(t!("..."))? {
-                    match self.peek_kind()? {
-                        Some(t!("{")) | Some(t!("[")) => {
-                            let binding = self.parse_binding(define)?;
-                            return Ok(Binding::Array(
-                                elements,
-                                BindingRestElement::Binding(Box::new_in(
-                                    binding,
-                                    self.alloc.clone(),
-                                )),
-                            ));
-                        }
-                        Some(t!("ident", id)) => {
-                            let symbol = if let Some(d) = define {
-                                self.symbol_table.define(id, d).ok_or(Error {
-                                    kind: ErrorKind::RedeclaredVariable,
-                                    origin: self.last_span,
-                                })?
-                            } else {
-                                self.symbol_table.use_symbol(id)
-                            };
-                            return Ok(Binding::Array(
-                                elements,
-                                BindingRestElement::Single(symbol),
-                            ));
-                        }
-                        _ => unexpected!(self, "{", "[", "ident"),
-                    }
-                }
-
-                elements.push(Some(self.parse_binding_element(define)?));
-
-                if self.eat(t!(","))? {
-                    if self.eat(t!("]"))? {
-                        elements.push(None);
-                        break;
-                    }
-                } else {
-                    expect!(self, "]");
-                    break;
-                }
-            }
-            return Ok(Binding::Array(elements, BindingRestElement::None));
-        }
-        unexpected!(self, "{","[" => "expected binding pattern")
-    }
-
-    fn parse_binding_property(
-        &mut self,
-        define: Option<DeclType>,
-    ) -> Result<ast::BindingProperty<A>> {
-        if self.eat(t!("["))? {
-            let computed = self.parse_single_expr()?;
-            expect!(self, "]");
-            expect!(self,":" => "computed bindings require an element binding");
-            let element = self.parse_binding_element(define)?;
-            return Ok(ast::BindingProperty::Computed(computed, element));
-        } else if let Some(TokenKind::Literal(x)) = self.peek_kind()? {
-            self.next()?;
-            let computed = match x {
-                token::Literal::Number(token::Number::Integer(x)) => {
-                    Expr::Prime(ast::PrimeExpr::Literal(Literal::Integer(x)))
-                }
-                token::Literal::Number(token::Number::Float(x)) => {
-                    Expr::Prime(ast::PrimeExpr::Literal(Literal::Float(x)))
-                }
-                token::Literal::String(x) => {
-                    Expr::Prime(ast::PrimeExpr::Literal(Literal::String(x)))
-                }
-                _ => {
-                    unexpected!(self => "bigints are not allowed as a computed properties")
-                }
-            };
-            let element = self.parse_binding_element(define)?;
-            return Ok(ast::BindingProperty::Computed(computed, element));
-        } else if let Some(TokenKind::Ident(id)) = self.next()?.map(|x| x.kind) {
-            if self.eat(t!(":"))? {
-                let element = self.parse_binding_element(define)?;
-                return Ok(ast::BindingProperty::Ident(id, element));
+        let label = if self.eat_semicolon() {
+            None
+        } else {
+            let token = peek_expect!(self);
+            if let t!("ident") = token.kind() {
+                self.next();
+                Some(token.data_id().unwrap())
             } else {
-                let symbol = if let Some(d) = define {
-                    self.symbol_table.define(id, d).ok_or(Error {
-                        kind: ErrorKind::RedeclaredVariable,
-                        origin: self.last_span,
-                    })?
-                } else {
-                    self.symbol_table.use_symbol(id)
-                };
-                let init = if self.eat(t!("="))? {
-                    Some(self.parse_single_expr()?)
-                } else {
-                    None
-                };
-                return Ok(ast::BindingProperty::Single(symbol, init));
+                unexpected!(self, token.kind(), "ident");
             }
-        }
-        unexpected!(self, "[", "ident")
+        };
+
+        let node = if is_break {
+            Stmt::Break { label }
+        } else {
+            Stmt::Continue { label }
+        };
+        Ok(self.ast.push_node(node))
     }
 
-    fn parse_binding_element(
-        &mut self,
-        define: Option<DeclType>,
-    ) -> Result<ast::BindingElement<A>> {
-        match self.peek_kind()? {
-            Some(t!("{")) | Some(t!("[")) => {
-                let binding = self.parse_binding(define)?;
-                let init = if self.eat(t!("="))? {
-                    Some(self.parse_single_expr()?)
-                } else {
-                    None
-                };
-                return Ok(ast::BindingElement::Binding(
-                    Box::new_in(binding, self.alloc.clone()),
-                    init,
-                ));
-            }
-            Some(TokenKind::Ident(id)) => {
-                self.next()?;
-                let symbol = if let Some(d) = define {
-                    self.symbol_table.define(id, d).ok_or(Error {
-                        kind: ErrorKind::RedeclaredVariable,
-                        origin: self.last_span,
-                    })?
-                } else {
-                    self.symbol_table.use_symbol(id)
-                };
-                let init = if self.eat(t!("="))? {
-                    Some(self.parse_single_expr()?)
-                } else {
-                    None
-                };
-                return Ok(ast::BindingElement::Single(symbol, init));
-            }
-            _ => unexpected!(self, "{", "[", "ident"),
-        }
-    }
-
-    fn parse_block(&mut self) -> Result<ast::Stmt<A>> {
+    pub fn parse_try_stmt(&mut self) -> Result<NodeId<Stmt>> {
         expect!(self, "{");
-        let scope = self.symbol_table.push_scope(ScopeKind::Lexical);
-        let mut stmts = Vec::new_in(self.alloc.clone());
-        while !self.eat(t!("}"))? {
-            stmts.push(self.parse_stmt()?);
-        }
-        debug_assert_eq!(scope, self.symbol_table.current_scope());
-        self.symbol_table.pop_scope();
-        Ok(ast::Stmt::Block(scope, stmts))
+        let block = self.parse_block_stmt()?;
+        let catch = self
+            .eat(t!("catch"))
+            .then(|| {
+                let binding = self
+                    .eat(t!("("))
+                    .then(|| {
+                        let res = self.parse_ident_or_pattern()?;
+                        expect!(self, ")");
+                        Ok(res)
+                    })
+                    .transpose()?;
+
+                expect!(self, "{");
+                let block = self.parse_block_stmt()?;
+                Ok(self.ast.push_node(CatchStmt { binding, block }))
+            })
+            .transpose()?;
+
+        let finally = self
+            .eat(t!("finally"))
+            .then(|| {
+                expect!(self, "{");
+                self.parse_block_stmt()
+            })
+            .transpose()?;
+
+        Ok(self.ast.push_node(Stmt::Try {
+            block,
+            catch,
+            finally,
+        }))
     }
 
-    fn parse_function(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "function");
-        expect_bind!(self, let name = "ident");
-        let var = self.symbol_table.define(name, DeclType::Var).ok_or(Error {
-            kind: ErrorKind::RedeclaredVariable,
-            origin: self.last_span,
-        })?;
-        let scope = self.symbol_table.push_scope(ScopeKind::Function);
-        let params = self.parse_params(false)?;
-        expect!(self, "{");
-        let stmts = self.alter_state::<_, _, Result<_>>(
-            |s| {
-                s.r#return = true;
-                s.r#continue = false;
-                s.r#break = false;
-            },
-            |this| {
-                let mut stmts = Vec::new_in(this.alloc.clone());
-                while !this.eat(t!("}"))? {
-                    stmts.push(this.parse_stmt()?);
-                }
-                Ok(stmts)
-            },
-        )?;
-        debug_assert_eq!(scope, self.symbol_table.current_scope());
-        self.symbol_table.pop_scope();
-        Ok(ast::Stmt::Function(scope, var, params, stmts))
+    pub fn parse_throw_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        peek_expect!(self);
+        self.no_line_terminator()?;
+        let expr = self.parse_expr()?;
+        self.semicolon()?;
+        Ok(self.ast.push_node(Stmt::Throw { expr }))
     }
 
-    pub(crate) fn parse_params(&mut self, openbrace_eaten: bool) -> Result<ast::Params<A>> {
-        if !openbrace_eaten {
-            expect!(self, "(");
+    pub fn parse_with_stmt(&mut self) -> Result<NodeId<Stmt>> {
+        if self.state.contains(ParserState::Strict) {
+            todo!("disallow with in strict mode")
         }
-        let mut stmt = Vec::new_in(self.alloc.clone());
-        let mut rest = None;
-        while let Some(peek) = self.peek_kind()? {
-            match peek {
-                t!("...") => {
-                    self.next()?;
-                    expect_bind!(self, let arg = "ident");
-                    let arg_var =
-                        self.symbol_table
-                            .define(arg, DeclType::Argument)
-                            .ok_or(Error {
-                                kind: ErrorKind::RedeclaredVariable,
-                                origin: self.last_span,
-                            })?;
-                    rest = Some(ast::Rest::BindingIdent(arg_var));
-                    break;
-                }
-                t!("ident", arg) => {
-                    self.next()?;
-                    let arg_var =
-                        self.symbol_table
-                            .define(arg, DeclType::Argument)
-                            .ok_or(Error {
-                                kind: ErrorKind::RedeclaredVariable,
-                                origin: self.last_span,
-                            })?;
-                    stmt.push(ast::SymbolOrBinding::Single(arg_var));
-                    if !self.eat(t!(","))? {
-                        break;
-                    }
-                }
-                t!("[") | t!("{") => {
-                    let binding = self.parse_binding(Some(DeclType::Let))?;
-                    stmt.push(ast::SymbolOrBinding::Binding(binding));
-                    if !self.eat(t!(","))? {
-                        break;
-                    }
-                }
-                t!(")") => {
-                    break;
-                }
-                _ => unexpected!(self, "...", ")", "ident"),
-            }
-        }
+        expect!(self, "(");
+        let expr = self.parse_expr()?;
         expect!(self, ")");
-        Ok(ast::Params(stmt, rest))
+        let stmt = self.parse_stmt()?;
+        Ok(self.ast.push_node(Stmt::With { expr, stmt }))
     }
 
-    fn parse_return(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "return");
-        let expr = self.parse_expr().ok();
-        Ok(ast::Stmt::Return(expr))
-    }
+    /// Parse a variable declaration, e.g. any of:
+    /// ```javascript
+    /// var a = 1;
+    /// let [b,,,...rest] = 1;
+    /// const { c } = foo;
+    /// ```
+    pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
+        let span = self.peek().span;
 
-    fn parse_throw(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "throw");
-        let expr = self.parse_single_expr()?;
-        Ok(ast::Stmt::Throw(expr))
-    }
+        let decl = self.parse_ident_or_pattern()?;
+        let decl_span = span.covers(self.last_span());
 
-    fn parse_try(&mut self) -> Result<ast::Stmt<A>> {
-        expect!(self, "try");
-        let r#try = Box::new_in(self.parse_block()?, self.alloc.clone());
-        let catch = if self.peek_kind()? == Some(t!("catch")) {
-            self.next()?;
-            let scope = self.symbol_table.push_scope(ScopeKind::Lexical);
-            let binding = if self.peek_kind()? == Some(t!("(")) {
-                self.next()?;
-                let binding = if let Some(t!("{")) | Some(t!("[")) = self.peek_kind()? {
-                    let binding = self.parse_binding(Some(DeclType::Let))?;
-                    ast::SymbolOrBinding::Binding(binding)
-                } else {
-                    expect_bind!(self, let binding = "ident");
-                    let binding = self.symbol_table.define(binding, DeclType::Let).unwrap();
-                    ast::SymbolOrBinding::Single(binding)
-                };
-                expect!(self, ")");
-                Some(binding)
-            } else {
-                None
-            };
-            expect!(self, "{");
-            let mut stmts = Vec::new_in(self.alloc.clone());
-            while !self.eat(t!("}"))? {
-                stmts.push(self.parse_stmt()?);
+        let initializer = self
+            .eat(t!("="))
+            .then(|| self.parse_assignment_expr())
+            .transpose()?;
+
+        if initializer.is_none() {
+            if kind == VariableKind::Const {
+                return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
             }
-            debug_assert_eq!(scope, self.symbol_table.current_scope());
-            self.symbol_table.pop_scope();
-            let stmt = Box::new_in(ast::Stmt::Block(scope, stmts), self.alloc.clone());
-            Some(ast::Catch { binding, stmt })
-        } else {
-            None
-        };
-        let finally = if self.peek_kind()? == Some(t!("finally")) {
-            self.next()?;
-            Some(Box::new_in(self.parse_block()?, self.alloc.clone()))
-        } else {
-            None
-        };
+            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+            }
+        }
 
-        Ok(ast::Stmt::Try(r#try, catch, finally))
+        let decl = self.ast.push_node(VariableDecl { decl, initializer });
+
+        let head = self.ast.append_list(decl, None);
+        let mut prev = head;
+        while self.eat(t!(",")) {
+            let span = self.peek().span;
+            let decl = self.parse_ident_or_pattern()?;
+            let decl_span = span.covers(self.last_span());
+
+            let initializer = self
+                .eat(t!("="))
+                .then(|| self.parse_assignment_expr())
+                .transpose()?;
+
+            if initializer.is_none() {
+                if kind == VariableKind::Const {
+                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+                }
+                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+                }
+            }
+
+            let decl = self.ast.push_node(VariableDecl { decl, initializer });
+            prev = self.ast.append_list(decl, Some(prev));
+        }
+        self.semicolon()?;
+
+        let res = self.ast.push_node(Stmt::VariableDecl { kind, decl: head });
+
+        Ok(res)
     }
 }

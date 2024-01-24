@@ -1,23 +1,19 @@
 [package]
 name = "toyjs_vm"
 version = "0.1.0"
-authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-common = { package="toyjs_common",path = "../common/" }
-token = { package="toyjs_token",path = "../token/" }
-lexer = { package="toyjs_lexer",path = "../lexer/" }
-bitflags = "1.3.2"
-# ast = { package="toyjs_ast",path = "../ast/" }
+dreck = { version = "0.1.1", path = "../../../dreck" }
+bc = { version = "0.1.0", path = "../bc", package = "toyjs_bc"}
+common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 
 [features]
-tagged-union = []
-gc-dump-trace = []
-gc-force-collect-full = []
-parallel = []
+slow_checks = ["bc/slow_checks", "common/slow_checks"]
 
-[profile.dev]
-opt-level = 2
+[dev-dependencies]
+lexer = { path = "../lexer", package = "toyjs_lexer" }
+parser = { package = "toyjs_parser", path = "../parser" }
+compiler = { package = "toyjs_compiler", path = "../compiler" }

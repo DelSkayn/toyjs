@@ -1,11 +1,17 @@
 [package]
 name = "toyjs_common"
 version = "0.1.0"
-authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+untagged = []
+slow_checks = []
+
+
 [dependencies]
-fxhash = "0.2.1"
-static_assertions = "1.1.0"
+ahash = { version = "0.8.3", default-features = false }
+bytemuck = { version = "1.13.1", features = ["derive"] }
+hashbrown = "0.13.2"
+unicode-ident = "1.0.8"

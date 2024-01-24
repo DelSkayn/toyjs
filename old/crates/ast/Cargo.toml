@@ -1,0 +1,12 @@
+[package]
+name = "toyjs_ast"
+version = "0.1.0"
+authors = ["Mees Delzenne <mees.delzenne@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bumpalo = { version = "3.9.1", features = ["boxed","collections"] }
+common = { package="toyjs_common",path = "../common/" }
+derivative = "2.2.0"
