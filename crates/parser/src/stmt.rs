@@ -468,6 +468,7 @@ impl<'a> Parser<'a> {
         } else {
             let token = peek_expect!(self);
             if let t!("ident") = token.kind() {
+                self.next();
                 Some(token.data_id().unwrap())
             } else {
                 unexpected!(self, token.kind(), "ident");

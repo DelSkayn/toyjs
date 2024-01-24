@@ -41,6 +41,10 @@ impl<V: VariableVisitor> VisitorDriver<V> {
         }
     }
 
+    pub fn into_inner(self) -> V {
+        self.driven
+    }
+
     fn resolve_params(
         &mut self,
         params: ListHead<ast::BindingElement>,
@@ -106,14 +110,18 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 ..
             } => {
                 self.driven.push_scope(ScopeKind::Function(func))?;
+                if let Some(sym) = name {
+                    self.driven.declare(sym, Kind::Let)?;
+                    self.driven.push_scope(ScopeKind::Block)?;
+                }
                 self.resolve_params(params, rest_param)?;
                 if let ListHead::Present(x) = body {
                     self.super_stmt_list(x)?;
                 }
-                self.driven.pop_scope()?;
-                if let Some(name) = name {
-                    self.driven.declare(name, Kind::Function)?;
+                if name.is_some() {
+                    self.driven.pop_scope()?;
                 }
+                self.driven.pop_scope()?;
             }
         }
 
@@ -142,6 +150,46 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 self.driven.pop_scope()?;
                 return Ok(());
             }
+            ast::Stmt::Break { .. } | ast::Stmt::Continue { .. } => return Ok(()),
+            ast::Stmt::Try {
+                block,
+                catch,
+                finally,
+            } => {
+                self.driven.push_scope(ScopeKind::Block)?;
+                if let ListHead::Present(stmt) = block {
+                    self.super_stmt_list(stmt)?;
+                }
+                self.driven.pop_scope()?;
+
+                if let Some(catch) = catch {
+                    self.super_catch(catch)?;
+                }
+
+                self.driven.push_scope(ScopeKind::Block)?;
+                if let Some(ListHead::Present(stmt)) = finally {
+                    self.super_stmt_list(stmt)?;
+                }
+                self.driven.pop_scope()?;
+
+                return Ok(());
+            }
+            ast::Stmt::Switch {
+                cond,
+                cases,
+                default,
+            } => {
+                self.visit_expr_list(cond)?;
+                self.driven.push_scope(ScopeKind::Block)?;
+                if let ListHead::Present(cases) = cases {
+                    self.super_cases(cases)?;
+                }
+                if let Some(ListHead::Present(stmt)) = default {
+                    self.super_stmt_list(stmt)?;
+                }
+                self.driven.pop_scope()?;
+                return Ok(());
+            }
             _ => (),
         }
         self.visit_stmt(stmt)
@@ -159,7 +207,6 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                     self.declaring = before;
                 }
                 self.super_expr_list(expr)?;
-                return Ok(());
             }
             ast::ForLoopHead::Of { decl, expr } => {
                 if let ast::InOfDecl::Decl { kind, binding } = decl {
@@ -168,11 +215,34 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                     self.declaring = before;
                 }
                 self.super_expr(expr)?;
-                return Ok(());
             }
-            _ => {}
+            ast::ForLoopHead::CStyle { decl, .. } => match decl {
+                ast::CstyleDecl::Empty => {}
+                ast::CstyleDecl::Expr(x) => {
+                    self.super_expr_list(x)?;
+                }
+                ast::CstyleDecl::Decl { kind, decl } => {
+                    let before = self.declaring.replace(kind.into());
+                    self.super_variable_decl_list(decl)?;
+                    self.declaring = before;
+                }
+            },
         }
-        self.visit_head_pre(head)
+        Ok(())
+    }
+
+    fn super_catch(&mut self, catch: NodeId<ast::CatchStmt>) -> Result<()> {
+        self.driven.push_scope(ScopeKind::Block)?;
+        if let Some(binding) = self.ast()[catch].binding {
+            let before = self.declaring.replace(Kind::Let);
+            self.super_ident_or_pattern(binding)?;
+            self.declaring = before;
+        }
+        if let ListHead::Present(block) = self.ast()[catch].block {
+            self.super_stmt_list(block)?;
+        }
+        self.driven.pop_scope()?;
+        Ok(())
     }
 
     fn super_class_member(
@@ -205,7 +275,7 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
         if let Some(d) = self.declaring {
             self.driven.declare(s, d)?;
         } else {
-            self.driven.use_symbol(s);
+            self.driven.use_symbol(s)?;
         }
         Ok(())
     }

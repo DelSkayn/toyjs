@@ -5,11 +5,11 @@ use std::{
     time::Instant,
 };
 
-use ast::{visitor::Visitor, ListHead};
+use ast::ListHead;
 use common::{result::ContextError, source::Source, string::String, structs::Interners};
 use lexer::Lexer;
 use parser::Parser;
-use toyjs_compiler::variables::{self, Variables};
+use toyjs_compiler::variables::{self, Kind, Variables};
 
 pub enum Error {
     Parse(parser::Error),
@@ -42,20 +42,31 @@ fn compile(source: &Source) -> Result<(), Error> {
     let lexer = Lexer::new(source.source(), &mut interners);
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script()?;
-    let mut ast = parser.into_ast();
+    let ast = parser.into_ast();
     let mut variables = Variables::new();
-    let mut resolver = variables::VariablesResolver::new(&mut ast, &mut variables);
-    resolver
-        .push_scope(variables::ScopeKind::Global { strict: res.strict })
-        .unwrap();
+    let root_scope = variables.push_global_scope(false);
     if let ListHead::Present(stmt) = res.stmt {
-        resolver.super_stmt_list(stmt)?;
+        variables::resolve_script(stmt, &ast, &mut variables, root_scope)?;
     }
-    let root = resolver.pop_scope()?;
-    resolver.finish();
     let elapsed = before.elapsed();
 
-    println!("{}", variables.render(root, &ast, &interners));
+    println!("{}", variables.render(root_scope, &ast, &interners));
+
+    let mut buffer = std::string::String::new();
+
+    for v in variables.declared_vars(root_scope).iter().copied() {
+        if variables.symbols[v].kind == Kind::Unresolved {
+            println!(
+                "unresolved variable `{}`:",
+                interners.strings.get(variables.symbols[v].ident).unwrap()
+            );
+            let span = ast[variables.symbols[v].ast_node].span;
+            buffer.clear();
+            source.render_string_block(&mut buffer, span, None).unwrap();
+            println!("{}", buffer)
+        }
+    }
+
     println!("compiled in {:.4} seconds", elapsed.as_secs_f64());
 
     Ok(())

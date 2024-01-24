@@ -4,13 +4,13 @@
 use core::fmt;
 use std::{backtrace::Backtrace, result::Result as StdResult};
 
-use ast::{visitor::Visitor, Ast, ListHead};
+use ast::{Ast, ListHead};
 use bc::{ByteCode, Instruction};
 use common::{
     key, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
 };
 use registers::Registers;
-use variables::{Variables, VariablesResolver};
+use variables::{resolve_script, Variables};
 
 macro_rules! to_do {
     () => {
@@ -50,13 +50,23 @@ pub enum Limits {
 impl fmt::Display for Limits {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Limits::InstructionCount => write!(f, "Too many instructions"),
+            Limits::InstructionCount => write!(
+                f,
+                "script required more then u32::MAX bytes of instructions"
+            ),
             Limits::JumpOffset => {
-                write!(f, "Tried to generate jump which exceeded max jump offset")
+                write!(f, "script required a jump which exceeded the maximum jump offset allowed by the instruction set.")
             }
-            Limits::TooManyScopes => write!(f, "Exceeded the limit of variable scopes count"),
-            Limits::TooManyVariables => write!(f, "Exceeded the limit of variable count"),
-            Limits::Registers => write!(f, "Ran out of registers to allocate"),
+            Limits::TooManyScopes => {
+                write!(f, "script has more scopes than the limit of u32::MAX - 1")
+            }
+            Limits::TooManyVariables => {
+                write!(f, "script has more symbols than the limit of u32::MAX - 1")
+            }
+            Limits::Registers => write!(
+                f,
+                "function in script required more registers then the instruction set limit of 127"
+            ),
         }
     }
 }
@@ -135,15 +145,11 @@ impl<'a> Compiler<'a> {
 
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
         let mut variables = Variables::new();
-        let mut resolver = VariablesResolver::new(self.ast, &mut variables);
-        resolver
-            .push_scope(variables::ScopeKind::Global { strict })
-            .unwrap();
-        if let ListHead::Present(stmt) = stmt {
-            resolver.super_stmt_list(stmt)?;
+        let root_scope = variables.push_global_scope(strict);
+
+        if let ListHead::Present(root) = stmt {
+            resolve_script(root, self.ast, &mut variables, root_scope)?;
         }
-        resolver.pop_scope()?;
-        resolver.finish();
 
         self.registers = Registers::new(variables);
 

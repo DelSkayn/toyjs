@@ -1,27 +1,20 @@
 use ast::{Ast, NodeId};
 use common::{
-    hashmap::{
-        hash_map::{Entry, HashMap},
-        HashMap,
-    },
-    id::KeyedVec,
+    hashmap::hash_map::{Entry, HashMap},
     key,
     string::StringId,
 };
 
 use super::driver::VariableVisitor;
 use crate::{
-    variables::{Kind, Scope, ScopeId, ScopeKind, Symbol, SymbolId, Variables},
+    variables::{
+        Kind, Scope, ScopeId, ScopeKind, Symbol, SymbolId, SymbolUseOrder, UseInfo, Variables,
+    },
     Error, Limits, Result,
 };
 
 key!(pub struct FunctionSymbolStackId(u32));
 key!(pub struct BlockSymbolStackId(u32));
-
-pub enum SymbolStackPtr {
-    Block(BlockSymbolStackId),
-    Function(FunctionSymbolStackId),
-}
 
 /// Pass which resolves all declared variables in the ast and creates the scopes.
 pub struct DeclarePass<'a, 'b> {
@@ -47,6 +40,50 @@ impl<'a, 'b> DeclarePass<'a, 'b> {
             lookup: HashMap::new(),
             current_block: root,
             current_function,
+        }
+    }
+
+    pub fn finish_scope(&mut self) {
+        let scope = &mut self.vars.scopes[self.current_block];
+        let is_function_scope = scope.kind.is_function_scope();
+        let num_childeren = scope.num_scope_children;
+        let num_decls = scope.num_decl_children;
+
+        // push declared scopes into the stack.
+        scope.scope_child_offset = self.vars.scope_children.len() as u32;
+        let offset = self.scope_stack.len() - num_childeren as usize;
+        self.vars
+            .scope_children
+            .extend(self.scope_stack.drain(offset..));
+
+        // push declared variables into the stack.
+        scope.decl_child_offset = self.vars.scope_decls.len() as u32;
+        if self.current_function == self.current_block {
+            let offset = self.function_decl_stack.len() - num_decls as usize;
+            for symbol_id in self.function_decl_stack.drain(offset..) {
+                let ident = self.vars.symbols[symbol_id].ident;
+                if let Some(shadow) = self.vars.symbols[symbol_id].shadows {
+                    let res = self.lookup.insert(ident, shadow);
+                    debug_assert!(res.is_some());
+                } else {
+                    let res = self.lookup.remove(&ident);
+                    debug_assert!(res.is_some());
+                }
+                self.vars.scope_decls.push(symbol_id);
+            }
+        } else {
+            let offset = self.block_decl_stack.len() - num_decls as usize;
+            for symbol_id in self.block_decl_stack.drain(offset..) {
+                let ident = self.vars.symbols[symbol_id].ident;
+                if let Some(shadow) = self.vars.symbols[symbol_id].shadows {
+                    let res = self.lookup.insert(ident, shadow);
+                    debug_assert!(res.is_some());
+                } else {
+                    let res = self.lookup.remove(&ident);
+                    debug_assert!(res.is_some());
+                }
+                self.vars.scope_decls.push(symbol_id);
+            }
         }
     }
 }
@@ -81,23 +118,17 @@ impl VariableVisitor for DeclarePass<'_, '_> {
     }
 
     fn pop_scope(&mut self) -> Result<()> {
-        let scope = &mut self.vars.scopes[self.current_block];
-        let is_function_scope = scope.kind.is_function_scope();
-        let num_childeren = scope.num_scope_children;
-
-        // push declared scopes into the stack.
-        let offset = self.scope_stack.len() - num_childeren as usize;
-        let scope_childeren_offset = self.vars.scope_children.len();
-        self.vars
-            .scope_children
-            .extend(self.scope_stack.drain(offset..));
-        scope.scope_child_offset = offset as u32;
+        self.finish_scope();
 
         // update current scope.
-        self.current_block = scope.parent.expect("tried to pop the global scope");
-        if is_function_scope {
+        let current = self.current_block;
+        self.current_block = self.vars.scopes[current]
+            .parent
+            .expect("tried to pop the global scope");
+        if self.current_function == current {
             self.current_function = self.vars.function_of(self.current_block);
         }
+
         Ok(())
     }
 
@@ -129,6 +160,14 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                         });
                     }
 
+                    self.vars.use_to_symbol.insert_grow_default(
+                        ast_node,
+                        UseInfo {
+                            use_order: SymbolUseOrder::first(),
+                            id: Some(old_symbol_id),
+                        },
+                    );
+
                     // redeclaration, no new symbol needed.
                     return Ok(());
                 }
@@ -156,7 +195,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
 
                 symbol_id
             }
-            Entry::Vacant(mut entry) => {
+            Entry::Vacant(entry) => {
                 let scope = if kind.is_function_scoped() {
                     self.current_function
                 } else {
@@ -180,6 +219,14 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                 symbol_id
             }
         };
+
+        self.vars.use_to_symbol.insert_grow_default(
+            ast_node,
+            UseInfo {
+                use_order: SymbolUseOrder::first(),
+                id: Some(symbol_id),
+            },
+        );
 
         if kind.is_function_scoped() || self.current_function == self.current_block {
             self.function_decl_stack.push(symbol_id);

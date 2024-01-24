@@ -94,6 +94,13 @@ impl<K, T> KeyedVec<K, T> {
     }
 }
 
+impl<K: Id, T: Clone + Default> KeyedVec<K, T> {
+    /// Resizes the vector so it contains value up till the key and then inserts the value.
+    pub fn insert_grow_default(&mut self, key: K, value: T) {
+        self.insert_grow(key, value, Default::default())
+    }
+}
+
 impl<K: Id, T: Clone> KeyedVec<K, T> {
     /// Resizes the vector so it contains value up till the key and then inserts the value.
     pub fn insert_grow(&mut self, key: K, value: T, fill: T) {

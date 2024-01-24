@@ -1,9 +1,8 @@
 use ast::NodeId;
-use common::{hashmap::hash_map::HashMap, id::KeyedVec, key, string::StringId};
+use common::{id::KeyedVec, key, string::StringId};
 
 mod resolve;
-mod resolve2;
-pub use resolve::VariablesResolver;
+pub use resolve::resolve_script;
 mod render;
 
 key!(
@@ -11,6 +10,12 @@ key!(
 pub struct ScopeId(u32)
 );
 key!(pub struct SymbolId(u32));
+
+impl ScopeId {
+    fn next(self) -> Self {
+        Self(self.0 + 1)
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SymbolUseOrder(pub u32);
@@ -121,11 +126,20 @@ pub struct UseInfo {
     pub id: Option<SymbolId>,
 }
 
+impl Default for UseInfo {
+    fn default() -> Self {
+        UseInfo {
+            use_order: SymbolUseOrder::first(),
+            id: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Variables {
     pub scopes: KeyedVec<ScopeId, Scope>,
     pub scope_children: Vec<ScopeId>,
-    pub scope_symbols: Vec<SymbolId>,
+    pub scope_decls: Vec<SymbolId>,
     pub symbols: KeyedVec<SymbolId, Symbol>,
     /// A list which maps a ast symbol to a resolved symbol.
     pub use_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
@@ -136,10 +150,22 @@ impl Variables {
         Variables {
             scopes: KeyedVec::new(),
             scope_children: Vec::new(),
-            scope_symbols: Vec::new(),
+            scope_decls: Vec::new(),
             symbols: KeyedVec::new(),
             use_to_symbol: KeyedVec::new(),
         }
+    }
+
+    pub fn push_global_scope(&mut self, strict: bool) -> ScopeId {
+        // TODO: limits check.
+        self.scopes.push(Scope {
+            parent: None,
+            kind: ScopeKind::Global { strict },
+            num_scope_children: 0,
+            scope_child_offset: 0,
+            num_decl_children: 0,
+            decl_child_offset: 0,
+        })
     }
 
     pub fn scopes(&self) -> &KeyedVec<ScopeId, Scope> {
@@ -163,7 +189,7 @@ impl Variables {
         let offset = scope.decl_child_offset as usize;
         let len = scope.num_decl_children as usize;
 
-        &self.scope_symbols[offset..(offset + len)]
+        &self.scope_decls[offset..(offset + len)]
     }
 
     pub fn new_symbol(&mut self, origin: NodeId<ast::Symbol>, sym: Symbol) -> SymbolId {

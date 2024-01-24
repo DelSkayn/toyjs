@@ -1,9 +1,9 @@
-use ast::{visitor::Visitor, ListHead};
+use ast::ListHead;
 use common::{string::String, structs::Interners};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lexer::Lexer;
 use parser::Parser;
-use toyjs_compiler::variables::{ScopeKind, Variables, VariablesResolver};
+use toyjs_compiler::variables::{self, Variables};
 
 pub fn bench(name: &str, source: &str, c: &mut Criterion) {
     let source = String::from_std_str(source);
@@ -12,20 +12,15 @@ pub fn bench(name: &str, source: &str, c: &mut Criterion) {
     let lexer = Lexer::new(source.source(), &mut interners);
     let mut parser = Parser::new(lexer);
     let res = parser.parse_script().expect("parsing failed");
-    let mut ast = parser.into_ast();
+    let ast = parser.into_ast();
 
     c.bench_function(name, |b| {
         b.iter(|| {
             let mut variables = Variables::new();
-            let mut resolver = VariablesResolver::new(black_box(&mut ast), &mut variables);
-            resolver
-                .push_scope(ScopeKind::Global { strict: res.strict })
-                .unwrap();
+            let root = variables.push_global_scope(false);
             if let ListHead::Present(stmt) = res.stmt {
-                resolver.super_stmt_list(stmt).unwrap();
+                variables::resolve_script(stmt, black_box(&ast), &mut variables, root).unwrap();
             }
-            resolver.pop_scope().unwrap();
-            resolver.finish();
             black_box(variables);
         })
     });
