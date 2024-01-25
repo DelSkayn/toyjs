@@ -111,10 +111,12 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             } => {
                 self.driven.push_scope(ScopeKind::Function(func))?;
                 if let Some(sym) = name {
-                    self.driven.declare(sym, Kind::Let)?;
+                    self.driven.declare(sym, Kind::Function)?;
+                    self.resolve_params(params, rest_param)?;
                     self.driven.push_scope(ScopeKind::Block)?;
+                } else {
+                    self.resolve_params(params, rest_param)?;
                 }
-                self.resolve_params(params, rest_param)?;
                 if let ListHead::Present(x) = body {
                     self.super_stmt_list(x)?;
                 }

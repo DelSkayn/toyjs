@@ -64,10 +64,10 @@ impl<'a, 'b> DeclarePass<'a, 'b> {
                 let ident = self.vars.symbols[symbol_id].ident;
                 if let Some(shadow) = self.vars.symbols[symbol_id].shadows {
                     let res = self.lookup.insert(ident, shadow);
-                    debug_assert!(res.is_some());
+                    debug_assert_eq!(res, Some(symbol_id));
                 } else {
                     let res = self.lookup.remove(&ident);
-                    debug_assert!(res.is_some());
+                    debug_assert_eq!(res, Some(symbol_id));
                 }
                 self.vars.scope_decls.push(symbol_id);
             }
@@ -147,18 +147,31 @@ impl VariableVisitor for DeclarePass<'_, '_> {
         let symbol_id = match self.lookup.entry(ident) {
             Entry::Occupied(mut entry) => {
                 let old_symbol_id = *entry.get();
-                if self.vars.symbols[old_symbol_id].scope == self.current_block {
-                    let collision_kind = self.vars.symbols[old_symbol_id].kind;
-                    if kind.is_block_scoped()
-                        || collision_kind.is_block_scoped()
-                        || kind.is_arg() && collision_kind.is_arg()
-                    {
-                        let old_ast = self.vars.symbols[old_symbol_id].ast_node;
-                        return Err(Error::Redeclared {
-                            span: self.ast[ast_node].span,
-                            first_declared: self.ast[old_ast].span,
-                        });
-                    }
+                let collision_kind = self.vars.symbols[old_symbol_id].kind;
+                let declare_scope = if kind.is_function_scoped() {
+                    self.current_function
+                } else {
+                    self.current_block
+                };
+
+                // if either variable is block scoped or both variables are args and there scopes
+                // are the same, the variables have been illegally redeclared.
+                if (kind.is_block_scoped()
+                    || collision_kind.is_block_scoped()
+                    || kind.is_arg() && collision_kind.is_arg())
+                    && self.vars.symbols[old_symbol_id].scope == declare_scope
+                {
+                    let old_ast = self.vars.symbols[old_symbol_id].ast_node;
+                    return Err(Error::Redeclared {
+                        span: self.ast[ast_node].span,
+                        first_declared: self.ast[old_ast].span,
+                    });
+                }
+
+                if kind.is_function_scoped()
+                    && self.vars.symbols[old_symbol_id].scope == self.current_function
+                {
+                    // redeclaration, no new symbol needed.
 
                     self.vars.use_to_symbol.insert_grow_default(
                         ast_node,
@@ -168,15 +181,14 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                         },
                     );
 
-                    // redeclaration, no new symbol needed.
                     return Ok(());
                 }
 
                 // we did not collide at this point.
-                let scope = if kind.is_function_scoped() {
-                    self.current_function
-                } else {
+                let scope = if kind.is_block_scoped() {
                     self.current_block
+                } else {
+                    self.current_function
                 };
 
                 let symbol_id = self.vars.symbols.push(Symbol {
@@ -196,10 +208,10 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                 symbol_id
             }
             Entry::Vacant(entry) => {
-                let scope = if kind.is_function_scoped() {
-                    self.current_function
-                } else {
+                let scope = if kind.is_block_scoped() {
                     self.current_block
+                } else {
+                    self.current_function
                 };
 
                 let symbol_id = self.vars.symbols.push(Symbol {
@@ -228,7 +240,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
             },
         );
 
-        if kind.is_function_scoped() || self.current_function == self.current_block {
+        if !kind.is_block_scoped() || self.current_function == self.current_block {
             self.function_decl_stack.push(symbol_id);
             self.vars.scopes[self.current_function].num_decl_children += 1;
         } else {

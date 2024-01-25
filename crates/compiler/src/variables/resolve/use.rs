@@ -96,9 +96,9 @@ impl VariableVisitor for UsePass<'_, '_> {
             let k = self.vars.symbols[v].ident;
             if let Some(old) = self.lookup.insert(k, v) {
                 if self.vars.symbols[old].kind == Kind::Unresolved {
-                    debug_assert!(self.vars.symbols[v].shadows.is_none());
-                    self.vars.symbols[v].shadows = Some(old);
+                    debug_assert_eq!(self.vars.symbols[v].shadows, None);
                 }
+                self.vars.symbols[v].shadows = Some(old);
             }
         }
         debug_assert_eq!(self.vars.scopes[self.current].kind, kind);
