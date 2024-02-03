@@ -44,7 +44,7 @@ impl RenderVariables<'_> {
                     }
                 }
             }
-            super::ScopeKind::Block => writeln!(f, "{:indent$}> BLOCK", "")?,
+            super::ScopeKind::Block { .. } => writeln!(f, "{:indent$}> BLOCK", "")?,
             super::ScopeKind::Static => writeln!(f, "{:indent$}> STATIC INIT", "")?,
             super::ScopeKind::Global { .. } => writeln!(f, "{:indent$}> GLOBAL", "")?,
         }
@@ -60,11 +60,11 @@ impl RenderVariables<'_> {
                 self.variables.symbols()[s].kind,
                 self.variables.symbols()[s]
                     .defined
-                    .map(|x| x.0 as isize)
+                    .map(|x| x.to_u32() as i64)
                     .unwrap_or(-1),
-                self.variables.symbols()[s]
-                    .last_use
-                    .map(|x| x.0 as isize)
+                self.variables
+                    .last_use_of(s)
+                    .map(|x| x.to_u32() as i64)
                     .unwrap_or(-1)
             )?;
         }

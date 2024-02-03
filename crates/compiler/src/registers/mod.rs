@@ -25,7 +25,7 @@ impl Registers {
     pub fn new(variables: Variables) -> Self {
         Registers {
             registers_used: 0u128,
-            reservation: [SymbolUseOrder(0); MAX_REGISTERS],
+            reservation: [SymbolUseOrder::first(); MAX_REGISTERS],
             variables,
             max_used: Reg::this_reg(),
             time: SymbolUseOrder::first(),

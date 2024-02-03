@@ -113,7 +113,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 if let Some(sym) = name {
                     self.driven.declare(sym, Kind::Function)?;
                     self.resolve_params(params, rest_param)?;
-                    self.driven.push_scope(ScopeKind::Block)?;
+                    self.driven
+                        .push_scope(ScopeKind::Block { has_loop: false })?;
                 } else {
                     self.resolve_params(params, rest_param)?;
                 }
@@ -133,7 +134,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
     fn super_stmt(&mut self, stmt: NodeId<ast::Stmt>) -> std::prelude::v1::Result<(), Error> {
         match self.ast()[stmt] {
             ast::Stmt::Block { .. } => {
-                self.driven.push_scope(ScopeKind::Block)?;
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: false })?;
                 self.visit_stmt(stmt)?;
                 self.driven.pop_scope()?;
                 return Ok(());
@@ -145,10 +147,27 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 return Ok(());
             }
             ast::Stmt::For { head, body } => {
-                self.driven.push_scope(ScopeKind::Block)?;
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: true })?;
                 self.super_head_pre(head)?;
                 self.super_stmt(body)?;
                 self.super_head_post(head)?;
+                self.driven.pop_scope()?;
+                return Ok(());
+            }
+            ast::Stmt::While { cond, body } => {
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: true })?;
+                self.visit_stmt(body)?;
+                self.visit_expr_list(cond)?;
+                self.driven.pop_scope()?;
+                return Ok(());
+            }
+            ast::Stmt::DoWhile { body, cond } => {
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: true })?;
+                self.visit_expr_list(cond)?;
+                self.visit_stmt(body)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
@@ -158,7 +177,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 catch,
                 finally,
             } => {
-                self.driven.push_scope(ScopeKind::Block)?;
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: false })?;
                 if let ListHead::Present(stmt) = block {
                     self.super_stmt_list(stmt)?;
                 }
@@ -168,7 +188,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                     self.super_catch(catch)?;
                 }
 
-                self.driven.push_scope(ScopeKind::Block)?;
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: false })?;
                 if let Some(ListHead::Present(stmt)) = finally {
                     self.super_stmt_list(stmt)?;
                 }
@@ -182,7 +203,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 default,
             } => {
                 self.visit_expr_list(cond)?;
-                self.driven.push_scope(ScopeKind::Block)?;
+                self.driven
+                    .push_scope(ScopeKind::Block { has_loop: false })?;
                 if let ListHead::Present(cases) = cases {
                     self.super_cases(cases)?;
                 }
@@ -234,7 +256,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
     }
 
     fn super_catch(&mut self, catch: NodeId<ast::CatchStmt>) -> Result<()> {
-        self.driven.push_scope(ScopeKind::Block)?;
+        self.driven
+            .push_scope(ScopeKind::Block { has_loop: false })?;
         if let Some(binding) = self.ast()[catch].binding {
             let before = self.declaring.replace(Kind::Let);
             self.super_ident_or_pattern(binding)?;

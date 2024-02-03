@@ -8,7 +8,8 @@ use common::{
 use super::driver::VariableVisitor;
 use crate::{
     variables::{
-        Kind, Scope, ScopeId, ScopeKind, Symbol, SymbolId, SymbolUseOrder, UseInfo, Variables,
+        Kind, LastUse, Scope, ScopeId, ScopeKind, Symbol, SymbolId, SymbolUseOrder, UseInfo,
+        Variables,
     },
     Error, Limits, Result,
 };
@@ -197,7 +198,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                     kind,
                     declared: None,
                     defined: None,
-                    last_use: None,
+                    last_use: LastUse::Unused,
                     scope,
                     shadows: Some(old_symbol_id),
                     ast_node,
@@ -220,7 +221,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                     kind,
                     declared: None,
                     defined: None,
-                    last_use: None,
+                    last_use: LastUse::Unused,
                     scope,
                     shadows: None,
                     ast_node,

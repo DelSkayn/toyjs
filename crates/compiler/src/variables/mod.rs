@@ -1,32 +1,51 @@
+use core::fmt;
+use std::num::NonZeroU32;
+
 use ast::NodeId;
 use common::{id::KeyedVec, key, string::StringId};
 
+mod livelyhood;
 mod resolve;
 pub use resolve::resolve_script;
 mod render;
 
 key!(
-#[derive(Ord,PartialOrd)]
-pub struct ScopeId(u32)
+    #[derive(Ord,PartialOrd)]
+    pub struct ScopeId(#[non_zero] NonZeroU32)
 );
-key!(pub struct SymbolId(u32));
+key!(pub struct SymbolId(#[non_zero] NonZeroU32));
+key!(pub struct LoopId(#[non_zero] NonZeroU32));
 
 impl ScopeId {
     fn next(self) -> Self {
-        Self(self.0 + 1)
+        Self(self.0.checked_add(1).unwrap())
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct SymbolUseOrder(pub u32);
+pub struct SymbolUseOrder(NonZeroU32);
+
+impl fmt::Display for SymbolUseOrder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (u32::from(self.0) - 1).fmt(f)
+    }
+}
 
 impl SymbolUseOrder {
     pub fn first() -> SymbolUseOrder {
-        SymbolUseOrder(0)
+        SymbolUseOrder(NonZeroU32::new(1).unwrap())
     }
 
     pub fn last() -> SymbolUseOrder {
-        SymbolUseOrder(u32::MAX)
+        SymbolUseOrder(NonZeroU32::new(u32::MAX).unwrap())
+    }
+
+    pub fn checked_add(self, v: u32) -> Option<Self> {
+        self.0.checked_add(v).map(Self)
+    }
+
+    pub fn to_u32(self) -> u32 {
+        u32::from(self.0) - 1
     }
 }
 
@@ -71,6 +90,13 @@ impl From<ast::VariableKind> for Kind {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum LastUse {
+    Unused,
+    Direct(SymbolUseOrder),
+    Loop(LoopId),
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct Symbol {
     /// The identifier of the variable.
     pub ident: StringId,
@@ -83,7 +109,7 @@ pub struct Symbol {
     /// When the variable is defined.
     pub defined: Option<SymbolUseOrder>,
     /// When the variable is last used.
-    pub last_use: Option<SymbolUseOrder>,
+    pub last_use: LastUse,
     /// The scope the symbol was declared in.
     pub scope: ScopeId,
     /// A symbol in a super scope with a same name.
@@ -109,7 +135,7 @@ pub struct Scope {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScopeKind {
     Function(NodeId<ast::Function>),
-    Block,
+    Block { has_loop: bool },
     Static,
     Global { strict: bool },
 }
@@ -135,6 +161,13 @@ impl Default for UseInfo {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct LoopInfo {
+    parent: Option<LoopId>,
+    scope: ScopeId,
+    use_order: SymbolUseOrder,
+}
+
 #[derive(Clone, Debug)]
 pub struct Variables {
     pub scopes: KeyedVec<ScopeId, Scope>,
@@ -143,6 +176,7 @@ pub struct Variables {
     pub symbols: KeyedVec<SymbolId, Symbol>,
     /// A list which maps a ast symbol to a resolved symbol.
     pub use_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
+    pub loop_use: KeyedVec<LoopId, LoopInfo>,
 }
 
 impl Variables {
@@ -153,6 +187,7 @@ impl Variables {
             scope_decls: Vec::new(),
             symbols: KeyedVec::new(),
             use_to_symbol: KeyedVec::new(),
+            loop_use: KeyedVec::new(),
         }
     }
 
@@ -194,32 +229,32 @@ impl Variables {
 
     pub fn new_symbol(&mut self, origin: NodeId<ast::Symbol>, sym: Symbol) -> SymbolId {
         let id = self.symbols.push(sym);
-        self.use_to_symbol.insert_grow(
+        self.use_to_symbol.insert_grow_default(
             origin,
             UseInfo {
-                use_order: SymbolUseOrder(0),
+                use_order: SymbolUseOrder::first(),
                 id: Some(id),
-            },
-            UseInfo {
-                use_order: SymbolUseOrder(0),
-                id: None,
             },
         );
         id
     }
 
     pub fn resolve_use(&mut self, origin: NodeId<ast::Symbol>, to: SymbolId) {
-        self.use_to_symbol.insert_grow(
+        self.use_to_symbol.insert_grow_default(
             origin,
             UseInfo {
-                use_order: SymbolUseOrder(0),
+                use_order: SymbolUseOrder::first(),
                 id: Some(to),
             },
-            UseInfo {
-                use_order: SymbolUseOrder(0),
-                id: None,
-            },
         );
+    }
+
+    pub fn last_use_of(&self, symbol: SymbolId) -> Option<SymbolUseOrder> {
+        match self.symbols[symbol].last_use {
+            LastUse::Unused => None,
+            LastUse::Direct(x) => Some(x),
+            LastUse::Loop(l) => Some(self.loop_use[l].use_order),
+        }
     }
 
     /// Returns the function like scope of this scope.

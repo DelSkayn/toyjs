@@ -36,6 +36,34 @@ macro_rules! key {
             }
         }
     };
+    ($(#[$m:meta])* $v:vis struct $name:ident(#[non_zero] $data:ty)) => {
+        $(#[ $m ])*
+        #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
+        #[repr(transparent)]
+        $v struct $name($data);
+
+        impl $crate::id::Id for $name {
+        }
+
+        impl TryFrom<usize> for $name {
+            type Error = <u32 as TryFrom<usize>>::Error;
+
+            #[inline]
+            fn try_from(value: usize) -> ::std::result::Result<Self, Self::Error> {
+                let x: u32 = (value + 1).try_into()?;
+                Ok($name(unsafe{ <$data>::new_unchecked(x) }))
+            }
+        }
+
+        impl TryFrom<$name> for usize {
+            type Error = <usize as TryFrom<u32>>::Error;
+
+            #[inline]
+            fn try_from(value: $name) -> ::std::result::Result<Self, Self::Error> {
+                (u32::from(value.0) - 1).try_into()
+            }
+        }
+    }
 }
 
 pub trait Id: TryFrom<usize> + TryInto<usize> {}
