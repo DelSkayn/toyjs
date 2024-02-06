@@ -77,7 +77,6 @@ impl Reg {
         Reg(-2)
     }
 }
-
 impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "r{}", self.0)

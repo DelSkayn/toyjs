@@ -120,6 +120,10 @@ impl<K, T> KeyedVec<K, T> {
     pub fn as_inner(&self) -> &Vec<T> {
         &self.vec
     }
+
+    pub fn as_inner_mut(&mut self) -> &mut Vec<T> {
+        &mut self.vec
+    }
 }
 
 impl<K: Id, T: Clone + Default> KeyedVec<K, T> {

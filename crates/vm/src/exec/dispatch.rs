@@ -60,7 +60,13 @@ impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
                     let src = reader.read::<Reg>();
                     return Ok(self.stack.read(src));
                 }
-                x => panic!("invalid opcode: 0x{x:x}"),
+                x => {
+                    if let Some(x) = bc::OpCode::from_u8(x) {
+                        panic!("unimplemented opcode: {x:?}")
+                    } else {
+                        panic!("invalid opcode: 0x{x:x}")
+                    }
+                }
             }
         }
     }

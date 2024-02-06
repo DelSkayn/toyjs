@@ -133,11 +133,11 @@ instructions! {
     Ret{ src: Reg },
 
     /// Call the function in func and store its result in ret.
-    Call{func: Reg, ret: Reg},
+    Call{ret: Reg, func: Reg },
     /// Call the function with a specific number of arguments store its result in ret.
-    Call1{func: Reg, ret: Reg, arg: Reg},
+    Call1{ret: Reg, func: Reg, arg: Reg},
     /// Call the function with a specific number of arguments store its result in ret.
-    Call2{func: Reg, ret: Reg, arg1: Reg, arg2: Reg},
+    Call2{ret: Reg, func: Reg, arg1: Reg, arg2: Reg},
     /// Call the function with a specific number of arguments store its result in ret.
-    Call3{func: Reg, ret: Reg, arg1: Reg, arg2: Reg, arg3: Reg},
+    Call3{ret: Reg, func: Reg, arg1: Reg, arg2: Reg, arg3: Reg},
 }

@@ -1,67 +1,59 @@
 use ast::NodeId;
 use bc::{Instruction, Reg};
 
-use crate::{Compiler, Result};
+use crate::{expr::ExprResult, Compiler, InstrOffset, Result};
 
 impl<'a> Compiler<'a> {
-    pub fn compile_prime(
-        &mut self,
-        placement: Option<Reg>,
-        expr: NodeId<ast::PrimeExpr>,
-    ) -> Result<Reg> {
+    pub fn compile_prime(&mut self, expr: NodeId<ast::PrimeExpr>) -> Result<ExprResult> {
+        let dst = Reg::this_reg();
         match self.ast[expr] {
             ast::PrimeExpr::Number(id) => {
                 let number = self.interners.numbers[id];
-                let dst = placement
-                    .map(Ok)
-                    .unwrap_or_else(|| self.registers.alloc_tmp())?;
-                if let Some(imm) = number.cast() {
-                    self.instructions.push(Instruction::Loadi8 { dst, imm });
+                let instr = if let Some(imm) = number.cast() {
+                    self.push(Instruction::Loadi8 { dst, imm })?
                 } else if let Some(imm) = number.cast() {
-                    self.instructions.push(Instruction::Loadi16 { dst, imm });
+                    self.push(Instruction::Loadi16 { dst, imm })?
                 } else if let Some(imm) = number.cast() {
-                    self.instructions.push(Instruction::Loadi32 { dst, imm });
+                    self.push(Instruction::Loadi32 { dst, imm })?
                 } else if let Some(imm) = number.cast() {
-                    self.instructions.push(Instruction::Loadf32 { dst, imm });
+                    self.push(Instruction::Loadf32 { dst, imm })?
                 } else {
-                    self.instructions
-                        .push(Instruction::Loadf64 { dst, imm: number.0 });
-                }
-                Ok(dst)
+                    self.push(Instruction::Loadf64 { dst, imm: number.0 })?
+                };
+                Ok(ExprResult::InstrDst(instr))
             }
             ast::PrimeExpr::String(_) => to_do!(),
             ast::PrimeExpr::Template(_) => to_do!(),
             ast::PrimeExpr::Regex(_) => to_do!(),
-            ast::PrimeExpr::Ident(_) => to_do!(),
-            ast::PrimeExpr::Boolean(x) => {
-                let dst = placement
-                    .map(Ok)
-                    .unwrap_or_else(|| self.registers.alloc_tmp())?;
-                if x {
-                    self.instructions
-                        .push(Instruction::LoadPrim { dst, imm: 6 });
+            ast::PrimeExpr::Ident(sym) => {
+                let sym_id = self.variables.symbol_of_ast(sym);
+                if let Some(reg) = self.registers.find_symbol(sym_id) {
+                    Ok(ExprResult::Register(reg))
                 } else {
-                    self.instructions
-                        .push(Instruction::LoadPrim { dst, imm: 7 });
+                    let instr = self.push(Instruction::LoadPrim { dst, imm: 10 })?;
+                    Ok(ExprResult::InstrDst(instr))
                 }
-                Ok(dst)
+            }
+            ast::PrimeExpr::Boolean(x) => {
+                let instr = if x {
+                    self.push(Instruction::LoadPrim { dst, imm: 6 })?
+                } else {
+                    self.push(Instruction::LoadPrim { dst, imm: 7 })?
+                };
+                Ok(ExprResult::InstrDst(instr))
             }
             ast::PrimeExpr::Function(_) => to_do!(),
             ast::PrimeExpr::Class(_) => to_do!(),
             ast::PrimeExpr::Object(_) => to_do!(),
             ast::PrimeExpr::Array(_) => to_do!(),
-            ast::PrimeExpr::NewTarget => Ok(Reg::this_reg()),
-            ast::PrimeExpr::Null => {
-                let dst = placement
-                    .map(Ok)
-                    .unwrap_or_else(|| self.registers.alloc_tmp())?;
-                self.instructions
-                    .push(Instruction::LoadPrim { dst, imm: 2 });
-                Ok(dst)
+            ast::PrimeExpr::NewTarget | ast::PrimeExpr::This => {
+                Ok(ExprResult::Register(Reg::this_reg()))
             }
-            ast::PrimeExpr::This => Ok(Reg::this_reg()),
+            ast::PrimeExpr::Null => self
+                .push(Instruction::LoadPrim { dst, imm: 2 })
+                .map(ExprResult::InstrDst),
             ast::PrimeExpr::Super => to_do!(),
-            ast::PrimeExpr::Covered(x) => self.compile_exprs(placement, x),
+            ast::PrimeExpr::Covered(x) => self.compile_exprs(x),
         }
     }
 }

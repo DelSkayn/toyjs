@@ -2,10 +2,10 @@
 #![allow(dead_code)]
 
 use core::fmt;
-use std::{backtrace::Backtrace, result::Result as StdResult};
+use std::{backtrace::Backtrace, result::Result as StdResult, u8};
 
 use ast::{Ast, ListHead};
-use bc::{ByteCode, Instruction};
+use bc::{ByteCode, Instruction, InstructionType, LongOffset, OpCode, Reg};
 use common::{
     key, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
 };
@@ -28,7 +28,10 @@ mod registers;
 mod stmt;
 pub mod variables;
 
-key!(pub struct InstructionId(u32));
+key!(
+    /// Offset into the instruction buffer in bytes.
+    pub struct InstrOffset(u32)
+);
 
 pub type Result<T> = StdResult<T, Error>;
 #[derive(Debug)]
@@ -40,7 +43,7 @@ pub enum Error {
 
 #[derive(Debug)]
 pub enum Limits {
-    InstructionCount,
+    BytecodeSize,
     JumpOffset,
     TooManyScopes,
     TooManyVariables,
@@ -50,7 +53,7 @@ pub enum Limits {
 impl fmt::Display for Limits {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Limits::InstructionCount => write!(
+            Limits::BytecodeSize => write!(
                 f,
                 "script required more then u32::MAX bytes of instructions"
             ),
@@ -117,10 +120,11 @@ impl ContextError<Source> for Error {
 }
 
 pub struct Compiler<'a> {
-    instructions: Vec<Instruction>,
+    instructions: Vec<u8>,
     interners: &'a mut Interners,
     ast: &'a mut Ast,
     registers: Registers,
+    variables: Variables,
 }
 
 impl<'a> Compiler<'a> {
@@ -129,29 +133,77 @@ impl<'a> Compiler<'a> {
             instructions: Vec::new(),
             interners,
             ast,
-            registers: Registers::new(Variables::new()),
+            registers: Registers::new(),
+            variables: Variables::new(),
         }
     }
 
-    pub fn push(&mut self, instr: Instruction) -> Result<InstructionId> {
+    fn push(&mut self, instr: Instruction) -> Result<InstrOffset> {
         let res = self.instructions.len();
-        let id = InstructionId(
+        let id = InstrOffset(
             res.try_into()
-                .map_err(|_| Error::ExceededLimits(Limits::InstructionCount))?,
+                .map_err(|_| Error::ExceededLimits(Limits::BytecodeSize))?,
         );
-        self.instructions.push(instr);
+        instr.write(&mut self.instructions);
         Ok(id)
     }
 
+    fn patch_dst(&mut self, instr: InstrOffset, to: Reg) {
+        debug_assert!(
+            OpCode::from_u8(self.instructions[instr.0 as usize])
+                .unwrap()
+                .has_dst_register(),
+            "tried to patch dst register of opcode {:?} with no dst register",
+            OpCode::from_u8(self.instructions[instr.0 as usize]).unwrap()
+        );
+
+        // dst registers are always the first register after the opcode.
+        self.instructions[instr.0 as usize + 1] = to.0 as u8;
+    }
+
+    /// Patch a jump instruction to jump to a give instruction.
+    fn patch_jump(&mut self, instr: InstrOffset, to: InstrOffset) -> Result<()> {
+        let opcode = OpCode::from_u8(self.instructions[instr.0 as usize]).unwrap();
+        match opcode {
+            OpCode::LongJump | OpCode::TryLong => {
+                let from_point = instr.0 as i64 + bc::types::LongJump::SIZE as i64;
+                let offset = LongOffset(
+                    i32::try_from(to.0 as i64 - from_point)
+                        .map_err(|_| Error::ExceededLimits(Limits::JumpOffset))?,
+                );
+                let instr_start = instr.0 as usize + 1;
+                self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
+                    .copy_from_slice(bytemuck::bytes_of(&offset));
+                Ok(())
+            }
+            OpCode::LongJumpTrue | OpCode::LongJumpFalse => {
+                let from_point = instr.0 as i64 + bc::types::LongJumpTrue::SIZE as i64;
+                let offset = LongOffset(
+                    i32::try_from(to.0 as i64 - from_point)
+                        .map_err(|_| Error::ExceededLimits(Limits::JumpOffset))?,
+                );
+                let instr_start = instr.0 as usize + 2;
+                self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
+                    .copy_from_slice(bytemuck::bytes_of(&offset));
+                Ok(())
+            }
+            OpCode::Jump | OpCode::Try | OpCode::JumpTrue | OpCode::JumpFalse => {
+                panic!("non long jumps should not be used during codegen")
+            }
+            _ => {
+                panic!("tried to patch non jump")
+            }
+        }
+    }
+
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
-        let mut variables = Variables::new();
-        let root_scope = variables.push_global_scope(strict);
+        let root_scope = self.variables.push_global_scope(strict);
 
         if let ListHead::Present(root) = stmt {
-            resolve_script(root, self.ast, &mut variables, root_scope)?;
+            resolve_script(root, self.ast, &mut self.variables, root_scope)?;
         }
 
-        self.registers = Registers::new(variables);
+        self.registers = Registers::new();
 
         let mut expr = None;
         if let ListHead::Present(s) = stmt {

@@ -4,7 +4,6 @@ use std::num::NonZeroU32;
 use ast::NodeId;
 use common::{id::KeyedVec, key, string::StringId};
 
-mod livelyhood;
 mod resolve;
 pub use resolve::resolve_script;
 mod render;
@@ -93,6 +92,7 @@ impl From<ast::VariableKind> for Kind {
 pub enum LastUse {
     Unused,
     Direct(SymbolUseOrder),
+    /// The variable is last used inside a child loop of it's declaration scope.
     Loop(LoopId),
 }
 
@@ -148,7 +148,9 @@ impl ScopeKind {
 
 #[derive(Clone, Copy, Debug)]
 pub struct UseInfo {
+    /// The use order of this use of a symbol
     pub use_order: SymbolUseOrder,
+    /// The id of the symbol this is a use of
     pub id: Option<SymbolId>,
 }
 
@@ -163,8 +165,12 @@ impl Default for UseInfo {
 
 #[derive(Clone, Copy, Debug)]
 pub struct LoopInfo {
+    /// the parent loop of this loop.
     parent: Option<LoopId>,
+    /// The scope to which this loop belongs.
     scope: ScopeId,
+    /// The order assigned to this loop.
+    /// All variables which are declared above this loop but are used inside have this use order.
     use_order: SymbolUseOrder,
 }
 
@@ -175,7 +181,7 @@ pub struct Variables {
     pub scope_decls: Vec<SymbolId>,
     pub symbols: KeyedVec<SymbolId, Symbol>,
     /// A list which maps a ast symbol to a resolved symbol.
-    pub use_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
+    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
     pub loop_use: KeyedVec<LoopId, LoopInfo>,
 }
 
@@ -186,7 +192,7 @@ impl Variables {
             scope_children: Vec::new(),
             scope_decls: Vec::new(),
             symbols: KeyedVec::new(),
-            use_to_symbol: KeyedVec::new(),
+            ast_to_symbol: KeyedVec::new(),
             loop_use: KeyedVec::new(),
         }
     }
@@ -201,6 +207,12 @@ impl Variables {
             num_decl_children: 0,
             decl_child_offset: 0,
         })
+    }
+
+    pub fn symbol_of_ast(&self, ast: NodeId<ast::Symbol>) -> SymbolId {
+        self.ast_to_symbol[ast]
+            .id
+            .expect("ast node was not properly resolved")
     }
 
     pub fn scopes(&self) -> &KeyedVec<ScopeId, Scope> {
@@ -229,7 +241,7 @@ impl Variables {
 
     pub fn new_symbol(&mut self, origin: NodeId<ast::Symbol>, sym: Symbol) -> SymbolId {
         let id = self.symbols.push(sym);
-        self.use_to_symbol.insert_grow_default(
+        self.ast_to_symbol.insert_grow_default(
             origin,
             UseInfo {
                 use_order: SymbolUseOrder::first(),
@@ -240,7 +252,7 @@ impl Variables {
     }
 
     pub fn resolve_use(&mut self, origin: NodeId<ast::Symbol>, to: SymbolId) {
-        self.use_to_symbol.insert_grow_default(
+        self.ast_to_symbol.insert_grow_default(
             origin,
             UseInfo {
                 use_order: SymbolUseOrder::first(),

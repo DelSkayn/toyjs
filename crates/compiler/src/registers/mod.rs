@@ -1,9 +1,10 @@
 use bc::{limits::MAX_REGISTERS, Reg};
+use common::hashmap::HashMap;
 
-use crate::{
-    variables::{SymbolUseOrder, Variables},
-    Error, Limits, Result,
-};
+mod use_bitmap;
+
+use self::use_bitmap::UseBitmap;
+use crate::variables::{SymbolId, SymbolUseOrder};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegisterState {
@@ -12,99 +13,94 @@ pub enum RegisterState {
     Symbol(SymbolUseOrder),
 }
 
+#[derive(Debug)]
 pub struct Registers {
-    registers_used: u128,
-    reservation: [SymbolUseOrder; MAX_REGISTERS],
-    variables: Variables,
-    max_used: Reg,
-    time: SymbolUseOrder,
-    earliest_reservation: SymbolUseOrder,
+    used: UseBitmap,
+    tmp: UseBitmap,
+    reservation: [Option<SymbolUseOrder>; MAX_REGISTERS],
+    symbol_allocation: [Option<SymbolId>; MAX_REGISTERS],
+    last_used_reg: Reg,
 }
 
 impl Registers {
-    pub fn new(variables: Variables) -> Self {
+    pub fn new() -> Self {
         Registers {
-            registers_used: 0u128,
-            reservation: [SymbolUseOrder::first(); MAX_REGISTERS],
-            variables,
-            max_used: Reg::this_reg(),
-            time: SymbolUseOrder::first(),
-            earliest_reservation: SymbolUseOrder::last(),
+            used: UseBitmap::empty(),
+            tmp: UseBitmap::empty(),
+            reservation: [None; MAX_REGISTERS],
+            symbol_allocation: [None; MAX_REGISTERS],
+            last_used_reg: Reg::this_reg(),
         }
     }
 
     pub fn clear(&mut self) {
-        self.registers_used = 0;
-        self.max_used = Reg::this_reg()
+        self.used = UseBitmap::empty();
+        self.last_used_reg = Reg::this_reg();
     }
 
-    pub fn advance(&mut self, new_use: SymbolUseOrder) {
-        debug_assert!(self.time <= new_use);
-        self.time = new_use;
-    }
-
-    /// Evict registers which have outlifed there reservation.
-    pub fn evict(&mut self) {
-        if self.earliest_reservation > self.time {
-            // no eviction required.
-            return;
+    pub fn next_free(&mut self) -> Option<Reg> {
+        let free = self.used.next_free();
+        if free < 128 {
+            let reg = Reg(free as i8);
+            self.last_used_reg = self.last_used_reg.max(reg);
+            Some(reg)
+        } else {
+            None
         }
-
-        self.earliest_reservation = SymbolUseOrder::last();
-        let mut register_map = self.registers_used;
-        // a bit scan, might actually be slower then a normal loop.
-        // TODO: profile
-        loop {
-            let idx = register_map.leading_zeros();
-            let cur = self.reservation[idx as usize];
-            if cur <= self.time {
-                self.registers_used &= !(1 << idx);
-            } else {
-                self.earliest_reservation = cur.min(self.earliest_reservation);
-            }
-            register_map &= register_map - 1;
-            if register_map == 0 {
-                break;
-            }
-        }
-    }
-
-    pub fn next_free(&mut self) -> Result<Reg> {
-        self.evict();
-
-        let available = self.registers_used.leading_ones();
-        if available == 128 {
-            return Err(Error::ExceededLimits(Limits::Registers));
-        }
-        Ok(Reg(available as i8))
     }
 
     pub fn reserve_tmp(&mut self, reg: Reg) {
-        debug_assert_eq!(self.registers_used & (1 << reg.0), 0);
-        self.registers_used |= 1 << reg.0;
-        self.reservation[reg.0 as usize] = SymbolUseOrder::last();
+        let reg = u8::try_from(reg.0).unwrap();
+        debug_assert!(!self.used.get(reg));
+        debug_assert!(!self.tmp.get(reg));
+        self.used.set(reg);
+        self.tmp.set(reg);
     }
 
-    pub fn alloc_tmp(&mut self) -> Result<Reg> {
+    pub fn alloc_tmp(&mut self) -> Option<Reg> {
         let reg = self.next_free()?;
         self.reserve_tmp(reg);
-        Ok(reg)
+        Some(reg)
+    }
+
+    pub fn free_if_tmp(&mut self, reg: Reg) {
+        let reg = u8::try_from(reg.0).unwrap();
+        if !self.tmp.get(reg) {
+            return;
+        }
+        debug_assert!(self.used.get(reg));
+        self.used.unset(reg);
+        self.tmp.unset(reg);
     }
 
     pub fn free_tmp(&mut self, reg: Reg) {
-        debug_assert_eq!(self.reservation[reg.0 as usize], SymbolUseOrder::last());
-        self.registers_used &= !(1 << reg.0);
+        let reg = u8::try_from(reg.0).unwrap();
+        debug_assert!(self.used.get(reg));
+        debug_assert!(self.tmp.get(reg));
+        self.used.unset(reg);
+        self.tmp.unset(reg);
     }
 
-    pub fn reserve_until(&mut self, reg: Reg, until: SymbolUseOrder) {
-        debug_assert_eq!(self.registers_used & (1 << reg.0), 0);
-        self.registers_used |= 1 << reg.0;
-        self.reservation[reg.0 as usize] = until;
+    pub fn reserve_until(&mut self, reg: Reg, symbol: SymbolId, until: SymbolUseOrder) {
+        let reg = u8::try_from(reg.0).unwrap();
+        debug_assert!(!self.used.get(reg));
+        self.used.set(reg);
+        self.reservation[reg as usize] = Some(until);
+        self.symbol_allocation[reg as usize] = Some(symbol);
     }
 
-    pub fn alloc_until(&mut self, until: SymbolUseOrder) -> Result<Reg> {
+    pub fn alloc_symbol(&mut self, symbol: SymbolId, until: SymbolUseOrder) -> Option<Reg> {
         let reg = self.next_free()?;
-        self.reserve_until(reg, until);
-        Ok(reg)
+        self.reserve_until(reg, symbol, until);
+        Some(reg)
+    }
+
+    pub fn find_symbol(&self, symbol: SymbolId) -> Option<Reg> {
+        for i in 0..=self.last_used_reg.0 {
+            if Some(symbol) == self.symbol_allocation[i as usize] {
+                return Some(Reg(i));
+            }
+        }
+        None
     }
 }

@@ -29,6 +29,6 @@ harness = false
 #harness = false
 
 [[example]]
-name = "compiler"
+name = "compile"
 
 

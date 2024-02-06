@@ -60,7 +60,7 @@ impl VariableVisitor for UsePass<'_, '_> {
     }
 
     fn declare(&mut self, ast_node: ast::NodeId<ast::Symbol>, kind: Kind) -> Result<()> {
-        let symbol = self.vars.use_to_symbol[ast_node].id.unwrap();
+        let symbol = self.vars.ast_to_symbol[ast_node].id.unwrap();
         let id = self.advance_use()?;
         self.vars.symbols[symbol].declared = Some(id);
         Ok(())
@@ -110,7 +110,7 @@ impl VariableVisitor for UsePass<'_, '_> {
             symbol_id
         };
 
-        self.vars.use_to_symbol.insert_grow_default(
+        self.vars.ast_to_symbol.insert_grow_default(
             ast_node,
             UseInfo {
                 use_order: SymbolUseOrder::first(),

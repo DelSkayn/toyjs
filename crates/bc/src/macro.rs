@@ -55,7 +55,7 @@ macro_rules! instructions {
                 match self{
                     $(
                         Self::$ir_name$({ $($field: _,)* })* => {
-                            super::types::$ir_name::size()
+                            super::types::$ir_name::SIZE
                         }
                     )*
                 }
@@ -99,9 +99,21 @@ macro_rules! instructions {
                     _ => None
                 }
             }
+
+            pub fn size(self) -> usize{
+                match self{
+                    $(OpCode::$ir_name => types::$ir_name::SIZE,)*
+                }
+            }
+
+            pub fn has_dst_register(self) -> bool{
+                match self{
+                    $(OpCode::$ir_name => instructions!(@has_dst, $($($field: $ty),*)*) ),*
+                }
+            }
         }
 
-        /// Opcodes as constants
+       /// Opcodes as constants
         #[allow(non_upper_case_globals)]
         pub mod opcodes{
             #[allow(unused_imports)]
@@ -121,11 +133,10 @@ macro_rules! instructions {
         pub trait InstructionType{
             /// The opcode for this instruction.
             const OPCODE: OpCode;
+            /// The amount of bytes this instruction takes in a buffer
+            const SIZE: usize;
             /// The operands for this instruction.
             type Operands;
-
-            /// Returns the amount of bytes this instruction takes in a buffer
-            fn size() -> usize;
 
             /// Create this instruction
             fn to_instruction(operands: Self::Operands) -> Instruction;
@@ -141,12 +152,10 @@ macro_rules! instructions {
 
                 impl InstructionType for $ir_name {
                     const OPCODE: OpCode = OpCode::$ir_name;
+                    const SIZE: usize =
+                        1 $($(+ std::mem::size_of::<$ty>())*)*;
 
                     type Operands = ($($($ty,)*)*);
-
-                    fn size() -> usize{
-                        1 $($(+ std::mem::size_of::<$ty>())*)*
-                    }
 
                     fn to_instruction(operands: Self::Operands) -> Instruction{
                         let ($($($field,)*)*) = operands;
@@ -159,4 +168,17 @@ macro_rules! instructions {
         }
 
     };
+
+    (@has_dst, dst: $ty:ty$(, $($t:tt)*)?) => {
+        {
+            ::std::any::TypeId::of::<$ty>() == ::std::any::TypeId::of::<$crate::Reg>()
+        }
+    };
+
+    (@has_dst, $($t:tt)*) => {
+        {
+            false
+        }
+    };
+
 }

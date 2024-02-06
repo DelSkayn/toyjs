@@ -174,7 +174,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                 {
                     // redeclaration, no new symbol needed.
 
-                    self.vars.use_to_symbol.insert_grow_default(
+                    self.vars.ast_to_symbol.insert_grow_default(
                         ast_node,
                         UseInfo {
                             use_order: SymbolUseOrder::first(),
@@ -233,7 +233,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
             }
         };
 
-        self.vars.use_to_symbol.insert_grow_default(
+        self.vars.ast_to_symbol.insert_grow_default(
             ast_node,
             UseInfo {
                 use_order: SymbolUseOrder::first(),
