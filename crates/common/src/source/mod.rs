@@ -50,6 +50,9 @@ impl SourceInfo {
                 offset = idx + 1;
             }
         }
+        if source.source.encoding().units().len() != offset {
+            lines.push(Span::from(offset..source.source.encoding().units().len()));
+        }
 
         Self { lines }
     }

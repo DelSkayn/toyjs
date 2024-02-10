@@ -43,13 +43,13 @@ pub struct SourceBlock<'a>(&'a RenderedLine);
 
 impl Display for SourceBlock<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let line_num_length = self.0.location.line.ilog2() + 1;
+        let line_num_length = (self.0.location.line + 1).ilog10() + 1;
         for _ in 0..line_num_length {
             f.write_char(' ')?;
         }
         writeln!(
             f,
-            " ╭─┤{}:{}:{}│",
+            "  ╭─┤{}:{}:{}│",
             self.0
                 .source_name
                 .as_ref()
@@ -58,7 +58,7 @@ impl Display for SourceBlock<'_> {
             self.0.location.line + 1,
             self.0.location.column + 1,
         )?;
-        write!(f, "{} │ ", self.0.location.line + 1)?;
+        write!(f, " {} │ ", self.0.location.line + 1)?;
         if let Truncation::Start | Truncation::Both = self.0.truncation {
             write!(f, "...")?;
         }
@@ -73,7 +73,7 @@ impl Display for SourceBlock<'_> {
             f.write_char(' ')?;
         }
 
-        f.write_str(" ╰─")?;
+        f.write_str("  ╰─")?;
 
         for _ in 0..self.0.offset {
             f.write_char('─')?;
@@ -218,7 +218,7 @@ impl Source {
             location: location.start,
             line: line.into(),
             source_name: self.name.clone(),
-            offset: location.start.column,
+            offset: location.start.column - whitespace_offset,
             length: location.end.column - location.start.column,
             message,
         })

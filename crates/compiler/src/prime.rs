@@ -27,7 +27,7 @@ impl<'a> Compiler<'a> {
             ast::PrimeExpr::Regex(_) => to_do!(),
             ast::PrimeExpr::Ident(sym) => {
                 let sym_id = self.variables.symbol_of_ast(sym);
-                let use_order = dbg!(self.variables.use_of_ast(sym));
+                let use_order = self.variables.use_of_ast(sym);
                 let res = if let Some(reg) = self.registers.find_symbol(sym_id) {
                     ExprResult::Register(reg)
                 } else {
