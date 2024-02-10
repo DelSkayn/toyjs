@@ -10,7 +10,8 @@ use crate::{
     Error, Limits, Result,
 };
 
-/// Pass which resolves all declared variables in the ast and creates the scopes.
+/// Pass which resolves all variable usages to a declared symbol and assigns use order to each
+/// symbol use for use in compilation.
 pub struct UsePass<'a, 'b> {
     ast: &'a Ast,
     vars: &'b mut Variables,
@@ -20,6 +21,7 @@ pub struct UsePass<'a, 'b> {
     current_function: ScopeId,
     last: ScopeId,
     current_use: SymbolUseOrder,
+    loop_use: Option<SymbolUseOrder>,
     current_loop: Option<LoopId>,
 }
 
@@ -40,6 +42,7 @@ impl<'a, 'b> UsePass<'a, 'b> {
             ast,
             vars,
             current_use: SymbolUseOrder::first(),
+            loop_use: None,
             current_loop: None,
         }
     }
@@ -50,7 +53,17 @@ impl<'a, 'b> UsePass<'a, 'b> {
             .current_use
             .checked_add(1)
             .ok_or(Error::ExceededLimits(Limits::TooManyVariables))?;
+        self.loop_use = None;
         Ok(id)
+    }
+
+    fn advance_use_loop(&mut self) -> Result<SymbolUseOrder> {
+        if let Some(x) = self.loop_use {
+            return Ok(x);
+        }
+        let loop_use = self.advance_use()?;
+        self.loop_use = Some(loop_use);
+        Ok(loop_use)
     }
 }
 
@@ -75,17 +88,48 @@ impl VariableVisitor for UsePass<'_, '_> {
                 if symbol_scope < self.current_function {
                     self.vars.symbols[s].captured = true;
                 }
+
+                let use_order = self.advance_use()?;
+                self.vars.ast_to_symbol.insert_grow_default(
+                    ast_node,
+                    UseInfo {
+                        id: Some(s),
+                        use_order,
+                    },
+                );
+                self.vars.symbols[s].last_use = LastUse::Direct(use_order);
+                if self.vars.symbols[s].defined.is_none() {
+                    self.vars.symbols[s].defined = Some(use_order);
+                }
+
                 // assign a use to the variable.
-                if let Some(current_loop) = self.current_loop {
-                    if self.vars.loop_use[current_loop].scope > symbol_scope {
-                        if !matches!(self.vars.symbols[s].last_use, LastUse::Loop(_)) {
-                            self.vars.symbols[s].last_use = LastUse::Loop(current_loop);
+                'calc_loop_use: {
+                    let Some(current_loop) = self.current_loop else {
+                        break 'calc_loop_use;
+                    };
+                    // we are in a loop
+                    if let LastUse::Loop(x) = self.vars.symbols[s].last_use {
+                        if self.vars.loop_use[x].use_order.is_none() {
+                            // variable was assigned a loop order of a loop we haven't finished
+                            // resolving so assignment is stil correct.
+                            break 'calc_loop_use;
                         }
-                    } else {
-                        self.vars.symbols[s].last_use = LastUse::Direct(self.advance_use()?);
                     }
-                } else {
-                    self.vars.symbols[s].last_use = LastUse::Direct(self.advance_use()?);
+                    if self.vars.loop_use[current_loop].scope <= symbol_scope {
+                        // symbol was declared within the current loop scope, so no need to change
+                        break 'calc_loop_use;
+                    }
+                    // symbol crossed looping scope so we need to assign a loop use
+                    // find the up most looping scope which is child of the symbols
+                    // declaration scope and assign that as the symbols last use.
+                    let mut root_loop = current_loop;
+                    while let Some(p) = self.vars.loop_use[root_loop].parent {
+                        if self.vars.loop_use[p].scope <= symbol_scope {
+                            break;
+                        }
+                        root_loop = p;
+                    }
+                    self.vars.symbols[s].last_use = LastUse::Loop(root_loop)
                 }
             }
             s
@@ -146,7 +190,7 @@ impl VariableVisitor for UsePass<'_, '_> {
         if let ScopeKind::Block { has_loop: true } = kind {
             self.current_loop = Some(self.vars.loop_use.push(LoopInfo {
                 parent: self.current_loop,
-                use_order: SymbolUseOrder::first(),
+                use_order: None,
                 scope: self.current,
             }));
         }
@@ -170,7 +214,7 @@ impl VariableVisitor for UsePass<'_, '_> {
 
         if let Some(current_loop) = self.current_loop {
             if self.current == self.vars.loop_use[current_loop].scope {
-                self.vars.loop_use[current_loop].use_order = self.advance_use()?;
+                self.vars.loop_use[current_loop].use_order = Some(self.advance_use_loop()?);
                 self.current_loop = self.vars.loop_use[current_loop].parent;
             }
         }

@@ -124,6 +124,12 @@ impl fmt::Debug for Utf16 {
 /// An iterator over utf16 code units returning chars
 pub struct Utf16Chars<'a>(&'a Utf16);
 
+impl<'a> Utf16Chars<'a> {
+    pub fn into_inner(self) -> &'a Utf16 {
+        self.0
+    }
+}
+
 impl Iterator for Utf16Chars<'_> {
     type Item = char;
 

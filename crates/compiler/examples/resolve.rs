@@ -52,18 +52,16 @@ fn compile(source: &Source) -> Result<(), Error> {
 
     println!("{}", variables.render(root_scope, &ast, &interners));
 
-    let mut buffer = std::string::String::new();
-
+    let mut first = true;
     for v in variables.declared_vars(root_scope).iter().copied() {
         if variables.symbols[v].kind == Kind::Unresolved {
-            println!(
-                "unresolved variable `{}`:",
-                interners.strings.get(variables.symbols[v].ident).unwrap()
-            );
+            if first {
+                println!("unresolved variables:",);
+                first = false;
+            }
             let span = ast[variables.symbols[v].ast_node].span;
-            buffer.clear();
-            source.render_string_block(&mut buffer, span, None).unwrap();
-            println!("{}", buffer)
+            let render = source.render_span(span, None).unwrap();
+            println!("{}", render.as_highlight())
         }
     }
 

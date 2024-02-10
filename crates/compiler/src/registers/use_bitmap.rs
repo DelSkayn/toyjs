@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not};
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct UseBitmap(u128);
@@ -13,6 +13,14 @@ impl fmt::Display for UseBitmap {
 impl fmt::Debug for UseBitmap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         <Self as fmt::Display>::fmt(self, f)
+    }
+}
+
+impl Not for UseBitmap {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        Self(!self.0)
     }
 }
 

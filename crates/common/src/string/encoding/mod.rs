@@ -9,6 +9,7 @@ pub use utf16::{Utf16, Utf16Chars};
 
 use super::String;
 
+#[derive(Debug)]
 pub struct Utf16Error {
     valid_up_to: usize,
 }

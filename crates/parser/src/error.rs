@@ -88,10 +88,13 @@ impl Error {
                     }
                 }
                 writeln!(w, ".")?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    message.as_ref().map(|x| x.encoding()),
+                    "{}",
+                    source
+                        .render_span(self.origin, message.clone())
+                        .unwrap()
+                        .as_block()
                 )?;
             }
             ErrorKind::Unexpected {
@@ -111,10 +114,13 @@ impl Error {
                     }
                 }
                 writeln!(w, ".")?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    message.as_ref().map(|x| x.encoding()),
+                    "{}",
+                    source
+                        .render_span(self.origin, message.clone())
+                        .unwrap()
+                        .as_block()
                 )?;
             }
             ErrorKind::DisallowedToken {
@@ -123,57 +129,90 @@ impl Error {
             } => {
                 write!(w, "Token `{:?}` is not allowed in this context", found)?;
                 writeln!(w)?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    message.as_ref().map(|x| x.encoding()),
+                    "{}",
+                    source
+                        .render_span(self.origin, message.clone())
+                        .unwrap()
+                        .as_block()
                 )?;
             }
             ErrorKind::NotAssignable => {
                 write!(w, "Left hand side expression is not assignable.")?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin, None)?;
+                writeln!(
+                    w,
+                    "{}",
+                    source.render_span(self.origin, None).unwrap().as_block()
+                )?;
             }
             ErrorKind::InvalidDestructuringAssigment => {
                 write!(w, "Invalid destructuring assignment target.")?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin, None)?;
+                writeln!(
+                    w,
+                    "{}",
+                    source.render_span(self.origin, None).unwrap().as_block()
+                )?;
             }
             ErrorKind::InvalidToken => {
                 write!(w, "Invalid token.")?;
                 writeln!(w)?;
-                source.render_string_block(w, self.origin, None)?;
+                writeln!(
+                    w,
+                    "{}",
+                    source.render_span(self.origin, None).unwrap().as_block()
+                )?;
             }
             ErrorKind::CoveredObjectLiteral => {
                 write!(w, "Invalid object literal.")?;
                 writeln!(w)?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    Some(
-                        Ascii::const_from_str(
-                            "This is only valid syntax in destructuring patterns.",
+                    "{}",
+                    source
+                        .render_span(
+                            self.origin,
+                            Some(
+                                Ascii::const_from_str(
+                                    "This is only valid syntax in destructuring patterns.",
+                                )
+                                .into(),
+                            ),
                         )
-                        .into(),
-                    ),
+                        .unwrap()
+                        .as_block()
                 )?;
             }
             ErrorKind::ConstNotInitialized => {
                 write!(w, "Const declaration not initialized.")?;
                 writeln!(w)?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
+                    "{}",
+                    source
+                        .render_span(
+                            self.origin,
+                            Some(Ascii::const_from_str("Initialize this declaration.").into())
+                        )
+                        .unwrap()
+                        .as_block()
                 )?;
             }
             ErrorKind::DestructringNotInitalized => {
                 write!(w, "Destructuring declaration not initialized.")?;
                 writeln!(w)?;
-                source.render_string_block(
+                writeln!(
                     w,
-                    self.origin,
-                    Some(Ascii::const_from_str("Initialize this declaration.").into()),
+                    "{}",
+                    source
+                        .render_span(
+                            self.origin,
+                            Some(Ascii::const_from_str("Initialize this declaration.").into())
+                        )
+                        .unwrap()
+                        .as_block()
                 )?;
             }
         }

@@ -1,8 +1,137 @@
 use core::fmt;
-use std::error::Error as ErrorTrait;
+use std::{
+    error::Error as ErrorTrait,
+    fmt::{Display, Write},
+};
 
-use super::Source;
-use crate::{span::Span, string::Encoding, unicode::units};
+use super::{Location, Source};
+use crate::{
+    span::Span,
+    string::{Ascii, Encoding, String},
+};
+
+#[derive(Debug)]
+pub enum Truncation {
+    None,
+    Start,
+    End,
+    Both,
+}
+
+#[derive(Debug)]
+pub struct RenderedLine {
+    source_name: Option<String>,
+    location: Location,
+    line: String,
+    message: Option<String>,
+    truncation: Truncation,
+    offset: u32,
+    length: u32,
+}
+
+impl RenderedLine {
+    pub fn as_block(&self) -> SourceBlock {
+        SourceBlock(self)
+    }
+
+    pub fn as_highlight(&self) -> HighlightToken {
+        HighlightToken(self)
+    }
+}
+
+pub struct SourceBlock<'a>(&'a RenderedLine);
+
+impl Display for SourceBlock<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let line_num_length = self.0.location.line.ilog2() + 1;
+        for _ in 0..line_num_length {
+            f.write_char(' ')?;
+        }
+        writeln!(
+            f,
+            " ╭─┤{}:{}:{}│",
+            self.0
+                .source_name
+                .as_ref()
+                .map(|x| x.encoding())
+                .unwrap_or(Encoding::Ascii(Ascii::from_slice(b"??").unwrap())),
+            self.0.location.line + 1,
+            self.0.location.column + 1,
+        )?;
+        write!(f, "{} │ ", self.0.location.line + 1)?;
+        if let Truncation::Start | Truncation::Both = self.0.truncation {
+            write!(f, "...")?;
+        }
+        write!(f, "{}", self.0.line)?;
+        if let Truncation::End | Truncation::Both = self.0.truncation {
+            write!(f, "...")?;
+        }
+
+        f.write_char('\n')?;
+
+        for _ in 0..line_num_length {
+            f.write_char(' ')?;
+        }
+
+        f.write_str(" ╰─")?;
+
+        for _ in 0..self.0.offset {
+            f.write_char('─')?;
+        }
+        for _ in 0..self.0.length {
+            f.write_char('^')?;
+        }
+
+        if let Some(msg) = self.0.message.as_ref() {
+            write!(f, " {msg}")?;
+        }
+
+        writeln!(f)?;
+
+        Ok(())
+    }
+}
+
+pub struct HighlightToken<'a>(&'a RenderedLine);
+
+impl Display for HighlightToken<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "│{}:{}:{}│> ",
+            self.0
+                .source_name
+                .as_ref()
+                .map(|x| x.encoding())
+                .unwrap_or(Encoding::Ascii(Ascii::from_slice(b"??").unwrap())),
+            self.0.location.line + 1,
+            self.0.location.column + 1,
+        )?;
+
+        if let Truncation::Start | Truncation::Both = self.0.truncation {
+            write!(f, "...")?;
+        }
+
+        let start = self.0.line.encoding().slice(..(self.0.offset as usize));
+        write!(f, "{}", start)?;
+        let point = self
+            .0
+            .line
+            .encoding()
+            .slice((self.0.offset as usize)..((self.0.offset + self.0.length) as usize));
+        write!(f, "\x1b[1;30;44m{}\x1b[0m", point)?;
+        let remaining = self
+            .0
+            .line
+            .encoding()
+            .slice(((self.0.offset + self.0.length) as usize)..);
+        write!(f, "{}", remaining)?;
+        if let Truncation::End | Truncation::Both = self.0.truncation {
+            write!(f, "...")?;
+        }
+        Ok(())
+    }
+}
 
 #[derive(Debug)]
 pub enum Error {
@@ -28,140 +157,70 @@ impl From<fmt::Error> for Error {
 }
 
 impl Source {
-    pub fn render_span_location<W: fmt::Write>(&self, w: &mut W, span: Span) -> Result<(), Error> {
-        let location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
-        write!(w, "┤")?;
+    const MAX_LINE_CHARS: u32 = 80;
+    const TRUNCATED_LINE_CHARS: u32 = Self::MAX_LINE_CHARS - 6;
 
-        if let Some(ref name) = self.name {
-            write!(w, "{}:", name)?
-        } else {
-            write!(w, "??:")?
-        }
-
-        write!(
-            w,
-            "{}:{}",
-            location.start.line + 1,
-            location.start.column + 1
-        )?;
-        write!(w, "│")?;
-
-        Ok(())
-    }
-    pub fn render_string_block<W: fmt::Write>(
-        &self,
-        w: &mut W,
-        span: Span,
-        message: Option<Encoding>,
-    ) -> Result<(), Error> {
-        const MAX_LINE_CHARS: usize = 80;
-
-        let location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
+    pub fn render_span(&self, span: Span, message: Option<String>) -> Result<RenderedLine, Error> {
+        let mut location = self.locate_span(span).ok_or(Error::InvalidSpan)?;
 
         if location.start.line != location.end.line {
-            writeln!(w, "TODO: render span that covers multiple lines")?;
-            return Ok(());
+            // TODO: render span that covers multiple lines
+            location.end.line = location.start.line;
+            location.end.column = location.start.column + 1;
         }
 
         let line_span = self
             .line_span(location.start.line as usize)
             .ok_or(Error::InvalidSpan)?;
-        let line_name = location.start.line + 1;
-        // The number of characters in the line number.
-        let line_number_length = line_name.ilog10() + 1;
 
         let line = self.source.encoding().slice(line_span);
-        // The number whitespace characters at the start of the line..
-        let n_whitespace = line
-            .units()
-            .enumerate()
-            .find(|(_, x)| !units::WHITE_SPACE.contains(x))
-            .map(|(x, _)| x)
-            .unwrap_or(0);
-
-        let line = line.slice(n_whitespace..).trim_end();
+        let start_line_length = line.chars().count();
+        let line = line.trim_start();
         let line_length = line.chars().count();
-        let token_lenght = self.source.encoding().slice(span).chars().count();
-        let offset = n_whitespace;
+        let whitespace_offset = (start_line_length - line_length) as u32;
+        let line = line.trim_end();
 
-        // Write initial `    | `
-        for _ in 0..line_number_length {
-            write!(w, " ")?
-        }
-        write!(w, "  ╭─")?;
-        self.render_span_location(w, span)?;
-        writeln!(w)?;
+        if line_length > Self::MAX_LINE_CHARS as usize {
+            let location_length =
+                (location.end.column - location.start.column).min(Self::TRUNCATED_LINE_CHARS);
 
-        if line_length > MAX_LINE_CHARS {
-            // The length of the line is to long
-            // Render only part of the line
+            let middle = location.start.column + location_length / 2;
+            let truncated_start = middle - (Self::TRUNCATED_LINE_CHARS / 2).min(middle);
+            let truncated_end =
+                (truncated_start + Self::TRUNCATED_LINE_CHARS).min(line_length as u32);
+            let truncated_start = truncated_end - Self::TRUNCATED_LINE_CHARS;
 
-            // Buffer to push the backwards context into.
-            let mut buffer = [' '; MAX_LINE_CHARS / 2];
+            let offset = location.start.column - truncated_start - whitespace_offset;
 
-            let context_size = MAX_LINE_CHARS.max(token_lenght + 6) - (token_lenght + 6);
-            let front = context_size / 2;
-            let end = context_size - front;
+            let truncation = if truncated_start == 0 {
+                Truncation::End
+            } else if truncated_end == line_length as u32 {
+                Truncation::Start
+            } else {
+                Truncation::Both
+            };
 
-            // Retrieve the backwards context.
-            self.source
-                .encoding()
-                .slice(..span.offset())
-                .chars()
-                .rev()
-                .take(front)
-                .enumerate()
-                .for_each(|(idx, c)| buffer[idx] = c);
-
-            write!(w, " {} │ ...", line_name)?;
-            for i in (0..front).rev() {
-                write!(w, "{}", buffer[i])?;
-            }
-
-            // write the span and the forward context.
-            self.source
-                .encoding()
-                .slice(span.offset()..)
-                .chars()
-                .take(end + token_lenght)
-                .try_for_each(|x| write!(w, "{}", x))?;
-            writeln!(w, "...")?;
-
-            for _ in 0..line_number_length {
-                write!(w, " ")?
-            }
-            // write the next line with the pointing part
-            write!(w, "  ╰────")?;
-            for _ in 0..front {
-                write!(w, "─")?;
-            }
-            for _ in 0..token_lenght {
-                write!(w, "^")?;
-            }
-        } else {
-            // Write initial `2 | foo.bar`
-            write!(w, " {} │ ", line_name)?;
-            writeln!(w, "{}", line)?;
-
-            // Write `  | ^ invalid identifier`
-            for _ in 0..line_number_length {
-                write!(w, " ")?
-            }
-            write!(w, "  ╰─")?;
-
-            for _ in 0..(location.start.column - offset as u32) {
-                write!(w, "─")?
-            }
-
-            for _ in 0..token_lenght {
-                write!(w, "^")?
-            }
+            return Ok(RenderedLine {
+                truncation,
+                location: location.start,
+                line: line
+                    .slice((truncated_start as usize)..(truncated_end as usize))
+                    .into(),
+                source_name: self.name.clone(),
+                offset,
+                length: location_length,
+                message,
+            });
         }
 
-        // Optionally write message next to the pointer.
-        if let Some(x) = message {
-            writeln!(w, " {}", x)?
-        }
-        Ok(())
+        Ok(RenderedLine {
+            truncation: Truncation::None,
+            location: location.start,
+            line: line.into(),
+            source_name: self.name.clone(),
+            offset: location.start.column,
+            length: location.end.column - location.start.column,
+            message,
+        })
     }
 }

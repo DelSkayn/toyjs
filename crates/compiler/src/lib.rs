@@ -104,16 +104,23 @@ impl ContextError<Source> for Error {
                 first_declared,
             } => {
                 writeln!(f, "Already existing variable was redeclared")?;
-                ctx.render_string_block(f, *span, None)
-                    .map_err(|_| fmt::Error)?;
-                writeln!(f)?;
-                writeln!(f)?;
-                ctx.render_string_block(
+                writeln!(
                     f,
-                    *first_declared,
-                    Some(Ascii::const_from_str("Was first declared here").into()),
+                    "{}",
+                    ctx.render_span(*span, None)
+                        .map_err(|_| fmt::Error)?
+                        .as_block()
+                )?;
+                writeln!(
+                    f,
+                    "{}",
+                    ctx.render_span(
+                        *first_declared,
+                        Some(Ascii::const_from_str("Was first declared here").into()),
+                    )
+                    .map_err(|_| fmt::Error)?
+                    .as_block()
                 )
-                .map_err(|_| fmt::Error)
             }
         }
     }

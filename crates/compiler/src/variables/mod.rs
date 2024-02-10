@@ -171,7 +171,7 @@ pub struct LoopInfo {
     scope: ScopeId,
     /// The order assigned to this loop.
     /// All variables which are declared above this loop but are used inside have this use order.
-    use_order: SymbolUseOrder,
+    use_order: Option<SymbolUseOrder>,
 }
 
 #[derive(Clone, Debug)]
@@ -213,6 +213,10 @@ impl Variables {
         self.ast_to_symbol[ast]
             .id
             .expect("ast node was not properly resolved")
+    }
+
+    pub fn use_of_ast(&self, ast: NodeId<ast::Symbol>) -> SymbolUseOrder {
+        self.ast_to_symbol[ast].use_order
     }
 
     pub fn scopes(&self) -> &KeyedVec<ScopeId, Scope> {
@@ -265,7 +269,7 @@ impl Variables {
         match self.symbols[symbol].last_use {
             LastUse::Unused => None,
             LastUse::Direct(x) => Some(x),
-            LastUse::Loop(l) => Some(self.loop_use[l].use_order),
+            LastUse::Loop(l) => self.loop_use[l].use_order,
         }
     }
 

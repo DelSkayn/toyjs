@@ -1,5 +1,4 @@
 use bc::{limits::MAX_REGISTERS, Reg};
-use common::hashmap::HashMap;
 
 mod use_bitmap;
 
@@ -19,6 +18,8 @@ pub struct Registers {
     tmp: UseBitmap,
     reservation: [Option<SymbolUseOrder>; MAX_REGISTERS],
     symbol_allocation: [Option<SymbolId>; MAX_REGISTERS],
+    recent_reservation: SymbolUseOrder,
+    current_use_order: SymbolUseOrder,
     last_used_reg: Reg,
 }
 
@@ -29,6 +30,8 @@ impl Registers {
             tmp: UseBitmap::empty(),
             reservation: [None; MAX_REGISTERS],
             symbol_allocation: [None; MAX_REGISTERS],
+            current_use_order: SymbolUseOrder::first(),
+            recent_reservation: SymbolUseOrder::last(),
             last_used_reg: Reg::this_reg(),
         }
     }
@@ -38,7 +41,31 @@ impl Registers {
         self.last_used_reg = Reg::this_reg();
     }
 
+    fn collect_variables(&mut self) {
+        if self.recent_reservation > self.current_use_order {
+            return;
+        }
+        let mut used_by_vars = !(self.used & !self.tmp);
+        let mut next_free;
+        self.recent_reservation = SymbolUseOrder::last();
+        loop {
+            next_free = used_by_vars.next_free();
+            if next_free == 128 {
+                break;
+            }
+            let reservation = self.reservation[next_free as usize].unwrap();
+            if reservation <= self.current_use_order {
+                self.reservation[next_free as usize] = None;
+                self.used.unset(next_free);
+            } else {
+                self.recent_reservation = self.recent_reservation.min(reservation);
+            }
+            used_by_vars.set(next_free)
+        }
+    }
+
     pub fn next_free(&mut self) -> Option<Reg> {
+        self.collect_variables();
         let free = self.used.next_free();
         if free < 128 {
             let reg = Reg(free as i8);
@@ -86,6 +113,7 @@ impl Registers {
         debug_assert!(!self.used.get(reg));
         self.used.set(reg);
         self.reservation[reg as usize] = Some(until);
+        self.recent_reservation = self.recent_reservation.min(until);
         self.symbol_allocation[reg as usize] = Some(symbol);
     }
 
@@ -102,5 +130,9 @@ impl Registers {
             }
         }
         None
+    }
+
+    pub fn advance_usage(&mut self, order: SymbolUseOrder) {
+        self.current_use_order = order;
     }
 }
