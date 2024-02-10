@@ -5,6 +5,7 @@ use crate::Result;
 
 mod declare;
 mod driver;
+mod render;
 mod r#use;
 
 use declare::DeclarePass;

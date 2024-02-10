@@ -6,7 +6,6 @@ use common::{id::KeyedVec, key, string::StringId};
 
 mod resolve;
 pub use resolve::resolve_script;
-mod render;
 
 key!(
     #[derive(Ord,PartialOrd)]
@@ -18,6 +17,12 @@ key!(pub struct LoopId(#[non_zero] NonZeroU32));
 impl ScopeId {
     fn next(self) -> Self {
         Self(self.0.checked_add(1).unwrap())
+    }
+}
+
+impl SymbolId {
+    pub fn to_u32(self) -> u32 {
+        u32::from(self.0) - 1
     }
 }
 

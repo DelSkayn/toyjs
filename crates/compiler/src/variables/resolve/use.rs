@@ -81,7 +81,7 @@ impl VariableVisitor for UsePass<'_, '_> {
 
     fn use_symbol(&mut self, ast_node: ast::NodeId<ast::Symbol>) -> Result<()> {
         let ident = self.ast[ast_node].name;
-        let id = if let Some(s) = self.lookup.get(&ident).copied() {
+        if let Some(s) = self.lookup.get(&ident).copied() {
             if self.vars.symbols[s].kind != Kind::Unresolved {
                 let symbol_scope = self.vars.symbols[s].scope;
                 // check if the variable is used across a function.
@@ -132,7 +132,6 @@ impl VariableVisitor for UsePass<'_, '_> {
                     self.vars.symbols[s].last_use = LastUse::Loop(root_loop)
                 }
             }
-            s
         } else {
             let defined = self.advance_use()?;
             let symbol_id = self.vars.symbols.push(Symbol {
@@ -151,16 +150,18 @@ impl VariableVisitor for UsePass<'_, '_> {
 
             self.vars.scopes[self.root].num_decl_children += 1;
             self.vars.scope_decls.push(symbol_id);
-            symbol_id
-        };
 
-        self.vars.ast_to_symbol.insert_grow_default(
-            ast_node,
-            UseInfo {
-                use_order: SymbolUseOrder::first(),
-                id: Some(id),
-            },
-        );
+            let use_order = self.advance_use()?;
+
+            self.vars.ast_to_symbol.insert_grow_default(
+                ast_node,
+                UseInfo {
+                    use_order,
+                    id: Some(symbol_id),
+                },
+            );
+        }
+
         Ok(())
     }
 

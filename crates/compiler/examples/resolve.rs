@@ -47,10 +47,12 @@ fn compile(source: &Source) -> Result<(), Error> {
     let root_scope = variables.push_global_scope(false);
     if let ListHead::Present(stmt) = res.stmt {
         variables::resolve_script(stmt, &ast, &mut variables, root_scope)?;
+        println!(
+            "{}",
+            variables.render(stmt, root_scope, &ast, &interners, source)
+        );
     }
     let elapsed = before.elapsed();
-
-    println!("{}", variables.render(root_scope, &ast, &interners));
 
     let mut first = true;
     for v in variables.declared_vars(root_scope).iter().copied() {
