@@ -119,7 +119,7 @@ impl Display for HighlightToken<'_> {
             .line
             .encoding()
             .slice((self.0.offset as usize)..((self.0.offset + self.0.length) as usize));
-        write!(f, "\x1b[1;30;44m{}\x1b[0m", point)?;
+        write!(f, "\x1b[1;34m{}\x1b[0m", point)?;
         let remaining = self
             .0
             .line
@@ -174,23 +174,23 @@ impl Source {
             .ok_or(Error::InvalidSpan)?;
 
         let line = self.source.encoding().slice(line_span);
-        let start_line_length = line.chars().count();
-        let line = line.trim_start();
+        let whitespace_offset = line.chars().take_while(|x| x.is_ascii_whitespace()).count() as u32;
+        let line = line.trim();
         let line_length = line.chars().count();
-        let whitespace_offset = (start_line_length - line_length) as u32;
-        let line = line.trim_end();
 
         if line_length > Self::MAX_LINE_CHARS as usize {
             let location_length =
                 (location.end.column - location.start.column).min(Self::TRUNCATED_LINE_CHARS);
 
-            let middle = location.start.column + location_length / 2;
-            let truncated_start = middle - (Self::TRUNCATED_LINE_CHARS / 2).min(middle);
+            let start = location.start.column - whitespace_offset;
+
+            let middle = start + location_length / 2;
+            let truncated_start = middle.saturating_sub(Self::TRUNCATED_LINE_CHARS / 2);
             let truncated_end =
                 (truncated_start + Self::TRUNCATED_LINE_CHARS).min(line_length as u32);
             let truncated_start = truncated_end - Self::TRUNCATED_LINE_CHARS;
 
-            let offset = location.start.column - truncated_start - whitespace_offset;
+            let offset = start - truncated_start;
 
             let truncation = if truncated_start == 0 {
                 Truncation::End

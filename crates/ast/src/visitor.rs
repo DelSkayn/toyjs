@@ -647,7 +647,7 @@ pub trait Visitor<E> {
 
     fn visit_propery_definition(&mut self, prop: NodeId<PropertyDefinition>) -> Result<(), E> {
         match self.ast()[prop] {
-            PropertyDefinition::Ident { .. } => {}
+            PropertyDefinition::Ident { ident } => self.super_symbol(ident)?,
             PropertyDefinition::Covered {
                 symbol,
                 initializer,

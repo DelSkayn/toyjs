@@ -1,3 +1,5 @@
+use std::mem;
+
 use ast::{visitor::Visitor, Ast, Expr, ListHead, NodeId};
 
 use crate::{
@@ -31,6 +33,7 @@ pub trait VariableVisitor {
 pub struct VisitorDriver<V: VariableVisitor> {
     driven: V,
     declaring: Option<Kind>,
+    decl_initialized: bool,
 }
 
 impl<V: VariableVisitor> VisitorDriver<V> {
@@ -38,6 +41,7 @@ impl<V: VariableVisitor> VisitorDriver<V> {
         VisitorDriver {
             driven: v,
             declaring: None,
+            decl_initialized: false,
         }
     }
 
@@ -227,7 +231,9 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             ast::ForLoopHead::In { decl, expr } => {
                 if let ast::InOfDecl::Decl { kind, binding } = decl {
                     let before = self.declaring.replace(kind.into());
+                    let before_init = mem::replace(&mut self.decl_initialized, true);
                     self.super_ident_or_pattern(binding)?;
+                    self.decl_initialized = before_init;
                     self.declaring = before;
                 }
                 self.super_expr_list(expr)?;
@@ -235,22 +241,29 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             ast::ForLoopHead::Of { decl, expr } => {
                 if let ast::InOfDecl::Decl { kind, binding } = decl {
                     let before = self.declaring.replace(kind.into());
+                    let before_init = mem::replace(&mut self.decl_initialized, true);
                     self.super_ident_or_pattern(binding)?;
+                    self.decl_initialized = before_init;
                     self.declaring = before;
                 }
                 self.super_expr(expr)?;
             }
-            ast::ForLoopHead::CStyle { decl, .. } => match decl {
-                ast::CstyleDecl::Empty => {}
-                ast::CstyleDecl::Expr(x) => {
-                    self.super_expr_list(x)?;
+            ast::ForLoopHead::CStyle { decl, cond, .. } => {
+                match decl {
+                    ast::CstyleDecl::Empty => {}
+                    ast::CstyleDecl::Expr(x) => {
+                        self.super_expr_list(x)?;
+                    }
+                    ast::CstyleDecl::Decl { kind, decl } => {
+                        let before = self.declaring.replace(kind.into());
+                        self.super_variable_decl_list(decl)?;
+                        self.declaring = before;
+                    }
                 }
-                ast::CstyleDecl::Decl { kind, decl } => {
-                    let before = self.declaring.replace(kind.into());
-                    self.super_variable_decl_list(decl)?;
-                    self.declaring = before;
+                if let Some(cond) = cond {
+                    self.super_expr_list(cond)?;
                 }
-            },
+            }
         }
         Ok(())
     }
@@ -296,9 +309,20 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
         Ok(())
     }
 
-    fn super_symbol(&mut self, s: NodeId<ast::Symbol>) -> std::prelude::v1::Result<(), Error> {
+    fn super_variable_decl(&mut self, decl: NodeId<ast::VariableDecl>) -> Result<()> {
+        let new = self.ast()[decl].initializer.is_some();
+        let old = std::mem::replace(&mut self.decl_initialized, new);
+        self.visit_variable_decl(decl)?;
+        self.decl_initialized = old;
+        Ok(())
+    }
+
+    fn super_symbol(&mut self, s: NodeId<ast::Symbol>) -> Result<()> {
         if let Some(d) = self.declaring {
             self.driven.declare(s, d)?;
+            if self.decl_initialized {
+                self.driven.use_symbol(s)?;
+            }
         } else {
             self.driven.use_symbol(s)?;
         }

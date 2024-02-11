@@ -131,9 +131,9 @@ impl fmt::Display for LongOffset {
 }
 
 /// A newtype for a string constant ids.
-#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable, Hash)]
 #[repr(transparent)]
-pub struct StringId(u16);
+pub struct StringId(pub u16);
 
 impl fmt::Display for StringId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

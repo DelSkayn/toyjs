@@ -2,12 +2,18 @@
 #![allow(dead_code)]
 
 use core::fmt;
-use std::{backtrace::Backtrace, result::Result as StdResult, u8};
+use std::{backtrace::Backtrace, collections::VecDeque, result::Result as StdResult, u8};
 
-use ast::{Ast, ListHead};
+use ast::{Ast, ListHead, NodeId};
 use bc::{ByteCode, Instruction, InstructionType, LongOffset, OpCode, Reg};
 use common::{
-    key, result::ContextError, source::Source, span::Span, string::Ascii, structs::Interners,
+    hashmap::HashMap,
+    key,
+    result::ContextError,
+    source::Source,
+    span::Span,
+    string::{Ascii, StringId},
+    structs::Interners,
 };
 use registers::Registers;
 use variables::{resolve_script, Variables};
@@ -48,6 +54,8 @@ pub enum Limits {
     TooManyScopes,
     TooManyVariables,
     Registers,
+    Functions,
+    Strings,
 }
 
 impl fmt::Display for Limits {
@@ -70,6 +78,8 @@ impl fmt::Display for Limits {
                 f,
                 "function in script required more registers then the instruction set limit of 127"
             ),
+            Limits::Functions => write!(f, "number of functions in script exceeded limit"),
+            Limits::Strings => write!(f, "number of strings in script exceeded limit"),
         }
     }
 }
@@ -132,6 +142,10 @@ pub struct Compiler<'a> {
     ast: &'a mut Ast,
     registers: Registers,
     variables: Variables,
+    functions: VecDeque<NodeId<ast::Function>>,
+    function_id: u32,
+    strings: HashMap<StringId, u32>,
+    next_string_id: u32,
 }
 
 impl<'a> Compiler<'a> {
@@ -142,6 +156,10 @@ impl<'a> Compiler<'a> {
             ast,
             registers: Registers::new(),
             variables: Variables::new(),
+            functions: VecDeque::new(),
+            function_id: 0,
+            strings: HashMap::default(),
+            next_string_id: 0,
         }
     }
 
@@ -203,6 +221,14 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    pub fn map_string(&mut self, id: StringId) -> u32 {
+        *self.strings.entry(id).or_insert_with(|| {
+            let res = self.next_string_id;
+            self.next_string_id += 1;
+            res
+        })
+    }
+
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
         let root_scope = self.variables.push_global_scope(strict);
 
@@ -228,6 +254,15 @@ impl<'a> Compiler<'a> {
             self.push(Instruction::RetUndefined {})?;
         }
 
+        while let Some(func) = self.functions.pop_front() {
+            self.registers.clear();
+            self.compile_function(func)?;
+        }
+
         self.into_bc()
+    }
+
+    pub fn compile_function(&mut self, ast: NodeId<ast::Function>) -> Result<()> {
+        Ok(())
     }
 }

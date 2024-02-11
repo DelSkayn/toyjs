@@ -74,14 +74,22 @@ impl VariableVisitor for UsePass<'_, '_> {
 
     fn declare(&mut self, ast_node: ast::NodeId<ast::Symbol>, kind: Kind) -> Result<()> {
         let symbol = self.vars.ast_to_symbol[ast_node].id.unwrap();
-        let id = self.advance_use()?;
-        self.vars.symbols[symbol].declared = Some(id);
+        self.vars.symbols[symbol].declared = Some(self.current_use);
         Ok(())
     }
 
     fn use_symbol(&mut self, ast_node: ast::NodeId<ast::Symbol>) -> Result<()> {
         let ident = self.ast[ast_node].name;
         if let Some(s) = self.lookup.get(&ident).copied() {
+            let use_order = self.advance_use()?;
+            self.vars.ast_to_symbol.insert_grow_default(
+                ast_node,
+                UseInfo {
+                    id: Some(s),
+                    use_order,
+                },
+            );
+
             if self.vars.symbols[s].kind != Kind::Unresolved {
                 let symbol_scope = self.vars.symbols[s].scope;
                 // check if the variable is used across a function.
@@ -89,14 +97,6 @@ impl VariableVisitor for UsePass<'_, '_> {
                     self.vars.symbols[s].captured = true;
                 }
 
-                let use_order = self.advance_use()?;
-                self.vars.ast_to_symbol.insert_grow_default(
-                    ast_node,
-                    UseInfo {
-                        id: Some(s),
-                        use_order,
-                    },
-                );
                 self.vars.symbols[s].last_use = LastUse::Direct(use_order);
                 if self.vars.symbols[s].defined.is_none() {
                     self.vars.symbols[s].defined = Some(use_order);

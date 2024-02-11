@@ -398,8 +398,11 @@ impl<'a> Parser<'a> {
             }
             x => {
                 if let PropertyName::Ident(name) = property {
-                    let span = self.ast.push_node(token.span);
-                    let id = self.ast.push_node(PropertyDefinition::Ident { name, span });
+                    let ident = self.ast.push_node(Symbol {
+                        name,
+                        span: token.span,
+                    });
+                    let id = self.ast.push_node(PropertyDefinition::Ident { ident });
                     Ok((id, None))
                 } else {
                     unexpected!(self, x, ":")
@@ -564,13 +567,10 @@ impl<'a> Parser<'a> {
         loop {
             let item_node = self.ast[item].item;
             let prop = match self.ast[item_node] {
-                PropertyDefinition::Ident { name, span } => {
-                    let span = self.ast[span];
-                    BindingProperty::Binding {
-                        symbol: self.ast.push_node(Symbol { name, span }),
-                        initializer: None,
-                    }
-                }
+                PropertyDefinition::Ident { ident: symbol } => BindingProperty::Binding {
+                    symbol,
+                    initializer: None,
+                },
 
                 // TODO: make sure this is a syntax error in actual object literals
                 PropertyDefinition::Covered {

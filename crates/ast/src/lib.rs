@@ -30,7 +30,7 @@ pub type AstStorage = (
     Vec<Function>,
     (Vec<Class>, Vec<ClassMember>),
     (Vec<ArrayLiteralEntry>, Vec<PropertyDefinition>),
-    (Vec<Symbol>, Vec<Span>),
+    Vec<Symbol>,
 );
 
 pub type Ast = GenAst<AstStorage>;
@@ -1157,8 +1157,7 @@ impl RenderAst for Template {
 #[derive(Clone, Copy, PartialEq)]
 pub enum PropertyDefinition {
     Ident {
-        name: StringId,
-        span: NodeId<Span>,
+        ident: NodeId<Symbol>,
     },
     /// A destructing assignment will first be parsed as an object literal and then later refined.
     /// This production is not valid for object literals but is for a destructing assignment and
@@ -1189,10 +1188,9 @@ pub enum PropertyDefinition {
 impl RenderAst for PropertyDefinition {
     fn render<W: fmt::Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         match *self {
-            PropertyDefinition::Ident { ref name, ref span } => ctx
+            PropertyDefinition::Ident { ref ident } => ctx
                 .render_struct("PropertyDefinition::Ident", w)?
-                .field("name", name)?
-                .field("span", span)?
+                .field("ident", ident)?
                 .finish(),
             PropertyDefinition::Covered {
                 symbol: ref ident,
