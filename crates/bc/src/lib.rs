@@ -1,10 +1,11 @@
 use std::fmt;
 
-use bytemuck::{Pod, TransparentWrapper, Zeroable};
+use bytemuck::{Contiguous, Pod, TransparentWrapper, Zeroable};
 use common::span::Span;
 use dreck::Trace;
 
 mod instructions;
+pub mod util;
 pub use instructions::*;
 mod r#macro;
 mod reader;
@@ -41,8 +42,7 @@ pub mod limits {
 
 pub struct ByteCode {
     pub functions: Box<[Function]>,
-    pub strings: Box<[String]>,
-    pub string_buffer: Box<[u16]>,
+    pub strings: Box<[common::string::String]>,
     pub instructions: Box<[u8]>,
 }
 
@@ -67,6 +67,14 @@ unsafe impl<'own> Trace<'own> for ByteCode {
 pub struct Reg(pub i8);
 
 impl Reg {
+    pub const MAX: i8 = i8::MAX;
+    pub const MIN: i8 = i8::MIN;
+    /// A register to use when a temporary register is required for writing.
+    /// Should always be patched later, not emited.
+    pub const fn tmp() -> Self {
+        Reg(-2)
+    }
+
     /// Returns the register index of the place where the `this` value is stored.
     pub const fn this_reg() -> Self {
         Reg(-1)
@@ -130,6 +138,51 @@ impl fmt::Display for LongOffset {
     }
 }
 
+/// A newtype for a primitive value.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable, Ord, PartialOrd)]
+#[repr(transparent)]
+pub struct Primitive(u8);
+
+impl Primitive {
+    pub fn empty() -> Self {
+        Primitive(0)
+    }
+
+    pub fn null() -> Self {
+        Primitive(2)
+    }
+
+    pub fn deleted() -> Self {
+        Primitive(5)
+    }
+
+    pub fn t() -> Self {
+        Primitive(6)
+    }
+
+    pub fn f() -> Self {
+        Primitive(7)
+    }
+
+    pub fn undefined() -> Self {
+        Primitive(10)
+    }
+}
+
+impl fmt::Display for Primitive {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            0 => write!(f, "Empty"),
+            2 => write!(f, "Null"),
+            5 => write!(f, "Deleted"),
+            6 => write!(f, "True"),
+            7 => write!(f, "False"),
+            10 => write!(f, "Undefined"),
+            x => panic!("invalid primitive {x}"),
+        }
+    }
+}
+
 /// A newtype for a string constant ids.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable, Hash)]
 #[repr(transparent)]
@@ -141,6 +194,7 @@ impl fmt::Display for StringId {
     }
 }
 
+/*
 pub struct String {
     // offset into the string buffer.
     pub offset: u32,
@@ -153,6 +207,7 @@ pub enum StringKind {
     Ascii,
     Utf16,
 }
+*/
 
 /// A newtype for a bytecode function constants.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
@@ -168,7 +223,7 @@ impl fmt::Display for UpvalueId {
 /// A newtype for a bytecode function constants.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
 #[repr(transparent)]
-pub struct FunctionId(pub u16);
+pub struct FunctionId(pub u32);
 
 impl FunctionId {
     /// Returns the id of an entry function.
@@ -183,15 +238,53 @@ impl fmt::Display for FunctionId {
     }
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Contiguous)]
+pub enum Builtin {
+    FunctionApply = 0,
+    ArraySpread = 1,
+    ObjectSpread = 2,
+    ObjectAssign = 3,
+    DefineGetter = 4,
+    DefineSetter = 5,
+}
+
+impl fmt::Display for Builtin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Builtin {
+    pub fn to_byte(self) -> BuiltinByte {
+        BuiltinByte(self as u8)
+    }
+}
+
+/// A newtype for a bytecode function constants.
+#[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
+#[repr(transparent)]
+pub struct BuiltinByte(pub u8);
+
+impl fmt::Display for BuiltinByte {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Builtin::from_integer(self.0).unwrap())
+    }
+}
+
 pub struct Function {
-    // offset into the instruction buffer.
+    /// offset into the instruction buffer.
     pub offset: u32,
-    // the amount of bytes in this function.
+    /// the amount of bytes in this function.
     pub len: u32,
-    // Information used to reconstruct variable locations for functions with direct eval.
+    /// Information used to reconstruct variable locations for functions with direct eval.
     pub reflect_info: Option<()>,
-    // The span of the function in the source code.
+    /// The span of the function in the source code.
     pub span: Span,
+    /// The amount of upvalues this function uses.
+    pub upvalues: u32,
+    /// The amount of upvalues this function uses.
+    pub registers: u32,
 }
 
 impl fmt::Display for ByteCode {

@@ -61,10 +61,10 @@ pub type GcContext<'gc, 'own> = Gc<'gc, 'own, Context<'gc, 'own>>;
 pub struct Context<'gc, 'own> {
     /// The global object,
     global: GcObject<'gc, 'own>,
-    // The vm this context belongs to.
+    /// The vm this context belongs to.
     vm: GcVm<'gc, 'own>,
-    // The current exception raised.
-    exception: Option<()>,
+    // A list of builtin functions
+    //builtins: [GcObject<'gc,'own>; <bc::Builtin as Contiguous>::MAX_VALUE];
 }
 
 unsafe impl<'gc, 'own> Trace<'own> for Context<'gc, 'own> {
@@ -85,10 +85,6 @@ unsafe impl<'gc, 'own> Trace<'own> for Context<'gc, 'own> {
 
 impl<'gc, 'own> Context<'gc, 'own> {
     pub fn new(global: GcObject<'gc, 'own>, vm: GcVm<'gc, 'own>) -> Self {
-        Context {
-            global,
-            vm,
-            exception: None,
-        }
+        Context { global, vm }
     }
 }

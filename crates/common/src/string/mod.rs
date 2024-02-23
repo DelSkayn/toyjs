@@ -25,7 +25,7 @@ pub struct String(Repr);
 
 impl String {
     /// Returns the empty string.
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         String(Repr::empty())
     }
 
@@ -48,7 +48,7 @@ impl String {
         }
     }
 
-    pub fn new(units: Encoding) -> Self {
+    pub fn from_encoding(units: Encoding) -> Self {
         match units {
             Encoding::Ascii(x) => Self(Repr::from_ascii(x)),
             Encoding::Utf16(x) => Self(Repr::from_utf16(x)),
@@ -125,6 +125,12 @@ impl String {
     }
 }
 
+impl Default for String {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl fmt::Display for String {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.encoding().fmt(f)
@@ -189,7 +195,7 @@ mod test {
 
     #[test]
     fn basic_empty() {
-        let string = String::empty();
+        let string = String::new();
         assert!(string.is_ascii());
         assert!(string.is_inline());
         assert!(string.is_empty());

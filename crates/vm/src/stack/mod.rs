@@ -1,7 +1,33 @@
 //! The implementation of the stack
 //!
+//! # Glossary
+//! - Frame
+//!     A number of registers on the stack which the bytecode of a function uses.
+//! - Entry frame
+//!     A frame pushed onto the stack when entering into the vm. This happens when calling the root
+//!     function of a script for instance or when a rust function calls a javascript function.
+//! - Error frame
+//!     A frame pushed onto the stack by a try statement. Used during unwinding to find where
+//!     execution should resume
+//! - Stack pointer
+//!     Pointer pointing to the first register of the current frame.
+//! - Top pointer
+//!     Pointer pointing to the first register past the end of the current frame.
+//! - Root pointer
+//!     Pointer pointing to the start of the stack.
+//!
 //!
 //! # The call frame
+//!
+//! A function has both it's registers and its arguments on the stack.
+//! Whenever a function calls the other function. It will place the arguments on the stack in the
+//! right order. Arguments are put in reverse order with the last argument being the first on the
+//! stack. The last two arguments are always the this object and the function object of the
+//! function called.
+//! When the function is called the stack will allocate a number of registers equal to the amount
+//! required by the function as described in the bytecode. The call pointer will then point to the
+//! first register. The function object and the this value are then at offset -1 and -2
+//! respectively.
 //!
 //! ```text             
 //!  REG INDEX:         -4      -3      -2      -1       0       1                    n
@@ -9,12 +35,12 @@
 //!   ...other frame ║ arg 1 ║ arg 0 ║ this  ║ func  ║ reg 0 ║ reg 1 ║  ..rest..  ║ reg n ║ unused
 //!  ..══════════════╩═══════╩═══════╩═══════╩═══════╩═══════╩═══════╩══..   ..═══╩═══════╩═════..
 //!                                                      △                                    △
-//!  ◁ root pointer at the start            call pointer ╝                        top pointer ╝
+//!  ◁ root pointer at the start           stack pointer ╝                        top pointer ╝
 //!                                             
 //! ```
 
 use core::fmt;
-use std::{mem::MaybeUninit, num::NonZeroU32, ptr::NonNull};
+use std::{num::NonZeroU32, ptr::NonNull};
 
 use bc::{ByteCodeReader, Reg};
 use common::{slow_assert, slow_assert_ne};
@@ -23,7 +49,7 @@ use dreck::{Marker, Trace};
 mod buffer;
 
 use self::buffer::RawBuffer;
-use crate::{object::GcObject, value::Value};
+use crate::value::Value;
 
 #[derive(Debug)]
 pub struct StackSizeError;
@@ -43,13 +69,13 @@ union FrameInfo {
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct CallFrameInfo {
-    // The size of the frame
+    /// The size of the frame
     size: u32,
-    // the number of args
-    args: u32,
-    // The reader from the previous frame.
-    // Optionally uninitialized if this is an entry frame.
-    reader: MaybeUninit<ByteCodeReader<'static>>,
+    /// The number of upvalues in this frame.
+    upvalues: u32,
+    /// The reader from the previous frame.
+    /// Can be null if this was an entry frame.
+    reader: Option<ByteCodeReader<'static>>,
 }
 
 // A struct which contains information about the current stack frame.
@@ -65,7 +91,7 @@ pub struct Stack<'gc, 'own> {
     // The javascript values making up the statek
     values: RawBuffer<Value<'gc, 'own>>,
     /// Points to the start of current function frame.
-    call: NonNull<Value<'gc, 'own>>,
+    stack: NonNull<Value<'gc, 'own>>,
     /// Points to the top of the stack to one past the last valid value of the current frame.
     top: NonNull<Value<'gc, 'own>>,
 
@@ -107,7 +133,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         let frame = frames.root();
         Stack {
             values,
-            call,
+            stack: call,
             top,
             frames,
             frame,
@@ -126,10 +152,15 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         unsafe { self.top.as_ptr().offset_from(self.values.end().as_ptr()) as usize }
     }
 
+    /// Returns the amount of stack values in use.
+    pub fn frame_size(&self) -> usize {
+        unsafe { self.top.as_ptr().offset_from(self.stack.as_ptr()) as usize }
+    }
+
     /// Make sure the stack has enough memory for atleast amount extra values.
     pub fn reserve(&mut self, amount: usize) -> Result<(), StackSizeError> {
         unsafe {
-            let offset = self.values.end().as_ptr().offset_from(self.call.as_ptr()) as usize;
+            let offset = self.values.end().as_ptr().offset_from(self.stack.as_ptr()) as usize;
             if offset < amount {
                 let current_size =
                     self.top.as_ptr().offset_from(self.values.end().as_ptr()) as usize;
@@ -140,9 +171,9 @@ impl<'gc, 'own> Stack<'gc, 'own> {
                     return Err(StackSizeError);
                 }
                 self.values.grow(new_size, |from, to| {
-                    self.call = NonNull::new_unchecked(
+                    self.stack = NonNull::new_unchecked(
                         to.as_ptr()
-                            .offset(self.call.as_ptr().offset_from(from.as_ptr())),
+                            .offset(self.stack.as_ptr().offset_from(from.as_ptr())),
                     );
                     self.top = NonNull::new_unchecked(
                         to.as_ptr()
@@ -195,7 +226,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             reg.0 as isize >= -(frame.args as isize + 2) && (reg.0 as u8) < frame.size
         });
         // can't write to the stack info.
-        self.call.as_ptr().offset(reg.0 as isize).read()
+        self.stack.as_ptr().offset(reg.0 as isize).read()
     }
 
     #[inline(always)]
@@ -208,7 +239,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
         });
         // the function object should not be overwritten.
         slow_assert_ne!(reg, Reg::function_reg());
-        self.call.as_ptr().offset(reg.0 as isize).write(value)
+        self.stack.as_ptr().offset(reg.0 as isize).write(value)
     }
 
     #[inline(always)]
@@ -220,7 +251,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             reg.0 as isize > -(frame.args as isize + 2) && (reg.0 as isize) < frame.size as isize
         });
         // can't write to the stack info.
-        self.call.as_ptr().offset(tgt as isize).read()
+        self.stack.as_ptr().offset(tgt as isize).read()
     }
 
     #[inline(always)]
@@ -232,38 +263,29 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             reg.0 as isize > -(frame.args as isize + 2) && (reg.0 as isize) < frame.size as isize
         });
         // can't write to the stack info.
-        self.call.as_ptr().offset(tgt as isize).write(value)
+        self.stack.as_ptr().offset(tgt as isize).write(value)
     }
 
-    pub unsafe fn push_entry_frame(
-        &mut self,
-        args: u32,
-        size: u32,
-        function: GcObject<'gc, 'own>,
-        this: Value<'gc, 'own>,
-    ) -> Result<(), StackSizeError> {
+    pub unsafe fn push_entry_frame(&mut self, size: u32) -> Result<(), StackSizeError> {
         // Reserve for atleast size amount of registers
         // + 1 for the this value .
         // + 1 for the current function.
-        self.reserve(size as usize + 2)?;
-        unsafe {
-            self.frame = self.push_info(FrameInfo {
-                call: CallFrameInfo {
-                    size,
-                    args,
-                    reader: MaybeUninit::uninit(),
-                },
-            })
-        };
+        self.reserve(size as usize)?;
+
+        self.frame = self.push_info(FrameInfo {
+            call: CallFrameInfo {
+                size: self.top.as_ptr().offset_from(self.stack.as_ptr()) as u32,
+                upvalues: 0,
+                reader: None,
+            },
+        });
 
         // Initialize the frame.
-        self.call = NonNull::new_unchecked(self.top.as_ptr().add(2));
-        self.top = NonNull::new_unchecked(self.top.as_ptr().add(size as usize + 2));
-        self.write(Reg::this_reg(), this);
-        self.write(Reg::function_reg(), function.into());
+        self.stack = NonNull::new_unchecked(self.top.as_ptr());
+        self.top = NonNull::new_unchecked(self.top.as_ptr().add(size as usize));
         // We need to write values into the stack, cause they can contain no longer reachable
         // pointers.
-        std::ptr::write_bytes(self.call.as_ptr(), 0, size as usize);
+        std::ptr::write_bytes(self.stack.as_ptr(), 0, size as usize);
         Ok(())
     }
 
@@ -275,9 +297,12 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             "Tried to pop from empty stack"
         );
 
-        let args = self.frame.as_ref().call.args;
+        let size = self.frame.as_ref().call.size;
+
         // TODO arg check limit, prevent u32 overflow.
-        self.top = NonNull::new_unchecked(self.call.as_ptr().sub((2 + args) as usize));
+        self.top = self.stack;
+        self.stack = NonNull::new_unchecked(self.stack.as_ptr().sub(size as usize));
+
         self.frame = NonNull::new_unchecked(self.frame.as_ptr().sub(1));
         if self.frame.as_ptr() == self.error.as_ptr() {
             let mut cur_error = self.error;
@@ -288,16 +313,16 @@ impl<'gc, 'own> Stack<'gc, 'own> {
             }
             self.frame = NonNull::new_unchecked(cur_error.as_ptr().sub(1));
         }
-        let size = self.frame.as_ref().call.size;
-        self.call = NonNull::new_unchecked(self.top.as_ptr().sub(size.try_into().unwrap()));
     }
 
     /// Push a value onto the frame increasing the size of the stack.
     pub fn push(&mut self, value: Value<'gc, 'own>) -> Result<(), StackSizeError> {
         self.reserve(1)?;
-        unsafe {
-            self.frame_info_mut().size += 1;
+
+        if self.frame_size() == i32::MAX as usize {
+            return Err(StackSizeError);
         }
+
         unsafe {
             self.top.as_ptr().write(value);
         }
@@ -306,8 +331,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
 
     /// Pop value of the stack
     pub unsafe fn pop(&mut self) -> Value<'gc, 'own> {
-        slow_assert!(self.frame_info_mut().size >= 1);
-        self.frame_info_mut().size -= 1;
+        slow_assert!(self.frame_size() >= 1);
         todo!()
     }
 

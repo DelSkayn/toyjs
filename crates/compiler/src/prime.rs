@@ -1,91 +1,114 @@
 use ast::{NodeId, ObjectLiteral};
-use bc::{FunctionId, Instruction, Reg};
-use common::number::NumberId;
+use bc::{FunctionId, Instruction, Primitive, Reg};
+use common::{number::NumberId, span::Span, string::StringId};
 
-use crate::{expr::ExprResult, Compiler, Error, Limits, Result};
+use crate::{
+    expr::{ExprPosition, ExprResult},
+    Compiler, Error, InstrOffset, Limits, Result,
+};
 
 impl<'a> Compiler<'a> {
     pub fn compile_prime(&mut self, expr: NodeId<ast::PrimeExpr>) -> Result<ExprResult> {
         let dst = Reg::this_reg();
         match self.ast[expr] {
-            ast::PrimeExpr::Number(id) => self.compile_number(id),
-            ast::PrimeExpr::String(_) => to_do!(),
+            ast::PrimeExpr::Number(id) => self.compile_number(id).map(|x| x.into()),
+            ast::PrimeExpr::String(x) => Ok(ExprPosition::InstrDst(self.compile_string(x)).into()),
             ast::PrimeExpr::Template(_) => to_do!(),
             ast::PrimeExpr::Regex(_) => to_do!(),
             ast::PrimeExpr::Ident(sym) => {
                 let sym_id = self.variables.symbol_of_ast(sym);
                 let use_order = self.variables.use_of_ast(sym);
                 let res = if let Some(reg) = self.registers.find_symbol(sym_id) {
-                    ExprResult::Register(reg)
+                    ExprPosition::Register(reg)
                 } else {
-                    let instr = self.push(Instruction::LoadPrim { dst, imm: 10 })?;
-                    ExprResult::InstrDst(instr)
+                    let instr = self.emit(Instruction::LoadPrim {
+                        dst,
+                        imm: Primitive::undefined(),
+                    })?;
+                    ExprPosition::InstrDst(instr)
                 };
                 self.registers.advance_usage(use_order);
-                Ok(res)
+                Ok(res.into())
             }
             ast::PrimeExpr::Boolean(x) => {
                 let instr = if x {
-                    self.push(Instruction::LoadPrim { dst, imm: 6 })?
+                    self.emit(Instruction::LoadPrim {
+                        dst,
+                        imm: Primitive::t(),
+                    })?
                 } else {
-                    self.push(Instruction::LoadPrim { dst, imm: 7 })?
+                    self.emit(Instruction::LoadPrim {
+                        dst,
+                        imm: Primitive::f(),
+                    })?
                 };
-                Ok(ExprResult::InstrDst(instr))
+                Ok(ExprPosition::InstrDst(instr).into())
             }
-            ast::PrimeExpr::Function(func) => self.compile_function_load(func),
+            ast::PrimeExpr::Function(func) => self.compile_function_load(func).map(|x| x.into()),
             ast::PrimeExpr::Class(_) => to_do!(),
-            ast::PrimeExpr::Object(obj) => self.compile_object_literal(obj),
+            ast::PrimeExpr::Object(obj) => self.compile_object_literal(obj).map(|x| x.into()),
             ast::PrimeExpr::Array(_) => to_do!(),
             ast::PrimeExpr::NewTarget | ast::PrimeExpr::This => {
-                Ok(ExprResult::Register(Reg::this_reg()))
+                Ok(ExprPosition::Register(Reg::this_reg()).into())
             }
             ast::PrimeExpr::Null => self
-                .push(Instruction::LoadPrim { dst, imm: 2 })
-                .map(ExprResult::InstrDst),
+                .emit(Instruction::LoadPrim {
+                    dst,
+                    imm: Primitive::null(),
+                })
+                .map(ExprPosition::InstrDst)
+                .map(Into::into),
             ast::PrimeExpr::Super => to_do!(),
             ast::PrimeExpr::Covered(x) => self.compile_exprs(x),
         }
     }
 
-    pub fn compile_function_load(&mut self, func: NodeId<ast::Function>) -> Result<ExprResult> {
-        let id = self.function_id;
-        self.functions.push_back(func);
-        self.function_id += 1;
+    pub fn compile_function_load(&mut self, func: NodeId<ast::Function>) -> Result<ExprPosition> {
+        let id = self.functions.len();
+        self.functions.push(bc::Function {
+            offset: 0,
+            len: 0,
+            reflect_info: None,
+            span: Span::empty(),
+            registers: 0,
+            upvalues: 0,
+        });
+        self.pending_functions.push_back(func);
         let cons = FunctionId(
             id.try_into()
                 .map_err(|_| Error::ExceededLimits(Limits::Functions))?,
         );
-        let instr = self.push(Instruction::LoadFunction {
+        let instr = self.emit(Instruction::LoadFunction {
             dst: Reg::this_reg(),
             cons,
         })?;
-        Ok(ExprResult::InstrDst(instr))
+        Ok(ExprPosition::InstrDst(instr))
     }
 
-    pub fn compile_number(&mut self, id: NumberId) -> Result<ExprResult> {
+    pub fn compile_number(&mut self, id: NumberId) -> Result<ExprPosition> {
         let dst = Reg::this_reg();
         let number = self.interners.numbers[id];
         let instr = if let Some(imm) = number.cast() {
-            self.push(Instruction::Loadi8 { dst, imm })?
+            self.emit(Instruction::Loadi8 { dst, imm })?
         } else if let Some(imm) = number.cast() {
-            self.push(Instruction::Loadi16 { dst, imm })?
+            self.emit(Instruction::Loadi16 { dst, imm })?
         } else if let Some(imm) = number.cast() {
-            self.push(Instruction::Loadi32 { dst, imm })?
+            self.emit(Instruction::Loadi32 { dst, imm })?
         } else if let Some(imm) = number.cast() {
-            self.push(Instruction::Loadf32 { dst, imm })?
+            self.emit(Instruction::Loadf32 { dst, imm })?
         } else {
-            self.push(Instruction::Loadf64 { dst, imm: number.0 })?
+            self.emit(Instruction::Loadf64 { dst, imm: number.0 })?
         };
-        Ok(ExprResult::InstrDst(instr))
+        Ok(ExprPosition::InstrDst(instr))
     }
 
-    pub fn compile_object_literal(&mut self, object: ObjectLiteral) -> Result<ExprResult> {
-        let instr = self.push(Instruction::NewObject {
+    pub fn compile_object_literal(&mut self, object: ObjectLiteral) -> Result<ExprPosition> {
+        let instr = self.emit(Instruction::NewObject {
             dst: Reg::this_reg(),
         })?;
 
         let ObjectLiteral::Item(mut cur) = object else {
-            return Ok(ExprResult::InstrDst(instr));
+            return Ok(ExprPosition::InstrDst(instr));
         };
 
         let tmp = self
@@ -103,7 +126,7 @@ impl<'a> Compiler<'a> {
         }
 
         self.patch_dst(instr, tmp);
-        Ok(ExprResult::Register(tmp))
+        Ok(ExprPosition::Register(tmp))
     }
 
     pub fn compile_object_prop_definition(
@@ -113,7 +136,29 @@ impl<'a> Compiler<'a> {
     ) -> Result<()> {
         match self.ast[prop] {
             ast::PropertyDefinition::Ident { ident } => {
-                to_do!()
+                let sym = self.variables.symbol_of_ast(ident);
+                let src = if let Some(x) = self.registers.find_symbol(sym) {
+                    x
+                } else {
+                    let reg = self
+                        .registers
+                        .alloc_tmp()
+                        .ok_or(Error::ExceededLimits(Limits::Registers))?;
+                    self.emit(Instruction::LoadPrim {
+                        dst: reg,
+                        imm: Primitive::undefined(),
+                    });
+                    reg
+                };
+                let str_instr = self.compile_string(self.ast[ident].name)?;
+                let key = self
+                    .registers
+                    .next_free()
+                    .ok_or(Error::ExceededLimits(Limits::Registers))?;
+                self.registers.free_if_tmp(src);
+                self.patch_dst(str_instr, key);
+                self.emit(Instruction::IndexStore { obj, key, src })?;
+                Ok(())
             }
             ast::PropertyDefinition::Define { property, expr } => {
                 let src = self.compile_expr(expr)?.to_register(self)?;
@@ -125,65 +170,59 @@ impl<'a> Compiler<'a> {
                             .next_free()
                             .ok_or(Error::ExceededLimits(Limits::Registers))?;
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::LoadString {
+                        self.emit(Instruction::LoadString {
                             dst: key,
                             cons: bc::StringId(
                                 str.try_into()
                                     .map_err(|_| Error::ExceededLimits(Limits::Strings))?,
                             ),
                         })?;
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Number(num) => {
-                        let key = self.compile_number(num)?.to_register(self)?;
+                        let key = ExprResult::new(self.compile_number(num)?).to_register(self)?;
                         self.registers.free_if_tmp(key);
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Computed(c) => {
                         let key = self.compile_expr(c)?.to_register(self)?;
                         self.registers.free_if_tmp(key);
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                 }
             }
             ast::PropertyDefinition::Method { property, func } => {
-                let src = self.compile_function_load(func)?.to_register(self)?;
+                let src = ExprResult::new(self.compile_function_load(func)?).to_register(self)?;
 
                 match property {
                     ast::PropertyName::Ident(x) | ast::PropertyName::String(x) => {
-                        let str = self.map_string(x);
+                        let str_instr = self.compile_string(x)?;
                         let key = self
                             .registers
                             .next_free()
                             .ok_or(Error::ExceededLimits(Limits::Registers))?;
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::LoadString {
-                            dst: key,
-                            cons: bc::StringId(
-                                str.try_into()
-                                    .map_err(|_| Error::ExceededLimits(Limits::Strings))?,
-                            ),
-                        })?;
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.patch_dst(str_instr, key);
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Number(num) => {
-                        let key = self.compile_number(num)?.to_register(self)?;
+                        let key = ExprResult::new(self.compile_number(num)?).to_register(self)?;
                         self.registers.free_if_tmp(key);
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Computed(c) => {
                         let key = self.compile_expr(c)?.to_register(self)?;
                         self.registers.free_if_tmp(key);
                         self.registers.free_if_tmp(src);
-                        self.push(Instruction::IndexStore { obj, key, src })?;
+                        self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                 }
@@ -194,5 +233,16 @@ impl<'a> Compiler<'a> {
             // should already be removed by the compiler
             ast::PropertyDefinition::Covered { .. } => unreachable!(),
         }
+    }
+
+    pub fn compile_string(&mut self, s: StringId) -> Result<InstrOffset> {
+        let str = self.map_string(x);
+        self.emit(Instruction::LoadString {
+            dst: Reg::tmp(),
+            cons: bc::StringId(
+                str.try_into()
+                    .map_err(|_| Error::ExceededLimits(Limits::Strings))?,
+            ),
+        })?;
     }
 }

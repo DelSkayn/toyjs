@@ -1,6 +1,8 @@
 //! Module defining instructions
 
-use crate::{instructions, FunctionId, LongOffset, Offset, Reg, StringId, UpvalueId};
+use crate::{
+    instructions, BuiltinByte, FunctionId, LongOffset, Offset, Primitive, Reg, StringId, UpvalueId,
+};
 
 instructions! {
     /// Load the i8 value in imm into dst
@@ -20,7 +22,7 @@ instructions! {
     /// - 6: True
     /// - 7: False
     /// - 10: Undefined
-    LoadPrim{ dst: Reg, imm: u8 },
+    LoadPrim{ dst: Reg, imm: Primitive },
     /// Load the string with id `const` into dst
     LoadString{ dst: Reg, cons: StringId },
     /// Load a bytecode function into dst
@@ -108,6 +110,9 @@ instructions! {
     JumpTrue{ cond: Reg, dst: Offset},
     /// Jump to instruction with offset dst if cond is falsish.
     JumpFalse{ cond: Reg, dst: Offset},
+    /// Jump to a offset in table with index table based on the idx register.
+    /// Used for handling control flow after a finally statement.
+    JumpTable{ idx: Reg, table: u32 },
 
     /// Jump to instruction with offset dst.
     LongJump{ dst: LongOffset},
@@ -132,12 +137,13 @@ instructions! {
     /// Return from the current function with a the value in the src register.
     Ret{ src: Reg },
 
+    CallBuiltin{reg: Reg, func: BuiltinByte},
     /// Call the function in func and store its result in ret.
-    Call{ret: Reg, func: Reg },
+    Call{dst: Reg, argc: u16 },
     /// Call the function with a specific number of arguments store its result in ret.
-    Call1{ret: Reg, func: Reg, arg: Reg},
+    Call1{dst: Reg, func: Reg, this: Reg},
     /// Call the function with a specific number of arguments store its result in ret.
-    Call2{ret: Reg, func: Reg, arg1: Reg, arg2: Reg},
+    Call2{dst: Reg, func: Reg, this: Reg, arg1: Reg},
     /// Call the function with a specific number of arguments store its result in ret.
-    Call3{ret: Reg, func: Reg, arg1: Reg, arg2: Reg, arg3: Reg},
+    Call3{dst: Reg, func: Reg, this: Reg, arg1: Reg, arg2: Reg},
 }

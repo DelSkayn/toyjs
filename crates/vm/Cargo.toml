@@ -9,6 +9,7 @@ edition = "2021"
 dreck = { version = "0.1.1", path = "../../../dreck" }
 bc = { version = "0.1.0", path = "../bc", package = "toyjs_bc"}
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
+bytemuck = {version = "1.13.1"}
 
 [features]
 slow_checks = ["bc/slow_checks", "common/slow_checks"]

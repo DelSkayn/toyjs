@@ -59,10 +59,10 @@ impl<'a> Compiler<'a> {
                 if let Some(expr) = expr {
                     let res = self.compile_exprs(expr)?.to_register(self)?;
                     self.registers.free_if_tmp(res);
-                    self.push(bc::Instruction::Ret { src: res })?;
+                    self.emit(bc::Instruction::Ret { src: res })?;
                     Ok(None)
                 } else {
-                    self.push(bc::Instruction::RetUndefined {})?;
+                    self.emit(bc::Instruction::RetUndefined {})?;
                     Ok(None)
                 }
             }

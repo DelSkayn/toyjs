@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ptr::NonNull};
 
 use bytemuck::Pod;
 
@@ -95,7 +95,7 @@ impl<'a> BcValid<'a> {
 /// An instruction reader for the fast, unsafe reading of instruction buffers.
 #[derive(Clone, Copy)]
 pub struct ByteCodeReader<'a> {
-    ip: *const u8,
+    ip: NonNull<u8>,
     #[cfg(feature = "slow_checks")]
     validate: BcValid<'a>,
     bc: PhantomData<&'a [u8]>,
@@ -104,7 +104,7 @@ pub struct ByteCodeReader<'a> {
 impl<'a> ByteCodeReader<'a> {
     pub fn from_bc(bc: &'a [u8]) -> Self {
         ByteCodeReader {
-            ip: bc.as_ptr(),
+            ip: NonNull::from(&bc[0]),
             #[cfg(feature = "slow_checks")]
             validate: BcValid::from_bc(bc),
             bc: PhantomData,
@@ -129,9 +129,9 @@ impl<'a> ByteCodeReader<'a> {
     ///
     /// User must ensure that the jump remains within the instruction buffer.
     pub unsafe fn jump(&mut self, offset: Offset) {
-        let ip = self.ip.offset(offset.0 as isize);
+        let ip = self.ip.as_ptr().offset(offset.0 as isize);
         self.check_valid(ip);
-        self.ip = ip;
+        self.ip = NonNull::new_unchecked(ip);
     }
 
     /// Read data from the instruction buffer.
@@ -140,10 +140,10 @@ impl<'a> ByteCodeReader<'a> {
     ///
     /// User must ensure that no data is read past the end of the instruction buffer.
     pub unsafe fn read<D: Pod>(&mut self) -> D {
-        let res = self.ip.cast::<D>().read_unaligned();
-        let ip = self.ip.add(std::mem::size_of::<D>());
+        let res = self.ip.cast::<D>().as_ptr().read_unaligned();
+        let ip = self.ip.as_ptr().add(std::mem::size_of::<D>());
         self.check_valid(ip);
-        self.ip = ip;
+        self.ip = NonNull::new_unchecked(ip);
         res
     }
 

@@ -36,6 +36,7 @@ macro_rules! instructions {
             }
 
             /// Write an instruction into a buffer of bytes.
+            #[inline(always)]
             pub fn write(self,write: &mut Vec<u8>){
                 match self{
                     $(

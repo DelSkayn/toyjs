@@ -12,7 +12,7 @@ use common::{
     result::ContextError,
     source::Source,
     span::Span,
-    string::{Ascii, StringId},
+    string::{Ascii, String, StringId},
     structs::Interners,
 };
 use registers::Registers;
@@ -136,40 +136,90 @@ impl ContextError<Source> for Error {
     }
 }
 
+struct PendingArg {
+    instruction: InstrOffset,
+    offset: u16,
+}
+
 pub struct Compiler<'a> {
-    instructions: Vec<u8>,
-    interners: &'a mut Interners,
+    // static structures used for compiling
     ast: &'a mut Ast,
-    registers: Registers,
+    interners: &'a mut Interners,
     variables: Variables,
-    functions: VecDeque<NodeId<ast::Function>>,
-    function_id: u32,
+
+    // functions we still need to compile.
+    pending_functions: VecDeque<NodeId<ast::Function>>,
+    next_function_id: u32,
+
+    // data created during compilation
+    functions: Vec<bc::Function>,
+    instructions: Vec<u8>,
+
+    // data structures storing information about the current function being compiled.
+    /// Data about the current register allocation
+    registers: Registers,
+    /// A list of instructions which push argument onto the stack which need to be patched later
+    /// once we found how many registers the current function requreis
+    arg_patch: Vec<PendingArg>,
+    max_arg: u16,
+    /// Strings which were referenced in compilation along with the id assigned to them
     strings: HashMap<StringId, u32>,
+    /// The id for the next string.
     next_string_id: u32,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(interners: &'a mut Interners, ast: &'a mut Ast) -> Self {
         Self {
-            instructions: Vec::new(),
             interners,
             ast,
-            registers: Registers::new(),
             variables: Variables::new(),
-            functions: VecDeque::new(),
-            function_id: 0,
+
+            pending_functions: VecDeque::new(),
+            next_function_id: 0,
+
+            functions: Vec::new(),
+            instructions: Vec::new(),
+
+            registers: Registers::new(),
+            arg_patch: Vec::new(),
+            max_arg: 0,
             strings: HashMap::default(),
             next_string_id: 0,
         }
     }
 
-    fn push(&mut self, instr: Instruction) -> Result<InstrOffset> {
+    fn reset_for_function(&mut self) {
+        debug_assert!(self.arg_patch.is_empty());
+        self.instructions.clear();
+        self.max_arg = 0;
+    }
+
+    fn push_arg(&mut self, instr: InstrOffset, offset: u16) {
+        self.arg_patch.push(PendingArg {
+            instruction: instr,
+            offset,
+        });
+        self.max_arg = self.max_arg.max(offset);
+    }
+
+    #[inline(always)]
+    fn emit(&mut self, instr: Instruction) -> Result<InstrOffset> {
         let res = self.instructions.len();
         let id = InstrOffset(
             res.try_into()
                 .map_err(|_| Error::ExceededLimits(Limits::BytecodeSize))?,
         );
         instr.write(&mut self.instructions);
+        Ok(id)
+    }
+
+    fn next_instruction(&mut self) -> Result<InstrOffset> {
+        let res = self.instructions.len();
+        let id = InstrOffset(
+            res.try_into()
+                .map_err(|_| Error::ExceededLimits(Limits::BytecodeSize))?,
+        );
         Ok(id)
     }
 
@@ -231,6 +281,7 @@ impl<'a> Compiler<'a> {
 
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
         let root_scope = self.variables.push_global_scope(strict);
+        self.next_function_id += 1;
 
         if let ListHead::Present(root) = stmt {
             resolve_script(root, self.ast, &mut self.variables, root_scope)?;
@@ -249,20 +300,60 @@ impl<'a> Compiler<'a> {
         }
 
         if let Some(x) = expr {
-            self.push(Instruction::Ret { src: x })?;
+            self.emit(Instruction::Ret { src: x })?;
         } else {
-            self.push(Instruction::RetUndefined {})?;
+            self.emit(Instruction::RetUndefined {})?;
         }
 
-        while let Some(func) = self.functions.pop_front() {
+        self.finalize_instructions(0)?;
+
+        let mut before = self.instructions.len();
+
+        while let Some(func) = self.pending_functions.pop_front() {
             self.registers.clear();
             self.compile_function(func)?;
+            self.finalize_instructions(before as u32)?;
+            before = self.instructions.len();
         }
 
-        self.into_bc()
+        let mut strings = vec![String::new(); self.next_string_id as usize];
+        for (id, k) in self.strings {
+            strings[k as usize] = self.interners.strings.get(id).unwrap().clone();
+        }
+
+        Ok(ByteCode {
+            functions: self.functions.into_boxed_slice(),
+            strings: strings.into_boxed_slice(),
+            instructions: self.instructions.into_boxed_slice(),
+        })
     }
 
     pub fn compile_function(&mut self, ast: NodeId<ast::Function>) -> Result<()> {
+        /*
+        let
+            ast::Function::Arrow { kind, params, rest_param, body, .. } |
+            ast::Function::Declared {  kind,  params, rest_param, body, .. } |
+            ast::Function::Expr {  kind,  params, rest_param, body, .. }  = self.ast[ast];
+
+        match kind{
+            ast::FunctionKind::Async | ast::FunctionKind::Generator | ast::FunctionKind::AsyncGenerator => to_do!(),
+            ast::FunctionKind::Simple => {},
+        }
+
+        let _params = params;
+        let _rest_param = rest_param;
+
+        if let ListHead::Present(mut cur) = body{
+            loop{
+                self.compile_stmt(self.ast[cur].item)?;
+                let Some(next) = self.ast[cur].next else{
+                    break
+                };
+                cur = next;
+            }
+        }
+        */
+
         Ok(())
     }
 }

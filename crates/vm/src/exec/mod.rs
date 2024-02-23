@@ -52,15 +52,19 @@ impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
 
         let bc = bc.borrow(owner);
 
-        let size = bc.functions[id.0 as usize].len;
+        let size = bc.functions[id.0 as usize].registers;
         let offset = bc.functions[id.0 as usize].offset;
+
+        self.stack.push(global.into()).unwrap();
+        self.stack.push(function.into()).unwrap();
 
         // TODO
         unsafe {
-            self.stack
-                .push_entry_frame(0, size, function, global.into())
-                .unwrap();
+            self.stack.push_entry_frame(size).unwrap();
         }
+
+        //self.stack.pop();
+        //self.stack.pop();
 
         let reader = ByteCodeReader::from_bc(&bc.instructions[offset as usize..]);
         let reader = unsafe { reader.detach() };

@@ -20,7 +20,7 @@ pub struct Registers {
     symbol_allocation: [Option<SymbolId>; MAX_REGISTERS],
     recent_reservation: SymbolUseOrder,
     current_use_order: SymbolUseOrder,
-    last_used_reg: Reg,
+    last_used_reg: i32,
 }
 
 impl Registers {
@@ -32,13 +32,13 @@ impl Registers {
             symbol_allocation: [None; MAX_REGISTERS],
             current_use_order: SymbolUseOrder::first(),
             recent_reservation: SymbolUseOrder::last(),
-            last_used_reg: Reg::this_reg(),
+            last_used_reg: -1,
         }
     }
 
     pub fn clear(&mut self) {
         self.used = UseBitmap::empty();
-        self.last_used_reg = Reg::this_reg();
+        self.last_used_reg = -1;
     }
 
     fn collect_variables(&mut self) {
@@ -69,11 +69,15 @@ impl Registers {
         let free = self.used.next_free();
         if free < 128 {
             let reg = Reg(free as i8);
-            self.last_used_reg = self.last_used_reg.max(reg);
+            self.last_used_reg = self.last_used_reg.max(free as i32);
             Some(reg)
         } else {
             None
         }
+    }
+
+    pub fn last_used(&self) -> i32 {
+        self.last_used_reg
     }
 
     pub fn reserve_tmp(&mut self, reg: Reg) {
@@ -124,9 +128,10 @@ impl Registers {
     }
 
     pub fn find_symbol(&self, symbol: SymbolId) -> Option<Reg> {
-        for i in 0..=self.last_used_reg.0 {
+        for i in 0..=self.last_used_reg {
+            // TODO: Test reg properly.
             if Some(symbol) == self.symbol_allocation[i as usize] {
-                return Some(Reg(i));
+                return Some(Reg(i as i8));
             }
         }
         None
