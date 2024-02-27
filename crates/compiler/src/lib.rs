@@ -28,7 +28,6 @@ mod error;
 mod expr;
 mod prime;
 mod proc;
-mod registers;
 mod stmt;
 mod symbol;
 mod use_bitmap;
