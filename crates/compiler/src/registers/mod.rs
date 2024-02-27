@@ -1,23 +1,37 @@
-use bc::{limits::MAX_REGISTERS, Reg};
+use std::collections::BinaryHeap;
+
+use bc::{ Reg};
+use common::hashmap::HashMap;
 
 mod use_bitmap;
 
 use self::use_bitmap::UseBitmap;
 use crate::variables::{SymbolId, SymbolUseOrder};
 
+// Lookups required:
+// - Register -> tmp state
+// - Reguster -> used
+// - most recent symbol usage -> register
+// - Symbolid -> location ->? register
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RegisterState {
-    Free,
-    Tmp,
-    Symbol(SymbolUseOrder),
+pub enum SymbolAllocation {
+    SwappedOut(u32),
+    Argument(u32),
+    Register(u8),
+    Global,
+    GlobalTmp(u8),
+    Upvalue(u32),
+    UpvalueTmp(u8),
 }
+
 
 #[derive(Debug)]
 pub struct Registers {
     used: UseBitmap,
     tmp: UseBitmap,
-    reservation: [Option<SymbolUseOrder>; MAX_REGISTERS],
-    symbol_allocation: [Option<SymbolId>; MAX_REGISTERS],
+    reservations: BinaryHeap<Reservation>,
+    used_symbols: HashMap<SymbolId, SymbolAllocation>,
     recent_reservation: SymbolUseOrder,
     current_use_order: SymbolUseOrder,
     last_used_reg: i32,
@@ -28,8 +42,7 @@ impl Registers {
         Registers {
             used: UseBitmap::empty(),
             tmp: UseBitmap::empty(),
-            reservation: [None; MAX_REGISTERS],
-            symbol_allocation: [None; MAX_REGISTERS],
+            reservation: BinaryHeap<Reservation><
             current_use_order: SymbolUseOrder::first(),
             recent_reservation: SymbolUseOrder::last(),
             last_used_reg: -1,

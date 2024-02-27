@@ -3,7 +3,7 @@ use core::panic;
 use ast::{ListId, NodeId};
 use bc::{Instruction, Primitive, Reg};
 
-use crate::{Compiler, Error, InstrOffset, Limits, Result};
+use crate::{Compiler, InstrOffset, Result};
 
 #[must_use]
 pub enum ExprPosition {
@@ -17,6 +17,18 @@ pub struct ExprResult {
     /// TODO: Maybe use list inside array.
     true_jump: Vec<InstrOffset>,
     false_jump: Vec<InstrOffset>,
+}
+
+impl From<Reg> for ExprResult {
+    fn from(value: Reg) -> Self {
+        ExprResult::new(ExprPosition::Register(value))
+    }
+}
+
+impl From<InstrOffset> for ExprResult {
+    fn from(value: InstrOffset) -> Self {
+        ExprResult::new(ExprPosition::InstrDst(value))
+    }
 }
 
 impl From<ExprPosition> for ExprResult {
@@ -38,10 +50,7 @@ impl ExprResult {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => {
-                let reg = compiler
-                    .registers
-                    .alloc_tmp()
-                    .ok_or(Error::ExceededLimits(Limits::Registers))?;
+                let reg = compiler.next_free_register()?;
                 compiler.patch_dst(instr, reg);
                 Ok(reg)
             }
@@ -85,11 +94,7 @@ impl ExprResult {
         match self.position {
             ExprPosition::Register(_) | ExprPosition::Unused => Ok(()),
             ExprPosition::InstrDst(instr) => {
-                let tmp = compiler
-                    .registers
-                    .alloc_tmp()
-                    .ok_or(Error::ExceededLimits(Limits::Registers))?;
-                compiler.registers.free_tmp(tmp);
+                let tmp = compiler.next_free_register()?;
                 compiler.patch_dst(instr, tmp);
                 Ok(())
             }
@@ -128,8 +133,8 @@ impl<'a> Compiler<'a> {
                     let left = self.compile_expr(left)?.to_register(self)?;
                     let right = self.compile_expr(right)?.to_register(self)?;
 
-                    self.registers.free_if_tmp(left);
-                    self.registers.free_if_tmp(right);
+                    self.free_tmp_register(left);
+                    self.free_tmp_register(right);
 
                     let dst = Reg::this_reg();
 

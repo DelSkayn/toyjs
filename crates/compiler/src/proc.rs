@@ -55,7 +55,7 @@ impl<'a> Compiler<'a> {
         // For now we assume all the registers used in the function are used when calling a
         // function. This isn't always the case.
 
-        let max_regs = self.registers.last_used().min(0) as u32;
+        let max_regs = self.function_stack_size;
 
         if max_regs > i32::MAX as u32 - self.max_arg as u32 {
             return Err(Error::ExceededLimits(Limits::Registers));

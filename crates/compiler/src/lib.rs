@@ -1,22 +1,19 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use core::fmt;
-use std::{backtrace::Backtrace, collections::VecDeque, result::Result as StdResult, u8};
+use std::{collections::VecDeque, u8};
 
 use ast::{Ast, ListHead, NodeId};
 use bc::{ByteCode, Instruction, InstructionType, LongOffset, OpCode, Reg};
 use common::{
-    hashmap::HashMap,
+    hashmap::hash_map::HashMap,
     key,
-    result::ContextError,
-    source::Source,
-    span::Span,
-    string::{Ascii, String, StringId},
+    string::{String, StringId},
     structs::Interners,
 };
-use registers::Registers;
-use variables::{resolve_script, Variables};
+use symbol::{Reservation, SymbolPlacement};
+use use_bitmap::UseBitmap;
+use variables::{resolve_script, SymbolId, SymbolUseOrder, Variables};
 
 macro_rules! to_do {
     () => {
@@ -27,118 +24,31 @@ macro_rules! to_do {
 }
 
 mod decl;
+mod error;
 mod expr;
 mod prime;
 mod proc;
 mod registers;
 mod stmt;
+mod symbol;
+mod use_bitmap;
 pub mod variables;
+
+pub use error::{Error, Limits, Result};
 
 key!(
     /// Offset into the instruction buffer in bytes.
     pub struct InstrOffset(u32)
 );
 
-pub type Result<T> = StdResult<T, Error>;
-#[derive(Debug)]
-pub enum Error {
-    ExceededLimits(Limits),
-    NotImplemented(Backtrace),
-    Redeclared { span: Span, first_declared: Span },
-}
-
-#[derive(Debug)]
-pub enum Limits {
-    BytecodeSize,
-    JumpOffset,
-    TooManyScopes,
-    TooManyVariables,
-    Registers,
-    Functions,
-    Strings,
-}
-
-impl fmt::Display for Limits {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Limits::BytecodeSize => write!(
-                f,
-                "script required more then u32::MAX bytes of instructions"
-            ),
-            Limits::JumpOffset => {
-                write!(f, "script required a jump which exceeded the maximum jump offset allowed by the instruction set.")
-            }
-            Limits::TooManyScopes => {
-                write!(f, "script has more scopes than the limit of u32::MAX - 1")
-            }
-            Limits::TooManyVariables => {
-                write!(f, "script has more symbols than the limit of u32::MAX - 1")
-            }
-            Limits::Registers => write!(
-                f,
-                "function in script required more registers then the instruction set limit of 127"
-            ),
-            Limits::Functions => write!(f, "number of functions in script exceeded limit"),
-            Limits::Strings => write!(f, "number of strings in script exceeded limit"),
-        }
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::ExceededLimits(limit) => {
-                write!(f, "Code exceeded interpreter limits: {limit}")
-            }
-            Error::NotImplemented(b) => {
-                write!(f, "Compiler hit path which was not yet implemented:\n{b}")
-            }
-            Error::Redeclared { .. } => {
-                writeln!(f, "Already existing variable was redeclared")
-            }
-        }
-    }
-}
-
-impl ContextError<Source> for Error {
-    fn display(&self, f: &mut fmt::Formatter, ctx: &Source) -> fmt::Result {
-        match self {
-            Error::ExceededLimits(limit) => {
-                write!(f, "Code exceeded interpreter limits: {limit}")
-            }
-            Error::NotImplemented(b) => {
-                write!(f, "Compiler hit path which was not yet implemented:\n{b}")
-            }
-            Error::Redeclared {
-                span,
-                first_declared,
-            } => {
-                writeln!(f, "Already existing variable was redeclared")?;
-                writeln!(
-                    f,
-                    "{}",
-                    ctx.render_span(*span, None)
-                        .map_err(|_| fmt::Error)?
-                        .as_block()
-                )?;
-                writeln!(
-                    f,
-                    "{}",
-                    ctx.render_span(
-                        *first_declared,
-                        Some(Ascii::const_from_str("Was first declared here").into()),
-                    )
-                    .map_err(|_| fmt::Error)?
-                    .as_block()
-                )
-            }
-        }
-    }
-}
-
 struct PendingArg {
     instruction: InstrOffset,
     offset: u16,
+}
+
+struct TempLoadedSymbol {
+    symbol: SymbolId,
+    register: Reg,
 }
 
 pub struct Compiler<'a> {
@@ -155,9 +65,6 @@ pub struct Compiler<'a> {
     functions: Vec<bc::Function>,
     instructions: Vec<u8>,
 
-    // data structures storing information about the current function being compiled.
-    /// Data about the current register allocation
-    registers: Registers,
     /// A list of instructions which push argument onto the stack which need to be patched later
     /// once we found how many registers the current function requreis
     arg_patch: Vec<PendingArg>,
@@ -166,6 +73,16 @@ pub struct Compiler<'a> {
     strings: HashMap<StringId, u32>,
     /// The id for the next string.
     next_string_id: u32,
+    // -- register allocation structs --
+    function_stack_size: u32,
+    used_registers: UseBitmap,
+    tmp_registers: UseBitmap,
+    tmp_symbol_registers: UseBitmap,
+    reservations: Vec<Reservation>,
+    inflight_symbols: HashMap<SymbolId, SymbolPlacement>,
+    tmp_symbol_id: HashMap<Reg, SymbolId>,
+    global_register: Option<Reg>,
+    current_use_order: SymbolUseOrder,
 }
 
 impl<'a> Compiler<'a> {
@@ -181,18 +98,35 @@ impl<'a> Compiler<'a> {
             functions: Vec::new(),
             instructions: Vec::new(),
 
-            registers: Registers::new(),
             arg_patch: Vec::new(),
             max_arg: 0,
             strings: HashMap::default(),
             next_string_id: 0,
+
+            used_registers: UseBitmap::empty(),
+            tmp_registers: UseBitmap::empty(),
+            tmp_symbol_registers: UseBitmap::empty(),
+            tmp_symbol_id: HashMap::default(),
+            function_stack_size: 0,
+            reservations: Vec::new(),
+            inflight_symbols: HashMap::new(),
+            global_register: None,
+            current_use_order: SymbolUseOrder::first(),
         }
     }
 
     fn reset_for_function(&mut self) {
         debug_assert!(self.arg_patch.is_empty());
-        self.instructions.clear();
+
         self.max_arg = 0;
+
+        self.used_registers = UseBitmap::empty();
+        self.tmp_registers = UseBitmap::empty();
+        self.inflight_symbols.clear();
+        self.global_register = None;
+        self.current_use_order = SymbolUseOrder::first();
+        self.function_stack_size = 0;
+        self.reservations.clear();
     }
 
     fn push_arg(&mut self, instr: InstrOffset, offset: u16) {
@@ -287,8 +221,6 @@ impl<'a> Compiler<'a> {
             resolve_script(root, self.ast, &mut self.variables, root_scope)?;
         }
 
-        self.registers = Registers::new();
-
         let mut expr = None;
         if let ListHead::Present(s) = stmt {
             let mut s = Some(s);
@@ -310,7 +242,6 @@ impl<'a> Compiler<'a> {
         let mut before = self.instructions.len();
 
         while let Some(func) = self.pending_functions.pop_front() {
-            self.registers.clear();
             self.compile_function(func)?;
             self.finalize_instructions(before as u32)?;
             before = self.instructions.len();

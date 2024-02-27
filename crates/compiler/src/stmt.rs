@@ -1,7 +1,7 @@
 use ast::{ListHead, NodeId};
 use bc::Reg;
 
-use crate::{variables::Kind, Compiler, Error, Limits, Result};
+use crate::{Compiler, Result};
 
 impl<'a> Compiler<'a> {
     pub fn compile_stmt(&mut self, stmt: NodeId<ast::Stmt>) -> Result<Option<Reg>> {
@@ -34,7 +34,7 @@ impl<'a> Compiler<'a> {
             ast::Stmt::Empty => Ok(None),
             ast::Stmt::Expr { expr } => {
                 let tmp = self.compile_exprs(expr)?.to_register(self)?;
-                self.registers.free_if_tmp(tmp);
+                self.free_tmp_register(tmp);
                 Ok(Some(tmp))
             }
             ast::Stmt::DoWhile { body, cond } => to_do!(),
@@ -58,7 +58,7 @@ impl<'a> Compiler<'a> {
             ast::Stmt::Return { expr } => {
                 if let Some(expr) = expr {
                     let res = self.compile_exprs(expr)?.to_register(self)?;
-                    self.registers.free_if_tmp(res);
+                    self.free_tmp_register(res);
                     self.emit(bc::Instruction::Ret { src: res })?;
                     Ok(None)
                 } else {
@@ -85,27 +85,9 @@ impl<'a> Compiler<'a> {
         match self.ast[decl] {
             ast::IdentOrPattern::Ident(sym) => {
                 let sym_id = self.variables.symbol_of_ast(sym);
-                match self.variables.symbols()[sym_id].kind {
-                    Kind::Function | Kind::Let | Kind::Const => {
-                        if let Some(until) = self.variables.last_use_of(sym_id) {
-                            let reg = self
-                                .registers
-                                .alloc_symbol(sym_id, until)
-                                .ok_or(Error::ExceededLimits(Limits::Registers))?;
-
-                            expr.assign_to_reg(self, reg)?;
-
-                            Ok(Some(reg))
-                        } else {
-                            expr.ignore(self)?;
-                            Ok(None)
-                        }
-                    }
-                    Kind::Global | Kind::Unresolved => {
-                        to_do!()
-                    }
-                    Kind::Arg => unreachable!(),
-                }
+                self.store_symbol(sym_id, expr)?;
+                // TODO: Expression
+                Ok(None)
             }
             ast::IdentOrPattern::Pattern(_) => todo!(),
         }
