@@ -3,7 +3,7 @@ use bc::{Instruction, Primitive, Reg};
 use crate::{
     expr::{ExprPosition, ExprResult},
     variables::{Kind, SymbolId, SymbolUseOrder},
-    Compiler, Result,
+    Compiler, Error, Limits, Result,
 };
 
 #[derive(Clone)]
@@ -49,6 +49,10 @@ impl Ord for Reservation {
 }
 
 impl Compiler<'_> {
+    pub fn is_tmp_register(&self, reg: Reg) -> bool {
+        self.tmp_registers.get(reg.0 as u8)
+    }
+
     /// Allocates a temporary register for free use, will live until freed.
     pub fn alloc_tmp_register(&mut self) -> Result<Reg> {
         let reg = self.next_free_register()?;
@@ -75,10 +79,12 @@ impl Compiler<'_> {
         self.collect_registers();
         let next_free = self.used_registers.next_free();
         if next_free == 128 {
-            self.free_registers();
-            if self.used_registers.next_free() == 128 {
-                return Err(crate::Error::ExceededLimits(crate::Limits::Registers));
+            self.free_registers()?;
+            let next_free = self.used_registers.next_free();
+            if next_free == 128 {
+                return Err(Error::ExceededLimits(Limits::Registers));
             }
+            return Ok(Reg(next_free as i8));
         }
         Ok(Reg(next_free as i8))
     }
@@ -236,7 +242,7 @@ impl Compiler<'_> {
             self.free_tmp_register(x);
             return Ok(());
         }
-        to_do!()
+        Err(Error::ExceededLimits(Limits::Registers))
     }
 
     pub fn collect_registers(&mut self) {

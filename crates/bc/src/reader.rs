@@ -21,6 +21,10 @@ impl<'a> SafeByteCodeReader<'a> {
         }
     }
 
+    pub fn offset(&self) -> usize {
+        unsafe { self.ip.offset_from(self.validate.first) as usize }
+    }
+
     pub fn read<D: Pod>(&mut self) -> Option<D> {
         unsafe {
             if self

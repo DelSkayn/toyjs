@@ -365,33 +365,41 @@ impl<'a> Parser<'a> {
         Ok(head)
     }
 
-    fn is_assignable(&self, expr: NodeId<ast::Expr>) -> bool {
-        match self.ast[expr] {
-            Expr::Binary { .. }
-            | Expr::Prefix { .. }
-            | Expr::Postfix { .. }
-            | Expr::Tenary(_)
-            | Expr::Call { .. }
-            | Expr::Yield { .. }
-            | Expr::TaggedTemplate { .. }
-            | Expr::Destructure { .. } => false,
-            Expr::Index { .. } | Expr::Dot { .. } => true,
-            Expr::Prime { expr } => match self.ast[expr] {
-                PrimeExpr::Number(_)
-                | PrimeExpr::String(_)
-                | PrimeExpr::Template(_)
-                | PrimeExpr::Regex(_)
-                | PrimeExpr::Boolean(_)
-                | PrimeExpr::Function(_)
-                | PrimeExpr::Class(_)
-                | PrimeExpr::Object(_)
-                | PrimeExpr::Array(_)
-                | PrimeExpr::This
-                | PrimeExpr::Null
-                | PrimeExpr::NewTarget
-                | PrimeExpr::Covered(_) => false,
-                PrimeExpr::Ident(_) | PrimeExpr::Super => true,
-            },
+    fn is_assignable(&self, mut tgt: NodeId<ast::Expr>) -> bool {
+        loop {
+            match self.ast[tgt] {
+                Expr::Binary { .. }
+                | Expr::Prefix { .. }
+                | Expr::Postfix { .. }
+                | Expr::Tenary(_)
+                | Expr::Call { .. }
+                | Expr::Yield { .. }
+                | Expr::TaggedTemplate { .. }
+                | Expr::Destructure { .. } => return false,
+                Expr::Index { .. } | Expr::Dot { .. } => return true,
+                Expr::Prime { expr } => match self.ast[expr] {
+                    PrimeExpr::Number(_)
+                    | PrimeExpr::String(_)
+                    | PrimeExpr::Template(_)
+                    | PrimeExpr::Regex(_)
+                    | PrimeExpr::Boolean(_)
+                    | PrimeExpr::Function(_)
+                    | PrimeExpr::Class(_)
+                    | PrimeExpr::Object(_)
+                    | PrimeExpr::Array(_)
+                    | PrimeExpr::This
+                    | PrimeExpr::Null
+                    | PrimeExpr::NewTarget => return false,
+                    PrimeExpr::Covered(x) => {
+                        let list = &self.ast[x];
+                        if list.next.is_some() {
+                            return false;
+                        }
+                        tgt = list.item;
+                    }
+                    PrimeExpr::Ident(_) | PrimeExpr::Super => return true,
+                },
+            }
         }
     }
 

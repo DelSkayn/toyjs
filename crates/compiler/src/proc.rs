@@ -70,7 +70,7 @@ impl<'a> Compiler<'a> {
             } = self.arg_patch[i];
             let arg_reg = register_count - offset as u32;
             if arg_reg < Reg::MAX as u32 {
-                self.patch_dst(dbg!(instruction), dbg!(Reg(arg_reg as i8)))
+                self.patch_dst(instruction, Reg(arg_reg as i8))
             } else {
                 to_do!()
             }

@@ -147,7 +147,7 @@ impl<'a> Compiler<'a> {
         Ok(id)
     }
 
-    fn next_instruction(&mut self) -> Result<InstrOffset> {
+    fn next_instruction(&self) -> Result<InstrOffset> {
         let res = self.instructions.len();
         let id = InstrOffset(
             res.try_into()

@@ -1,10 +1,11 @@
 use core::panic;
 
-use ast::{ListId, NodeId};
-use bc::{Instruction, Primitive, Reg};
+use ast::{AssignOp, ListId, NodeId};
+use bc::{Instruction, LongOffset, OpCode, Primitive, Reg};
 
 use crate::{Compiler, InstrOffset, Result};
 
+#[derive(Debug)]
 #[must_use]
 pub enum ExprPosition {
     Register(Reg),
@@ -12,6 +13,8 @@ pub enum ExprPosition {
     Unused,
 }
 
+#[derive(Debug)]
+#[must_use]
 pub struct ExprResult {
     position: ExprPosition,
     /// TODO: Maybe use list inside array.
@@ -46,7 +49,21 @@ impl ExprResult {
         }
     }
 
-    pub fn to_register(&self, compiler: &mut Compiler) -> Result<Reg> {
+    pub fn to_cond_register(&self, compiler: &mut Compiler) -> Result<Reg> {
+        match self.position {
+            ExprPosition::InstrDst(instr) => {
+                let reg = compiler.next_free_register()?;
+                compiler.patch_dst(instr, reg);
+                Ok(reg)
+            }
+            ExprPosition::Register(reg) => Ok(reg),
+            ExprPosition::Unused => {
+                panic!("used result of expression which should have been unused")
+            }
+        }
+    }
+
+    pub fn to_register(mut self, compiler: &mut Compiler) -> Result<Reg> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => {
@@ -61,7 +78,7 @@ impl ExprResult {
         }
     }
 
-    pub fn to_instr(&self, compiler: &mut Compiler) -> Result<InstrOffset> {
+    pub fn to_instr(mut self, compiler: &mut Compiler) -> Result<InstrOffset> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => Ok(instr),
@@ -75,7 +92,7 @@ impl ExprResult {
         }
     }
 
-    pub fn assign_to_reg(&self, compiler: &mut Compiler, reg: Reg) -> Result<()> {
+    pub fn assign_to_reg(mut self, compiler: &mut Compiler, reg: Reg) -> Result<()> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::Register(reg) => {
@@ -89,7 +106,20 @@ impl ExprResult {
         Ok(())
     }
 
-    pub fn ignore(&self, compiler: &mut Compiler) -> Result<()> {
+    pub fn assign_to_cond_reg(&self, compiler: &mut Compiler, reg: Reg) -> Result<()> {
+        match self.position {
+            ExprPosition::Register(reg) => {
+                compiler.emit(Instruction::Move { dst: reg, src: reg })?;
+            }
+            ExprPosition::InstrDst(instr) => compiler.patch_dst(instr, reg),
+            ExprPosition::Unused => {
+                panic!("tried to use result which ought to be unused.")
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ignore(mut self, compiler: &mut Compiler) -> Result<()> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::Register(_) | ExprPosition::Unused => Ok(()),
@@ -101,15 +131,43 @@ impl ExprResult {
         }
     }
 
-    fn patch_jumps(&self, compiler: &mut Compiler) -> Result<()> {
-        let target = compiler.next_instruction()?;
-        for t in self.true_jump.iter() {
-            compiler.patch_jump(*t, target)?
-        }
-        for t in self.false_jump.iter() {
-            compiler.patch_jump(*t, target)?
+    pub fn patch_jumps(&mut self, compiler: &mut Compiler) -> Result<()> {
+        let next = compiler.next_instruction()?;
+        self.patch_true_jumps_to(compiler, next)?;
+        self.patch_false_jumps_to(compiler, next)
+    }
+
+    pub fn patch_true_jumps_to(&mut self, compiler: &mut Compiler, tgt: InstrOffset) -> Result<()> {
+        for t in self.true_jump.drain(..) {
+            compiler.patch_jump(t, tgt)?
         }
         Ok(())
+    }
+
+    pub fn patch_false_jumps_to(
+        &mut self,
+        compiler: &mut Compiler,
+        tgt: InstrOffset,
+    ) -> Result<()> {
+        for t in self.false_jump.drain(..) {
+            compiler.patch_jump(t, tgt)?
+        }
+        Ok(())
+    }
+
+    pub fn merge_jumps_from(mut self, other: Self) -> Self {
+        self.true_jump.extend(other.true_jump);
+        self.false_jump.extend(other.false_jump);
+        self
+    }
+
+    pub fn with_true_jump(mut self, jmp: InstrOffset) -> Self {
+        self.true_jump.push(jmp);
+        self
+    }
+    pub fn with_false_jump(mut self, jmp: InstrOffset) -> Self {
+        self.false_jump.push(jmp);
+        self
     }
 }
 
@@ -130,6 +188,91 @@ impl<'a> Compiler<'a> {
         match self.ast[expr] {
             ast::Expr::Binary { op, left, right } => match op {
                 ast::BinaryOp::Base(op) => {
+                    let opcode = match op {
+                        ast::BaseOp::NullCoalessing => to_do!(),
+                        ast::BaseOp::TenaryNull => to_do!(),
+                        ast::BaseOp::Or => {
+                            let mut left = self.compile_expr(left)?;
+                            let left_reg = left.to_cond_register(self)?;
+                            let left_reg = if !self.is_tmp_register(left_reg) {
+                                let reg = self.alloc_tmp_register()?;
+                                self.emit(Instruction::Move {
+                                    dst: reg,
+                                    src: left_reg,
+                                })?;
+                                reg
+                            } else {
+                                left_reg
+                            };
+                            let jump = self.emit(Instruction::LongJumpTrue {
+                                cond: left_reg,
+                                dst: LongOffset(0),
+                            })?;
+
+                            let next = self.next_instruction()?;
+                            left.patch_false_jumps_to(self, next)?;
+
+                            let right = self.compile_expr(right)?;
+                            right.assign_to_cond_reg(self, left_reg)?;
+
+                            return Ok(ExprResult::from(left_reg)
+                                .merge_jumps_from(right)
+                                .merge_jumps_from(left)
+                                .with_true_jump(jump));
+                        }
+                        ast::BaseOp::And => {
+                            let mut left = self.compile_expr(left)?;
+                            let left_reg = left.to_cond_register(self)?;
+                            let left_reg = if !self.is_tmp_register(left_reg) {
+                                let reg = self.alloc_tmp_register()?;
+                                self.emit(Instruction::Move {
+                                    dst: reg,
+                                    src: left_reg,
+                                })?;
+                                reg
+                            } else {
+                                left_reg
+                            };
+                            let jump = self.emit(Instruction::LongJumpFalse {
+                                cond: left_reg,
+                                dst: LongOffset(0),
+                            })?;
+
+                            let next = self.next_instruction()?;
+                            left.patch_true_jumps_to(self, next)?;
+
+                            let right = self.compile_expr(right)?;
+                            right.assign_to_cond_reg(self, left_reg)?;
+
+                            return Ok(ExprResult::from(left_reg)
+                                .merge_jumps_from(right)
+                                .merge_jumps_from(left)
+                                .with_false_jump(jump));
+                        }
+                        ast::BaseOp::BitwiseAnd => OpCode::BitAnd,
+                        ast::BaseOp::BitwiseOr => OpCode::BitOr,
+                        ast::BaseOp::BitwiseXor => OpCode::BitXor,
+                        ast::BaseOp::Add => OpCode::Add,
+                        ast::BaseOp::Sub => OpCode::Sub,
+                        ast::BaseOp::Mul => OpCode::Mul,
+                        ast::BaseOp::Div => OpCode::Div,
+                        ast::BaseOp::Mod => OpCode::Mod,
+                        ast::BaseOp::Exp => OpCode::Pow,
+                        ast::BaseOp::Less => OpCode::Less,
+                        ast::BaseOp::LessEqual => OpCode::LessEq,
+                        ast::BaseOp::Greater => OpCode::Greater,
+                        ast::BaseOp::GreaterEqual => OpCode::GreaterEq,
+                        ast::BaseOp::ShiftLeft => OpCode::ShiftL,
+                        ast::BaseOp::ShiftRight => OpCode::ShiftR,
+                        ast::BaseOp::ShiftRightUnsigned => OpCode::ShiftRU,
+                        ast::BaseOp::InstanceOf => to_do!(),
+                        ast::BaseOp::In => to_do!(),
+                        ast::BaseOp::Equal => OpCode::Equal,
+                        ast::BaseOp::StrictEqual => OpCode::SEqual,
+                        ast::BaseOp::NotEqual => OpCode::NotEqual,
+                        ast::BaseOp::StrictNotEqual => OpCode::SNotEqual,
+                    };
+
                     let left = self.compile_expr(left)?.to_register(self)?;
                     let right = self.compile_expr(right)?.to_register(self)?;
 
@@ -137,68 +280,60 @@ impl<'a> Compiler<'a> {
                     self.free_tmp_register(right);
 
                     let dst = Reg::this_reg();
+                    let instr = self.next_instruction()?;
+                    self.instructions.push(opcode as u8);
+                    self.instructions.push(dst.0 as u8);
+                    self.instructions.push(left.0 as u8);
+                    self.instructions.push(right.0 as u8);
 
-                    let instr = match op {
-                        ast::BaseOp::NullCoalessing => to_do!(),
-                        ast::BaseOp::TenaryNull => to_do!(),
-                        ast::BaseOp::Or => to_do!(),
-                        ast::BaseOp::And => to_do!(),
-                        ast::BaseOp::BitwiseAnd => {
-                            self.emit(Instruction::BitAnd { dst, left, right })?
-                        }
-                        ast::BaseOp::BitwiseOr => {
-                            self.emit(Instruction::BitOr { dst, left, right })?
-                        }
-                        ast::BaseOp::BitwiseXor => {
-                            self.emit(Instruction::BitXor { dst, left, right })?
-                        }
-                        ast::BaseOp::Add => self.emit(Instruction::Add { dst, left, right })?,
-                        ast::BaseOp::Sub => self.emit(Instruction::Sub { dst, left, right })?,
-                        ast::BaseOp::Mul => self.emit(Instruction::Mul { dst, left, right })?,
-                        ast::BaseOp::Div => self.emit(Instruction::Div { dst, left, right })?,
-                        ast::BaseOp::Mod => self.emit(Instruction::Mod { dst, left, right })?,
-                        ast::BaseOp::Exp => self.emit(Instruction::Pow { dst, left, right })?,
-                        ast::BaseOp::Less => self.emit(Instruction::Less { dst, left, right })?,
-                        ast::BaseOp::LessEqual => {
-                            self.emit(Instruction::LessEq { dst, left, right })?
-                        }
-                        ast::BaseOp::Greater => {
-                            self.emit(Instruction::Greater { dst, left, right })?
-                        }
-                        ast::BaseOp::GreaterEqual => {
-                            self.emit(Instruction::GreaterEq { dst, left, right })?
-                        }
-                        ast::BaseOp::ShiftLeft => {
-                            self.emit(Instruction::ShiftL { dst, left, right })?
-                        }
-                        ast::BaseOp::ShiftRight => {
-                            self.emit(Instruction::ShiftR { dst, left, right })?
-                        }
-                        ast::BaseOp::ShiftRightUnsigned => {
-                            self.emit(Instruction::ShiftRU { dst, left, right })?
-                        }
-                        ast::BaseOp::InstanceOf => to_do!(),
-                        ast::BaseOp::In => to_do!(),
-                        ast::BaseOp::Equal => self.emit(Instruction::Equal { dst, left, right })?,
-                        ast::BaseOp::StrictEqual => {
-                            self.emit(Instruction::SEqual { dst, left, right })?
-                        }
-                        ast::BaseOp::NotEqual => {
-                            self.emit(Instruction::NotEqual { dst, left, right })?
-                        }
-                        ast::BaseOp::StrictNotEqual => {
-                            self.emit(Instruction::SNotEqual { dst, left, right })?
-                        }
-                    };
                     Ok(ExprPosition::InstrDst(instr).into())
                 }
-                ast::BinaryOp::Assign(_) => to_do!(),
+                ast::BinaryOp::Assign(op) => self.compile_assign_expr(op, left, right),
             },
-            ast::Expr::Prefix { op, expr } => to_do!(),
-            ast::Expr::Postfix { op, expr } => to_do!(),
+            ast::Expr::Prefix { op, expr } => match op {
+                ast::PrefixOp::AddOne => to_do!(),
+                ast::PrefixOp::SubOne => to_do!(),
+                ast::PrefixOp::Plus => to_do!(),
+                ast::PrefixOp::Minus => to_do!(),
+                ast::PrefixOp::Not => to_do!(),
+                ast::PrefixOp::BitwiseNot => to_do!(),
+                ast::PrefixOp::New => to_do!(),
+                ast::PrefixOp::Delete => to_do!(),
+                ast::PrefixOp::Void => to_do!(),
+                ast::PrefixOp::TypeOf => to_do!(),
+                ast::PrefixOp::Await => to_do!(),
+            },
+            ast::Expr::Postfix { op, expr } => match op {
+                ast::PostfixOp::AddOne => to_do!(),
+                ast::PostfixOp::SubOne => to_do!(),
+            },
             ast::Expr::Tenary(_) => to_do!(),
-            ast::Expr::Index { index, expr } => to_do!(),
-            ast::Expr::Dot { ident, expr } => to_do!(),
+            ast::Expr::Index { index, expr } => {
+                let expr = self.compile_expr(expr)?.to_register(self)?;
+                let index = self.compile_expr(index)?.to_register(self)?;
+                self.free_tmp_register(expr);
+                self.free_tmp_register(index);
+                let dst = self.alloc_tmp_register()?;
+                self.emit(Instruction::IndexLoad {
+                    dst,
+                    obj: expr,
+                    key: index,
+                })?;
+                Ok(dst.into())
+            }
+            ast::Expr::Dot { ident, expr } => {
+                let expr = self.compile_expr(expr)?.to_register(self)?;
+                let str = self.compile_string(ident)?;
+                let key = self.alloc_tmp_register()?;
+                self.free_tmp_register(expr);
+                self.patch_dst(str, key);
+                self.emit(Instruction::IndexLoad {
+                    dst: key,
+                    obj: expr,
+                    key,
+                })?;
+                Ok(key.into())
+            }
             ast::Expr::Call { args, expr } => self.compile_call(expr, args),
             ast::Expr::Prime { expr } => self.compile_prime(expr),
             ast::Expr::Yield { star, expr } => to_do!(),
@@ -242,5 +377,94 @@ impl<'a> Compiler<'a> {
         })?;
 
         Ok(ExprResult::new(ExprPosition::InstrDst(instr)))
+    }
+
+    pub fn compile_assign_expr(
+        &mut self,
+        op: AssignOp,
+        mut left: NodeId<ast::Expr>,
+        right: NodeId<ast::Expr>,
+    ) -> Result<ExprResult> {
+        let right = self.compile_expr(right)?.to_register(self)?;
+        let (obj, key) = loop {
+            match self.ast[left] {
+                ast::Expr::Binary { .. }
+                | ast::Expr::Prefix { .. }
+                | ast::Expr::Postfix { .. }
+                | ast::Expr::Tenary(_)
+                | ast::Expr::Yield { .. }
+                | ast::Expr::Destructure { .. }
+                | ast::Expr::TaggedTemplate { .. }
+                | ast::Expr::Call { .. } => unreachable!(),
+                ast::Expr::Index { index, expr } => {
+                    let obj = self.compile_expr(expr)?.to_register(self)?;
+                    let key = self.compile_expr(index)?.to_register(self)?;
+                    break (obj, key);
+                }
+                ast::Expr::Dot { ident, expr } => {
+                    let obj = self.compile_expr(expr)?.to_register(self)?;
+                    let key = ExprResult::from(self.compile_string(ident)?).to_register(self)?;
+                    break (obj, key);
+                }
+                ast::Expr::Prime { expr } => match self.ast[expr] {
+                    ast::PrimeExpr::Number(_)
+                    | ast::PrimeExpr::String(_)
+                    | ast::PrimeExpr::Template(_)
+                    | ast::PrimeExpr::Regex(_)
+                    | ast::PrimeExpr::Boolean(_)
+                    | ast::PrimeExpr::Function(_)
+                    | ast::PrimeExpr::Class(_)
+                    | ast::PrimeExpr::Object(_)
+                    | ast::PrimeExpr::Array(_)
+                    | ast::PrimeExpr::NewTarget
+                    | ast::PrimeExpr::Null
+                    | ast::PrimeExpr::This
+                    | ast::PrimeExpr::Super => unreachable!(),
+                    ast::PrimeExpr::Ident(x) => {
+                        let sym = self.variables.symbol_of_ast(x);
+                        self.store_symbol(sym, right.into())?;
+                        return Ok(right.into());
+                    }
+                    ast::PrimeExpr::Covered(x) => {
+                        left = self.ast[x].item;
+                    }
+                },
+            };
+        };
+
+        let idx = match op {
+            AssignOp::Assign => {
+                self.emit(Instruction::IndexStore {
+                    obj,
+                    key,
+                    src: right,
+                })?;
+                return Ok(right.into());
+            }
+            AssignOp::Add => OpCode::Add,
+            AssignOp::Sub => OpCode::Sub,
+            AssignOp::Mul => OpCode::Mul,
+            AssignOp::Div => OpCode::Div,
+            AssignOp::Mod => OpCode::Mod,
+            AssignOp::Exp => OpCode::Pow,
+            AssignOp::ShiftLeft => OpCode::ShiftL,
+            AssignOp::ShiftRight => OpCode::ShiftR,
+            AssignOp::ShiftRightUnsigned => OpCode::ShiftRU,
+            AssignOp::BitwiseAnd => OpCode::BitAnd,
+            AssignOp::BitwiseOr => OpCode::BitOr,
+            AssignOp::BitwiseXor => OpCode::BitXor,
+        };
+
+        let dst = self.alloc_tmp_register()?;
+        self.emit(Instruction::IndexLoad { dst, obj, key })?;
+        self.free_tmp_register(right);
+        self.instructions.push(idx as u8);
+        self.instructions.push(bytemuck::cast(dst));
+        self.instructions.push(bytemuck::cast(dst));
+        self.instructions.push(bytemuck::cast(right));
+        self.free_tmp_register(obj);
+        self.free_tmp_register(key);
+        self.emit(Instruction::IndexStore { obj, key, src: dst })?;
+        Ok(dst.into())
     }
 }

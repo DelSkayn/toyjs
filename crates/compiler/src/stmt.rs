@@ -1,5 +1,5 @@
 use ast::{ListHead, NodeId};
-use bc::Reg;
+use bc::{Instruction, LongOffset, Reg};
 
 use crate::{Compiler, Result};
 
@@ -37,9 +37,64 @@ impl<'a> Compiler<'a> {
                 self.free_tmp_register(tmp);
                 Ok(Some(tmp))
             }
-            ast::Stmt::DoWhile { body, cond } => to_do!(),
-            ast::Stmt::If { cond, body, r#else } => to_do!(),
-            ast::Stmt::While { cond, body } => to_do!(),
+            ast::Stmt::DoWhile { body, cond } => {
+                let before_block = self.next_instruction()?;
+                self.compile_stmt(body)?;
+                let mut cond = self.compile_exprs(cond)?;
+                let cond_reg = cond.to_cond_register(self)?;
+                cond.patch_true_jumps_to(self, before_block)?;
+                let instr = self.emit(Instruction::LongJumpFalse {
+                    cond: cond_reg,
+                    dst: LongOffset(0),
+                })?;
+                self.patch_jump(instr, before_block)?;
+                let next = self.next_instruction()?;
+                cond.patch_false_jumps_to(self, next)?;
+                Ok(None)
+            }
+            ast::Stmt::If { cond, body, r#else } => {
+                let mut cond = self.compile_exprs(cond)?;
+                let cond_reg = cond.to_cond_register(self)?;
+                let cond_jump = self.emit(Instruction::LongJumpFalse {
+                    cond: cond_reg,
+                    dst: LongOffset(0),
+                })?;
+                let next = self.next_instruction()?;
+                cond.patch_true_jumps_to(self, next)?;
+                self.compile_stmt(body)?;
+                if let Some(r#else) = r#else {
+                    let else_jump = self.emit(Instruction::LongJump { dst: LongOffset(0) })?;
+                    let next_instr = self.next_instruction()?;
+                    cond.patch_false_jumps_to(self, next_instr)?;
+                    self.patch_jump(cond_jump, next_instr)?;
+                    self.compile_stmt(r#else)?;
+                    let next_instr = self.next_instruction()?;
+                    self.patch_jump(else_jump, next_instr)?;
+                } else {
+                    let next_instr = self.next_instruction()?;
+                    cond.patch_false_jumps_to(self, next_instr)?;
+                    self.patch_jump(cond_jump, next_instr)?;
+                }
+                Ok(None)
+            }
+            ast::Stmt::While { cond, body } => {
+                let before_cond = self.next_instruction()?;
+                let mut cond = self.compile_exprs(cond)?;
+                let cond_reg = cond.to_cond_register(self)?;
+                let cond_jump = self.emit(Instruction::LongJumpFalse {
+                    cond: cond_reg,
+                    dst: LongOffset(0),
+                })?;
+                let next = self.next_instruction()?;
+                cond.patch_true_jumps_to(self, next)?;
+                self.compile_stmt(body)?;
+                let back_jump = self.emit(Instruction::LongJump { dst: LongOffset(0) })?;
+                self.patch_jump(back_jump, before_cond)?;
+                let after_loop = self.next_instruction()?;
+                cond.patch_false_jumps_to(self, after_loop)?;
+                self.patch_jump(cond_jump, after_loop)?;
+                Ok(None)
+            }
             ast::Stmt::For { head, body } => to_do!(),
             ast::Stmt::Switch {
                 cond,
@@ -59,10 +114,10 @@ impl<'a> Compiler<'a> {
                 if let Some(expr) = expr {
                     let res = self.compile_exprs(expr)?.to_register(self)?;
                     self.free_tmp_register(res);
-                    self.emit(bc::Instruction::Ret { src: res })?;
+                    self.emit(Instruction::Ret { src: res })?;
                     Ok(None)
                 } else {
-                    self.emit(bc::Instruction::RetUndefined {})?;
+                    self.emit(Instruction::RetUndefined {})?;
                     Ok(None)
                 }
             }

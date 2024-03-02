@@ -1,7 +1,7 @@
 use std::fmt;
 
 use bytemuck::{Contiguous, Pod, TransparentWrapper, Zeroable};
-use common::span::Span;
+use common::{hashmap::HashMap, span::Span};
 use dreck::Trace;
 
 mod instructions;
@@ -290,9 +290,66 @@ pub struct Function {
 impl fmt::Display for ByteCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, " - INSTRUCTIONS -")?;
+        let mut label_id = 0;
+        let mut jumps_label = HashMap::<usize, usize>::new();
+        let mut reader = SafeByteCodeReader::from_bc(&self.instructions);
+        while let Some(x) = reader.read_instruction() {
+            match x {
+                Instruction::LongJumpFalse { dst, .. }
+                | Instruction::LongJumpTrue { dst, .. }
+                | Instruction::LongJump { dst } => {
+                    let tgt = reader.offset() as isize + dst.0 as isize;
+                    jumps_label.entry(tgt as usize).or_insert_with(|| {
+                        let res = label_id;
+                        label_id += 1;
+                        res
+                    });
+                }
+                Instruction::JumpFalse { dst, .. }
+                | Instruction::JumpTrue { dst, .. }
+                | Instruction::Jump { dst } => {
+                    let tgt = reader.offset() as isize + dst.0 as isize;
+                    jumps_label.entry(tgt as usize).or_insert_with(|| {
+                        let res = label_id;
+                        label_id += 1;
+                        res
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(id) = jumps_label.get(&0) {
+            writeln!(f, "L{id}")?;
+        }
+
         let mut reader = SafeByteCodeReader::from_bc(&self.instructions);
         while let Some(instr) = reader.read_instruction() {
-            writeln!(f, "{}", instr)?;
+            match instr {
+                Instruction::LongJumpFalse { dst, .. }
+                | Instruction::LongJumpTrue { dst, .. }
+                | Instruction::LongJump { dst } => {
+                    let tgt = reader.offset() as isize + dst.0 as isize;
+                    let label = jumps_label.get(&(tgt as usize)).unwrap();
+                    write!(f, "    {}", instr)?;
+                    writeln!(f, "\t= L{label}")?;
+                }
+                Instruction::JumpFalse { dst, .. }
+                | Instruction::JumpTrue { dst, .. }
+                | Instruction::Jump { dst } => {
+                    let tgt = reader.offset() as isize + dst.0 as isize;
+                    let label = jumps_label.get(&(tgt as usize)).unwrap();
+                    write!(f, "    {}", instr)?;
+                    writeln!(f, "\t= L{label}")?;
+                }
+                _ => {
+                    writeln!(f, "    {}", instr)?;
+                }
+            }
+
+            if let Some(id) = jumps_label.get(&reader.offset()) {
+                writeln!(f, "L{id}:")?;
+            }
         }
 
         Ok(())
