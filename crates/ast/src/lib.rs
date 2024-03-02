@@ -1005,6 +1005,7 @@ impl RenderAst for Expr {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Tenary {
     pub cond: NodeId<Expr>,
     pub then: NodeId<Expr>,

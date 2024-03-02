@@ -293,9 +293,27 @@ impl<'a> Compiler<'a> {
             ast::Expr::Prefix { op, expr } => match op {
                 ast::PrefixOp::AddOne => to_do!(),
                 ast::PrefixOp::SubOne => to_do!(),
-                ast::PrefixOp::Plus => to_do!(),
-                ast::PrefixOp::Minus => to_do!(),
-                ast::PrefixOp::Not => to_do!(),
+                ast::PrefixOp::Plus => {
+                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    self.free_tmp_register(expr);
+                    let dst = self.alloc_tmp_register()?;
+                    self.emit(Instruction::ToNum { dst, src: expr })?;
+                    Ok(dst.into())
+                }
+                ast::PrefixOp::Minus => {
+                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    self.free_tmp_register(expr);
+                    let dst = self.alloc_tmp_register()?;
+                    self.emit(Instruction::Neg { dst, src: expr })?;
+                    Ok(dst.into())
+                }
+                ast::PrefixOp::Not => {
+                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    self.free_tmp_register(expr);
+                    let dst = self.alloc_tmp_register()?;
+                    self.emit(Instruction::Not { dst, src: expr })?;
+                    Ok(dst.into())
+                }
                 ast::PrefixOp::BitwiseNot => to_do!(),
                 ast::PrefixOp::New => to_do!(),
                 ast::PrefixOp::Delete => to_do!(),
@@ -307,7 +325,39 @@ impl<'a> Compiler<'a> {
                 ast::PostfixOp::AddOne => to_do!(),
                 ast::PostfixOp::SubOne => to_do!(),
             },
-            ast::Expr::Tenary(_) => to_do!(),
+            ast::Expr::Tenary(x) => {
+                let tenary = self.ast[x];
+                let mut cond = self.compile_expr(tenary.cond)?;
+                let cond_reg = cond.to_cond_register(self)?;
+                let cond_jump = self.emit(Instruction::LongJumpFalse {
+                    cond: cond_reg,
+                    dst: LongOffset(0),
+                })?;
+                let next = self.next_instruction()?;
+                cond.patch_true_jumps_to(self, next)?;
+                let then = self.compile_expr(tenary.then)?.to_register(self)?;
+                let then = if self.is_tmp_register(then) {
+                    then
+                } else {
+                    let new_then = self.alloc_tmp_register()?;
+                    if new_then != then {
+                        self.emit(Instruction::Move {
+                            dst: new_then,
+                            src: then,
+                        })?;
+                    }
+                    new_then
+                };
+                let then_jump = self.emit(Instruction::LongJump { dst: LongOffset(0) })?;
+                let next = self.next_instruction()?;
+                cond.patch_false_jumps_to(self, next)?;
+                self.patch_jump(cond_jump, next)?;
+                self.compile_expr(tenary.r#else)?
+                    .assign_to_reg(self, then)?;
+                let next = self.next_instruction()?;
+                self.patch_jump(then_jump, next)?;
+                Ok(then.into())
+            }
             ast::Expr::Index { index, expr } => {
                 let expr = self.compile_expr(expr)?.to_register(self)?;
                 let index = self.compile_expr(index)?.to_register(self)?;
