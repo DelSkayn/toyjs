@@ -1,0 +1,20 @@
+{
+  "name": "toyjs-playground",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.1.4",
+    "vite-plugin-top-level-await": "^1.4.1",
+    "vite-plugin-wasm": "^3.3.0"
+  },
+  "dependencies": {
+    "monaco-editor": "0.46.0",
+    "toyjs-playground-bundle": "file:./toyjs-playground-bundle/pkg"
+  }
+}

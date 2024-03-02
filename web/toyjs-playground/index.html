@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script type="module">
+      import "./style.css"
+    </script>
+    <title>Vite App</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="top-bar"> 
+        <input type="button" id="run-button" value="Run"></input>
+        <select id="run-option">
+          <option value="lex">Lex</option>
+          <option value="parse">Parse</option>
+          <option value="compile">Compile</option>
+          <option value="evaluate">Evaluate</option>
+        </select>
+      </div>
+      <div id="content">
+        <div id="editor">
+          <div id="editor-attach"></div>
+        </div>
+        <pre id="result">
+          Some text result
+        </pre>
+      </div>
+    </div>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

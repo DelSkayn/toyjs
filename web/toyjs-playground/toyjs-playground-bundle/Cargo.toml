@@ -1,0 +1,17 @@
+[package]
+name = "toyjs_playground_bundle"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2.91"
+token = {package = "toyjs_token", path = "../../../crates/token"}
+common = {package = "toyjs_common", path = "../../../crates/common"}
+lexer = {package = "toyjs_lexer", path = "../../../crates/lexer"}
+ast = {package = "toyjs_ast", path = "../../../crates/ast"}
+parser = {package = "toyjs_parser", path = "../../../crates/parser"}
+compiler = {package = "toyjs_compiler", path = "../../../crates/compiler"}
+#vm = {package = "toyjs_vm", path = "../../../crates/vm"}

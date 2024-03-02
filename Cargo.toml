@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/*",
+    "crates/*", "web/toyjs-playground/toyjs-playground-bundle",
     #"toyjs",
     #"toyjs_test",
     #"toyjs_web",
