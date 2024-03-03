@@ -13,32 +13,65 @@
 //!    ptr:
 //!    |l/f|l|l|l|p|p|p|p|
 
+use core::fmt;
 use std::{
-    fmt,
+    alloc::{self, Layout},
     hash::{Hash, Hasher},
-    mem::MaybeUninit,
-    ops::Range,
+    mem::{ManuallyDrop, MaybeUninit},
+    ops::BitOr,
+    ptr::NonNull,
     slice,
 };
 
-use self::{flags::PtrFlag, tagged_ptr::TaggedPtr};
-use super::{Ascii, Encoding, Utf16};
+use super::encoding::{Ascii, Encoding, Utf16};
 
-mod flags;
-mod tagged_ptr;
+/// TODO: 32bit platforms.
 
+/// The flag which indicates that the string is allocated on the heap.
+const ON_HEAP: usize = 1 << ((std::mem::size_of::<usize>() * 8) - 2);
+/// The flag which indicates that the string contains utf16 code points.
+const UTF16: usize = 1 << ((std::mem::size_of::<usize>() * 8) - 1);
+/// A mask of both flags.
+const LEN_FLAGS: usize = ON_HEAP | UTF16;
+
+#[repr(u8)]
+pub enum PtrFlag {
+    Heap = 1 << (8 - 2),
+    Utf16 = 1 << (8 - 1),
+}
+
+pub struct PtrFlags(usize);
+
+impl PtrFlags {
+    pub fn none() -> Self {
+        Self(0)
+    }
+}
+
+impl From<PtrFlag> for PtrFlags {
+    fn from(value: PtrFlag) -> Self {
+        Self(value as usize)
+    }
+}
+
+impl BitOr<PtrFlag> for PtrFlag {
+    type Output = PtrFlags;
+
+    fn bitor(self, rhs: PtrFlag) -> Self::Output {
+        PtrFlags::from(self) | PtrFlags::from(rhs)
+    }
+}
+
+impl BitOr<PtrFlags> for PtrFlags {
+    type Output = PtrFlags;
+
+    fn bitor(self, rhs: PtrFlags) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+/// The size of the inline buffer.
 const INLINE_SIZE: usize = std::mem::size_of::<TaggedPtr<u8>>();
-const MAX_SIZE: usize = usize::MAX >> 2;
-
-#[cfg(target_endian = "little")]
-const FLAG_BYTE_INDEX: usize = INLINE_SIZE - 1;
-#[cfg(target_endian = "big")]
-const FLAG_BYTE_INDEX: usize = 0;
-
-#[cfg(target_endian = "little")]
-const INLINE_RANGE: Range<usize> = 0..(INLINE_SIZE - 1);
-#[cfg(target_endian = "big")]
-const INLINE_RANGE: Range<usize> = 1..INLINE_SIZE;
 
 impl PartialEq for Repr {
     fn eq(&self, other: &Self) -> bool {
@@ -56,15 +89,35 @@ impl Hash for Repr {
 
 pub union Repr {
     inline: [u8; INLINE_SIZE],
-    ascii: TaggedPtr<u8>,
-    utf16: TaggedPtr<u16>,
+    ascii: ManuallyDrop<TaggedPtr<u8>>,
+    utf16: ManuallyDrop<TaggedPtr<u16>>,
+}
+
+impl Clone for Repr {
+    fn clone(&self) -> Self {
+        unsafe {
+            if self.is_inline() {
+                Repr {
+                    inline: self.inline,
+                }
+            } else if self.is_utf16() {
+                Repr {
+                    utf16: self.utf16.clone(),
+                }
+            } else {
+                Repr {
+                    ascii: self.ascii.clone(),
+                }
+            }
+        }
+    }
 }
 
 impl Repr {
     pub const fn empty() -> Self {
-        Self {
-            inline: [0u8; INLINE_SIZE],
-        }
+        let mut inline = [0u8; INLINE_SIZE];
+        inline[0] = 1;
+        Self { inline }
     }
 
     /// Creates a new inline string from an existing string.
@@ -83,44 +136,39 @@ impl Repr {
         let len = bytes.len() as u8;
 
         let mut i = 0;
-        let offset = (FLAG_BYTE_INDEX == 0) as u8;
         // While loop because const fn don't allow for loops.
         while i < len {
             let byte = bytes[i as usize];
             if !byte.is_ascii() {
                 panic!("to be inlined string contains non ascii characters")
             }
-            inline[(i + offset) as usize] = byte;
+            inline[i as usize] = byte;
             i += 1;
         }
-        inline[FLAG_BYTE_INDEX] = len;
+        inline[INLINE_SIZE - 1] = len;
         Repr { inline }
     }
 
+    pub unsafe fn from_tagged_ptr_utf16(ptr: TaggedPtr<u16>) -> Self {
+        Repr {
+            utf16: ManuallyDrop::new(ptr),
+        }
+    }
+
     pub fn is_inline(&self) -> bool {
-        self.flag_byte() & flags::PtrFlag::Heap as u8 == 0
+        unsafe { self.utf16.len & ON_HEAP != ON_HEAP }
     }
 
     pub fn is_utf16(&self) -> bool {
-        self.flag_byte() & flags::PtrFlag::Utf16 as u8 == flags::PtrFlag::Utf16 as u8
+        unsafe { self.utf16.len & UTF16 == UTF16 }
     }
 
     pub fn inline_len(&self) -> u8 {
-        self.flag_byte()
+        unsafe { self.inline[INLINE_SIZE - 1] }
     }
 
     pub fn heap_len(&self) -> usize {
-        unsafe { self.ascii.len() }
-    }
-
-    fn flag_byte(&self) -> u8 {
-        unsafe { self.inline[FLAG_BYTE_INDEX] }
-    }
-
-    fn set_flag_byte(&mut self, v: u8) {
-        unsafe {
-            self.inline[FLAG_BYTE_INDEX] = v;
-        }
+        unsafe { self.ascii.len & !LEN_FLAGS }
     }
 
     pub fn from_ascii(ascii: &Ascii) -> Self {
@@ -130,27 +178,27 @@ impl Repr {
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     ascii.as_ptr(),
-                    inline[INLINE_RANGE].as_mut_ptr().cast::<u8>(),
+                    inline.as_mut_ptr().cast::<u8>(),
                     ascii.len(),
                 );
-                inline[FLAG_BYTE_INDEX].write(ascii.len() as u8);
+                inline[INLINE_SIZE - 1].write(ascii.len() as u8);
                 Repr {
                     inline: std::mem::transmute(inline),
                 }
             }
         } else {
-            let ascii = TaggedPtr::from_slice(ascii);
-            let mut res = Repr { ascii };
-            res.set_flag_byte(res.flag_byte() | PtrFlag::Heap as u8);
-            res
+            let ascii = TaggedPtr::from_slice(ascii, PtrFlag::Heap.into());
+            Repr {
+                ascii: ManuallyDrop::new(ascii),
+            }
         }
     }
 
-    pub fn from_utf16(ascii: &Utf16) -> Self {
-        let utf16 = TaggedPtr::from_slice(ascii.units());
-        let mut res = Repr { utf16 };
-        res.set_flag_byte(res.flag_byte() | PtrFlag::Heap as u8 | PtrFlag::Utf16 as u8);
-        res
+    pub fn from_utf16(utf16: &Utf16) -> Self {
+        let ascii = TaggedPtr::from_slice(utf16.units(), PtrFlag::Heap | PtrFlag::Utf16);
+        Repr {
+            utf16: ManuallyDrop::new(ascii),
+        }
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -159,9 +207,9 @@ impl Repr {
                 let len = self.inline_len() as usize;
                 slice::from_raw_parts(self.inline.as_ptr(), len)
             } else if self.is_utf16() {
-                slice::from_raw_parts(self.utf16.ptr.cast::<u8>(), self.heap_len() * 2)
+                slice::from_raw_parts(self.utf16.ptr.as_ptr().cast::<u8>(), self.heap_len() * 2)
             } else {
-                slice::from_raw_parts(self.ascii.ptr, self.heap_len())
+                slice::from_raw_parts(self.ascii.ptr.as_ptr(), self.heap_len())
             }
         }
     }
@@ -186,47 +234,6 @@ impl Repr {
             }
         }
     }
-
-    pub fn from_std_str(s: &str) -> Self {
-        if s.is_ascii() {
-            let ascii = unsafe { Ascii::from_slice_unchecked(s.as_bytes()) };
-            Repr::from_ascii(ascii)
-        } else {
-            unsafe {
-                let len = s.chars().map(|x| x.len_utf16()).sum();
-
-                let utf16 = TaggedPtr::<u16>::alloc(len);
-
-                for (idx, code_point) in s.encode_utf16().enumerate() {
-                    utf16.ptr.add(idx).write(code_point);
-                }
-
-                let mut res = Repr { utf16 };
-                res.set_flag_byte(res.flag_byte() | PtrFlag::Heap as u8 | PtrFlag::Utf16 as u8);
-                res
-            }
-        }
-    }
-}
-
-impl Clone for Repr {
-    fn clone(&self) -> Self {
-        unsafe {
-            if self.is_inline() {
-                Repr {
-                    inline: self.inline,
-                }
-            } else if self.is_utf16() {
-                Repr {
-                    utf16: self.utf16.clone_ptr(),
-                }
-            } else {
-                Repr {
-                    ascii: self.ascii.clone_ptr(),
-                }
-            }
-        }
-    }
 }
 
 impl fmt::Debug for Repr {
@@ -248,10 +255,18 @@ impl Drop for Repr {
     fn drop(&mut self) {
         if !self.is_inline() {
             if self.is_utf16() {
-                unsafe { self.utf16.drop_in_place() }
+                unsafe { ManuallyDrop::drop(&mut self.utf16) }
             } else {
-                unsafe { self.ascii.drop_in_place() }
+                unsafe { ManuallyDrop::drop(&mut self.ascii) }
             }
         }
     }
+}
+
+mod test {
+    use std::ptr::NonNull;
+
+    use super::{Repr, TaggedPtr};
+
+    fn repr() {}
 }

@@ -1,9 +1,10 @@
 use std::fmt;
 
 use bytemuck::{Contiguous, Pod, TransparentWrapper, Zeroable};
-use common::{hashmap::HashMap, span::Span};
+use common::span::Span;
 use dreck::Trace;
 
+mod display;
 mod instructions;
 pub mod util;
 pub use instructions::*;
@@ -19,7 +20,8 @@ pub mod limits {
     ///
     /// Limit is a result from how registers are addressed in thye bytecode.
     /// Every register is addressed via a i8 where all positive values can be a register.
-    pub const MAX_REGISTERS: usize = i8::MAX as usize;
+    pub const MAX_REGISTERS: usize = i32::MAX as usize;
+    pub const MAX_DIRECT_REGISTERS: usize = i8::MAX as usize;
     /// The maximum number of arguments that can be directly addressed from an instruction.
     ///
     /// Limit is a result from how arguments are addressed in the bytecode.
@@ -285,73 +287,4 @@ pub struct Function {
     pub upvalues: u32,
     /// The amount of upvalues this function uses.
     pub registers: u32,
-}
-
-impl fmt::Display for ByteCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, " - INSTRUCTIONS -")?;
-        let mut label_id = 0;
-        let mut jumps_label = HashMap::<usize, usize>::new();
-        let mut reader = SafeByteCodeReader::from_bc(&self.instructions);
-        while let Some(x) = reader.read_instruction() {
-            match x {
-                Instruction::LongJumpFalse { dst, .. }
-                | Instruction::LongJumpTrue { dst, .. }
-                | Instruction::LongJump { dst } => {
-                    let tgt = reader.offset() as isize + dst.0 as isize;
-                    jumps_label.entry(tgt as usize).or_insert_with(|| {
-                        let res = label_id;
-                        label_id += 1;
-                        res
-                    });
-                }
-                Instruction::JumpFalse { dst, .. }
-                | Instruction::JumpTrue { dst, .. }
-                | Instruction::Jump { dst } => {
-                    let tgt = reader.offset() as isize + dst.0 as isize;
-                    jumps_label.entry(tgt as usize).or_insert_with(|| {
-                        let res = label_id;
-                        label_id += 1;
-                        res
-                    });
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(id) = jumps_label.get(&0) {
-            writeln!(f, "L{id}")?;
-        }
-
-        let mut reader = SafeByteCodeReader::from_bc(&self.instructions);
-        while let Some(instr) = reader.read_instruction() {
-            match instr {
-                Instruction::LongJumpFalse { dst, .. }
-                | Instruction::LongJumpTrue { dst, .. }
-                | Instruction::LongJump { dst } => {
-                    let tgt = reader.offset() as isize + dst.0 as isize;
-                    let label = jumps_label.get(&(tgt as usize)).unwrap();
-                    write!(f, "    {}", instr)?;
-                    writeln!(f, "\t= L{label}")?;
-                }
-                Instruction::JumpFalse { dst, .. }
-                | Instruction::JumpTrue { dst, .. }
-                | Instruction::Jump { dst } => {
-                    let tgt = reader.offset() as isize + dst.0 as isize;
-                    let label = jumps_label.get(&(tgt as usize)).unwrap();
-                    write!(f, "    {}", instr)?;
-                    writeln!(f, "\t= L{label}")?;
-                }
-                _ => {
-                    writeln!(f, "    {}", instr)?;
-                }
-            }
-
-            if let Some(id) = jumps_label.get(&reader.offset()) {
-                writeln!(f, "L{id}:")?;
-            }
-        }
-
-        Ok(())
-    }
 }

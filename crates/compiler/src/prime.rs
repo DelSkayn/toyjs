@@ -116,7 +116,7 @@ impl<'a> Compiler<'a> {
         match self.ast[prop] {
             ast::PropertyDefinition::Ident { ident } => {
                 let sym = self.variables.symbol_of_ast(ident);
-                let src = self.load_symbol(sym)?.to_register(self)?;
+                let src = self.load_symbol(sym)?.into_register(self)?;
                 let str_instr = self.compile_string(self.ast[ident].name)?;
                 let key = self.alloc_tmp_register()?;
                 self.free_tmp_register(src);
@@ -125,7 +125,7 @@ impl<'a> Compiler<'a> {
                 Ok(())
             }
             ast::PropertyDefinition::Define { property, expr } => {
-                let src = self.compile_expr(expr)?.to_register(self)?;
+                let src = self.compile_expr(expr)?.into_register(self)?;
                 match property {
                     ast::PropertyName::Ident(x) | ast::PropertyName::String(x) => {
                         let str = self.map_string(x);
@@ -142,14 +142,14 @@ impl<'a> Compiler<'a> {
                         Ok(())
                     }
                     ast::PropertyName::Number(num) => {
-                        let key = ExprResult::new(self.compile_number(num)?).to_register(self)?;
+                        let key = ExprResult::new(self.compile_number(num)?).into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Computed(c) => {
-                        let key = self.compile_expr(c)?.to_register(self)?;
+                        let key = self.compile_expr(c)?.into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
@@ -158,7 +158,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             ast::PropertyDefinition::Method { property, func } => {
-                let src = ExprResult::new(self.compile_function_load(func)?).to_register(self)?;
+                let src = ExprResult::new(self.compile_function_load(func)?).into_register(self)?;
 
                 match property {
                     ast::PropertyName::Ident(x) | ast::PropertyName::String(x) => {
@@ -170,14 +170,14 @@ impl<'a> Compiler<'a> {
                         Ok(())
                     }
                     ast::PropertyName::Number(num) => {
-                        let key = ExprResult::new(self.compile_number(num)?).to_register(self)?;
+                        let key = ExprResult::new(self.compile_number(num)?).into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
                     ast::PropertyName::Computed(c) => {
-                        let key = self.compile_expr(c)?.to_register(self)?;
+                        let key = self.compile_expr(c)?.into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;

@@ -20,8 +20,6 @@ pub enum SymbolPlacement {
     UpvalueLoaded(u32, Reg),
     /// Symbol is stored on the global object.
     Global,
-    /// Symbol is in a given upvalue and loaded in a register.
-    GlobalLoad(Reg),
 }
 
 #[derive(Debug)]
@@ -86,6 +84,7 @@ impl Compiler<'_> {
             }
             return Ok(Reg(next_free as i8));
         }
+        self.function_stack_size = (next_free as u32).max(self.function_stack_size);
         Ok(Reg(next_free as i8))
     }
 
@@ -134,7 +133,7 @@ impl Compiler<'_> {
                 if place <= 128 {
                     return expr.assign_to_reg(self, Reg((-(place as i32)) as i8));
                 }
-                let reg = expr.to_register(self)?;
+                let reg = expr.into_register(self)?;
                 let place = i32::try_from(-(place as i64)).unwrap();
                 self.emit(Instruction::MoveLong {
                     dst: place,
@@ -144,7 +143,7 @@ impl Compiler<'_> {
             }
             SymbolPlacement::Register(x) => expr.assign_to_reg(self, x),
             SymbolPlacement::SwappedOut(x) => {
-                let reg = expr.to_register(self)?;
+                let reg = expr.into_register(self)?;
                 let place = i32::try_from(x).unwrap();
                 self.emit(Instruction::MoveLong {
                     dst: place,
@@ -154,8 +153,8 @@ impl Compiler<'_> {
             }
             SymbolPlacement::Upvalue(_) => to_do!(),
             SymbolPlacement::UpvalueLoaded(_, _) => to_do!(),
-            SymbolPlacement::Global | SymbolPlacement::GlobalLoad(_) => {
-                let src = expr.to_register(self)?;
+            SymbolPlacement::Global => {
+                let src = expr.into_register(self)?;
                 let ident = self.variables.symbols()[symbol].ident;
                 let instr = self.compile_string(ident)?;
                 let key = self.alloc_tmp_register()?;
@@ -233,7 +232,6 @@ impl Compiler<'_> {
                 })?;
                 Ok(ExprResult::new(ExprPosition::InstrDst(instr)))
             }
-            SymbolPlacement::GlobalLoad(reg) => Ok(ExprResult::new(ExprPosition::Register(reg))),
         }
     }
 
@@ -261,8 +259,7 @@ impl Compiler<'_> {
             SymbolPlacement::Argument(_)
             | SymbolPlacement::Upvalue(_)
             | SymbolPlacement::UpvalueLoaded(_, _)
-            | SymbolPlacement::Global
-            | SymbolPlacement::GlobalLoad(_) => panic!("tried to free unfreeable symbol"),
+            | SymbolPlacement::Global => panic!("tried to free unfreeable symbol"),
             SymbolPlacement::Register(reg) => {
                 self.used_registers.unset(reg.0 as u8);
             }

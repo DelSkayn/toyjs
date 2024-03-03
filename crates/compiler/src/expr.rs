@@ -63,7 +63,7 @@ impl ExprResult {
         }
     }
 
-    pub fn to_register(mut self, compiler: &mut Compiler) -> Result<Reg> {
+    pub fn into_register(mut self, compiler: &mut Compiler) -> Result<Reg> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => {
@@ -78,7 +78,7 @@ impl ExprResult {
         }
     }
 
-    pub fn to_instr(mut self, compiler: &mut Compiler) -> Result<InstrOffset> {
+    pub fn into_instr(mut self, compiler: &mut Compiler) -> Result<InstrOffset> {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => Ok(instr),
@@ -267,8 +267,8 @@ impl<'a> Compiler<'a> {
                         ast::BaseOp::StrictNotEqual => OpCode::SNotEqual,
                     };
 
-                    let left = self.compile_expr(left)?.to_register(self)?;
-                    let right = self.compile_expr(right)?.to_register(self)?;
+                    let left = self.compile_expr(left)?.into_register(self)?;
+                    let right = self.compile_expr(right)?.into_register(self)?;
 
                     self.free_tmp_register(left);
                     self.free_tmp_register(right);
@@ -288,21 +288,21 @@ impl<'a> Compiler<'a> {
                 ast::PrefixOp::AddOne => to_do!(),
                 ast::PrefixOp::SubOne => to_do!(),
                 ast::PrefixOp::Plus => {
-                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    let expr = self.compile_expr(expr)?.into_register(self)?;
                     self.free_tmp_register(expr);
                     let dst = self.alloc_tmp_register()?;
                     self.emit(Instruction::ToNum { dst, src: expr })?;
                     Ok(dst.into())
                 }
                 ast::PrefixOp::Minus => {
-                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    let expr = self.compile_expr(expr)?.into_register(self)?;
                     self.free_tmp_register(expr);
                     let dst = self.alloc_tmp_register()?;
                     self.emit(Instruction::Neg { dst, src: expr })?;
                     Ok(dst.into())
                 }
                 ast::PrefixOp::Not => {
-                    let expr = self.compile_expr(expr)?.to_register(self)?;
+                    let expr = self.compile_expr(expr)?.into_register(self)?;
                     self.free_tmp_register(expr);
                     let dst = self.alloc_tmp_register()?;
                     self.emit(Instruction::Not { dst, src: expr })?;
@@ -329,7 +329,7 @@ impl<'a> Compiler<'a> {
                 })?;
                 let next = self.next_instruction()?;
                 cond.patch_true_jumps_to(self, next)?;
-                let then = self.compile_expr(tenary.then)?.to_register(self)?;
+                let then = self.compile_expr(tenary.then)?.into_register(self)?;
                 let then = if self.is_tmp_register(then) {
                     then
                 } else {
@@ -348,8 +348,8 @@ impl<'a> Compiler<'a> {
                 Ok(then.into())
             }
             ast::Expr::Index { index, expr } => {
-                let expr = self.compile_expr(expr)?.to_register(self)?;
-                let index = self.compile_expr(index)?.to_register(self)?;
+                let expr = self.compile_expr(expr)?.into_register(self)?;
+                let index = self.compile_expr(index)?.into_register(self)?;
                 self.free_tmp_register(expr);
                 self.free_tmp_register(index);
                 let dst = self.alloc_tmp_register()?;
@@ -361,7 +361,7 @@ impl<'a> Compiler<'a> {
                 Ok(dst.into())
             }
             ast::Expr::Dot { ident, expr } => {
-                let expr = self.compile_expr(expr)?.to_register(self)?;
+                let expr = self.compile_expr(expr)?.into_register(self)?;
                 let str = self.compile_string(ident)?;
                 let key = self.alloc_tmp_register()?;
                 self.free_tmp_register(expr);
@@ -386,7 +386,7 @@ impl<'a> Compiler<'a> {
         func: NodeId<ast::Expr>,
         args: Option<NodeId<ast::NodeList<ast::Argument>>>,
     ) -> Result<ExprResult> {
-        let expr = self.compile_expr(func)?.to_instr(self)?;
+        let expr = self.compile_expr(func)?.into_instr(self)?;
         self.push_arg(expr, 0);
         // TODO: this value
         let instr = self.emit(Instruction::LoadPrim {
@@ -403,7 +403,7 @@ impl<'a> Compiler<'a> {
                 to_do!()
             }
 
-            let arg = self.compile_expr(arg.expr)?.to_instr(self)?;
+            let arg = self.compile_expr(arg.expr)?.into_instr(self)?;
             self.push_arg(arg, offset);
             offset += 1;
 
@@ -424,7 +424,7 @@ impl<'a> Compiler<'a> {
         mut left: NodeId<ast::Expr>,
         right: NodeId<ast::Expr>,
     ) -> Result<ExprResult> {
-        let right = self.compile_expr(right)?.to_register(self)?;
+        let right = self.compile_expr(right)?.into_register(self)?;
         let (obj, key) = loop {
             match self.ast[left] {
                 ast::Expr::Binary { .. }
@@ -436,13 +436,13 @@ impl<'a> Compiler<'a> {
                 | ast::Expr::TaggedTemplate { .. }
                 | ast::Expr::Call { .. } => unreachable!(),
                 ast::Expr::Index { index, expr } => {
-                    let obj = self.compile_expr(expr)?.to_register(self)?;
-                    let key = self.compile_expr(index)?.to_register(self)?;
+                    let obj = self.compile_expr(expr)?.into_register(self)?;
+                    let key = self.compile_expr(index)?.into_register(self)?;
                     break (obj, key);
                 }
                 ast::Expr::Dot { ident, expr } => {
-                    let obj = self.compile_expr(expr)?.to_register(self)?;
-                    let key = ExprResult::from(self.compile_string(ident)?).to_register(self)?;
+                    let obj = self.compile_expr(expr)?.into_register(self)?;
+                    let key = ExprResult::from(self.compile_string(ident)?).into_register(self)?;
                     break (obj, key);
                 }
                 ast::Expr::Prime { expr } => match self.ast[expr] {

@@ -1,6 +1,7 @@
 use std::usize;
 
 use bc::{util, LongOffset, OpCode, Reg};
+use common::span::Span;
 
 use crate::{Compiler, Error, Limits, PendingArg, Result};
 
@@ -55,20 +56,17 @@ impl<'a> Compiler<'a> {
         // For now we assume all the registers used in the function are used when calling a
         // function. This isn't always the case.
 
-        let max_regs = self.function_stack_size;
-
-        if max_regs > i32::MAX as u32 - self.max_arg as u32 {
+        if self.function_stack_size as usize > bc::limits::MAX_REGISTERS - self.max_arg as usize {
             return Err(Error::ExceededLimits(Limits::Registers));
         }
 
-        let register_count = max_regs + self.max_arg as u32;
-
+        self.function_stack_size += self.max_arg as u32;
         for i in 0..self.arg_patch.len() {
             let PendingArg {
                 instruction,
                 offset,
             } = self.arg_patch[i];
-            let arg_reg = register_count - offset as u32;
+            let arg_reg = self.function_stack_size - offset as u32;
             if arg_reg < Reg::MAX as u32 {
                 self.patch_dst(instruction, Reg(arg_reg as i8))
             } else {
@@ -84,6 +82,15 @@ impl<'a> Compiler<'a> {
 
     pub fn finalize_instructions(&mut self, start: u32) -> Result<()> {
         self.patch_args()?;
+
+        self.functions.push(bc::Function {
+            offset: start,
+            len: (self.instructions.len() - start as usize) as u32,
+            reflect_info: None,
+            span: Span::empty(),
+            upvalues: 0,
+            registers: self.function_stack_size,
+        });
         // self.restructure_jumps();
 
         Ok(())

@@ -3,7 +3,7 @@
 use std::{borrow::Cow, fmt};
 
 mod repr;
-use repr::{PtrFlag, Repr, TaggedPtr};
+use repr::Repr;
 
 mod encoding;
 pub use encoding::{Ascii, AsciiChars, Chars, Encoding, Units, Utf16, Utf16Chars};
@@ -30,22 +30,7 @@ impl String {
     }
 
     pub fn from_std_str(s: &str) -> Self {
-        if s.is_ascii() {
-            let ascii = unsafe { Ascii::from_slice_unchecked(s.as_bytes()) };
-            String(Repr::from_ascii(ascii))
-        } else {
-            unsafe {
-                let len = s.chars().map(|x| x.len_utf16()).sum();
-
-                let ptr = TaggedPtr::<u16>::alloc(len, PtrFlag::Utf16 | PtrFlag::Heap);
-
-                for (idx, code_point) in s.encode_utf16().enumerate() {
-                    ptr.ptr.as_ptr().add(idx).write(code_point);
-                }
-
-                String(Repr::from_tagged_ptr_utf16(ptr))
-            }
-        }
+        String(Repr::from_std_str(s))
     }
 
     pub fn from_encoding(units: Encoding) -> Self {

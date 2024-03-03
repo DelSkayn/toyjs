@@ -33,7 +33,7 @@ impl<'a> Compiler<'a> {
             }
             ast::Stmt::Empty => Ok(None),
             ast::Stmt::Expr { expr } => {
-                let tmp = self.compile_exprs(expr)?.to_register(self)?;
+                let tmp = self.compile_exprs(expr)?.into_register(self)?;
                 self.free_tmp_register(tmp);
                 Ok(Some(tmp))
             }
@@ -112,7 +112,7 @@ impl<'a> Compiler<'a> {
             ast::Stmt::Continue { label } => to_do!(),
             ast::Stmt::Return { expr } => {
                 if let Some(expr) = expr {
-                    let res = self.compile_exprs(expr)?.to_register(self)?;
+                    let res = self.compile_exprs(expr)?.into_register(self)?;
                     self.free_tmp_register(res);
                     self.emit(Instruction::Ret { src: res })?;
                     Ok(None)
