@@ -650,6 +650,7 @@ name = "toyjs_playground_bundle"
 version = "0.1.0"
 dependencies = [
  "toyjs_ast",
+ "toyjs_bc",
  "toyjs_common",
  "toyjs_compiler",
  "toyjs_lexer",

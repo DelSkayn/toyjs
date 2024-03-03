@@ -13,5 +13,6 @@ common = {package = "toyjs_common", path = "../../../crates/common"}
 lexer = {package = "toyjs_lexer", path = "../../../crates/lexer"}
 ast = {package = "toyjs_ast", path = "../../../crates/ast"}
 parser = {package = "toyjs_parser", path = "../../../crates/parser"}
+bc = {package = "toyjs_bc", path = "../../../crates/bc"}
 compiler = {package = "toyjs_compiler", path = "../../../crates/compiler"}
 #vm = {package = "toyjs_vm", path = "../../../crates/vm"}
