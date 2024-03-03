@@ -67,7 +67,7 @@ impl ExprResult {
         self.patch_jumps(compiler)?;
         match self.position {
             ExprPosition::InstrDst(instr) => {
-                let reg = compiler.next_free_register()?;
+                let reg = compiler.alloc_tmp_register()?;
                 compiler.patch_dst(instr, reg);
                 Ok(reg)
             }
@@ -95,8 +95,8 @@ impl ExprResult {
     pub fn assign_to_reg(mut self, compiler: &mut Compiler, reg: Reg) -> Result<()> {
         self.patch_jumps(compiler)?;
         match self.position {
-            ExprPosition::Register(reg) => {
-                compiler.emit(Instruction::Move { dst: reg, src: reg })?;
+            ExprPosition::Register(old_reg) => {
+                compiler.emit_move(reg, old_reg)?;
             }
             ExprPosition::InstrDst(instr) => compiler.patch_dst(instr, reg),
             ExprPosition::Unused => {
@@ -108,8 +108,8 @@ impl ExprResult {
 
     pub fn assign_to_cond_reg(&self, compiler: &mut Compiler, reg: Reg) -> Result<()> {
         match self.position {
-            ExprPosition::Register(reg) => {
-                compiler.emit(Instruction::Move { dst: reg, src: reg })?;
+            ExprPosition::Register(old_reg) => {
+                compiler.emit_move(reg, old_reg)?;
             }
             ExprPosition::InstrDst(instr) => compiler.patch_dst(instr, reg),
             ExprPosition::Unused => {
@@ -196,10 +196,7 @@ impl<'a> Compiler<'a> {
                             let left_reg = left.to_cond_register(self)?;
                             let left_reg = if !self.is_tmp_register(left_reg) {
                                 let reg = self.alloc_tmp_register()?;
-                                self.emit(Instruction::Move {
-                                    dst: reg,
-                                    src: left_reg,
-                                })?;
+                                self.emit_move(reg, left_reg)?;
                                 reg
                             } else {
                                 left_reg
@@ -225,10 +222,7 @@ impl<'a> Compiler<'a> {
                             let left_reg = left.to_cond_register(self)?;
                             let left_reg = if !self.is_tmp_register(left_reg) {
                                 let reg = self.alloc_tmp_register()?;
-                                self.emit(Instruction::Move {
-                                    dst: reg,
-                                    src: left_reg,
-                                })?;
+                                self.emit_move(reg, left_reg)?;
                                 reg
                             } else {
                                 left_reg
@@ -340,12 +334,7 @@ impl<'a> Compiler<'a> {
                     then
                 } else {
                     let new_then = self.alloc_tmp_register()?;
-                    if new_then != then {
-                        self.emit(Instruction::Move {
-                            dst: new_then,
-                            src: then,
-                        })?;
-                    }
+                    self.emit_move(new_then, then)?;
                     new_then
                 };
                 let then_jump = self.emit(Instruction::LongJump { dst: LongOffset(0) })?;

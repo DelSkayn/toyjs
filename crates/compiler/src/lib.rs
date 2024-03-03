@@ -147,6 +147,13 @@ impl<'a> Compiler<'a> {
         Ok(id)
     }
 
+    fn emit_move(&mut self, dst: Reg, src: Reg) -> Result<Option<InstrOffset>> {
+        if dst == src {
+            return Ok(None);
+        }
+        self.emit(Instruction::Move { dst, src }).map(Some)
+    }
+
     fn next_instruction(&self) -> Result<InstrOffset> {
         let res = self.instructions.len();
         let id = InstrOffset(

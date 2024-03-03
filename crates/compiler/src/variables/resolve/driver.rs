@@ -162,16 +162,16 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             ast::Stmt::While { cond, body } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: true })?;
-                self.visit_stmt(body)?;
                 self.visit_expr_list(cond)?;
+                self.visit_stmt(body)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
             ast::Stmt::DoWhile { body, cond } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: true })?;
-                self.visit_expr_list(cond)?;
                 self.visit_stmt(body)?;
+                self.visit_expr_list(cond)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
