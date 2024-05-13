@@ -1,0 +1,12 @@
+[package]
+name = "toyjs_gc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { package = "toyjs_common", version = "0.1.0", path = "../common" }
+bitflags = "2.5.0"
+libc = "0.2.153"
+
+[features]
+no_mmap = []

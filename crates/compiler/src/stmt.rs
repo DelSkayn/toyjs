@@ -122,7 +122,22 @@ impl<'a> Compiler<'a> {
                 }
             }
             ast::Stmt::Labeled { label, stmt } => to_do!(),
-            ast::Stmt::Function { func } => to_do!(),
+            ast::Stmt::Function { func } => {
+                let ast::Function::Declared { name, .. } = self.ast[func] else {
+                    // in this place the parser should only generate declared functions.
+                    unreachable!();
+                };
+                let id = self.push_pending_function(func);
+                let instr = self.emit(Instruction::LoadFunction {
+                    dst: Reg::tmp(),
+                    cons: id,
+                })?;
+
+                let sym = self.variables.symbol_of_ast(name);
+                self.store_symbol(sym, instr.into())?;
+
+                Ok(None)
+            }
             ast::Stmt::Class { class } => to_do!(),
             ast::Stmt::Debugger => Ok(None),
         }

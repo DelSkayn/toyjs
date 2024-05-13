@@ -7,7 +7,8 @@ edition = "2021"
 
 [features]
 untagged = []
-slow_checks = []
+slow_assert = []
+no_assert = []
 
 
 [dependencies]

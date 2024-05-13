@@ -1,5 +1,9 @@
 use std::any::{Any, TypeId};
 
+pub trait AnyTypeId {
+    const ID: usize = 0;
+}
+
 #[inline]
 pub fn coerce_ref<F: Any, T: Any>(f: &F) -> Option<&T> {
     if TypeId::of::<F>() == TypeId::of::<T>() {
@@ -86,7 +90,7 @@ impl<T: Any> AnyVec for Vec<T> {
 
     #[inline]
     fn any_clear<V: Any>(&mut self) {
-        if TypeId::of::<V>() == TypeId::of::<T>() {
+        if const { TypeId::of::<V>() == TypeId::of::<T>() } {
             self.clear();
         }
     }

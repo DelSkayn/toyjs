@@ -1,7 +1,8 @@
 //! Module defining instructions
 
 use crate::{
-    instructions, BuiltinByte, FunctionId, LongOffset, Offset, Primitive, Reg, StringId, UpvalueId,
+    instructions, BuiltinByte, FunctionId, LongOffset, LongReg, Offset, Primitive, Reg, StringId,
+    UpvalueId,
 };
 
 instructions! {
@@ -43,7 +44,7 @@ instructions! {
     /// Copy the value from src into dst.
     Move{ dst: Reg , src: Reg},
     /// Copy the value from src into dst allowing reaching far furter then regular move
-    MoveLong{ dst: i32, src: i32},
+    MoveLong{ dst: LongReg, src: LongReg},
 
     /// Load an upvalue into a specified registers dst
     LoadUpvalue{ dst: Reg, upvalue: UpvalueId },

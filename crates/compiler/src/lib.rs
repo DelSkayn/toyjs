@@ -1,19 +1,16 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
-
-use std::{collections::VecDeque, u8};
+#![allow(clippy::new_without_default)]
 
 use ast::{Ast, ListHead, NodeId};
 use bc::{ByteCode, Instruction, InstructionType, LongOffset, OpCode, Reg};
+use bytemuck::NoUninit;
 use common::{
     hashmap::hash_map::HashMap,
     key,
     string::{String, StringId},
     structs::Interners,
 };
-use symbol::{Reservation, SymbolPlacement};
-use use_bitmap::UseBitmap;
-use variables::{resolve_script, SymbolId, SymbolUseOrder, Variables};
 
 macro_rules! to_do {
     () => {
@@ -23,23 +20,28 @@ macro_rules! to_do {
     };
 }
 
-mod decl;
-mod error;
 mod expr;
 mod prime;
 mod proc;
 mod stmt;
-mod symbol;
-mod use_bitmap;
-pub mod variables;
 
+mod error;
 pub use error::{Error, Limits, Result};
+mod function;
+use function::PendingFunctionList;
+mod symbol;
+use symbol::RegisterInfo;
+pub mod variables;
+use variables::{resolve_script, SymbolId, Variables};
 
 key!(
     /// Offset into the instruction buffer in bytes.
     pub struct InstrOffset(u32)
 );
 
+/// An argument whose location is an offset from the end of the function frame.
+/// The size of the frame is only found after all instructions are generated so therefore assigning
+/// these argument an destination
 struct PendingArg {
     instruction: InstrOffset,
     offset: u16,
@@ -57,8 +59,7 @@ pub struct Compiler<'a> {
     variables: Variables,
 
     // functions we still need to compile.
-    pending_functions: VecDeque<NodeId<ast::Function>>,
-    next_function_id: u32,
+    pending_functions: PendingFunctionList,
 
     // data created during compilation
     functions: Vec<bc::Function>,
@@ -72,16 +73,8 @@ pub struct Compiler<'a> {
     strings: HashMap<StringId, u32>,
     /// The id for the next string.
     next_string_id: u32,
-    // -- register allocation structs --
-    function_stack_size: u32,
-    used_registers: UseBitmap,
-    tmp_registers: UseBitmap,
-    tmp_symbol_registers: UseBitmap,
-    reservations: Vec<Reservation>,
-    inflight_symbols: HashMap<SymbolId, SymbolPlacement>,
-    tmp_symbol_id: HashMap<Reg, SymbolId>,
-    global_register: Option<Reg>,
-    current_use_order: SymbolUseOrder,
+    /// Data regarding register allocation and symbol placement.
+    regs: RegisterInfo,
 }
 
 impl<'a> Compiler<'a> {
@@ -91,8 +84,7 @@ impl<'a> Compiler<'a> {
             ast,
             variables: Variables::new(),
 
-            pending_functions: VecDeque::new(),
-            next_function_id: 0,
+            pending_functions: PendingFunctionList::new(),
 
             functions: Vec::new(),
             instructions: Vec::new(),
@@ -102,30 +94,14 @@ impl<'a> Compiler<'a> {
             strings: HashMap::default(),
             next_string_id: 0,
 
-            used_registers: UseBitmap::empty(),
-            tmp_registers: UseBitmap::empty(),
-            tmp_symbol_registers: UseBitmap::empty(),
-            tmp_symbol_id: HashMap::default(),
-            function_stack_size: 0,
-            reservations: Vec::new(),
-            inflight_symbols: HashMap::new(),
-            global_register: None,
-            current_use_order: SymbolUseOrder::first(),
+            regs: RegisterInfo::new(),
         }
     }
 
     fn reset_for_function(&mut self) {
-        debug_assert!(self.arg_patch.is_empty());
-
+        self.arg_patch.clear();
         self.max_arg = 0;
-
-        self.used_registers = UseBitmap::empty();
-        self.tmp_registers = UseBitmap::empty();
-        self.inflight_symbols.clear();
-        self.global_register = None;
-        self.current_use_order = SymbolUseOrder::first();
-        self.function_stack_size = 0;
-        self.reservations.clear();
+        self.regs.reset();
     }
 
     fn push_arg(&mut self, instr: InstrOffset, offset: u16) {
@@ -136,14 +112,28 @@ impl<'a> Compiler<'a> {
         self.max_arg = self.max_arg.max(offset);
     }
 
+    fn push_pending_function(&mut self, func: NodeId<ast::Function>) -> bc::FunctionId {
+        self.pending_functions.push(func)
+    }
+
     #[inline(always)]
     fn emit(&mut self, instr: Instruction) -> Result<InstrOffset> {
         let res = self.instructions.len();
         let id = InstrOffset(
             res.try_into()
-                .map_err(|_| Error::ExceededLimits(Limits::BytecodeSize))?,
+                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
         );
         instr.write(&mut self.instructions);
+        Ok(id)
+    }
+
+    pub fn push_instr_byte<B: NoUninit>(&mut self, b: B) -> Result<InstrOffset> {
+        let res = self.instructions.len();
+        let id = InstrOffset(
+            res.try_into()
+                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
+        );
+        self.instructions.push(bytemuck::cast(b));
         Ok(id)
     }
 
@@ -158,7 +148,7 @@ impl<'a> Compiler<'a> {
         let res = self.instructions.len();
         let id = InstrOffset(
             res.try_into()
-                .map_err(|_| Error::ExceededLimits(Limits::BytecodeSize))?,
+                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
         );
         Ok(id)
     }
@@ -184,7 +174,7 @@ impl<'a> Compiler<'a> {
                 let from_point = instr.0 as i64 + bc::types::LongJump::SIZE as i64;
                 let offset = LongOffset(
                     i32::try_from(to.0 as i64 - from_point)
-                        .map_err(|_| Error::ExceededLimits(Limits::JumpOffset))?,
+                        .map_err(|_| Error::Limit(Limits::JumpOffset))?,
                 );
                 let instr_start = instr.0 as usize + 1;
                 self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
@@ -195,7 +185,7 @@ impl<'a> Compiler<'a> {
                 let from_point = instr.0 as i64 + bc::types::LongJumpTrue::SIZE as i64;
                 let offset = LongOffset(
                     i32::try_from(to.0 as i64 - from_point)
-                        .map_err(|_| Error::ExceededLimits(Limits::JumpOffset))?,
+                        .map_err(|_| Error::Limit(Limits::JumpOffset))?,
                 );
                 let instr_start = instr.0 as usize + 2;
                 self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
@@ -221,12 +211,13 @@ impl<'a> Compiler<'a> {
 
     pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
         let root_scope = self.variables.push_global_scope(strict);
-        self.next_function_id += 1;
 
+        // resolve all variables in the statement.
         if let ListHead::Present(root) = stmt {
             resolve_script(root, self.ast, &mut self.variables, root_scope)?;
         }
 
+        // compile the main function or the root of the script.
         let mut expr = None;
         if let ListHead::Present(s) = stmt {
             let mut s = Some(s);
@@ -237,22 +228,27 @@ impl<'a> Compiler<'a> {
             }
         }
 
+        // Add a return instruction a the end.
         if let Some(x) = expr {
             self.emit(Instruction::Ret { src: x })?;
         } else {
             self.emit(Instruction::RetUndefined {})?;
         }
 
+        // do finalizing operations now that instructions are finalized.
         self.finalize_instructions(0)?;
 
+        // Keep track where the new function start
         let mut before = self.instructions.len();
-
-        while let Some(func) = self.pending_functions.pop_front() {
+        // Compile all functions
+        while let Some(func) = self.pending_functions.pop_pending() {
+            self.reset_for_function();
             self.compile_function(func)?;
             self.finalize_instructions(before as u32)?;
             before = self.instructions.len();
         }
 
+        // Push all the used strings into a single slice.
         let mut strings = vec![String::new(); self.next_string_id as usize];
         for (id, k) in self.strings {
             strings[k as usize] = self.interners.strings.get(id).unwrap().clone();
@@ -265,31 +261,44 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    pub fn compile_function(&mut self, ast: NodeId<ast::Function>) -> Result<()> {
-        /*
-        let
-            ast::Function::Arrow { kind, params, rest_param, body, .. } |
-            ast::Function::Declared {  kind,  params, rest_param, body, .. } |
-            ast::Function::Expr {  kind,  params, rest_param, body, .. }  = self.ast[ast];
+    pub fn compile_function(&mut self, func: NodeId<ast::Function>) -> Result<()> {
+        let (kind, name, body) = match self.ast[func] {
+            ast::Function::Arrow { .. } => to_do!(),
+            ast::Function::Declared {
+                kind, body, name, ..
+            } => (kind, Some(name), body),
+            ast::Function::Expr {
+                kind, body, name, ..
+            } => (kind, name, body),
+        };
 
-        match kind{
-            ast::FunctionKind::Async | ast::FunctionKind::Generator | ast::FunctionKind::AsyncGenerator => to_do!(),
-            ast::FunctionKind::Simple => {},
+        match kind {
+            ast::FunctionKind::Async
+            | ast::FunctionKind::Generator
+            | ast::FunctionKind::AsyncGenerator => to_do!(),
+            ast::FunctionKind::Simple => {}
         }
 
-        let _params = params;
-        let _rest_param = rest_param;
-
-        if let ListHead::Present(mut cur) = body{
-            loop{
-                self.compile_stmt(self.ast[cur].item)?;
-                let Some(next) = self.ast[cur].next else{
-                    break
+        let expr = if let ListHead::Present(mut cur) = body {
+            let mut expr;
+            loop {
+                expr = self.compile_stmt(self.ast[cur].item)?;
+                let Some(next) = self.ast[cur].next else {
+                    break;
                 };
                 cur = next;
             }
+            expr
+        } else {
+            None
+        };
+
+        // Add a return instruction a the end.
+        if let Some(x) = expr {
+            self.emit(Instruction::Ret { src: x })?;
+        } else {
+            self.emit(Instruction::RetUndefined {})?;
         }
-        */
 
         Ok(())
     }

@@ -87,9 +87,28 @@ impl Reg {
         Reg(-2)
     }
 }
+
 impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "r{}", self.0)
+    }
+}
+
+/// Error that happens when trying to create a register for an stack value outside of i8 range.
+#[derive(Debug, Clone, Copy)]
+pub struct RegOutOfRange;
+
+impl fmt::Display for RegOutOfRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Tried to create register from out of range offset")
+    }
+}
+
+impl TryFrom<LongReg> for Reg {
+    type Error = RegOutOfRange;
+
+    fn try_from(value: LongReg) -> Result<Self, Self::Error> {
+        i8::try_from(value.0).map(Reg).map_err(|_| RegOutOfRange)
     }
 }
 
@@ -99,21 +118,27 @@ impl fmt::Display for Reg {
 /// When an instruction needs to read from a further address this register is used.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable)]
 #[repr(transparent)]
-pub struct FarReg(pub i32);
+pub struct LongReg(pub i32);
 
-impl FarReg {
+impl LongReg {
     /// Returns the register index of the place where the `this` value is stored.
     pub const fn this_reg() -> Self {
-        FarReg(-1)
+        LongReg(-1)
     }
 
     /// Returns the register for the current function being executed.
     pub const fn function_reg() -> Self {
-        FarReg(-2)
+        LongReg(-2)
     }
 }
 
-impl fmt::Display for FarReg {
+impl From<Reg> for LongReg {
+    fn from(value: Reg) -> Self {
+        LongReg(value.0 as i32)
+    }
+}
+
+impl fmt::Display for LongReg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fr{}", self.0)
     }
@@ -143,30 +168,32 @@ impl fmt::Display for LongOffset {
 /// A newtype for a primitive value.
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Pod, TransparentWrapper, Zeroable, Ord, PartialOrd)]
 #[repr(transparent)]
-pub struct Primitive(u8);
+pub struct Primitive(pub u8);
 
 impl Primitive {
-    pub fn empty() -> Self {
+    pub const TRUE: Self = Self::t();
+
+    pub const fn empty() -> Self {
         Primitive(0)
     }
 
-    pub fn null() -> Self {
+    pub const fn null() -> Self {
         Primitive(2)
     }
 
-    pub fn deleted() -> Self {
+    pub const fn deleted() -> Self {
         Primitive(5)
     }
 
-    pub fn t() -> Self {
+    pub const fn t() -> Self {
         Primitive(6)
     }
 
-    pub fn f() -> Self {
+    pub const fn f() -> Self {
         Primitive(7)
     }
 
-    pub fn undefined() -> Self {
+    pub const fn undefined() -> Self {
         Primitive(10)
     }
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::new_without_default)]
 // TODO remove once ready to release
 #![allow(dead_code)]
 #![allow(clippy::missing_safety_doc)]

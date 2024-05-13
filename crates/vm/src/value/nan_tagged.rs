@@ -6,6 +6,7 @@
 //pub use tagged_union::TaggedValue;
 use std::{cmp, fmt, marker::PhantomData, ptr::NonNull};
 
+use bc::Primitive;
 use dreck::{marker::Invariant, Gc, Marker, Trace};
 
 use crate::object::GcObject;
@@ -309,6 +310,13 @@ impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
                 bits: if v { VALUE_TRUE } else { VALUE_FALSE },
             })
         }
+    }
+}
+
+impl<'gc, 'own> From<Primitive> for Value<'gc, 'own> {
+    #[inline]
+    fn from(v: Primitive) -> Self {
+        unsafe { Value::from_value(ValueUnion { bits: v.0 as u64 }) }
     }
 }
 

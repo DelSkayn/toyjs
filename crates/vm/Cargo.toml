@@ -12,7 +12,7 @@ common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 bytemuck = {version = "1.13.1"}
 
 [features]
-slow_checks = ["bc/slow_checks", "common/slow_checks"]
+slow_assert = ["bc/slow_assert", "common/slow_assert"]
 
 [dev-dependencies]
 lexer = { path = "../lexer", package = "toyjs_lexer" }

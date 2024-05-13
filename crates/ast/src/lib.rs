@@ -580,7 +580,7 @@ impl RenderAst for ArrowFunctionBody {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FunctionKind {
     Simple,
     Async,

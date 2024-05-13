@@ -3,6 +3,8 @@ use std::{
     ptr::{self, NonNull},
 };
 
+use common::tassert;
+
 /// A growable raw buffer with support for relocating raw pointers on alloc.
 pub struct RawBuffer<T> {
     root: NonNull<T>,
@@ -47,7 +49,7 @@ impl<T> RawBuffer<T> {
             }
         } else {
             let capacity = self.capacity();
-            assert!(new_size >= capacity);
+            tassert!(new_size >= capacity);
             let old_layout = Layout::array::<T>(capacity).unwrap();
             let new_mem =
                 unsafe { std::alloc::realloc(self.root.as_ptr().cast(), old_layout, new_size) }

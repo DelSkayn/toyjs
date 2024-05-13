@@ -11,4 +11,4 @@ common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 dreck = { version = "0.1.1", path = "../../../dreck" }
 
 [features]
-slow_checks = ["common/slow_checks"]
+slow_assert = ["common/slow_assert"]

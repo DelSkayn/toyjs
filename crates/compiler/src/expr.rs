@@ -194,7 +194,7 @@ impl<'a> Compiler<'a> {
                         ast::BaseOp::Or => {
                             let mut left = self.compile_expr(left)?;
                             let left_reg = left.to_cond_register(self)?;
-                            let left_reg = if !self.is_tmp_register(left_reg) {
+                            let left_reg = if !self.regs.is_tmp(left_reg) {
                                 let reg = self.alloc_tmp_register()?;
                                 self.emit_move(reg, left_reg)?;
                                 reg
@@ -220,7 +220,7 @@ impl<'a> Compiler<'a> {
                         ast::BaseOp::And => {
                             let mut left = self.compile_expr(left)?;
                             let left_reg = left.to_cond_register(self)?;
-                            let left_reg = if !self.is_tmp_register(left_reg) {
+                            let left_reg = if !self.regs.is_tmp(left_reg) {
                                 let reg = self.alloc_tmp_register()?;
                                 self.emit_move(reg, left_reg)?;
                                 reg
@@ -275,11 +275,10 @@ impl<'a> Compiler<'a> {
 
                     let dst = Reg::this_reg();
                     let instr = self.next_instruction()?;
-                    self.instructions.push(opcode as u8);
-                    self.instructions.push(dst.0 as u8);
-                    self.instructions.push(left.0 as u8);
-                    self.instructions.push(right.0 as u8);
-
+                    self.push_instr_byte(opcode as u8)?;
+                    self.push_instr_byte(dst)?;
+                    self.push_instr_byte(left)?;
+                    self.push_instr_byte(right)?;
                     Ok(ExprPosition::InstrDst(instr).into())
                 }
                 ast::BinaryOp::Assign(op) => self.compile_assign_expr(op, left, right),
@@ -308,7 +307,13 @@ impl<'a> Compiler<'a> {
                     self.emit(Instruction::Not { dst, src: expr })?;
                     Ok(dst.into())
                 }
-                ast::PrefixOp::BitwiseNot => to_do!(),
+                ast::PrefixOp::BitwiseNot => {
+                    let expr = self.compile_expr(expr)?.into_register(self)?;
+                    self.free_tmp_register(expr);
+                    let dst = self.alloc_tmp_register()?;
+                    self.emit(Instruction::BitNot { dst, src: expr })?;
+                    Ok(dst.into())
+                }
                 ast::PrefixOp::New => to_do!(),
                 ast::PrefixOp::Delete => to_do!(),
                 ast::PrefixOp::Void => to_do!(),
@@ -330,7 +335,7 @@ impl<'a> Compiler<'a> {
                 let next = self.next_instruction()?;
                 cond.patch_true_jumps_to(self, next)?;
                 let then = self.compile_expr(tenary.then)?.into_register(self)?;
-                let then = if self.is_tmp_register(then) {
+                let then = if self.regs.is_tmp(then) {
                     then
                 } else {
                     let new_then = self.alloc_tmp_register()?;
@@ -497,10 +502,10 @@ impl<'a> Compiler<'a> {
         let dst = self.alloc_tmp_register()?;
         self.emit(Instruction::IndexLoad { dst, obj, key })?;
         self.free_tmp_register(right);
-        self.instructions.push(idx as u8);
-        self.instructions.push(bytemuck::cast(dst));
-        self.instructions.push(bytemuck::cast(dst));
-        self.instructions.push(bytemuck::cast(right));
+        self.push_instr_byte(idx as u8)?;
+        self.push_instr_byte(dst)?;
+        self.push_instr_byte(dst)?;
+        self.push_instr_byte(right)?;
         self.free_tmp_register(obj);
         self.free_tmp_register(key);
         self.emit(Instruction::IndexStore { obj, key, src: dst })?;

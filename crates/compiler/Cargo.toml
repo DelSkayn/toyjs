@@ -12,13 +12,16 @@ bytemuck = { version = "1.13.1", features = ["derive"] }
 common = { package = "toyjs_common", version = "0.1.0", path = "../common" }
 
 [dev-dependencies]
-criterion = "0.4.0"
-iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
 lexer = { path = "../lexer", package = "toyjs_lexer" }
 parser = { package = "toyjs_parser", version = "0.1.0", path = "../parser" }
 
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = "0.4.0"
+iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
+
 [features]
-slow_checks = ["bc/slow_checks"]
+slow_assert = ["bc/slow_assert"]
 
 [[bench]]
 name = "scripts_resolve"

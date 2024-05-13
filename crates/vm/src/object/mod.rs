@@ -9,6 +9,8 @@ use dreck::{Gc, Trace};
 
 use crate::value::Value;
 
+mod props;
+
 pub struct BcFunction<'gc, 'own> {
     pub id: FunctionId,
     pub bc: Gc<'gc, 'own, ByteCode>,
@@ -57,6 +59,64 @@ unsafe impl<'gc, 'own> Trace<'own> for ObjectSlot<'gc, 'own> {
     }
 }
 
+pub enum Property<'gc, 'own> {
+    Value(Value<'gc, 'own>),
+    Accessor {
+        get: Value<'gc, 'own>,
+        set: Value<'gc, 'own>,
+    },
+}
+
+unsafe impl<'gc, 'own> Trace<'own> for Property<'gc, 'own> {
+    type Gc<'r> = Property<'r, 'own>;
+
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, marker: dreck::Marker<'own, '_>) {
+        match self {
+            Property::Value(ref x) => x.trace(marker),
+            Property::Accessor { ref get, ref set } => {
+                get.trace(marker);
+                set.trace(marker);
+            }
+        }
+    }
+}
+
+pub struct Properties<'gc, 'own> {
+    values: HashMap<String, Property<'gc, 'own>>,
+}
+
+unsafe impl<'gc, 'own> Trace<'own> for Properties<'gc, 'own> {
+    type Gc<'r> = Properties<'r, 'own>;
+
+    fn needs_trace() -> bool
+    where
+        Self: Sized,
+    {
+        true
+    }
+
+    fn trace(&self, marker: dreck::Marker<'own, '_>) {
+        for v in self.values.values() {
+            v.trace(marker)
+        }
+    }
+}
+
+impl<'gc, 'own> Properties<'gc, 'own> {
+    pub fn new() -> Self {
+        Properties {
+            values: HashMap::new(),
+        }
+    }
+}
+
 pub type GcObject<'gc, 'own> = Gc<'gc, 'own, Object<'gc, 'own>>;
 pub struct Object<'gc, 'own> {
     // TODO: hidden class
@@ -66,7 +126,7 @@ pub struct Object<'gc, 'own> {
     // TODO: The values of the object indexed with a integer.
     entries: (),
     // TODO: The values of the object indexed with any non-integer value..
-    properties: (),
+    properties: Properties<'gc, 'own>,
     // The special value for this object.
     slot: ObjectSlot<'gc, 'own>,
 }
@@ -82,7 +142,8 @@ unsafe impl<'gc, 'own> Trace<'own> for Object<'gc, 'own> {
     }
 
     fn trace(&self, marker: dreck::Marker<'own, '_>) {
-        self.slot.trace(marker)
+        self.slot.trace(marker);
+        self.prototype.trace(marker);
     }
 }
 
@@ -92,7 +153,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
             shape: (),
             prototype: None,
             entries: (),
-            properties: (),
+            properties: Properties::new(),
             slot: ObjectSlot::Generic,
         }
     }
@@ -102,7 +163,7 @@ impl<'gc, 'own> Object<'gc, 'own> {
             shape: (),
             prototype: None,
             entries: (),
-            properties: (),
+            properties: Properties::new(),
             slot: ObjectSlot::BcFunction(BcFunction {
                 id: FunctionId::entry(),
                 bc,

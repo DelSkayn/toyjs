@@ -6,7 +6,7 @@ pub type Result<T> = StdResult<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
-    ExceededLimits(Limits),
+    Limit(Limits),
     NotImplemented(Backtrace),
     Redeclared { span: Span, first_declared: Span },
 }
@@ -51,7 +51,7 @@ impl fmt::Display for Limits {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::ExceededLimits(limit) => {
+            Error::Limit(limit) => {
                 write!(f, "Code exceeded interpreter limits: {limit}")
             }
             Error::NotImplemented(b) => {
@@ -67,7 +67,7 @@ impl fmt::Display for Error {
 impl ContextError<Source> for Error {
     fn display(&self, f: &mut fmt::Formatter, ctx: &Source) -> fmt::Result {
         match self {
-            Error::ExceededLimits(limit) => {
+            Error::Limit(limit) => {
                 write!(f, "Code exceeded interpreter limits: {limit}")
             }
             Error::NotImplemented(b) => {

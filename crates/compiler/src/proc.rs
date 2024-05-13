@@ -1,5 +1,3 @@
-use std::usize;
-
 use bc::{util, LongOffset, OpCode, Reg};
 use common::span::Span;
 
@@ -51,22 +49,24 @@ impl<'a> Compiler<'a> {
         address_adjust.push((slice.len(), offset));
     }
 
-    pub fn patch_args(&mut self) -> Result<()> {
+    pub fn patch_args(&mut self) -> Result<u32> {
         // TODO: Optimize instruction usage.
         // For now we assume all the registers used in the function are used when calling a
         // function. This isn't always the case.
 
-        if self.function_stack_size as usize > bc::limits::MAX_REGISTERS - self.max_arg as usize {
-            return Err(Error::ExceededLimits(Limits::Registers));
+        let mut frame_offset = self.regs.max_frame_offset();
+        if frame_offset as usize > bc::limits::MAX_REGISTERS - self.max_arg as usize {
+            return Err(Error::Limit(Limits::Registers));
         }
 
-        self.function_stack_size += self.max_arg as u32;
+        frame_offset += self.max_arg as u32;
         for i in 0..self.arg_patch.len() {
             let PendingArg {
                 instruction,
                 offset,
             } = self.arg_patch[i];
-            let arg_reg = self.function_stack_size - offset as u32;
+            // -1 cause self.function_stack_size is a size and we require an offset.
+            let arg_reg = frame_offset - offset as u32;
             if arg_reg < Reg::MAX as u32 {
                 self.patch_dst(instruction, Reg(arg_reg as i8))
             } else {
@@ -74,14 +74,11 @@ impl<'a> Compiler<'a> {
             }
         }
 
-        self.arg_patch.clear();
-        self.max_arg = 0;
-
-        Ok(())
+        Ok(frame_offset)
     }
 
     pub fn finalize_instructions(&mut self, start: u32) -> Result<()> {
-        self.patch_args()?;
+        let frame_offset = self.patch_args()?;
 
         self.functions.push(bc::Function {
             offset: start,
@@ -89,7 +86,7 @@ impl<'a> Compiler<'a> {
             reflect_info: None,
             span: Span::empty(),
             upvalues: 0,
-            registers: self.function_stack_size,
+            registers: frame_offset + 1,
         });
         // self.restructure_jumps();
 

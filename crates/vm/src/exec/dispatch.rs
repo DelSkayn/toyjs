@@ -1,4 +1,6 @@
-use bc::{ByteCodeReader, Reg};
+//! Module containing the main dispatch loop.
+
+use bc::{ByteCodeReader, LongReg, Primitive, Reg};
 use dreck::Owner;
 
 use super::ExecutionFrame;
@@ -6,6 +8,23 @@ use crate::value::Value;
 
 impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
     pub(crate) unsafe fn dispatch(
+        &mut self,
+        reader: ByteCodeReader,
+        owner: &mut Owner<'own>,
+    ) -> Result<Value<'gc, 'own>, Value<'gc, 'own>> {
+        loop {
+            let _error = match self.dispatch_inner(reader, owner) {
+                Ok(x) => return Ok(x),
+                Err(e) => e,
+            };
+            todo!()
+            // Error was raised, we need to now might need to unwind.
+        }
+    }
+
+    /// Function running nominal dispatch of instructions.
+    /// If an error happens the functions returns
+    pub(crate) unsafe fn dispatch_inner(
         &mut self,
         mut reader: ByteCodeReader,
         _owner: &mut Owner<'own>,
@@ -31,6 +50,21 @@ impl<'gc, 'own> ExecutionFrame<'gc, 'own> {
                     let dst = reader.read::<Reg>();
                     let v = reader.read::<f64>();
                     self.stack.write(dst, Value::from(v));
+                }
+                bc::opcodes::LoadPrim => {
+                    let dst = reader.read::<Reg>();
+                    let imm = reader.read::<Primitive>();
+                    self.stack.write(dst, Value::from(imm));
+                }
+                bc::opcodes::Move => {
+                    let dst = reader.read::<Reg>();
+                    let src = reader.read::<Reg>();
+                    self.stack.write(dst, self.stack.read(src))
+                }
+                bc::opcodes::MoveLong => {
+                    let dst = reader.read::<LongReg>();
+                    let src = reader.read::<LongReg>();
+                    self.stack.long_write(dst, self.stack.long_read(src))
                 }
                 bc::opcodes::Add => {
                     let dst = reader.read::<Reg>();

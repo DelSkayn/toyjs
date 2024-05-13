@@ -106,7 +106,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                 num_decl_children: 0,
                 decl_child_offset: 0,
             })
-            .map_err(|_| Error::ExceededLimits(Limits::TooManyScopes))?;
+            .map_err(|_| Error::Limit(Limits::TooManyScopes))?;
         self.vars.scopes[self.current_block].num_scope_children += 1;
         self.scope_stack.push(id);
 

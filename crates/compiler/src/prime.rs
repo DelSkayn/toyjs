@@ -1,6 +1,10 @@
-use ast::{NodeId, ObjectLiteral};
+use ast::{ArrayLiteralEntry, ListHead, NodeId, ObjectLiteral};
 use bc::{FunctionId, Instruction, Primitive, Reg};
-use common::{number::NumberId, span::Span, string::StringId};
+use common::{
+    number::{Number, NumberId},
+    span::Span,
+    string::StringId,
+};
 
 use crate::{
     expr::{ExprPosition, ExprResult},
@@ -33,7 +37,7 @@ impl<'a> Compiler<'a> {
             ast::PrimeExpr::Function(func) => self.compile_function_load(func).map(|x| x.into()),
             ast::PrimeExpr::Class(_) => to_do!(),
             ast::PrimeExpr::Object(obj) => self.compile_object_literal(obj).map(|x| x.into()),
-            ast::PrimeExpr::Array(_) => to_do!(),
+            ast::PrimeExpr::Array(array) => self.compile_array_literal(array),
             ast::PrimeExpr::NewTarget | ast::PrimeExpr::This => Ok(Reg::this_reg().into()),
             ast::PrimeExpr::Null => self
                 .emit(Instruction::LoadPrim {
@@ -56,11 +60,8 @@ impl<'a> Compiler<'a> {
             registers: 0,
             upvalues: 0,
         });
-        self.pending_functions.push_back(func);
-        let cons = FunctionId(
-            id.try_into()
-                .map_err(|_| Error::ExceededLimits(Limits::Functions))?,
-        );
+        self.pending_functions.push(func);
+        let cons = FunctionId(id.try_into().map_err(|_| Error::Limit(Limits::Functions))?);
         let instr = self.emit(Instruction::LoadFunction {
             dst: Reg::this_reg(),
             cons,
@@ -69,8 +70,12 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile_number(&mut self, id: NumberId) -> Result<ExprPosition> {
-        let dst = Reg::this_reg();
         let number = self.interners.numbers[id];
+        self.compile_number_value(number)
+    }
+
+    pub fn compile_number_value(&mut self, number: Number) -> Result<ExprPosition> {
+        let dst = Reg::this_reg();
         let instr = if let Some(imm) = number.cast() {
             self.emit(Instruction::Loadi8 { dst, imm })?
         } else if let Some(imm) = number.cast() {
@@ -108,6 +113,49 @@ impl<'a> Compiler<'a> {
         Ok(ExprPosition::Register(tmp))
     }
 
+    pub fn compile_array_literal(
+        &mut self,
+        array: ListHead<ArrayLiteralEntry>,
+    ) -> Result<ExprResult> {
+        let instr = self.emit(Instruction::NewArray {
+            dst: Reg::this_reg(),
+        })?;
+
+        let ListHead::Present(mut entry) = array else {
+            return Ok(ExprPosition::InstrDst(instr).into());
+        };
+        let tmp = self.alloc_tmp_register()?;
+        self.patch_dst(instr, tmp);
+
+        let mut i = 0;
+        loop {
+            let item = self.ast[entry].item;
+            if let Some(expr) = self.ast[item].expr {
+                if self.ast[item].is_spread {
+                    to_do!()
+                } else {
+                    let expr = self.compile_expr(expr)?.into_register(self)?;
+                    let key = self.compile_number_value(Number(i.into()))?;
+                    let key = ExprResult::from(key).into_register(self)?;
+                    self.free_tmp_register(key);
+                    self.free_tmp_register(expr);
+                    self.emit(Instruction::IndexStore {
+                        obj: tmp,
+                        key,
+                        src: expr,
+                    })?;
+                }
+            }
+            let Some(next) = self.ast[entry].next else {
+                break;
+            };
+            entry = next;
+            i += 1;
+        }
+
+        Ok(tmp.into())
+    }
+
     pub fn compile_object_prop_definition(
         &mut self,
         obj: Reg,
@@ -134,8 +182,7 @@ impl<'a> Compiler<'a> {
                         self.emit(Instruction::LoadString {
                             dst: key,
                             cons: bc::StringId(
-                                str.try_into()
-                                    .map_err(|_| Error::ExceededLimits(Limits::Strings))?,
+                                str.try_into().map_err(|_| Error::Limit(Limits::Strings))?,
                             ),
                         })?;
                         self.emit(Instruction::IndexStore { obj, key, src })?;
@@ -197,10 +244,7 @@ impl<'a> Compiler<'a> {
         let str = self.map_string(s);
         self.emit(Instruction::LoadString {
             dst: Reg::tmp(),
-            cons: bc::StringId(
-                str.try_into()
-                    .map_err(|_| Error::ExceededLimits(Limits::Strings))?,
-            ),
+            cons: bc::StringId(str.try_into().map_err(|_| Error::Limit(Limits::Strings))?),
         })
     }
 }

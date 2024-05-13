@@ -42,8 +42,8 @@
 use core::fmt;
 use std::{num::NonZeroU32, ptr::NonNull};
 
-use bc::{ByteCodeReader, Reg};
-use common::{slow_assert, slow_assert_ne};
+use bc::{ByteCodeReader, LongReg, Reg};
+use common::{sassert, sassert_ne};
 use dreck::{Marker, Trace};
 
 mod buffer;
@@ -220,7 +220,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     #[inline(always)]
     pub unsafe fn read(&self, reg: Reg) -> Value<'gc, 'own> {
         // read must be inside current frame.
-        slow_assert!({
+        sassert!({
             let frame = self.frame_info();
             // +2 for stack info
             reg.0 as isize >= -(frame.args as isize + 2) && (reg.0 as u8) < frame.size
@@ -232,38 +232,38 @@ impl<'gc, 'own> Stack<'gc, 'own> {
     #[inline(always)]
     pub unsafe fn write<'l>(&self, reg: Reg, value: Value<'l, 'own>) {
         // read must be inside current frame.
-        slow_assert!({
+        sassert!({
             let frame = self.frame_info();
             // +2 for stack info and function
             reg.0 as isize >= -(frame.args as isize + 2) && (reg.0 as u8) < frame.size
         });
         // the function object should not be overwritten.
-        slow_assert_ne!(reg, Reg::function_reg());
+        sassert_ne!(reg, Reg::function_reg());
         self.stack.as_ptr().offset(reg.0 as isize).write(value)
     }
 
     #[inline(always)]
-    pub unsafe fn long_read(&self, tgt: i32) -> Value<'gc, 'own> {
+    pub unsafe fn long_read(&self, tgt: LongReg) -> Value<'gc, 'own> {
         // read must be inside current frame.
-        slow_assert!({
+        sassert!({
             let frame = self.frame_info();
             // +2 for stack info
             reg.0 as isize > -(frame.args as isize + 2) && (reg.0 as isize) < frame.size as isize
         });
         // can't write to the stack info.
-        self.stack.as_ptr().offset(tgt as isize).read()
+        self.stack.as_ptr().offset(tgt.0 as isize).read()
     }
 
     #[inline(always)]
-    pub unsafe fn long_write<'l>(&self, tgt: i32, value: Value<'l, 'own>) {
+    pub unsafe fn long_write<'l>(&self, tgt: LongReg, value: Value<'l, 'own>) {
         // read must be inside current frame.
-        slow_assert!({
+        sassert!({
             let frame = self.frame_info();
             // +2 for stack info and function
             reg.0 as isize > -(frame.args as isize + 2) && (reg.0 as isize) < frame.size as isize
         });
         // can't write to the stack info.
-        self.stack.as_ptr().offset(tgt as isize).write(value)
+        self.stack.as_ptr().offset(tgt.0 as isize).write(value)
     }
 
     pub unsafe fn push_entry_frame(&mut self, size: u32) -> Result<(), StackSizeError> {
@@ -331,7 +331,7 @@ impl<'gc, 'own> Stack<'gc, 'own> {
 
     /// Pop value of the stack
     pub unsafe fn pop(&mut self) -> Value<'gc, 'own> {
-        slow_assert!(self.frame_size() >= 1);
+        sassert!(self.frame_size() >= 1);
         todo!()
     }
 

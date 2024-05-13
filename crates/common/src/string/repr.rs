@@ -135,7 +135,9 @@ impl Repr {
                 );
                 inline[FLAG_BYTE_INDEX].write(ascii.len() as u8);
                 Repr {
-                    inline: std::mem::transmute(inline),
+                    inline: std::mem::transmute::<[MaybeUninit<_>; INLINE_SIZE], [u8; INLINE_SIZE]>(
+                        inline,
+                    ),
                 }
             }
         } else {

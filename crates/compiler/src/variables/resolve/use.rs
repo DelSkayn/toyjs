@@ -52,7 +52,7 @@ impl<'a, 'b> UsePass<'a, 'b> {
         self.current_use = self
             .current_use
             .checked_add(1)
-            .ok_or(Error::ExceededLimits(Limits::TooManyVariables))?;
+            .ok_or(Error::Limit(Limits::TooManyVariables))?;
         self.loop_use = None;
         Ok(id)
     }
