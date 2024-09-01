@@ -1,599 +1,614 @@
 use ast::{
-    CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern, InOfDecl,
-    List, ListHead, ListId, NodeId, PrimeExpr, Stmt, VariableDecl, VariableKind,
+    Ast, CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern,
+    InOfDecl, List, NodeId, NodeListId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
 use common::span::Span;
 use token::t;
 
 use crate::{
     alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Error,
-    Parser, ParserState, Result,
+    Parse, Parser, ParserState, Result,
 };
 
-impl<'a> Parser<'a> {
-    /// Parses ECMA spec `Declaration`, `Statement` and other `...Statement` productions
-    pub fn parse_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        let token = self.peek();
+impl Parse for Stmt {
+    fn parse(parser: &mut Parser, ast: &mut ast::Ast) -> Result<NodeId<Self>> {
+        let token = parser.peek();
         let expr = match token.kind() {
             t!("{") => {
-                self.next();
-                let list = self.parse_block_stmt()?;
-                self.ast.push_node(Stmt::Block { list })
+                parser.next();
+                let list = parser.parse_block_stmt()?;
+                parser.ast.push_node(Stmt::Block { list })
             }
             t!("var") => {
-                self.next();
-                self.parse_variable_decl(VariableKind::Var)?
+                parser.next();
+                parser.parse_variable_decl(VariableKind::Var)?
             }
             t!("let") => {
-                self.next();
-                self.parse_variable_decl(VariableKind::Let)?
+                parser.next();
+                parser.parse_variable_decl(VariableKind::Let)?
             }
             t!("const") => {
-                self.next();
-                self.parse_variable_decl(VariableKind::Const)?
+                parser.next();
+                parser.parse_variable_decl(VariableKind::Const)?
             }
             t!("if") => {
-                self.next();
-                self.parse_if_stmt()?
+                parser.next();
+                parser.parse_if_stmt()?
             }
             t!("while") => {
-                self.next();
-                self.parse_while_stmt()?
+                parser.next();
+                parser.parse_while_stmt()?
             }
             t!("do") => {
-                self.next();
-                self.parse_do_while_stmt()?
+                parser.next();
+                parser.parse_do_while_stmt()?
             }
             t!("for") => {
-                self.next();
-                self.parse_for_stmt()?
+                parser.next();
+                parser.parse_for_stmt()?
             }
             t!("switch") => {
-                self.next();
-                self.parse_switch_stmt()?
+                parser.next();
+                parser.parse_switch_stmt()?
             }
             t!("return") => {
-                self.next();
-                self.parse_return_stmt()?
+                parser.next();
+                parser.parse_return_stmt()?
             }
             t!("break") => {
-                self.next();
-                self.parse_cntrl_flow_stmt(true)?
+                parser.next();
+                parser.parse_cntrl_flow_stmt(true)?
             }
             t!("continue") => {
-                self.next();
-                self.parse_cntrl_flow_stmt(false)?
+                parser.next();
+                parser.parse_cntrl_flow_stmt(false)?
             }
             t!("try") => {
-                self.next();
-                self.parse_try_stmt()?
+                parser.next();
+                parser.parse_try_stmt()?
             }
             t!("throw") => {
-                self.next();
-                self.parse_throw_stmt()?
+                parser.next();
+                parser.parse_throw_stmt()?
             }
             t!("class") => {
-                self.next();
-                let class = self.parse_class(true)?;
-                self.ast.push_node(Stmt::Class { class })
+                parser.next();
+                let class = parser.parse_class(true)?;
+                Ok(ast.push(Stmt::Class { class })?)
             }
             t!("function") => {
-                self.next();
-                let kind = if self.eat(t!("*")) {
+                parser.next();
+                let kind = if parser.eat(t!("*")) {
                     FunctionKind::Generator
                 } else {
                     FunctionKind::Simple
                 };
-                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
-                self.ast.push_node(Stmt::Function { func })
+                let func = parser.parse_function(FunctionCtx::Stmt, kind)?;
+                ast.push(Stmt::Function { func }).into()
             }
             t!("async") => {
-                self.next();
-                expect!(self, "function");
-                let kind = if self.eat(t!("*")) {
+                parser.next();
+                expect!(parser, "function");
+                let kind = if parser.eat(t!("*")) {
                     FunctionKind::AsyncGenerator
                 } else {
                     FunctionKind::Async
                 };
-                self.no_line_terminator()?;
-                let func = self.parse_function(FunctionCtx::Stmt, kind)?;
-                self.ast.push_node(Stmt::Function { func })
+                parser.no_line_terminator()?;
+                let func = parser.parse_function(FunctionCtx::Stmt, kind)?;
+                ast.push(Stmt::Function { func }).into()
             }
             t!("debugger") => {
-                self.next();
-                self.semicolon()?;
-                self.ast.push_node(Stmt::Debugger)
+                parser.next();
+                parser.semicolon()?;
+                parser.ast.push_node(Stmt::Debugger)
             }
             t!("with") => {
-                self.next();
-                self.parse_with_stmt()?
+                parser.next();
+                parser.parse_with_stmt()?
             }
             t!(";") => {
-                self.next();
-                self.ast.push_node(Stmt::Empty)
+                parser.next();
+                parser.ast.push_node(Stmt::Empty)
             }
             _ => {
-                alter_state!(self => {
-                    self.state.insert(ParserState::In);
-                    let expr = self.parse_expr()?;
+                alter_state!(parser => {
+                    parser.state.insert(ParserState::In);
+                    let expr = parser.parse_expr()?;
                 });
-                if self.eat(t!(":")) {
-                    if self.ast[expr].next.is_some() {
-                        unexpected!(self, t!(":"), ";");
+                if parser.eat(t!(":")) {
+                    if parser.ast[expr].next.is_some() {
+                        unexpected!(parser, t!(":"), ";");
                     }
-                    let prime = self.ast[expr].item;
-                    let Expr::Prime { expr } = self.ast[prime] else {
-                        unexpected!(self, t!(":"), ";");
+                    let prime = parser.ast[expr].item;
+                    let Expr::Prime { expr } = parser.ast[prime] else {
+                        unexpected!(parser, t!(":"), ";");
                     };
-                    let PrimeExpr::Ident(label) = self.ast[expr] else {
-                        unexpected!(self, t!(":"), ";");
+                    let PrimeExpr::Ident(label) = parser.ast[expr] else {
+                        unexpected!(parser, t!(":"), ";");
                     };
-                    let name = self.ast[label].name;
-                    self.ast.free_node(label);
-                    self.ast.free_node(expr);
-                    self.ast.free_node(prime);
-                    let stmt = self.parse_stmt()?;
-                    self.ast.push_node(Stmt::Labeled { label: name, stmt })
+                    let name = parser.ast[label].name;
+                    let stmt = parser.parse_stmt()?;
+                    parser.ast.push_node(Stmt::Labeled { label: name, stmt })
                 } else {
-                    self.semicolon()?;
-                    self.ast.push_node(Stmt::Expr { expr })
+                    parser.semicolon()?;
+                    parser.ast.push_node(Stmt::Expr { expr })
                 }
             }
         };
 
         Ok(expr)
     }
+}
 
-    /// Parser a block statement:
-    /// ```javascript
-    /// // starts here {
-    ///     var a = 1;
-    /// }
-    /// ```
-    pub fn parse_block_stmt(&mut self) -> Result<ListHead<Stmt>> {
-        let mut head = ListHead::Empty;
-        let mut prev = None;
+/// Parser a block statement:
+/// ```javascript
+/// // starts here {
+///     var a = 1;
+/// }
+/// ```
+pub fn parse_block_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<Option<NodeListId<Stmt>>> {
+    let mut head = None;
+    let mut cur = None;
 
-        loop {
-            if let t!("}") = self.peek_kind() {
-                self.next();
-                return Ok(head);
-            }
-            let stmt = self.parse_stmt()?;
+    loop {
+        if let t!("}") = parser.peek_kind() {
+            parser.next();
+            return Ok(head);
+        }
+        let stmt = parser.parse(ast)?;
+        ast.push_list(&mut head, &mut cur, stmt)
+    }
 
-            let new = self.ast.append_list(stmt, prev);
-            prev = Some(new);
-            head = head.or(ListHead::Present(new));
+    Ok(head)
+}
+
+pub fn parse_if_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    expect!(parser, "(");
+    let cond = parser.save_state(|parser| {
+        parser.state.insert(ParserState::In);
+        parser.parse_expr()
+    })?;
+    expect!(parser, ")");
+    let body = parser.parse(ast)?;
+    let r#else = if parser.eat(t!("else")) {
+        Some(parser.parse(ast)?)
+    } else {
+        None
+    };
+
+    Ok(ast.push(Stmt::If { cond, body, r#else })?)
+}
+
+pub fn parse_while_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    expect!(parser, "(");
+    let cond = parser.save_state(|parser| {
+        parser.state.insert(ParserState::In);
+        let cond = parser.parse(ast)?;
+    });
+    expect!(parser, ")");
+
+    let body = parser.save_state(|parser| {
+        parser
+            .state
+            .insert(ParserState::Break | ParserState::Continue);
+        parser.parse(ast)
+    })?;
+
+    ast.push(Stmt::While { cond, body }).into()
+}
+
+pub fn parse_do_while_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    parser.save_state(|parser| {
+        parser
+            .state
+            .insert(ParserState::Break | ParserState::Continue);
+        parser.parse(ast)?;
+    })?;
+
+    expect!(parser, "while");
+    expect!(parser, "(");
+    let cond = parser.parse(ast)?;
+    expect!(parser, ")");
+    Ok(ast.push(Stmt::DoWhile { cond, body }))
+}
+
+/// Parse a c style for loop declaration:
+/// ```javascript
+/// for(let i /* start here */ = foo, b = bar; i < 10;i++){ body }
+/// ```
+pub fn parse_c_style_decl(
+    parser: &mut Parser,
+    ast: &mut Ast,
+    kind: VariableKind,
+    decl: NodeId<IdentOrPattern>,
+    decl_span: Span,
+) -> Result<NodeListId<VariableDecl>> {
+
+    let initializer = parser
+        .eat(t!("="))
+        .then(|| parser.parse(ast))
+        .transpose()?;
+
+    if initializer.is_none() {
+        if kind == VariableKind::Const {
+            return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+        }
+        if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+            return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
         }
     }
 
-    pub fn parse_if_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "(");
-        alter_state!(self => {
-            self.state.insert(ParserState::In);
-            let cond = self.parse_expr()?;
-        });
-        expect!(self, ")");
-        let body = self.parse_stmt()?;
-        let r#else = if self.eat(t!("else")) {
-            Some(self.parse_stmt()?)
-        } else {
-            None
-        };
+    let decl = ast.push(VariableDecl { decl, initializer })?;
+    let mut head = None;
+    let mut cur = None;
 
-        Ok(self.ast.push_node(Stmt::If { cond, body, r#else }))
-    }
+    ast.push_list(&mut head, &mut cur, None)
 
-    pub fn parse_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "(");
-        alter_state!(self => {
-            self.state.insert(ParserState::In);
-        let cond = self.parse_expr()?;
-        });
-        expect!(self, ")");
-
-        alter_state!(self => {
-            self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
-        });
-
-        Ok(self.ast.push_node(Stmt::While { cond, body }))
-    }
-
-    pub fn parse_do_while_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        alter_state!(self => {
-            self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
-        });
-
-        expect!(self, "while");
-        expect!(self, "(");
-        let cond = self.parse_expr()?;
-        expect!(self, ")");
-        Ok(self.ast.push_node(Stmt::DoWhile { cond, body }))
-    }
-
-    /// Parse a c style for loop declaration:
-    /// ```javascript
-    /// for(let i /* start here */ = foo, b = bar; i < 10;i++){ body }
-    /// ```
-    pub fn parse_c_style_decl(
-        &mut self,
-        kind: VariableKind,
-        decl: NodeId<IdentOrPattern>,
-        decl_span: Span,
-    ) -> Result<ListId<VariableDecl>> {
-        let initializer = self
+    while parser.eat(t!(",")) {
+        let start = *parser.last_span();
+        let decl = parser.parse_ident_or_pattern()?;
+        let decl_span = start.covers(parser.last_span());
+        let initializer = parser
             .eat(t!("="))
-            .then(|| self.parse_assignment_expr())
+            .then(|| parser.parse(ast))
             .transpose()?;
 
         if initializer.is_none() {
             if kind == VariableKind::Const {
                 return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
             }
-            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+            if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
                 return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
             }
         }
 
-        let decl = self.ast.push_node(VariableDecl { decl, initializer });
+        let decl = ast.push(VariableDecl { decl, initializer });
 
-        let head = self.ast.append_list(decl, None);
-        let mut prev = head;
-        while self.eat(t!(",")) {
-            let start = *self.last_span();
-            let decl = self.parse_ident_or_pattern()?;
-            let decl_span = start.covers(self.last_span());
-            let initializer = self
-                .eat(t!("="))
-                .then(|| self.parse_assignment_expr())
-                .transpose()?;
-
-            if initializer.is_none() {
-                if kind == VariableKind::Const {
-                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
-                }
-                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
-                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
-                }
-            }
-
-            let decl = self.ast.push_node(VariableDecl { decl, initializer });
-
-            prev = self.ast.append_list(decl, Some(prev));
-        }
-        Ok(head)
+        prev = ast.append_list(decl, Some(prev));
     }
+    Ok(head)
+}
 
-    /// Parse a c style for loop:
-    /// ```javascript
-    /// for(let i = foo /* start here */; i < 10;i++){ body }
-    /// ```
-    pub fn parse_c_style_for(&mut self, decl: CstyleDecl) -> Result<NodeId<Stmt>> {
-        expect!(self, ";");
-        let cond = if let t!(";") = self.peek_kind() {
-            None
-        } else {
-            Some(self.parse_expr()?)
-        };
-        expect!(self, ";");
-        let post = if let t!(")") = self.peek_kind() {
-            None
-        } else {
-            Some(self.parse_expr()?)
-        };
-        expect!(self, ")");
-        let head = self.ast.push_node(ForLoopHead::CStyle { decl, cond, post });
-        alter_state!(self => {
-            self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
-        });
-        Ok(self.ast.push_node(Stmt::For { head, body }))
-    }
+/// Parse a c style for loop:
+/// ```javascript
+/// for(let i = foo /* start here */; i < 10;i++){ body }
+/// ```
+pub fn parse_c_style_for(
+    parser: &mut Parser,
+    ast: &mut Ast,
+    decl: CstyleDecl,
+) -> Result<NodeId<Stmt>> {
+    expect!(parser, ";");
+    let cond = if let t!(";") = parser.peek_kind() {
+        None
+    } else {
+        Some(parser.parse_expr()?)
+    };
+    expect!(parser, ";");
+    let post = if let t!(")") = parser.peek_kind() {
+        None
+    } else {
+        Some(parser.parse_expr()?)
+    };
+    expect!(parser, ")");
+    let head = ast.push(ForLoopHead::CStyle { decl, cond, post });
+    alter_state!(parser => {
+        parser.state.insert(ParserState::Break | ParserState::Continue);
+        let body = parser.parse_stmt()?;
+    });
+    Ok(ast.push(Stmt::For { head, body }))
+}
 
-    pub fn parse_for_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        //TODO await loop
-        expect!(self, "(");
-        let next = self.peek_kind();
-        let decl = match next {
-            t!("let") | t!("var") | t!("const") => {
-                let kind = match next {
-                    t!("let") => VariableKind::Let,
-                    t!("var") => VariableKind::Var,
-                    t!("const") => VariableKind::Const,
-                    _ => unreachable!(),
-                };
-                self.next();
-                self.peek(); // peek to advance the last span to the next token.
-                let start = *self.last_span();
-                let binding = self.parse_ident_or_pattern()?;
-                let binding_span = start.covers(self.last_span());
-                if let t!("=") | t!(",") = self.peek_kind() {
-                    let decl = self.parse_c_style_decl(kind, binding, binding_span)?;
-                    return self.parse_c_style_for(CstyleDecl::Decl { kind, decl });
-                } else {
-                    InOfDecl::Decl { kind, binding }
-                }
-            }
-            t!(";") => return self.parse_c_style_for(CstyleDecl::Empty),
-            _ => {
-                let state = self.state;
-                self.state.remove(ParserState::In);
-                let expr = self.parse_assignment_expr()?;
-
-                if self.eat(t!(",")) {
-                    let next = Some(self.parse_expr()?);
-                    let expr = self.ast.push_list(List { item: expr, next });
-                    self.state = state;
-                    return self.parse_c_style_for(CstyleDecl::Expr(expr));
-                }
-                self.state = state;
-                InOfDecl::Expr(expr)
-            }
-        };
-
-        let next = peek_expect!(self);
-        let head = match next.kind() {
-            t!(";") => {
-                let decl = match decl {
-                    InOfDecl::Expr(expr) => CstyleDecl::Expr(self.ast.append_list(expr, None)),
-                    InOfDecl::Decl { kind, binding } => {
-                        let decl = self.ast.push_node(VariableDecl {
-                            decl: binding,
-                            initializer: None,
-                        });
-                        let decl = self.ast.append_list(decl, None);
-                        CstyleDecl::Decl { kind, decl }
-                    }
-                };
-                return self.parse_c_style_for(decl);
-            }
-            t!("in") => {
-                self.next();
-                let expr = self.parse_expr()?;
-                ForLoopHead::In { decl, expr }
-            }
-            t!("of") => {
-                self.next();
-                let expr = self.parse_assignment_expr()?;
-                ForLoopHead::Of { decl, expr }
-            }
-            //TODO 'of'
-            x => unexpected!(self, x, ";", "in"),
-        };
-        let head = self.ast.push_node(head);
-
-        expect!(self, ")");
-        alter_state!(self => {
-            self.state.insert(ParserState::Break | ParserState::Continue);
-            let body = self.parse_stmt()?;
-        });
-        Ok(self.ast.push_node(Stmt::For { head, body }))
-    }
-
-    pub fn parse_switch_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "(");
-        let cond = self.parse_expr()?;
-        expect!(self, ")");
-        expect!(self, "{");
-        let mut head = ListHead::Empty;
-        let mut prev = None;
-        let mut default = None;
-        loop {
-            let case = match self.peek_kind() {
-                t!("case") => {
-                    self.next();
-                    Some(self.parse_expr()?)
-                }
-                t!("default") => {
-                    if default.is_some() {
-                        unexpected!(self, t!("default") => "multiple default cases is not allowed")
-                    }
-                    self.next();
-                    None
-                }
-                t!("}") => {
-                    self.next();
-                    return Ok(self.ast.push_node(Stmt::Switch {
-                        cond,
-                        cases: head,
-                        default,
-                    }));
-                }
-                x => unexpected!(self, x, "case", "default", "}"),
+pub fn parse_for_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    //TODO await loop
+    expect!(parser, "(");
+    let next = parser.peek_kind();
+    let decl = match next {
+        t!("let") | t!("var") | t!("const") => {
+            let kind = match next {
+                t!("let") => VariableKind::Let,
+                t!("var") => VariableKind::Var,
+                t!("const") => VariableKind::Const,
+                _ => unreachable!(),
             };
-            expect!(self, ":");
+            parser.next();
+            parser.peek(); // peek to advance the last span to the next token.
+            let start = *parser.last_span();
+            let binding = parser.parse_ident_or_pattern()?;
+            let binding_span = start.covers(parser.last_span());
+            if let t!("=") | t!(",") = parser.peek_kind() {
+                let decl = parser.parse_c_style_decl(kind, binding, binding_span)?;
+                return parser.parse_c_style_for(CstyleDecl::Decl { kind, decl });
+            } else {
+                InOfDecl::Decl { kind, binding }
+            }
+        }
+        t!(";") => return parser.parse_c_style_for(CstyleDecl::Empty),
+        _ => {
+            let state = parser.state;
+            parser.state.remove(ParserState::In);
+            let expr = parser.parse_assignment_expr()?;
 
-            alter_state!(self => {
-                self.state.insert(ParserState::Break);
-                let mut stmt_head = ListHead::Empty;
-                let mut stmt_prev = None;
-                loop {
-                    match peek_expect!(self).kind() {
-                        t!("case") | t!("default") | t!("}") => break,
-                        _ => {
-                            let stmt = self.parse_stmt()?;
-                            stmt_prev = Some(self.ast.append_list(stmt, stmt_prev));
-                            stmt_head = stmt_head.or(stmt_prev.into())
-                        }
+            if parser.eat(t!(",")) {
+                let next = Some(parser.parse_expr()?);
+                let expr = ast.push_list(List { item: expr, next });
+                parser.state = state;
+                return parser.parse_c_style_for(CstyleDecl::Expr(expr));
+            }
+            parser.state = state;
+            InOfDecl::Expr(expr)
+        }
+    };
+
+    let next = peek_expect!(parser);
+    let head = match next.kind() {
+        t!(";") => {
+            let decl = match decl {
+                InOfDecl::Expr(expr) => CstyleDecl::Expr(ast.append_list(expr, None)),
+                InOfDecl::Decl { kind, binding } => {
+                    let decl = ast.push(VariableDecl {
+                        decl: binding,
+                        initializer: None,
+                    });
+                    let decl = ast.append_list(decl, None);
+                    CstyleDecl::Decl { kind, decl }
+                }
+            };
+            return parser.parse_c_style_for(decl);
+        }
+        t!("in") => {
+            parser.next();
+            let expr = parser.parse_expr()?;
+            ForLoopHead::In { decl, expr }
+        }
+        t!("of") => {
+            parser.next();
+            let expr = parser.parse_assignment_expr()?;
+            ForLoopHead::Of { decl, expr }
+        }
+        //TODO 'of'
+        x => unexpected!(parser, x, ";", "in"),
+    };
+    let head = ast.push(head);
+
+    expect!(parser, ")");
+    alter_state!(parser => {
+        parser.state.insert(ParserState::Break | ParserState::Continue);
+        let body = parser.parse_stmt()?;
+    });
+    Ok(ast.push(Stmt::For { head, body }))
+}
+
+pub fn parse_switch_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    expect!(parser, "(");
+    let cond = parser.parse_expr()?;
+    expect!(parser, ")");
+    expect!(parser, "{");
+    let mut head = ListHead::Empty;
+    let mut prev = None;
+    let mut default = None;
+    loop {
+        let case = match parser.peek_kind() {
+            t!("case") => {
+                parser.next();
+                Some(parser.parse_expr()?)
+            }
+            t!("default") => {
+                if default.is_some() {
+                    unexpected!(parser, t!("default") => "multiple default cases is not allowed")
+                }
+                parser.next();
+                None
+            }
+            t!("}") => {
+                parser.next();
+                return Ok(ast.push(Stmt::Switch {
+                    cond,
+                    cases: head,
+                    default,
+                }));
+            }
+            x => unexpected!(parser, x, "case", "default", "}"),
+        };
+        expect!(parser, ":");
+
+        alter_state!(parser => {
+            parser.state.insert(ParserState::Break);
+            let mut stmt_head = ListHead::Empty;
+            let mut stmt_prev = None;
+            loop {
+                match peek_expect!(parser).kind() {
+                    t!("case") | t!("default") | t!("}") => break,
+                    _ => {
+                        let stmt = parser.parse_stmt()?;
+                        stmt_prev = Some(ast.append_list(stmt, stmt_prev));
+                        stmt_head = stmt_head.or(stmt_prev.into())
                     }
                 }
+            }
+        });
+
+        if let Some(expr) = case {
+            let node = ast.push(CaseItem {
+                expr,
+                stmts: stmt_head,
             });
-
-            if let Some(expr) = case {
-                let node = self.ast.push_node(CaseItem {
-                    expr,
-                    stmts: stmt_head,
-                });
-                prev = Some(self.ast.append_list(node, prev));
-                head = head.or(prev.into())
-            } else {
-                // Default case
-                default = Some(stmt_head)
-            }
-        }
-    }
-
-    pub fn parse_return_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        debug_assert!(self.peek.is_none());
-        if self.eat_semicolon() {
-            Ok(self.ast.push_node(Stmt::Return { expr: None }))
+            prev = Some(ast.append_list(node, prev));
+            head = head.or(prev.into())
         } else {
-            let expr = Some(self.parse_expr()?);
-            self.semicolon()?;
-            Ok(self.ast.push_node(Stmt::Return { expr }))
+            // Default case
+            default = Some(stmt_head)
         }
     }
+}
 
-    pub fn parse_cntrl_flow_stmt(&mut self, is_break: bool) -> Result<NodeId<Stmt>> {
-        if is_break && !self.state.contains(ParserState::Break)
-            || !is_break && !self.state.contains(ParserState::Continue)
-        {
-            return Err(crate::Error::new(
-                ErrorKind::DisallowedToken {
-                    found: if is_break {
-                        t!("break")
-                    } else {
-                        t!("continue")
-                    },
-                    message: None,
+pub fn parse_return_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    debug_assert!(parser.peek.is_none());
+    if parser.eat_semicolon() {
+        Ok(ast.push(Stmt::Return { expr: None }))
+    } else {
+        let expr = Some(parser.parse_expr()?);
+        parser.semicolon()?;
+        Ok(ast.push(Stmt::Return { expr }))
+    }
+}
+
+pub fn parse_cntrl_flow_stmt(
+    parser: &mut Parser,
+    ast: &mut Ast,
+    is_break: bool,
+) -> Result<NodeId<Stmt>> {
+    if is_break && !parser.state.contains(ParserState::Break)
+        || !is_break && !parser.state.contains(ParserState::Continue)
+    {
+        return Err(crate::Error::new(
+            ErrorKind::DisallowedToken {
+                found: if is_break {
+                    t!("break")
+                } else {
+                    t!("continue")
                 },
-                *self.last_span(),
-            ));
-        }
+                message: None,
+            },
+            *parser.last_span(),
+        ));
+    }
 
-        let label = if self.eat_semicolon() {
-            None
+    let label = if parser.eat_semicolon() {
+        None
+    } else {
+        let token = peek_expect!(parser);
+        if let t!("ident") = token.kind() {
+            parser.next();
+            Some(token.data_id().unwrap())
         } else {
-            let token = peek_expect!(self);
-            if let t!("ident") = token.kind() {
-                self.next();
-                Some(token.data_id().unwrap())
-            } else {
-                unexpected!(self, token.kind(), "ident");
-            }
-        };
-
-        let node = if is_break {
-            Stmt::Break { label }
-        } else {
-            Stmt::Continue { label }
-        };
-        Ok(self.ast.push_node(node))
-    }
-
-    pub fn parse_try_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        expect!(self, "{");
-        let block = self.parse_block_stmt()?;
-        let catch = self
-            .eat(t!("catch"))
-            .then(|| {
-                let binding = self
-                    .eat(t!("("))
-                    .then(|| {
-                        let res = self.parse_ident_or_pattern()?;
-                        expect!(self, ")");
-                        Ok(res)
-                    })
-                    .transpose()?;
-
-                expect!(self, "{");
-                let block = self.parse_block_stmt()?;
-                Ok(self.ast.push_node(CatchStmt { binding, block }))
-            })
-            .transpose()?;
-
-        let finally = self
-            .eat(t!("finally"))
-            .then(|| {
-                expect!(self, "{");
-                self.parse_block_stmt()
-            })
-            .transpose()?;
-
-        Ok(self.ast.push_node(Stmt::Try {
-            block,
-            catch,
-            finally,
-        }))
-    }
-
-    pub fn parse_throw_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        peek_expect!(self);
-        self.no_line_terminator()?;
-        let expr = self.parse_expr()?;
-        self.semicolon()?;
-        Ok(self.ast.push_node(Stmt::Throw { expr }))
-    }
-
-    pub fn parse_with_stmt(&mut self) -> Result<NodeId<Stmt>> {
-        if self.state.contains(ParserState::Strict) {
-            todo!("disallow with in strict mode")
+            unexpected!(parser, token.kind(), "ident");
         }
-        expect!(self, "(");
-        let expr = self.parse_expr()?;
-        expect!(self, ")");
-        let stmt = self.parse_stmt()?;
-        Ok(self.ast.push_node(Stmt::With { expr, stmt }))
+    };
+
+    let node = if is_break {
+        Stmt::Break { label }
+    } else {
+        Stmt::Continue { label }
+    };
+    Ok(ast.push(node))
+}
+
+pub fn parse_try_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    expect!(parser, "{");
+    let block = parser.parse_block_stmt()?;
+    let catch = parser
+        .eat(t!("catch"))
+        .then(|| {
+            let binding = parser
+                .eat(t!("("))
+                .then(|| {
+                    let res = parser.parse_ident_or_pattern()?;
+                    expect!(parser, ")");
+                    Ok(res)
+                })
+                .transpose()?;
+
+            expect!(parser, "{");
+            let block = parser.parse_block_stmt()?;
+            Ok(ast.push(CatchStmt { binding, block }))
+        })
+        .transpose()?;
+
+    let finally = parser
+        .eat(t!("finally"))
+        .then(|| {
+            expect!(parser, "{");
+            parser.parse_block_stmt()
+        })
+        .transpose()?;
+
+    Ok(ast.push(Stmt::Try {
+        block,
+        catch,
+        finally,
+    }))
+}
+
+pub fn parse_throw_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    peek_expect!(parser);
+    parser.no_line_terminator()?;
+    let expr = parser.parse_expr()?;
+    parser.semicolon()?;
+    Ok(ast.push(Stmt::Throw { expr }))
+}
+
+pub fn parse_with_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+    if parser.state.contains(ParserState::Strict) {
+        todo!("disallow with in strict mode")
+    }
+    expect!(parser, "(");
+    let expr = parser.parse_expr()?;
+    expect!(parser, ")");
+    let stmt = parser.parse_stmt()?;
+    Ok(ast.push(Stmt::With { expr, stmt }))
+}
+
+/// Parse a variable declaration, e.g. any of:
+/// ```javascript
+/// var a = 1;
+/// let [b,,,...rest] = 1;
+/// const { c } = foo;
+/// ```
+pub fn parse_variable_decl(
+    parser: &mut Parser,
+    ast: &mut Ast,
+    kind: VariableKind,
+) -> Result<NodeId<Stmt>> {
+    let span = parser.peek().span;
+
+    let decl = parser.parse_ident_or_pattern()?;
+    let decl_span = span.covers(parser.last_span());
+
+    let initializer = parser
+        .eat(t!("="))
+        .then(|| parser.parse_assignment_expr())
+        .transpose()?;
+
+    if initializer.is_none() {
+        if kind == VariableKind::Const {
+            return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
+        }
+        if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+            return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
+        }
     }
 
-    /// Parse a variable declaration, e.g. any of:
-    /// ```javascript
-    /// var a = 1;
-    /// let [b,,,...rest] = 1;
-    /// const { c } = foo;
-    /// ```
-    pub fn parse_variable_decl(&mut self, kind: VariableKind) -> Result<NodeId<Stmt>> {
-        let span = self.peek().span;
+    let decl = ast.push(VariableDecl { decl, initializer });
 
-        let decl = self.parse_ident_or_pattern()?;
-        let decl_span = span.covers(self.last_span());
+    let head = ast.append_list(decl, None);
+    let mut prev = head;
+    while parser.eat(t!(",")) {
+        let span = parser.peek().span;
+        let decl = parser.parse_ident_or_pattern()?;
+        let decl_span = span.covers(parser.last_span());
 
-        let initializer = self
+        let initializer = parser
             .eat(t!("="))
-            .then(|| self.parse_assignment_expr())
+            .then(|| parser.parse_assignment_expr())
             .transpose()?;
 
         if initializer.is_none() {
             if kind == VariableKind::Const {
                 return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
             }
-            if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
+            if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
                 return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
             }
         }
 
-        let decl = self.ast.push_node(VariableDecl { decl, initializer });
-
-        let head = self.ast.append_list(decl, None);
-        let mut prev = head;
-        while self.eat(t!(",")) {
-            let span = self.peek().span;
-            let decl = self.parse_ident_or_pattern()?;
-            let decl_span = span.covers(self.last_span());
-
-            let initializer = self
-                .eat(t!("="))
-                .then(|| self.parse_assignment_expr())
-                .transpose()?;
-
-            if initializer.is_none() {
-                if kind == VariableKind::Const {
-                    return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
-                }
-                if matches!(self.ast[decl], IdentOrPattern::Pattern(_)) {
-                    return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
-                }
-            }
-
-            let decl = self.ast.push_node(VariableDecl { decl, initializer });
-            prev = self.ast.append_list(decl, Some(prev));
-        }
-        self.semicolon()?;
-
-        let res = self.ast.push_node(Stmt::VariableDecl { kind, decl: head });
-
-        Ok(res)
+        let decl = ast.push(VariableDecl { decl, initializer });
+        prev = ast.append_list(decl, Some(prev));
     }
+    parser.semicolon()?;
+
+    let res = ast.push(Stmt::VariableDecl { kind, decl: head });
+
+    Ok(res)
 }

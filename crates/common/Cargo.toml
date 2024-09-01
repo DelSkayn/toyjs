@@ -12,7 +12,6 @@ no_assert = []
 
 
 [dependencies]
-ahash = { version = "0.8.3", default-features = false }
-bytemuck = { version = "1.13.1", features = ["derive"] }
-hashbrown = "0.13.2"
-unicode-ident = "1.0.8"
+ahash = { version = "0.8", default-features = false }
+hashbrown = {version = "0.14", features = ["raw"] }
+unicode-ident = "1.0"

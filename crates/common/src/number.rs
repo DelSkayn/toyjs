@@ -1,6 +1,10 @@
 //! Module implementing number wrapper for floating point number which implement bitwise equality
 //! and hashing
 
+use std::hash::{Hash, Hasher};
+
+use crate::id;
+
 pub trait Num: Sized + Copy {
     fn equal_bits(self, other: Self) -> bool;
 
@@ -39,11 +43,7 @@ macro_rules! impl_num{
 
 impl_num!(u8, i8, u16, i16, u32, i32, u64, i64, f32, f64);
 
-use std::hash::{Hash, Hasher};
-
-use crate::key;
-
-key!(pub struct NumberId(u32));
+id!(pub struct NumberId);
 
 /// A wrapper around f64 which implements bitwise equility and hashing.
 #[derive(Clone, Copy, Debug)]

@@ -1,249 +1,162 @@
-use std::{
-    marker::PhantomData,
-    ops::{Index, IndexMut, RangeBounds},
-    slice::{Iter, IterMut},
-    vec::Drain,
-};
+//! Module for  working with type-safe indexed collections.
+//!
+//! Instead of indexing into a collection with a usize, which is no more type safe than a void
+//! pointer, this module proveds the Id trait allong with some collections and a way to easily
+//! create new id's. The collection only provide indexing for the id's this prevent mixin indexes
+//! of serveral different collections.
+//!
+//! Id's are stored as `NonZeroU32` this allows `Option<Id>` to be equal in size as `Id`.
+
+use core::fmt;
+use std::{num::NonZeroU32, usize};
+
+pub mod collections;
+
+pub trait Id: Sized + Clone + Copy {
+    fn idx(self) -> usize;
+
+    fn from_idx(idx: usize) -> Result<Self, IdRangeError>;
+}
+
+impl Id for u32 {
+    fn idx(self) -> usize {
+        self as usize
+    }
+
+    fn from_idx(idx: usize) -> Result<Self, IdRangeError> {
+        idx.try_into().map_err(|_| IdRangeError)
+    }
+}
+
+impl Id for NonZeroU32 {
+    fn idx(self) -> usize {
+        self.get() as usize
+    }
+
+    fn from_idx(idx: usize) -> Result<Self, IdRangeError> {
+        if idx > (u32::MAX - 1) as usize {
+            return Err(IdRangeError);
+        }
+        // SAFETY: We check above if the idx is in a valid range so this is safe.
+        unsafe { Ok(NonZeroU32::new_unchecked((idx as u32) ^ u32::MAX)) }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IdRangeError;
+
+impl fmt::Display for IdRangeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id for node exceeded maximum allowed value.")
+    }
+}
 
 /// A macro which implements a newtype index.
 #[macro_export]
-macro_rules! key {
-    ($(#[$m:meta])* $v:vis struct $name:ident($data:ty)) => {
-
-        $(#[ $m ])*
-        #[derive(Clone, Copy, Eq, PartialEq, Hash, bytemuck::Pod, bytemuck::Zeroable, Debug)]
-        #[repr(transparent)]
-        $v struct $name($data);
-
-        impl $crate::id::Id for $name {
+macro_rules! id {
+    ($vis:vis struct $name:ident $( < $($gen:ident),* $(,)? > )? ) => {
+        $vis struct $name $( < $( $gen, )* > )?{
+            id: ::std::num::NonZeroU32,
+            $(
+                _marker: PhantomData< $($gen),*>
+            )?
         }
 
-        impl TryFrom<usize> for $name {
-            type Error = <$data as TryFrom<usize>>::Error;
+        impl$( <$($gen),* > )? $crate::id::Id for $name$( <$($gen),* > )?{
+            fn idx(self) -> usize{
+                self.id.idx()
+            }
 
-            #[inline]
-            fn try_from(value: usize) -> ::std::result::Result<Self, Self::Error> {
-                Ok($name(value.try_into()?))
+            fn from_idx(idx: usize) -> Result<Self, $crate::id::IdRangeError>{
+                let id = ::std::num::NonZeroU32::from_idx(idx)?;
+                Ok(Self{
+                    id,
+                    $(
+                        _marker: PhantomData< $($gen),*>
+                    )?
+                })
             }
         }
 
-        impl TryFrom<$name> for usize {
-            type Error = <usize as TryFrom<u32>>::Error;
+        impl$( <$($gen),* > )? $name $( < $($gen),* > )? {
+            $vis const MIN: Self = unsafe{
+                Self{
+                        id: ::std::num::NonZeroU32::new_unchecked(u32::MAX),
+                        $(
+                            _marker: PhantomData::<$($gen),*>,
+                        )?
+                    }
+            };
 
-            #[inline]
-            fn try_from(value: $name) -> ::std::result::Result<Self, Self::Error> {
-                value.0.try_into()
+            $vis const MAX : Self = unsafe{
+                Self{
+                        id: ::std::num::NonZeroU32::new_unchecked((u32::MAX - 1) ^ u32::MAX),
+                        $(
+                            _marker: PhantomData::<$($gen),*>,
+                        )?
+                    }
+            };
+
+            $vis const fn from_u32(index: u32) -> Option<Self> {
+                if index > (u32::MAX - 1) {
+                    return None;
+                }
+
+                unsafe {
+                    Some(Self{
+                        id: ::std::num::NonZeroU32::new_unchecked(index as u32 ^ u32::MAX),
+                        $(
+                            _marker: PhantomData::<$($gen),*>,
+                        )?
+                    })
+                }
+            }
+
+            $vis const fn into_u32(self) -> u32 {
+                self.id.get() ^ u32::MAX
+            }
+
+            $vis fn next(self) -> Option<Self>{
+                Self::from_u32(self.into_u32() + 1)
             }
         }
+
+        impl$( <$($gen),* > )? Clone for $name $( < $($gen),* > )? {
+            fn clone(&self) -> Self {
+                *self
+            }
+        }
+        impl$( <$($gen),* > )? Copy for $name $( < $($gen),* > )? { }
+        impl$( <$($gen),* > )? PartialEq for $name $( < $($gen),* > )? {
+            fn eq(&self, other: &Self) -> bool {
+                self.id == other.id
+            }
+        }
+        impl$( <$($gen),* > )? Eq for $name $( < $($gen),* > )? { }
+
+        impl$( <$($gen),* > )? PartialOrd for $name $( < $($gen),* > )? {
+            fn partial_cmp(&self, other: &Self) -> Option<::core::cmp::Ordering>{
+                Some(self.cmp(other))
+            }
+        }
+        impl$( <$($gen),* > )? Ord for $name $( < $($gen),* > )? {
+            fn cmp(&self, other: &Self) -> ::core::cmp::Ordering{
+                self.into_u32().cmp(&other.into_u32())
+            }
+        }
+
+        impl$( <$($gen),* > )? ::std::hash::Hash for $name $( < $($gen),* > )? {
+            fn hash<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                self.id.hash(state)
+            }
+        }
+        impl$( <$($gen),* > )? ::std::fmt::Debug for $name $( < $($gen),* > )? {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    .field("id", &self.into_u32())
+                    .finish()
+            }
+        }
+
     };
-    ($(#[$m:meta])* $v:vis struct $name:ident(#[non_zero] $data:ty)) => {
-        $(#[ $m ])*
-        #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
-        #[repr(transparent)]
-        $v struct $name($data);
-
-        impl $crate::id::Id for $name {
-        }
-
-        impl TryFrom<usize> for $name {
-            type Error = <u32 as TryFrom<usize>>::Error;
-
-            #[inline]
-            fn try_from(value: usize) -> ::std::result::Result<Self, Self::Error> {
-                let x: u32 = (value + 1).try_into()?;
-                Ok($name(unsafe{ <$data>::new_unchecked(x) }))
-            }
-        }
-
-        impl TryFrom<$name> for usize {
-            type Error = <usize as TryFrom<u32>>::Error;
-
-            #[inline]
-            fn try_from(value: $name) -> ::std::result::Result<Self, Self::Error> {
-                (u32::from(value.0) - 1).try_into()
-            }
-        }
-    }
-}
-
-pub trait Id: TryFrom<usize> + TryInto<usize> {}
-
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Default)]
-pub struct KeyedVec<K, T> {
-    vec: Vec<T>,
-    _marker: PhantomData<K>,
-}
-
-impl<K, T> KeyedVec<K, T> {
-    pub fn new() -> Self {
-        KeyedVec {
-            vec: Vec::new(),
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn shrink_to_fit(&mut self) {
-        self.vec.shrink_to_fit()
-    }
-
-    pub fn pop(&mut self) -> Option<T> {
-        self.vec.pop()
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.vec.capacity()
-    }
-
-    pub fn len(&self) -> usize {
-        self.vec.len()
-    }
-
-    pub fn iter(&self) -> Iter<'_, T> {
-        self.vec.iter()
-    }
-
-    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        self.vec.iter_mut()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.vec.is_empty()
-    }
-
-    pub fn drain<R>(&mut self, range: R) -> Drain<'_, T>
-    where
-        R: RangeBounds<usize>,
-    {
-        self.vec.drain(range)
-    }
-
-    pub fn as_inner(&self) -> &Vec<T> {
-        &self.vec
-    }
-
-    pub fn as_inner_mut(&mut self) -> &mut Vec<T> {
-        &mut self.vec
-    }
-}
-
-impl<K: Id, T: Clone + Default> KeyedVec<K, T> {
-    /// Resizes the vector so it contains value up till the key and then inserts the value.
-    pub fn insert_grow_default(&mut self, key: K, value: T) {
-        self.insert_grow(key, value, Default::default())
-    }
-}
-
-impl<K: Id, T: Clone> KeyedVec<K, T> {
-    /// Resizes the vector so it contains value up till the key and then inserts the value.
-    pub fn insert_grow(&mut self, key: K, value: T, fill: T) {
-        let Ok(idx) = key.try_into() else {
-            panic!("could not convert key to usize")
-        };
-        if self.len() <= idx {
-            self.vec.resize(idx, fill);
-            self.vec.push(value);
-        } else {
-            self.vec[idx] = value;
-        }
-    }
-}
-
-impl<K: Id, T> KeyedVec<K, T> {
-    pub fn push(&mut self, value: T) -> K {
-        let Ok(res) = K::try_from(self.len()) else {
-            panic!("could not convert index to usize")
-        };
-        self.vec.push(value);
-        res
-    }
-
-    pub fn try_push(&mut self, value: T) -> Result<K, T> {
-        let Ok(res) = K::try_from(self.len()) else {
-            return Err(value);
-        };
-        self.vec.push(value);
-        Ok(res)
-    }
-
-    pub fn next_id(&mut self) -> K {
-        let Ok(x) = K::try_from(self.len()) else {
-            panic!("could not convert index to usize")
-        };
-        x
-    }
-}
-
-impl<V, K, T> From<V> for KeyedVec<K, T>
-where
-    Vec<T>: From<V>,
-{
-    fn from(v: V) -> Self {
-        KeyedVec {
-            vec: Vec::from(v),
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<K, T> AsRef<[T]> for KeyedVec<K, T> {
-    fn as_ref(&self) -> &[T] {
-        self.vec.as_ref()
-    }
-}
-
-impl<K: Id, T> Index<K> for KeyedVec<K, T> {
-    type Output = T;
-
-    fn index(&self, index: K) -> &Self::Output {
-        if let Ok(x) = index.try_into() {
-            &self.vec[x]
-        } else {
-            panic!("could not convert index to usize")
-        }
-    }
-}
-
-impl<K: Id, T> IndexMut<K> for KeyedVec<K, T> {
-    fn index_mut(&mut self, index: K) -> &mut Self::Output {
-        if let Ok(x) = index.try_into() {
-            &mut self.vec[x]
-        } else {
-            panic!("could not convert index to usize")
-        }
-    }
-}
-
-pub struct BinaryVec<K, T>(Vec<(K, T)>);
-
-impl<K: Ord + Copy, V> BinaryVec<K, V> {
-    pub fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    pub fn insert_after(&mut self, key: K, value: V) {
-        if let Some(x) = self.0.last() {
-            assert!(x.0 < key);
-        }
-        self.0.push((key, value));
-    }
-
-    pub fn get(&self, key: &K) -> Option<&V> {
-        let idx = self.0.binary_search_by_key(key, |x| x.0).ok()?;
-        Some(&self.0[idx].1)
-    }
-
-    pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        let idx = self.0.binary_search_by_key(key, |x| x.0).ok()?;
-        Some(&mut self.0[idx].1)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &(K, V)> {
-        self.0.iter()
-    }
-}
-
-impl<K: Ord + Copy, V> Default for BinaryVec<K, V> {
-    fn default() -> Self {
-        Self::new()
-    }
 }

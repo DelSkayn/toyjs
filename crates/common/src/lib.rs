@@ -2,6 +2,9 @@
 
 #![allow(dead_code)]
 
+pub mod hasher {
+    pub use ahash::AHasher as Hasher;
+}
 pub mod hashmap {
     use core::hash::BuildHasherDefault;
 
@@ -13,9 +16,7 @@ pub mod hashmap {
     pub type HashSet<K> = BrownSet<K, BuildHasherDefault<ahash::AHasher>>;
 }
 
-pub mod any_vec;
 pub mod id;
-pub mod interner;
 pub mod number;
 pub mod result;
 //pub mod smaller_vec;
@@ -24,6 +25,5 @@ pub mod assert;
 pub mod source;
 pub mod span;
 pub mod string;
-pub mod structs;
 pub mod tagged_ptr;
 pub mod unicode;

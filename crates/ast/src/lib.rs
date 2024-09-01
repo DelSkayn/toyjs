@@ -1,43 +1,69 @@
 use core::fmt;
+use std::{hash::BuildHasherDefault, num::NonZeroU32};
 
-use common::{number::NumberId, span::Span, string::StringId};
+use common::{
+    hasher::Hasher,
+    id::collections::IdSet,
+    number::{Number, NumberId},
+    span::Span,
+    string::String,
+};
 
 mod ast;
 pub mod visitor;
-pub use ast::{Ast as GenAst, List, ListHead, ListId, NodeId, NodeList, NodeListId};
+pub use ast::{Ast as GenAst, List, NodeId, NodeList, NodeListId};
 
 mod render;
 pub use render::{RenderAst, RenderCtx, Result};
 
-pub type AstStorage = (
-    (Vec<Stmt>, Vec<CaseItem>, Vec<CatchStmt>, Vec<ForLoopHead>),
-    (
-        Vec<Expr>,
-        Vec<PrimeExpr>,
-        Vec<Tenary>,
-        Vec<NodeList<Option<NodeId<Expr>>>>,
-        Vec<Template>,
-        Vec<NodeList<Argument>>,
-    ),
-    (
-        Vec<IdentOrPattern>,
-        Vec<VariableDecl>,
-        Vec<NodeList<Option<NodeId<BindingElement>>>>,
-        Vec<BindingElement>,
-        Vec<BindingProperty>,
-        Vec<BindingPattern>,
-    ),
-    Vec<Function>,
-    (Vec<Class>, Vec<ClassMember>),
-    (Vec<ArrayLiteralEntry>, Vec<PropertyDefinition>),
-    Vec<Symbol>,
-);
+library! {Library{
+    stmt: Vec<Stmt>,
+    stmts: Vec<NodeList<Stmt>>,
 
-pub type Ast = GenAst<AstStorage>;
+    catch: Vec<CatchStmt>,
+    for_loop_head: Vec<ForLoopHead>,
+
+    expr: Vec<Expr>,
+    exprs: Vec<NodeListId<Expr>>,
+    prime_exprs: Vec<PrimeExpr>,
+    tenary: Vec<Tenary>,
+    templates: Vec<Template>,
+
+    case: Vec<CaseItem>,
+    cases: Vec<NodeList<CaseItem>>,
+
+    var_decl: Vec<VariableDecl>,
+    var_decls: Vec<NodeList<VariableDecl>>,
+
+    ident_pattern: Vec<IdentOrPattern>,
+    element: Vec<BindingElement>,
+    elements: Vec<NodeList<BindingElement>>,
+    property: Vec<BindingProperty>,
+    properties: Vec<NodeList<BindingProperty>>,
+    pattern: Vec<BindingPattern>,
+
+    function: Vec<Function>,
+    argument: Vec<Argument>,
+    arguments: Vec<NodeListId<Argument>>,
+    class: Vec<Class>,
+    class_member: Vec<ClassMember>,
+    class_members: Vec<NodeListId<ClassMember>>,
+    array_literal: Vec<ArrayLiteralEntry>,
+    array_literals: Vec<NodeList<ArrayLiteralEntry>>,
+    propery_definition: Vec<PropertyDefinition>,
+    propery_definitions: Vec<NodeList<PropertyDefinition>>,
+
+    symbol: Vec<Symbol>,
+
+    numbers: IdSet<NonZeroU32, Number, BuildHasherDefault<Hasher>>,
+    strings: IdSet<NonZeroU32, String, BuildHasherDefault<Hasher>>,
+}}
+
+pub type Ast = GenAst<Library>;
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct Symbol {
-    pub name: StringId,
+    pub name: NodeId<String>,
     pub span: Span,
 }
 
@@ -83,7 +109,7 @@ impl RenderAst for IdentOrPattern {
 
 pub enum BindingPattern {
     Object {
-        properties: ListHead<BindingProperty>,
+        properties: Option<NodeListId<BindingProperty>>,
         rest: Option<NodeId<Symbol>>,
     },
     Array {
@@ -118,8 +144,8 @@ impl RenderAst for BindingPattern {
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum PropertyName {
-    Ident(StringId),
-    String(StringId),
+    Ident(NodeId<String>),
+    String(NodeId<String>),
     Number(NumberId),
     Computed(NodeId<Expr>),
 }
@@ -237,27 +263,27 @@ impl RenderAst for VariableDecl {
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub enum Stmt {
     Block {
-        list: ListHead<Stmt>,
+        list: Option<NodeListId<Stmt>>,
     },
     VariableDecl {
         kind: VariableKind,
-        decl: ListId<VariableDecl>,
+        decl: NodeListId<VariableDecl>,
     },
     Empty,
     Expr {
-        expr: ListId<Expr>,
+        expr: NodeListId<Expr>,
     },
     DoWhile {
         body: NodeId<Stmt>,
-        cond: ListId<Expr>,
+        cond: NodeListId<Expr>,
     },
     If {
-        cond: ListId<Expr>,
+        cond: NodeListId<Expr>,
         body: NodeId<Stmt>,
         r#else: Option<NodeId<Stmt>>,
     },
     While {
-        cond: ListId<Expr>,
+        cond: NodeListId<Expr>,
         body: NodeId<Stmt>,
     },
     For {
@@ -265,33 +291,33 @@ pub enum Stmt {
         body: NodeId<Stmt>,
     },
     Switch {
-        cond: ListId<Expr>,
-        cases: ListHead<CaseItem>,
-        default: Option<ListHead<Stmt>>,
+        cond: NodeListId<Expr>,
+        cases: Option<NodeListId<CaseItem>>,
+        default: Option<NodeListId<Stmt>>,
     },
     Throw {
-        expr: ListId<Expr>,
+        expr: NodeListId<Expr>,
     },
     Try {
-        block: ListHead<Stmt>,
+        block: Option<NodeListId<Stmt>>,
         catch: Option<NodeId<CatchStmt>>,
-        finally: Option<ListHead<Stmt>>,
+        finally: Option<Stmt>,
     },
     With {
-        expr: ListId<Expr>,
+        expr: NodeListId<Expr>,
         stmt: NodeId<Stmt>,
     },
     Break {
-        label: Option<StringId>,
+        label: Option<NodeId<String>>,
     },
     Continue {
-        label: Option<StringId>,
+        label: Option<NodeId<String>>,
     },
     Return {
-        expr: Option<ListId<Expr>>,
+        expr: Option<NodeListId<Expr>>,
     },
     Labeled {
-        label: StringId,
+        label: Option<NodeId<String>>,
         stmt: NodeId<Stmt>,
     },
     Function {
@@ -410,10 +436,10 @@ impl RenderAst for Stmt {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum CstyleDecl {
-    Expr(ListId<Expr>),
+    Expr(NodeListId<Expr>),
     Decl {
         kind: VariableKind,
-        decl: ListId<VariableDecl>,
+        decl: NodeListId<VariableDecl>,
     },
     Empty,
 }
@@ -468,12 +494,12 @@ impl RenderAst for InOfDecl {
 pub enum ForLoopHead {
     CStyle {
         decl: CstyleDecl,
-        cond: Option<ListId<Expr>>,
-        post: Option<ListId<Expr>>,
+        cond: Option<NodeListId<Expr>>,
+        post: Option<NodeListId<Expr>>,
     },
     In {
         decl: InOfDecl,
-        expr: ListId<Expr>,
+        expr: NodeListId<Expr>,
     },
     Of {
         decl: InOfDecl,
@@ -511,8 +537,8 @@ impl RenderAst for ForLoopHead {
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct CaseItem {
-    pub expr: ListId<Expr>,
-    pub stmts: ListHead<Stmt>,
+    pub expr: NodeListId<Expr>,
+    pub stmts: NodeListId<Stmt>,
 }
 
 impl RenderAst for CaseItem {
@@ -527,7 +553,7 @@ impl RenderAst for CaseItem {
 
 pub struct CatchStmt {
     pub binding: Option<NodeId<IdentOrPattern>>,
-    pub block: ListHead<Stmt>,
+    pub block: Option<NodeListId<Stmt>>,
 }
 
 impl RenderAst for CatchStmt {
@@ -561,7 +587,7 @@ impl RenderAst for Parameters {
 #[derive(Clone, Copy, Debug)]
 pub enum ArrowFunctionBody {
     Expr(NodeId<Expr>),
-    Stmt(ListHead<Stmt>),
+    Stmt(Option<NodeListId<Stmt>>),
 }
 
 impl RenderAst for ArrowFunctionBody {
@@ -611,7 +637,7 @@ pub enum Function {
     Arrow {
         is_strict: bool,
         kind: FunctionKind,
-        params: ListHead<BindingElement>,
+        params: Option<NodeListId<BindingElement>>,
         rest_param: Option<NodeId<IdentOrPattern>>,
         body: ArrowFunctionBody,
     },
@@ -619,17 +645,17 @@ pub enum Function {
         is_strict: bool,
         kind: FunctionKind,
         name: NodeId<Symbol>,
-        params: ListHead<BindingElement>,
+        params: Option<NodeListId<BindingElement>>,
         rest_param: Option<NodeId<IdentOrPattern>>,
-        body: ListHead<Stmt>,
+        body: Option<NodeListId<Stmt>>,
     },
     Expr {
         is_strict: bool,
         kind: FunctionKind,
         name: Option<NodeId<Symbol>>,
-        params: ListHead<BindingElement>,
+        params: Option<NodeListId<BindingElement>>,
         rest_param: Option<NodeId<IdentOrPattern>>,
-        body: ListHead<Stmt>,
+        body: Option<NodeListId<Stmt>>,
     },
 }
 
@@ -691,7 +717,7 @@ impl RenderAst for Function {
 pub struct Class {
     pub name: Option<NodeId<Symbol>>,
     pub heritage: Option<NodeId<Expr>>,
-    pub body: ListHead<ClassMember>,
+    pub body: Option<NodeListId<ClassMember>>,
 }
 
 impl RenderAst for Class {
@@ -707,7 +733,7 @@ impl RenderAst for Class {
 
 pub enum ClassMember {
     StaticBlock {
-        stmts: ListHead<Stmt>,
+        stmts: Option<NodeListId<Stmt>>,
     },
     Method {
         is_static: bool,
@@ -902,7 +928,7 @@ pub enum Expr {
         expr: NodeId<Expr>,
     },
     Dot {
-        ident: StringId,
+        ident: NodeId<String>,
         expr: NodeId<Expr>,
     },
     Call {
@@ -1025,7 +1051,7 @@ impl RenderAst for Tenary {
 }
 
 pub struct ArrayLiteral {
-    pub elements: ListHead<ArrayLiteralEntry>,
+    pub elements: Option<NodeListId<ArrayLiteralEntry>>,
 }
 
 pub struct ArrayLiteralEntry {
@@ -1047,20 +1073,20 @@ impl RenderAst for ArrayLiteralEntry {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum PrimeExpr {
     Number(NumberId),
-    String(StringId),
+    String(NodeId<String>),
     Template(NodeId<Template>),
-    Regex(StringId),
+    Regex(NodeId<String>),
     Ident(NodeId<Symbol>),
     Boolean(bool),
     Function(NodeId<Function>),
     Class(NodeId<Class>),
     Object(ObjectLiteral),
-    Array(ListHead<ArrayLiteralEntry>),
+    Array(Option<NodeListId<ArrayLiteralEntry>>),
     NewTarget,
     Null,
     This,
     Super,
-    Covered(ListId<Expr>),
+    Covered(NodeListId<Expr>),
 }
 
 impl RenderAst for PrimeExpr {
@@ -1124,12 +1150,12 @@ impl RenderAst for PrimeExpr {
 
 pub enum Template {
     Head {
-        text: StringId,
-        expr: ListId<Expr>,
+        text: NodeId<String>,
+        expr: NodeListId<Expr>,
         next: NodeId<Template>,
     },
     Tail {
-        text: StringId,
+        text: NodeId<String>,
     },
 }
 
@@ -1245,7 +1271,7 @@ impl RenderAst for PropertyDefinition {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum ObjectLiteral {
     Empty,
-    Item(ListId<PropertyDefinition>),
+    Item(NodeListId<PropertyDefinition>),
 }
 
 impl RenderAst for Span {

@@ -2,7 +2,7 @@ use core::fmt;
 use std::num::NonZeroU32;
 
 use ast::NodeId;
-use common::{id::KeyedVec, key, string::StringId};
+use common::{id::IdVec, key, string::StringId};
 
 mod resolve;
 pub use resolve::resolve_script;
@@ -181,24 +181,24 @@ pub struct LoopInfo {
 
 #[derive(Clone, Debug)]
 pub struct Variables {
-    pub scopes: KeyedVec<ScopeId, Scope>,
+    pub scopes: IdVec<ScopeId, Scope>,
     pub scope_children: Vec<ScopeId>,
     pub scope_decls: Vec<SymbolId>,
-    pub symbols: KeyedVec<SymbolId, Symbol>,
+    pub symbols: IdVec<SymbolId, Symbol>,
     /// A list which maps a ast symbol to a resolved symbol.
-    pub ast_to_symbol: KeyedVec<NodeId<ast::Symbol>, UseInfo>,
-    pub loop_use: KeyedVec<LoopId, LoopInfo>,
+    pub ast_to_symbol: IdVec<NodeId<ast::Symbol>, UseInfo>,
+    pub loop_use: IdVec<LoopId, LoopInfo>,
 }
 
 impl Variables {
     pub fn new() -> Self {
         Variables {
-            scopes: KeyedVec::new(),
+            scopes: IdVec::new(),
             scope_children: Vec::new(),
             scope_decls: Vec::new(),
-            symbols: KeyedVec::new(),
-            ast_to_symbol: KeyedVec::new(),
-            loop_use: KeyedVec::new(),
+            symbols: IdVec::new(),
+            ast_to_symbol: IdVec::new(),
+            loop_use: IdVec::new(),
         }
     }
 
@@ -224,11 +224,11 @@ impl Variables {
         self.ast_to_symbol[ast].use_order
     }
 
-    pub fn scopes(&self) -> &KeyedVec<ScopeId, Scope> {
+    pub fn scopes(&self) -> &IdVec<ScopeId, Scope> {
         &self.scopes
     }
 
-    pub fn symbols(&self) -> &KeyedVec<SymbolId, Symbol> {
+    pub fn symbols(&self) -> &IdVec<SymbolId, Symbol> {
         &self.symbols
     }
 

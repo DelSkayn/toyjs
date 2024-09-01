@@ -3,6 +3,7 @@ use core::fmt;
 use std::backtrace::Backtrace;
 
 use common::{
+    id,
     result::ContextError,
     source::{self, Source},
     span::Span,
@@ -33,6 +34,7 @@ pub enum ErrorKind {
     CoveredObjectLiteral,
     ConstNotInitialized,
     DestructringNotInitalized,
+    IdRange(id::IdRangeError),
 }
 
 /// A parser error.
@@ -42,6 +44,17 @@ pub struct Error {
     pub origin: Span,
     #[cfg(feature = "trace_error")]
     trace: Backtrace,
+}
+
+impl From<id::IdRangeError> for Error {
+    fn from(value: id::IdRangeError) -> Self {
+        Error {
+            kind: ErrorKind::IdRange(value),
+            origin: Span::empty(),
+            #[cfg(feature = "trace_error")]
+            trace: Backtrace::capture(),
+        }
+    }
 }
 
 impl ContextError<Source> for Error {
@@ -214,6 +227,9 @@ impl Error {
                         .unwrap()
                         .as_block()
                 )?;
+            }
+            ErrorKind::IdRange(x) => {
+                write!(w, "Id range overflowed, source code to large to parse.")?;
             }
         }
         Ok(())

@@ -2,15 +2,11 @@ use core::fmt::{self, Write};
 use std::{any::Any, cell::Cell, result::Result as StdResult};
 
 use common::{
-    interner::Interner,
     number::{Number, NumberId},
     string::{String, StringId},
 };
 
-use crate::{
-    ast::{ListHead, NodeList},
-    Ast, ListId, NodeId,
-};
+use crate::{ast::NodeList, Ast, NodeId, NodeListId};
 
 pub type Result<T> = StdResult<T, fmt::Error>;
 
@@ -27,21 +23,13 @@ impl<'a, R: RenderAst> fmt::Display for Display<'a, R> {
 
 pub struct RenderCtx<'a> {
     pub tree: &'a Ast,
-    pub strings: &'a Interner<String, StringId>,
-    pub numbers: &'a Interner<Number, NumberId>,
     pub indent: Cell<usize>,
 }
 
 impl<'a> RenderCtx<'a> {
-    pub fn new(
-        tree: &'a Ast,
-        strings: &'a Interner<String, StringId>,
-        numbers: &'a Interner<Number, NumberId>,
-    ) -> Self {
+    pub fn new(tree: &'a Ast) -> Self {
         RenderCtx {
             tree,
-            strings,
-            numbers,
             indent: Cell::new(0),
         }
     }
@@ -146,18 +134,7 @@ impl<T: RenderAst + Any> RenderAst for Option<T> {
     }
 }
 
-impl<T: RenderAst + Any> RenderAst for ListHead<T> {
-    fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
-        match *self {
-            ListHead::Empty => {
-                writeln!(w, "empty")
-            }
-            ListHead::Present(x) => x.render(ctx, w),
-        }
-    }
-}
-
-impl<T: RenderAst + Any> RenderAst for ListId<T> {
+impl<T: RenderAst + Any> RenderAst for NodeListId<T> {
     fn render<W: Write>(&self, ctx: &RenderCtx, w: &mut W) -> Result<()> {
         let mut cur = *self;
         ctx.push_indent();

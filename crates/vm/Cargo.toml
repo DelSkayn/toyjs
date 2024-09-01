@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dreck = { version = "0.1.1", path = "../../../dreck" }
 bc = { version = "0.1.0", path = "../bc", package = "toyjs_bc"}
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 bytemuck = {version = "1.13.1"}
