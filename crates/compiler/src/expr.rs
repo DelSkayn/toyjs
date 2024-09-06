@@ -324,7 +324,7 @@ impl<'a> Compiler<'a> {
                 ast::PostfixOp::AddOne => to_do!(),
                 ast::PostfixOp::SubOne => to_do!(),
             },
-            ast::Expr::Tenary(x) => {
+            ast::Expr::Ternary(x) => {
                 let tenary = self.ast[x];
                 let mut cond = self.compile_expr(tenary.cond)?;
                 let cond_reg = cond.to_cond_register(self)?;
@@ -435,7 +435,7 @@ impl<'a> Compiler<'a> {
                 ast::Expr::Binary { .. }
                 | ast::Expr::Prefix { .. }
                 | ast::Expr::Postfix { .. }
-                | ast::Expr::Tenary(_)
+                | ast::Expr::Ternary(_)
                 | ast::Expr::Yield { .. }
                 | ast::Expr::Destructure { .. }
                 | ast::Expr::TaggedTemplate { .. }

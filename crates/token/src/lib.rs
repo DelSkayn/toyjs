@@ -1,88 +1,14 @@
-use bytemuck::{AnyBitPattern, NoUninit};
-use common::{span::Span, string::String};
+use ast::NodeId;
+use common::{number::Number, span::Span, string::String};
 
 mod r#macro;
 
 /// A token produced by the lexer.
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Token {
-    pub kind_and_data: TokenKindData,
+    pub kind: TokenKind,
+    pub data: Option<NodeId<()>>,
     pub span: Span,
-}
-
-impl Token {
-    #[inline]
-    pub fn kind(&self) -> TokenKind {
-        self.kind_and_data.kind()
-    }
-
-    #[inline]
-    pub fn data_id<D: AnyBitPattern>(&self) -> Option<D> {
-        self.kind_and_data.data_id()
-    }
-}
-
-/// A packed data struct.
-#[derive(Clone, Copy)]
-pub struct TokenKindData(u64);
-
-impl PartialEq for TokenKindData {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind() == other.kind() && self.data_id_inner() == other.data_id_inner()
-    }
-}
-
-impl Eq for TokenKindData {}
-
-impl std::fmt::Debug for TokenKindData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TokenKindData")
-            .field("kind", &self.kind())
-            .field("data_id", &self.data_id::<u32>())
-            .field("raw", &self.0)
-            .finish()
-    }
-}
-
-/// The token kind and possible data id packed into 8 bytes
-impl TokenKindData {
-    #[inline]
-    pub fn new<D: NoUninit>(kind: TokenKind, data_id: Option<D>) -> Self {
-        Self::new_inner(kind, data_id.map(bytemuck::cast))
-    }
-
-    #[inline]
-    fn new_inner(kind: TokenKind, data_id: Option<u32>) -> Self {
-        let data_id = if let Some(x) = data_id {
-            (x as u64 | (1 << 32)) << 16
-        } else {
-            0
-        };
-
-        let kind = unsafe { std::mem::transmute::<TokenKind, u16>(kind) };
-
-        Self(data_id | (kind as u64))
-    }
-
-    #[inline]
-    pub fn kind(self) -> TokenKind {
-        unsafe { std::mem::transmute(self.0 as u16) }
-    }
-
-    #[inline]
-    pub fn data_id<D: AnyBitPattern>(self) -> Option<D> {
-        self.data_id_inner().map(bytemuck::cast)
-    }
-
-    #[inline]
-    fn data_id_inner(self) -> Option<u32> {
-        let data = self.0 >> 16;
-        if data & (1 << 32) == 0 {
-            None
-        } else {
-            Some(data as u32)
-        }
-    }
 }
 
 //Used to statically check the size of TokenKind.
@@ -97,9 +23,11 @@ pub enum TokenKind {
     String,
     Number,
     BigInt,
-    Template(Template),
     Regex,
     UnreservedKeyword(UnreservedKeyword),
+
+    Template(Template),
+
     Keyword(Keyword),
     /// `;`
     SemiColon,
@@ -129,6 +57,7 @@ pub enum TokenKind {
     Comma,
     /// `\n`
     LineTerminator,
+
     Unknown,
     Eof,
 }

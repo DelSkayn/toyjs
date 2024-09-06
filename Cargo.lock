@@ -588,7 +588,6 @@ name = "toyjs_ast"
 version = "0.1.0"
 dependencies = [
  "toyjs_common",
- "toyjs_token",
 ]
 
 [[package]]
@@ -637,6 +636,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "phf",
+ "toyjs_ast",
  "toyjs_common",
  "toyjs_token",
 ]
@@ -674,6 +674,7 @@ name = "toyjs_token"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "toyjs_ast",
  "toyjs_common",
 ]
 

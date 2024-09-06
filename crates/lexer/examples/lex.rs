@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 
-use common::{number::NumberId, string::String, structs::Interners};
+use common::{number::Number, string::String};
 use token::{t, TokenKind};
 use toyjs_lexer::Lexer;
 
@@ -22,9 +22,9 @@ fn main() -> Result<(), io::Error> {
     let mut buffer = std::string::String::new();
     read.read_to_string(&mut buffer)?;
     let source = String::from_std_str(&buffer);
-    let mut interners = Interners::default();
+    let mut ast = ast::Ast::new();
 
-    let mut lexer = Lexer::new(source.encoding(), &mut interners);
+    let mut lexer = Lexer::new(source.encoding(), &mut ast);
     let mut tokens = Vec::new();
     let time = Instant::now();
     for t in lexer.by_ref() {
@@ -33,7 +33,7 @@ fn main() -> Result<(), io::Error> {
     let elapsed = time.elapsed();
     for t in &tokens {
         let span = t.span;
-        let kind = t.kind_and_data.kind();
+        let kind = t.kind;
         let kind_name = format!("{:?}", kind);
         print!(
             "{:>4}+{:<4}:: {:<20}",
@@ -43,28 +43,20 @@ fn main() -> Result<(), io::Error> {
         );
         print!("\t\t\t'{}'", source.encoding().slice(span));
         if kind == t!("ident") {
-            let data = t.kind_and_data.data_id().unwrap();
-            println!(
-                " = {:?} = '{}'",
-                data,
-                lexer.data.strings.get(data).unwrap()
-            );
+            let data = t.data.unwrap().entype::<String>();
+            println!(" = {:?} = '{}'", data, lexer[data]);
         } else if kind == t!("string") {
-            let data = t.kind_and_data.data_id().unwrap();
-            println!(
-                " = {:?}={:?}",
-                data,
-                lexer.data.strings.get(data).unwrap().as_str()
-            );
+            let data = t.data.unwrap().entype::<String>();
+            println!(" = {:?}={:?}", data, lexer[data]);
         } else if kind == t!("123") {
-            let data = t.kind_and_data.data_id::<NumberId>();
-            println!(" = {:e}", lexer.data.numbers[data.unwrap()].0);
+            let data = t.data.unwrap().entype::<Number>();
+            println!(" = {:e}", lexer[data].0);
         } else if kind == t!("123n") {
-            let data = t.kind_and_data.data_id();
-            println!(" = {}n", lexer.data.strings.get(data.unwrap()).unwrap());
+            let data = t.data.unwrap().entype::<String>();
+            println!(" = {}n", lexer[data]);
         } else if let TokenKind::Template(_) = kind {
-            let data = t.kind_and_data.data_id();
-            println!(" = `{}`", lexer.data.strings.get(data.unwrap()).unwrap());
+            let data = t.data.unwrap().entype::<String>();
+            println!(" = `{}`", lexer[data]);
         } else {
             println!()
         }
@@ -76,8 +68,8 @@ fn main() -> Result<(), io::Error> {
     );
     eprintln!(
         "> strings {}, numbers {}",
-        lexer.data.strings.len(),
-        lexer.data.numbers.len()
+        lexer.ast.library().strings.len(),
+        lexer.ast.library().numbers.len()
     );
     Ok(())
 }

@@ -1,40 +1,20 @@
 #![allow(dead_code)]
 
-use bytemuck::Pod;
+use std::ops::{Deref, DerefMut};
+
+use ast::{Ast, NodeId};
 use common::{
-    interner::Interner,
-    number::{Number, NumberId},
+    number::Number,
     span::Span,
-    string::{Encoding, String, StringBuilder, StringId, Units},
-    structs::Interners,
+    string::{Encoding, StringBuilder, Units},
     unicode::{byte, chars, units, CharExt, Utf16Ext},
 };
-use token::{t, Token, TokenKind, TokenKindData};
+use token::{t, Token, TokenKind};
 
 mod ident;
 mod number;
 mod regex;
 mod string;
-
-/// Additional data produced during lexing which is not present in the produced token.
-pub struct LexingData {
-    pub strings: Interner<String, StringId>,
-    pub numbers: Interner<Number, NumberId>,
-}
-
-impl LexingData {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        LexingData {
-            strings: Interner::new(),
-            numbers: Interner::new(),
-        }
-    }
-
-    pub fn push_string(&mut self, encoding: Encoding) -> StringId {
-        self.strings.intern(&encoding)
-    }
-}
 
 /// The toyjs lexer, produces tokens from a source string.
 pub struct Lexer<'a> {
@@ -44,11 +24,24 @@ pub struct Lexer<'a> {
     peek: Option<u16>,
     overread: Option<u16>,
     builder: StringBuilder,
-    pub data: &'a mut Interners,
+    pub ast: &'a mut Ast,
+}
+
+impl Deref for Lexer<'_> {
+    type Target = Ast;
+
+    fn deref(&self) -> &Self::Target {
+        self.ast
+    }
+}
+impl DerefMut for Lexer<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.ast
+    }
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(units: Encoding<'a>, interners: &'a mut Interners) -> Self {
+    pub fn new(units: Encoding<'a>, ast: &'a mut Ast) -> Self {
         let units = units.units();
 
         Self {
@@ -58,7 +51,7 @@ impl<'a> Lexer<'a> {
             peek: None,
             overread: None,
             builder: StringBuilder::new(),
-            data: interners,
+            ast,
         }
     }
 
@@ -87,53 +80,44 @@ impl<'a> Lexer<'a> {
         self.peek_unit().and_then(|x| x.try_into().ok())
     }
 
+    fn finish_token_numeric(&mut self, value: f64, kind: TokenKind) -> Token {
+        let id = self.ast.library_mut().numbers.push(Number(value));
+        let Some(id) = id.ok().and_then(NodeId::from_u32) else {
+            return self.finish_token(TokenKind::Unknown);
+        };
+        self.finish_token_data(kind, Some(id))
+    }
+
+    fn finish_token_string(&mut self, kind: TokenKind) -> Token {
+        let id = self
+            .ast
+            .library_mut()
+            .strings
+            .push_ref(&self.builder.encoding());
+        let Some(id) = id.ok().and_then(NodeId::from_u32) else {
+            return self.finish_token(TokenKind::Unknown);
+        };
+        self.finish_token_data(kind, Some(id))
+    }
+
     /// Wrap a token kind in a span and update set the next token to start at the end of the
     /// current.
     #[inline]
-    fn finish_token_inner<D: Pod>(&mut self, kind: TokenKind, id: Option<D>) -> Token {
+    fn finish_token_data(&mut self, kind: TokenKind, data: Option<NodeId<()>>) -> Token {
         let span = Span::from_range(self.start..self.end);
         self.start = self.end;
 
-        Token {
-            kind_and_data: TokenKindData::new(kind, id),
-            span,
-        }
+        Token { kind, span, data }
     }
 
     /// Wrap a token kind in a span and update set the next token to start at the end of the
     /// current.
     #[inline]
     fn finish_token(&mut self, kind: TokenKind) -> Token {
-        self.finish_token_inner::<u32>(kind, None)
+        self.finish_token_data(kind, None)
     }
 
-    /// Wrap a token kind in a span and update set the next token to start at the end of the
-    /// current.
     #[inline]
-    fn finish_token_number(&mut self, kind: TokenKind, id: Option<NumberId>) -> Token {
-        self.finish_token_inner(kind, id)
-    }
-
-    /// Wrap a token kind in a span and update set the next token to start at the end of the
-    /// current.
-    #[inline]
-    fn finish_token_string(&mut self, kind: TokenKind, id: Option<StringId>) -> Token {
-        self.finish_token_inner(kind, id)
-    }
-
-    /// Finish the string in the string buffer and push it into the strings data.
-    /// Returns the id of the strings data.
-    fn finish_string(&mut self) -> StringId {
-        let result = self.builder.encoding();
-        let id = self.data.strings.intern(&result);
-        self.builder.clear();
-        id
-    }
-
-    fn finish_number(&mut self, number: f64) -> NumberId {
-        self.data.numbers.intern(&Number(number))
-    }
-
     fn lex_slash(&mut self) -> Token {
         let byte = self.peek_byte();
         match byte {
@@ -456,10 +440,10 @@ impl<'a> Lexer<'a> {
 
     /// Redoes lexing for a `/` or `/=` token changing it to be parsed as a regex.
     pub fn relex_regex(&mut self, token: Token) -> Token {
-        debug_assert!(matches!(token.kind(), t!("/") | t!("/=")));
+        debug_assert!(matches!(token.kind, t!("/") | t!("/=")));
         debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
         self.start = token.span.offset();
-        if let t!("/=") = token.kind() {
+        if let t!("/=") = token.kind {
             self.builder.push(b'=' as u16);
             self.lex_regex(false)
         } else {
@@ -469,7 +453,7 @@ impl<'a> Lexer<'a> {
 
     /// Redoes lexing for a `}` token changing it to be parsed as a regex.
     pub fn relex_template(&mut self, token: Token) -> Token {
-        debug_assert_eq!(token.kind(), t!("}"));
+        debug_assert_eq!(token.kind, t!("}"));
         debug_assert_eq!(token.span.offset() + token.span.size(), self.start);
         self.start = token.span.offset();
         self.lex_template(false)
@@ -480,7 +464,8 @@ impl<'a> Lexer<'a> {
         let Some(unit) = self.overread.take().or(self.next_unit()) else {
             return Token {
                 span: Span::from_range(self.end.saturating_sub(1)..self.end),
-                kind_and_data: TokenKindData::new::<u32>(TokenKind::Eof, None),
+                data: None,
+                kind: TokenKind::Eof,
             };
         };
         if unit.is_ascii() {
@@ -505,7 +490,7 @@ impl Iterator for Lexer<'_> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let res = self.next_token();
-        if res.kind() == TokenKind::Eof {
+        if res.kind == TokenKind::Eof {
             return None;
         }
         Some(res)
@@ -514,8 +499,9 @@ impl Iterator for Lexer<'_> {
 
 #[cfg(test)]
 mod test {
-    use common::{source::Source, span::Span, structs::Interners};
-    use token::{t, Token, TokenKindData};
+    use ast::{Ast, NodeId};
+    use common::{source::Source, span::Span};
+    use token::{t, Token, TokenKind};
 
     use crate::Lexer;
 
@@ -523,48 +509,54 @@ mod test {
     fn newlines() {
         let source = b"\n\n\n \n\n  tgt\n\n";
         let source = Source::new(std::str::from_utf8(source).unwrap(), Some("test"));
-        let mut interners = Interners::default();
-        let mut lexer = Lexer::new(source.source(), &mut interners);
+        let mut ast = Ast::new();
+        let mut lexer = Lexer::new(source.source(), &mut ast);
 
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                kind: t!("\n"),
+                data: None,
                 span: Span::new(0, 1),
             }),
         );
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                kind: t!("\n"),
+                data: None,
                 span: Span::new(1, 1),
             }),
         );
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                kind: t!("\n"),
+                data: None,
                 span: Span::new(2, 1),
             }),
         );
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                kind: t!("\n"),
+                data: None,
                 span: Span::new(4, 1),
             }),
         );
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("\n"), None),
+                kind: t!("\n"),
+                data: None,
                 span: Span::new(5, 1),
             }),
         );
         assert_eq!(
             lexer.next(),
             Some(Token {
-                kind_and_data: TokenKindData::new::<u32>(t!("ident"), Some(0)),
+                kind: TokenKind::Ident,
+                data: Some(NodeId::from_u32(0).unwrap()),
                 span: Span::new(8, 3),
             }),
         );

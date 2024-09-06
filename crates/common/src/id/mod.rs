@@ -72,7 +72,7 @@ macro_rules! id {
                 Ok(Self{
                     id,
                     $(
-                        _marker: PhantomData< $($gen),*>
+                        _marker: PhantomData::< $($gen),* >
                     )?
                 })
             }
@@ -157,6 +157,8 @@ macro_rules! id {
                     .finish()
             }
         }
+        unsafe impl$( <$($gen),* > )? Send for $name $( < $($gen),* > )? {}
+        unsafe impl$( <$($gen),* > )? Sync for $name $( < $($gen),* > )? {}
 
     };
 }

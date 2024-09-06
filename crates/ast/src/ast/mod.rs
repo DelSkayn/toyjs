@@ -1,31 +1,55 @@
 //! The ast datastructure used by the engine.
 
-use core::fmt;
 use std::{
     any::Any,
+    hash::{BuildHasher, Hash},
     marker::PhantomData,
-    num::NonZeroU32,
     ops::{Index, IndexMut},
 };
 
 use common::{
     id,
-    id::{Id, IdRangeError},
+    id::{collections::IdSet, IdRangeError},
+    number::Number,
+    string::String,
+    thinvec::ThinVec,
 };
 
-static TOO_MANY_NODES: &str = "Too many nodes in storage to fit 32 bit id.";
+id!(pub struct NodeId<T>);
 
-/// Generates the panic for when a type is not in the storage.
-#[cold]
-fn panic_no_storage<T>() -> ! {
-    panic!(
-        "Node of type `{}` not present in storage.",
-        std::any::type_name::<T>()
-    );
+impl<T: Node> NodeId<T> {
+    pub fn index<L>(self, ast: &Ast<L>) -> &T
+    where
+        L: NodeLibrary + 'static,
+        T: 'static,
+    {
+        &ast[self]
+    }
+
+    pub fn index_mut<L>(self, ast: &mut Ast<L>) -> &mut T
+    where
+        L: NodeLibrary + 'static,
+        T: 'static,
+    {
+        &mut ast[self]
+    }
+
+    pub fn erase(self) -> NodeId<()> {
+        NodeId {
+            id: self.id,
+            _marker: PhantomData,
+        }
+    }
 }
 
-id!(pub struct NodeId<T>);
-pub type NodeListId<T> = NodeId<NodeList<T>>;
+impl NodeId<()> {
+    pub fn entype<T>(self) -> NodeId<T> {
+        NodeId {
+            id: self.id,
+            _marker: PhantomData,
+        }
+    }
+}
 
 /// A generic list node
 pub struct NodeList<T> {
@@ -35,31 +59,162 @@ pub struct NodeList<T> {
     pub next: Option<NodeListId<T>>,
 }
 
-/// A generic list node for when the normal list node would be inefficient.
-pub struct List<T> {
-    pub data: T,
-    pub next: Option<NodeId<NodeList<T>>>,
+impl<T> PartialEq for NodeList<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.item == other.item && self.next == other.next
+    }
+}
+impl<T> Eq for NodeList<T> {}
+impl<T> Hash for NodeList<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.item.hash(state);
+        self.next.hash(state);
+    }
 }
 
 /// Shorthand for `NodeId<NodeList<T>>`;
 pub type NodeListId<T> = NodeId<NodeList<T>>;
 
-impl<T> List<T> {
-    fn cast<V>(self) -> List<V> {
-        // SAFETY: NodeId and ListId are transparent wrappers over u32.
-        // Changing the generic type does not change that.
+pub type ListStorage = NodeList<()>;
+
+unsafe impl<T: Any> Node for NodeList<T> {
+    type Storage = ListStorage;
+
+    fn into_storage(self) -> Self::Storage {
         unsafe { std::mem::transmute(self) }
     }
 
-    fn cast_borrow<V>(&self) -> &List<V> {
-        // SAFETY: NodeId and ListId are transparent wrappers over u32.
-        // Changing the generic type does not change that.
-        unsafe { std::mem::transmute(self) }
+    fn from_storage_ref(storage: &Self::Storage) -> &Self {
+        unsafe { std::mem::transmute(storage) }
     }
 
-    fn cast_borrow_mut<V>(&mut self) -> &mut List<V> {
-        // SAFETY
-        unsafe { std::mem::transmute(self) }
+    fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
+        unsafe { std::mem::transmute(storage) }
+    }
+}
+
+pub trait NodeStorage<T: Node> {
+    fn storage_get(&self, idx: u32) -> Option<&T>;
+
+    fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T>;
+
+    fn storage_push(&mut self, value: T) -> Option<u32>
+    where
+        T::Storage: Eq + Hash;
+}
+
+impl<T: Node> NodeStorage<T> for Vec<T::Storage> {
+    fn storage_push(&mut self, value: T) -> Option<u32>
+    where
+        T::Storage: Eq + Hash,
+    {
+        let idx = self.len().try_into().ok()?;
+        self.push(value.into_storage());
+        Some(idx)
+    }
+
+    fn storage_get(&self, idx: u32) -> Option<&T> {
+        let Some(x) = self.get(idx as usize) else {
+            return None;
+        };
+        Some(T::from_storage_ref(x))
+    }
+
+    fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
+        let Some(x) = self.get_mut(idx as usize) else {
+            return None;
+        };
+        Some(T::from_storage_mut(x))
+    }
+}
+
+impl<T: Node> NodeStorage<T> for ThinVec<T::Storage> {
+    fn storage_push(&mut self, value: T) -> Option<u32>
+    where
+        T::Storage: Eq + Hash,
+    {
+        let idx = self.len().try_into().ok()?;
+        self.push(value.into_storage());
+        Some(idx)
+    }
+
+    fn storage_get(&self, idx: u32) -> Option<&T> {
+        let Some(x) = self.get(idx) else {
+            return None;
+        };
+        Some(T::from_storage_ref(x))
+    }
+
+    fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
+        let Some(x) = self.get_mut(idx) else {
+            return None;
+        };
+        Some(T::from_storage_mut(x))
+    }
+}
+
+impl<T: Node, S: BuildHasher + Default> NodeStorage<T> for IdSet<u32, T::Storage, S> {
+    fn storage_push(&mut self, value: T) -> Option<u32>
+    where
+        T::Storage: Eq + Hash,
+    {
+        self.push(value.into_storage()).ok()
+    }
+
+    fn storage_get(&self, idx: u32) -> Option<&T> {
+        let Some(x) = self.get(idx) else {
+            return None;
+        };
+        Some(T::from_storage_ref(x))
+    }
+
+    fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
+        let Some(x) = self.get_mut(idx) else {
+            return None;
+        };
+        Some(T::from_storage_mut(x))
+    }
+}
+
+pub unsafe trait Node: Any {
+    type Storage: Any;
+
+    fn into_storage(self) -> Self::Storage;
+
+    fn from_storage_ref(storage: &Self::Storage) -> &Self;
+
+    fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self;
+}
+
+unsafe impl Node for String {
+    type Storage = Self;
+
+    fn into_storage(self) -> Self::Storage {
+        self
+    }
+
+    fn from_storage_ref(storage: &Self::Storage) -> &Self {
+        storage
+    }
+
+    fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
+        storage
+    }
+}
+
+unsafe impl Node for Number {
+    type Storage = Self;
+
+    fn into_storage(self) -> Self::Storage {
+        self
+    }
+
+    fn from_storage_ref(storage: &Self::Storage) -> &Self {
+        storage
+    }
+
+    fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
+        storage
     }
 }
 
@@ -67,11 +222,13 @@ impl<T> List<T> {
 pub trait NodeLibrary {
     fn new() -> Self;
 
-    fn get<T: Any>(&self, idx: u32) -> Option<&T>;
+    fn get<T: Node>(&self, idx: u32) -> Option<&T>;
 
-    fn get_mut<T: Any>(&mut self, idx: u32) -> Option<&mut T>;
+    fn get_mut<T: Node>(&mut self, idx: u32) -> Option<&mut T>;
 
-    fn push<T: Any>(&mut self, value: T) -> u32;
+    fn push<T: Node>(&mut self, value: T) -> Option<u32>
+    where
+        T::Storage: Eq + Hash;
 
     fn clear(&mut self);
 }
@@ -80,10 +237,6 @@ pub trait NodeLibrary {
 ///
 /// Can be indexed with the index syntax by both `NodeId` as well as `ListId`;
 #[derive(Default)]
-pub struct Ast<L: NodeLibrary> {
-    storage: L,
-}
-
 pub struct Ast<L> {
     library: L,
 }
@@ -96,12 +249,25 @@ where
         Self { library: L::new() }
     }
 
-    pub fn push<T: Any>(&mut self, value: T) -> Result<NodeId<T>, IdRangeError> {
-        let idx = self.library.push(value);
-        NodeId::from_u32(idx)
+    pub fn library(&self) -> &L {
+        &self.library
     }
 
-    pub fn push_list<T: Any>(
+    pub fn library_mut(&mut self) -> &mut L {
+        &mut self.library
+    }
+
+    pub fn push<T: Node>(&mut self, value: T) -> Result<NodeId<T>, IdRangeError>
+    where
+        T::Storage: Eq + Hash,
+    {
+        self.library
+            .push(value)
+            .and_then(NodeId::from_u32)
+            .ok_or(IdRangeError)
+    }
+
+    pub fn push_list<T: Node>(
         &mut self,
         head: &mut Option<NodeListId<T>>,
         current: &mut Option<NodeListId<T>>,
@@ -160,7 +326,7 @@ pub struct ListIter<'a, L, T> {
     current: Option<NodeListId<T>>,
 }
 
-impl<'a, L, T: 'static> Iterator for ListIter<'a, L, T>
+impl<'a, L, T: Node> Iterator for ListIter<'a, L, T>
 where
     L: NodeLibrary,
 {
@@ -172,7 +338,7 @@ where
     }
 }
 
-impl<T: Any, L: NodeLibrary> Index<NodeId<T>> for Ast<L> {
+impl<T: Node, L: NodeLibrary> Index<NodeId<T>> for Ast<L> {
     type Output = T;
 
     fn index(&self, index: NodeId<T>) -> &Self::Output {
@@ -183,7 +349,7 @@ impl<T: Any, L: NodeLibrary> Index<NodeId<T>> for Ast<L> {
     }
 }
 
-impl<T: Any, L: NodeLibrary> IndexMut<NodeId<T>> for Ast<L> {
+impl<T: Node, L: NodeLibrary> IndexMut<NodeId<T>> for Ast<L> {
     fn index_mut(&mut self, index: NodeId<T>) -> &mut Self::Output {
         let Some(x) = self.library.get_mut(index.into_u32()) else {
             panic!("invalid node id for type `{}`", std::any::type_name::<T>());
@@ -196,29 +362,30 @@ impl<T: Any, L: NodeLibrary> IndexMut<NodeId<T>> for Ast<L> {
 macro_rules! library {
     (
         $(#[$m:meta])*
-        $name:ident{ $($field:ident: $container:ident<$( $ty:ty ),* $(,)?>),* $(,)? }
+        $name:ident{ $($field:ident: $container:ident<$ty:ty>),* $(,)? }
     ) => {
 
         $(#[$m])*
         pub struct $name{
             $(
-                $field: $container<$( $ty ),*>
+                pub $field: $container<$ty>
             ),*
         }
 
         impl $crate::ast::NodeLibrary for $name{
             fn new() -> Self{
                 $name{
-                    $($field: $container::new()),*
+                    $($field: $container::default()),*
                 }
             }
 
-            fn get<T: std::any::Any>(&self, idx: u32) -> Option<&T>{
-                let type_id = std::any::TypeId::of::<T>();
+            fn get<T: $crate::ast::Node>(&self, idx: u32) -> Option<&T>{
+                let type_id = std::any::TypeId::of::<T::Storage>();
                 $(
-                    if std::any::TypeId::of::<library!(@last $($ty,)*)>() == type_id{
+                    if std::any::TypeId::of::<$ty>() == type_id{
                         unsafe{
-                            return std::mem::transmute::<&$container<$($ty,)*>,&$container<T>>(&self.$field).get(idx)
+                            let c = std::mem::transmute::<&$container<$ty>,&$container<T::Storage>>(&self.$field);
+                            return <$container<T::Storage> as $crate::ast::NodeStorage<T>>::storage_get(c,idx)
                         }
                     }
 
@@ -227,26 +394,28 @@ macro_rules! library {
                 panic!("type '{}' not part of node library",std::any::type_name::<T>());
             }
 
-            fn get_mut<T: std::any::Any>(&mut self, idx: u32) -> Option<&mut T>{
-                let type_id = std::any::TypeId::of::<T>();
+            fn get_mut<T: $crate::ast::Node>(&mut self, idx: u32) -> Option<&mut T>{
+                let type_id = std::any::TypeId::of::<T::Storage>();
                 $(
-                    if std::any::TypeId::of::<library!(@last $($ty,)*)>() == type_id{
+                    if std::any::TypeId::of::<$ty>() == type_id{
                         unsafe{
-                            return std::mem::transmute::<&mut $container<$($ty,)*>,&mut $container<T>>(&mut self.$field).get_mut(idx)
+                            let c = std::mem::transmute::<&mut $container<$ty>,&mut $container<T::Storage>>(&mut self.$field);
+                            return <$container<T::Storage> as $crate::ast::NodeStorage<T>>::storage_get_mut(c,idx)
                         }
                     }
                 )*
                 panic!("type '{}' not part of node library",std::any::type_name::<T>());
             }
 
-            fn push<T: std::any::Any>(&mut self, value: T) -> u32{
-                let type_id = std::any::TypeId::of::<T>();
+            fn push<T: $crate::ast::Node>(&mut self, value: T) -> Option<u32>
+                where T::Storage: Eq + ::std::hash::Hash
+            {
+                let type_id = std::any::TypeId::of::<T::Storage>();
                 $(
-                    if std::any::TypeId::of::<library!(@last $($ty,)*)>() == type_id{
+                    if std::any::TypeId::of::<$ty>() == type_id{
                         unsafe{
-                            let idx = self.$field.len();
-                            std::mem::transmute::<&mut $container<$($ty,)*>,&mut $container<T>>(&mut self.$field).push(value);
-                            return idx
+                            let c = std::mem::transmute::<&mut $container<$ty>,&mut $container<T::Storage>>(&mut self.$field);
+                            return <$container<T::Storage> as $crate::ast::NodeStorage<T>>::storage_push(c,value)
                         }
                     }
                 )*
@@ -255,7 +424,7 @@ macro_rules! library {
 
             fn clear(&mut self){
                 $(
-                    self.$field.clear();
+                     self.$field.clear();
                 )*
             }
 
@@ -263,12 +432,6 @@ macro_rules! library {
 
     };
 
-    (@last $f:ty, $($t:ty,)+) => {
-        library!(@last $($t,)*)
-    };
-    (@last $f:ty,) => {
-        $f
-    };
 }
 
 #[macro_export]
@@ -279,25 +442,19 @@ macro_rules! ast_struct {
             $(
                 pub $field:ident: $ty:ty
             ),*$(,)?
-        }
-
-
+        } $(= $storage:ident)?
     ) => {
 
-        #[derive(Clone,Copy,Debug)]
+        #[derive(Clone,Copy,Debug, Eq, PartialEq, Hash)]
+        $(#[$m])*
         $vis struct $name {
             $(
                 pub $field: $ty,
             )*
-            pub span: crate::ast::Span
+            //pub span: crate::ast::Span
         }
 
-        impl crate::ast::Spanned for $name
-        {
-            fn span(&self) -> crate::ast::Span {
-                self.span
-            }
-        }
+        ast_struct!(@impl_id $name, $($storage)?);
 
         #[cfg(feature = "print")]
         impl<L,W> crate::ast::AstDisplay<L,W> for $name
@@ -318,6 +475,30 @@ macro_rules! ast_struct {
             }
         }
     };
+
+    (@impl_id $name:ident, $storage:ident) => {
+        unsafe impl crate::ast::Node for $name{
+            type Storage = $storage;
+        }
+    };
+
+    (@impl_id $name:ident,) => {
+        unsafe impl crate::ast::Node for $name{
+            type Storage = Self;
+
+            fn into_storage(self) -> Self::Storage{
+                self
+            }
+
+            fn from_storage_ref(storage: &Self::Storage) -> &Self{
+                storage
+            }
+
+            fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self{
+                storage
+            }
+        }
+    };
 }
 
 #[macro_export]
@@ -326,34 +507,29 @@ macro_rules! ast_enum{
         $(#[$m:meta])*
         $vis:vis enum $name:ident {
             $(
-                $variant:ident($ty:ty)
-            ),*$(,)?
-        }
-
+                $(#[$vm:meta])*
+                $variant:ident $({
+                    $($field:ident: $ty:ty),* $(,)?
+                })?
+            ),*
+            $(,)?
+        } $(= $storage:ident)?
 
     ) => {
 
-        #[derive(Clone,Copy,Debug)]
+        #[derive(Clone,Copy,Debug, Eq, PartialEq, Hash)]
+        #[repr(u8)]
+        $(#[$m])*
         $vis enum $name {
             $(
-                $variant($ty)
+                $(#[$vm])*
+                $variant$({
+                    $($field : $ty,)*
+                })?
             ),*
         }
 
-
-        impl $crate::ast::AstSpanned for $name
-        {
-            fn ast_span<L: $crate::ast::NodeLibrary>(&self, ast: &$crate::ast::Ast<L>) -> $crate::ast::Span {
-                match *self{
-                    $(
-                        Self::$variant(x) => {
-                            x.ast_span(ast)
-                        }
-                    )*
-                }
-            }
-        }
-
+        ast_enum!{@impl_id $name, $($storage)?}
 
         #[cfg(feature = "print")]
         impl<L,W> crate::ast::AstDisplay<L,W> for $name
@@ -370,6 +546,31 @@ macro_rules! ast_enum{
                     }
                     )*
                 }
+            }
+        }
+    };
+
+
+    (@impl_id $name:ident, $storage:ident) => {
+        impl crate::ast::Node for $name{
+            type Storage = $storage;
+        }
+    };
+
+    (@impl_id $name:ident,) => {
+        unsafe impl crate::ast::Node for $name{
+            type Storage = Self;
+
+            fn into_storage(self) -> Self::Storage{
+                self
+            }
+
+            fn from_storage_ref(storage: &Self::Storage) -> &Self{
+                storage
+            }
+
+            fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self{
+                storage
             }
         }
     };

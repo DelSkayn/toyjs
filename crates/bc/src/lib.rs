@@ -2,7 +2,6 @@ use std::fmt;
 
 use bytemuck::{Contiguous, Pod, TransparentWrapper, Zeroable};
 use common::span::Span;
-use dreck::Trace;
 
 mod display;
 mod instructions;
@@ -46,19 +45,6 @@ pub struct ByteCode {
     pub functions: Box<[Function]>,
     pub strings: Box<[common::string::String]>,
     pub instructions: Box<[u8]>,
-}
-
-unsafe impl<'own> Trace<'own> for ByteCode {
-    type Gc<'r> = ByteCode;
-
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        false
-    }
-
-    fn trace(&self, _marker: dreck::Marker<'own, '_>) {}
 }
 
 /// A newtype for a register index.

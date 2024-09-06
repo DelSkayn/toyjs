@@ -1,5 +1,5 @@
 use common::string::Units;
-use token::{t, Token, TokenKind};
+use token::{Token, TokenKind};
 
 use crate::Lexer;
 
@@ -79,12 +79,9 @@ impl<'a> Lexer<'a> {
         debug_assert!(number as f64 as u64 == number);
 
         if exponent == 0 {
-            let id = self.finish_number(number as f64);
-            self.finish_token_number(t!("123"), Some(id))
+            self.finish_token_numeric(number as f64, TokenKind::Number)
         } else {
-            let number = (number as f64) * 2f64.powi(exponent as i32);
-            let id = self.finish_number(number);
-            self.finish_token_number(t!("123"), Some(id))
+            self.finish_token_numeric(number as f64, TokenKind::Number)
         }
     }
 
@@ -144,8 +141,7 @@ impl<'a> Lexer<'a> {
             }
             self.builder.ascii.push(c);
         }
-        let id = self.finish_string();
-        self.finish_token_string(t!("123n"), Some(id))
+        self.finish_token_string(TokenKind::BigInt)
     }
 
     fn parse_number(&mut self, start: &[u8], mut iter: Units) -> Token {
@@ -172,8 +168,7 @@ impl<'a> Lexer<'a> {
             panic!("invalid number: {} at {}", str, self.end);
         };
         self.builder.ascii.clear();
-        let id = self.finish_number(number);
-        self.finish_token_number(t!("123"), Some(id))
+        self.finish_token_numeric(number, TokenKind::Number)
     }
 
     pub(super) fn lex_number(&mut self, start: &[u8]) -> Token {
@@ -182,15 +177,11 @@ impl<'a> Lexer<'a> {
 
         if start[0] == b'0' {
             match self.peek_byte() {
-                None => {
-                    let id = self.finish_number(0.0);
-                    return self.finish_token_number(t!("123"), Some(id));
-                }
+                None => return self.finish_token_numeric(0.0, TokenKind::Number),
                 Some(b'n') => {
                     self.next_unit();
                     self.builder.push(b'0' as u16);
-                    let id = self.finish_string();
-                    return self.finish_token_string(t!("123n"), Some(id));
+                    return self.finish_token_string(TokenKind::BigInt);
                 }
                 Some(b'b' | b'B') => {
                     self.next_unit();

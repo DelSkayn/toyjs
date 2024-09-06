@@ -1,5 +1,5 @@
 use common::unicode::{units, CharExt, Utf16Ext};
-use token::{t, Template, Token, TokenKind};
+use token::{Template, Token, TokenKind};
 
 use crate::Lexer;
 
@@ -138,8 +138,7 @@ impl<'a> Lexer<'a> {
             };
 
             if unit == start {
-                let id = self.finish_string();
-                return self.finish_token_string(t!("string"), Some(id));
+                return self.finish_token_string(TokenKind::String);
             }
 
             match unit {
@@ -178,8 +177,7 @@ impl<'a> Lexer<'a> {
                         } else {
                             Template::Middle
                         };
-                        let id = self.finish_string();
-                        return self.finish_token_string(TokenKind::Template(template), Some(id));
+                        return self.finish_token_string(TokenKind::Template(template));
                     } else {
                         self.builder.push(x);
                     }
@@ -190,8 +188,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         Template::End
                     };
-                    let id = self.finish_string();
-                    return self.finish_token_string(TokenKind::Template(template), Some(id));
+                    return self.finish_token_string(TokenKind::Template(template));
                 }
                 ESCAPE => {
                     if !self.lex_escape() {

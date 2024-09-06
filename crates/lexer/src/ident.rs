@@ -1,6 +1,6 @@
 use common::unicode::{self, chars, CharExt, Utf16Ext};
 use phf::phf_map;
-use token::{t, Keyword, Token, TokenKind, UnreservedKeyword};
+use token::{Keyword, Token, TokenKind, UnreservedKeyword};
 
 use crate::Lexer;
 
@@ -138,7 +138,6 @@ impl<'a> Lexer<'a> {
             return self.finish_token(x);
         }
 
-        let id = self.finish_string();
-        self.finish_token_string(t!("ident"), Some(id))
+        self.finish_token_string(TokenKind::Ident)
     }
 }

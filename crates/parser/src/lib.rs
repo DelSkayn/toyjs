@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 
-use ast::{Ast, Expr, ListHead, NodeId, NodeListId, PrimeExpr, Stmt};
+use std::ops::{Deref, DerefMut};
+
+use ast::{Ast, Expr, Node, NodeId, NodeListId, PrimeExpr, Stmt};
 use common::{span::Span, string::String};
 use lexer::Lexer;
 use token::{t, Token, TokenKind};
@@ -23,7 +25,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Parser<'a> {
     /// The lexer used during parsing
     pub lexer: Lexer<'a>,
-    /// The ast, in which the source parsed.
     peek: Option<Token>,
     last_span: Span,
     ate_line_terminator: bool,
@@ -47,8 +48,8 @@ bitflags::bitflags! {
     }
 }
 
-pub trait Parse {
-    fn parse(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Self>>;
+pub trait Parse: Sized {
+    fn parse(parser: &mut Parser) -> Result<NodeId<Self>>;
 }
 
 pub struct ParsedScript {
@@ -68,18 +69,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn ast(&self) -> &Ast {
-        &self.ast
-    }
-
-    pub fn ast_mut(&mut self) -> &mut Ast {
-        &mut self.ast
-    }
-
-    pub fn into_ast(self) -> Ast {
-        self.ast
-    }
-
     // Return the span
     fn last_span(&self) -> &Span {
         if let Some(x) = self.peek.as_ref().map(|x| &x.span) {
@@ -94,7 +83,7 @@ impl<'a> Parser<'a> {
         self.ate_line_terminator = false;
         loop {
             let token = self.lexer.next_token();
-            match token.kind_and_data.kind() {
+            match token.kind {
                 t!("\n") => {
                     self.ate_line_terminator = true;
                 }
@@ -128,18 +117,18 @@ impl<'a> Parser<'a> {
     /// ithout advancing the token iterator..
     fn peek_kind(&mut self) -> TokenKind {
         if let Some(peek) = self.peek.as_ref() {
-            peek.kind()
+            peek.kind
         } else {
             let res = self.retrieve_next_token();
             self.peek = Some(res.clone());
-            res.kind()
+            res.kind
         }
     }
 
     /// Eat a token if it is of a specific type.
     /// Returns true if a token was eaten.
     fn eat(&mut self, which: TokenKind) -> bool {
-        if self.peek().kind_and_data.kind() == which {
+        if self.peek().kind == which {
             self.peek = None;
             true
         } else {
@@ -162,7 +151,7 @@ impl<'a> Parser<'a> {
     /// Mark a spot where a semicolon should be inserted.
     fn semicolon(&mut self) -> Result<()> {
         if !self.eat_semicolon() {
-            unexpected!(self, self.peek.clone().unwrap().kind(), ";");
+            unexpected!(self, self.peek.clone().unwrap().kind, ";");
         }
         Ok(())
     }
@@ -170,7 +159,12 @@ impl<'a> Parser<'a> {
     /// Mark a spot where a semicolon should be inserted.
     fn no_line_terminator(&mut self) -> Result<()> {
         if self.ate_line_terminator {
-            unexpected!(self, self.peek.clone().expect("no_line_terminator should be called before consuming the next token").kind() => "a new line before this token is not allowed");
+            let kind = self
+                .peek
+                .clone()
+                .expect("no_line_terminator should be called before consuming the next token")
+                .kind;
+            unexpected!(self,kind => "a new line before this token is not allowed");
         }
         Ok(())
     }
@@ -182,48 +176,63 @@ impl<'a> Parser<'a> {
         let state = self.state;
         let r = f(self);
         self.state = state;
+        r
     }
 
-    pub fn parse<P: Parse>(&mut self, ast: &mut Ast) -> Result<NodeId<P>> {
-        P::parse(self, ast)
+    pub fn parse<P: Parse>(&mut self) -> Result<NodeId<P>> {
+        P::parse(self)
+    }
+}
+
+impl Deref for Parser<'_> {
+    type Target = Ast;
+
+    fn deref(&self) -> &Self::Target {
+        self.lexer.ast
+    }
+}
+
+impl DerefMut for Parser<'_> {
+    fn deref_mut(&mut self) -> &mut Ast {
+        self.lexer.ast
     }
 }
 
 impl Parse for ParsedScript {
     /// Parse a javascript script.
-    fn parse(parser: &mut Parser, ast: &mut Ast) -> Result<ParsedScript> {
+    fn parse(parser: &mut Parser) -> Result<NodeId<ParsedScript>> {
         let mut head = None;
         let mut cur = None;
         let mut strict = false;
         loop {
             let peek = parser.peek();
-            if peek.kind() == t!("eof") {
+            if let t!("eof") = peek.kind {
                 break;
             }
-            let stmt = parser.parse(ast)?;
+            let stmt = parser.parse()?;
             if !parser.state.contains(ParserState::Strict)
                 && head.is_none()
-                && is_strict_directive(ast, stmt)
+                && is_strict_directive(parser, stmt)
             {
                 strict = true;
                 parser.state.insert(ParserState::Strict);
             }
-            ast.push_list(&mut head, &mut cur, stmt);
+            parser.push_list(&mut head, &mut cur, stmt);
         }
-        Ok(ParsedScript { stmt: head, strict })
+        Ok(parser.push(ParsedScript { stmt: head, strict })?)
     }
 }
 
 /// Checks if a statement contains the strict directive `"use strict"`.
-fn is_strict_directive(ast: &Ast, stmt: NodeId<Stmt>) -> bool {
+fn is_strict_directive(ast: &Parser, stmt: NodeId<Stmt>) -> bool {
     let Stmt::Expr { expr } = ast[stmt] else {
         return false;
     };
     let Expr::Prime { expr } = expr.index(ast).item.index(ast) else {
         return false;
     };
-    let PrimeExpr::String(id) = ast[expr] else {
+    let PrimeExpr::String { value } = ast[*expr] else {
         return false;
     };
-    ast[lexer] == String::new_const("use strict")
+    ast[value] == String::new_const("use strict")
 }

@@ -76,8 +76,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let id = self.finish_string();
-        self.finish_token_string(TokenKind::Regex, Some(id))
+        self.finish_token_string(TokenKind::Regex)
     }
 
     fn lex_regex_class(&mut self) -> bool {

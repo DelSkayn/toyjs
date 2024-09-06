@@ -1,80 +1,83 @@
 use ast::{
     Ast, CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern,
-    InOfDecl, List, NodeId, NodeListId, PrimeExpr, Stmt, VariableDecl, VariableKind,
+    InOfDecl, NodeId, NodeList, NodeListId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
 use common::span::Span;
 use token::t;
 
 use crate::{
-    alter_state, error::ErrorKind, expect, function::FunctionCtx, peek_expect, unexpected, Error,
-    Parse, Parser, ParserState, Result,
+    alter_state,
+    class::parse_class,
+    error::ErrorKind,
+    expect,
+    function::{parse_function, FunctionCtx},
+    peek_expect, unexpected, Error, Parse, Parser, ParserState, Result,
 };
 
 impl Parse for Stmt {
-    fn parse(parser: &mut Parser, ast: &mut ast::Ast) -> Result<NodeId<Self>> {
+    fn parse(parser: &mut Parser) -> Result<NodeId<Self>> {
         let token = parser.peek();
-        let expr = match token.kind() {
+        let expr = match token.kind {
             t!("{") => {
                 parser.next();
-                let list = parser.parse_block_stmt()?;
-                parser.ast.push_node(Stmt::Block { list })
+                let list = parse_block_stmt(parser)?;
+                parser.push(Stmt::Block { list })?
             }
             t!("var") => {
                 parser.next();
-                parser.parse_variable_decl(VariableKind::Var)?
+                parse_variable_decl(parser, VariableKind::Var)?
             }
             t!("let") => {
                 parser.next();
-                parser.parse_variable_decl(VariableKind::Let)?
+                parse_variable_decl(parser, VariableKind::Let)?
             }
             t!("const") => {
                 parser.next();
-                parser.parse_variable_decl(VariableKind::Const)?
+                parse_variable_decl(parser, VariableKind::Const)?
             }
             t!("if") => {
                 parser.next();
-                parser.parse_if_stmt()?
+                parse_if_stmt(parser)?
             }
             t!("while") => {
                 parser.next();
-                parser.parse_while_stmt()?
+                parse_while_stmt(parser)?
             }
             t!("do") => {
                 parser.next();
-                parser.parse_do_while_stmt()?
+                parse_do_while_stmt(parser)?
             }
             t!("for") => {
                 parser.next();
-                parser.parse_for_stmt()?
+                parse_for_stmt(parser)?
             }
             t!("switch") => {
                 parser.next();
-                parser.parse_switch_stmt()?
+                parse_switch_stmt(parser)?
             }
             t!("return") => {
                 parser.next();
-                parser.parse_return_stmt()?
+                parse_return_stmt(parser)?
             }
             t!("break") => {
                 parser.next();
-                parser.parse_cntrl_flow_stmt(true)?
+                parse_cntrl_flow_stmt(parser, true)?
             }
             t!("continue") => {
                 parser.next();
-                parser.parse_cntrl_flow_stmt(false)?
+                parse_cntrl_flow_stmt(parser, false)?
             }
             t!("try") => {
                 parser.next();
-                parser.parse_try_stmt()?
+                parse_try_stmt(parser)?
             }
             t!("throw") => {
                 parser.next();
-                parser.parse_throw_stmt()?
+                parse_throw_stmt(parser)?
             }
             t!("class") => {
-                parser.next();
-                let class = parser.parse_class(true)?;
-                Ok(ast.push(Stmt::Class { class })?)
+                let class = parse_class(parser, true)?;
+                parser.push(Stmt::Class { class })?
             }
             t!("function") => {
                 parser.next();
@@ -83,8 +86,8 @@ impl Parse for Stmt {
                 } else {
                     FunctionKind::Simple
                 };
-                let func = parser.parse_function(FunctionCtx::Stmt, kind)?;
-                ast.push(Stmt::Function { func }).into()
+                let func = parse_function(parser, FunctionCtx::Stmt, kind)?;
+                parser.push(Stmt::Function { func })?
             }
             t!("async") => {
                 parser.next();
@@ -95,44 +98,47 @@ impl Parse for Stmt {
                     FunctionKind::Async
                 };
                 parser.no_line_terminator()?;
-                let func = parser.parse_function(FunctionCtx::Stmt, kind)?;
-                ast.push(Stmt::Function { func }).into()
+                let func = parse_function(parser, FunctionCtx::Stmt, kind)?;
+                parser.push(Stmt::Function { func })?
             }
             t!("debugger") => {
                 parser.next();
                 parser.semicolon()?;
-                parser.ast.push_node(Stmt::Debugger)
+                parser.push(Stmt::Debugger)?
             }
             t!("with") => {
                 parser.next();
-                parser.parse_with_stmt()?
+                parse_with_stmt(parser)?
             }
             t!(";") => {
                 parser.next();
-                parser.ast.push_node(Stmt::Empty)
+                parser.push(Stmt::Empty)?
             }
             _ => {
-                alter_state!(parser => {
+                let expr = parser.save_state(|parser| {
                     parser.state.insert(ParserState::In);
-                    let expr = parser.parse_expr()?;
-                });
+                    parser.parse::<NodeList<Expr>>()
+                })?;
                 if parser.eat(t!(":")) {
-                    if parser.ast[expr].next.is_some() {
+                    if parser[expr].next.is_some() {
                         unexpected!(parser, t!(":"), ";");
                     }
-                    let prime = parser.ast[expr].item;
-                    let Expr::Prime { expr } = parser.ast[prime] else {
+                    let prime = parser[expr].item;
+                    let Expr::Prime { expr } = parser[prime] else {
                         unexpected!(parser, t!(":"), ";");
                     };
-                    let PrimeExpr::Ident(label) = parser.ast[expr] else {
+                    let PrimeExpr::Ident { symbol } = parser[expr] else {
                         unexpected!(parser, t!(":"), ";");
                     };
-                    let name = parser.ast[label].name;
-                    let stmt = parser.parse_stmt()?;
-                    parser.ast.push_node(Stmt::Labeled { label: name, stmt })
+                    let name = parser[symbol].name;
+                    let stmt = parser.parse()?;
+                    parser.push(Stmt::Labeled {
+                        label: Some(name),
+                        stmt,
+                    })?
                 } else {
                     parser.semicolon()?;
-                    parser.ast.push_node(Stmt::Expr { expr })
+                    parser.push(Stmt::Expr { expr })?
                 }
             }
         };
@@ -147,7 +153,7 @@ impl Parse for Stmt {
 ///     var a = 1;
 /// }
 /// ```
-pub fn parse_block_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<Option<NodeListId<Stmt>>> {
+pub fn parse_block_stmt(parser: &mut Parser) -> Result<Option<NodeListId<Stmt>>> {
     let mut head = None;
     let mut cur = None;
 
@@ -156,61 +162,59 @@ pub fn parse_block_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<Option<Nod
             parser.next();
             return Ok(head);
         }
-        let stmt = parser.parse(ast)?;
-        ast.push_list(&mut head, &mut cur, stmt)
+        let stmt = parser.parse()?;
+        parser.push_list(&mut head, &mut cur, stmt)?;
     }
-
-    Ok(head)
 }
 
-pub fn parse_if_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_if_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     expect!(parser, "(");
     let cond = parser.save_state(|parser| {
         parser.state.insert(ParserState::In);
-        parser.parse_expr()
+        parser.parse()
     })?;
     expect!(parser, ")");
-    let body = parser.parse(ast)?;
+    let body = parser.parse()?;
     let r#else = if parser.eat(t!("else")) {
-        Some(parser.parse(ast)?)
+        Some(parser.parse()?)
     } else {
         None
     };
 
-    Ok(ast.push(Stmt::If { cond, body, r#else })?)
+    Ok(parser.push(Stmt::If { cond, body, r#else })?)
 }
 
-pub fn parse_while_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_while_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     expect!(parser, "(");
     let cond = parser.save_state(|parser| {
         parser.state.insert(ParserState::In);
-        let cond = parser.parse(ast)?;
-    });
+        parser.parse()
+    })?;
     expect!(parser, ")");
 
     let body = parser.save_state(|parser| {
         parser
             .state
             .insert(ParserState::Break | ParserState::Continue);
-        parser.parse(ast)
+        parser.parse()
     })?;
 
-    ast.push(Stmt::While { cond, body }).into()
+    Ok(parser.push(Stmt::While { cond, body })?)
 }
 
-pub fn parse_do_while_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
-    parser.save_state(|parser| {
+pub fn parse_do_while_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
+    let body = parser.save_state(|parser| {
         parser
             .state
             .insert(ParserState::Break | ParserState::Continue);
-        parser.parse(ast)?;
+        parser.parse()
     })?;
 
     expect!(parser, "while");
     expect!(parser, "(");
-    let cond = parser.parse(ast)?;
+    let cond = parser.parse()?;
     expect!(parser, ")");
-    Ok(ast.push(Stmt::DoWhile { cond, body }))
+    Ok(parser.push(Stmt::DoWhile { cond, body })?)
 }
 
 /// Parse a c style for loop declaration:
@@ -219,88 +223,75 @@ pub fn parse_do_while_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<
 /// ```
 pub fn parse_c_style_decl(
     parser: &mut Parser,
-    ast: &mut Ast,
     kind: VariableKind,
     decl: NodeId<IdentOrPattern>,
     decl_span: Span,
 ) -> Result<NodeListId<VariableDecl>> {
-
-    let initializer = parser
-        .eat(t!("="))
-        .then(|| parser.parse(ast))
-        .transpose()?;
+    let initializer = parser.eat(t!("=")).then(|| parser.parse()).transpose()?;
 
     if initializer.is_none() {
         if kind == VariableKind::Const {
             return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
         }
-        if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+        if matches!(parser[decl], IdentOrPattern::Pattern { .. }) {
             return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
         }
     }
 
-    let decl = ast.push(VariableDecl { decl, initializer })?;
+    let decl = parser.push(VariableDecl { decl, initializer })?;
     let mut head = None;
     let mut cur = None;
 
-    ast.push_list(&mut head, &mut cur, None)
+    parser.push_list(&mut head, &mut cur, None)?;
 
     while parser.eat(t!(",")) {
         let start = *parser.last_span();
-        let decl = parser.parse_ident_or_pattern()?;
+        let decl = parser.parse::<IdentOrPattern>()?;
         let decl_span = start.covers(parser.last_span());
-        let initializer = parser
-            .eat(t!("="))
-            .then(|| parser.parse(ast))
-            .transpose()?;
+        let initializer = parser.eat(t!("=")).then(|| parser.parse()).transpose()?;
 
         if initializer.is_none() {
             if kind == VariableKind::Const {
                 return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
             }
-            if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+            if matches!(parser[decl], IdentOrPattern::Pattern { .. }) {
                 return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
             }
         }
 
-        let decl = ast.push(VariableDecl { decl, initializer });
-
-        prev = ast.append_list(decl, Some(prev));
+        let decl = parser.push(VariableDecl { decl, initializer })?;
+        parser.push_list(&mut head, &mut cur, decl)?;
     }
-    Ok(head)
+    Ok(head.unwrap())
 }
 
 /// Parse a c style for loop:
 /// ```javascript
 /// for(let i = foo /* start here */; i < 10;i++){ body }
 /// ```
-pub fn parse_c_style_for(
-    parser: &mut Parser,
-    ast: &mut Ast,
-    decl: CstyleDecl,
-) -> Result<NodeId<Stmt>> {
+pub fn parse_c_style_for(parser: &mut Parser, decl: CstyleDecl) -> Result<NodeId<Stmt>> {
     expect!(parser, ";");
     let cond = if let t!(";") = parser.peek_kind() {
         None
     } else {
-        Some(parser.parse_expr()?)
+        Some(parser.parse()?)
     };
     expect!(parser, ";");
     let post = if let t!(")") = parser.peek_kind() {
         None
     } else {
-        Some(parser.parse_expr()?)
+        Some(parser.parse()?)
     };
     expect!(parser, ")");
-    let head = ast.push(ForLoopHead::CStyle { decl, cond, post });
+    let head = parser.push(ForLoopHead::CStyle { decl, cond, post })?;
     alter_state!(parser => {
         parser.state.insert(ParserState::Break | ParserState::Continue);
-        let body = parser.parse_stmt()?;
+        let body = parser.parse()?;
     });
-    Ok(ast.push(Stmt::For { head, body }))
+    Ok(parser.push(Stmt::For { head, body })?)
 }
 
-pub fn parse_for_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_for_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     //TODO await loop
     expect!(parser, "(");
     let next = parser.peek_kind();
@@ -315,84 +306,91 @@ pub fn parse_for_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>
             parser.next();
             parser.peek(); // peek to advance the last span to the next token.
             let start = *parser.last_span();
-            let binding = parser.parse_ident_or_pattern()?;
+            let binding = parser.parse()?;
             let binding_span = start.covers(parser.last_span());
             if let t!("=") | t!(",") = parser.peek_kind() {
-                let decl = parser.parse_c_style_decl(kind, binding, binding_span)?;
-                return parser.parse_c_style_for(CstyleDecl::Decl { kind, decl });
+                let decl = parse_c_style_decl(parser, kind, binding, binding_span)?;
+                return parse_c_style_for(parser, CstyleDecl::Decl { kind, decl });
             } else {
                 InOfDecl::Decl { kind, binding }
             }
         }
-        t!(";") => return parser.parse_c_style_for(CstyleDecl::Empty),
+        t!(";") => return parse_c_style_for(parser, CstyleDecl::Empty),
         _ => {
             let state = parser.state;
             parser.state.remove(ParserState::In);
-            let expr = parser.parse_assignment_expr()?;
+            let expr = parser.parse()?;
 
             if parser.eat(t!(",")) {
-                let next = Some(parser.parse_expr()?);
-                let expr = ast.push_list(List { item: expr, next });
+                let next = Some(parser.parse()?);
+                let expr = parser.push(List { item: expr, next });
                 parser.state = state;
-                return parser.parse_c_style_for(CstyleDecl::Expr(expr));
+                return parse_c_style_for(parser, CstyleDecl::Expr { expr });
             }
             parser.state = state;
-            InOfDecl::Expr(expr)
+            InOfDecl::Expr { expr }
         }
     };
 
     let next = peek_expect!(parser);
-    let head = match next.kind() {
+    let head = match next.kind {
         t!(";") => {
             let decl = match decl {
-                InOfDecl::Expr(expr) => CstyleDecl::Expr(ast.append_list(expr, None)),
+                InOfDecl::Expr { expr } => CstyleDecl::Expr {
+                    expr: parser.push(NodeList {
+                        item: expr,
+                        next: None,
+                    })?,
+                },
                 InOfDecl::Decl { kind, binding } => {
-                    let decl = ast.push(VariableDecl {
+                    let decl = parser.push(VariableDecl {
                         decl: binding,
                         initializer: None,
                     });
-                    let decl = ast.append_list(decl, None);
+                    let decl = parser.append_list(decl, None);
                     CstyleDecl::Decl { kind, decl }
                 }
             };
-            return parser.parse_c_style_for(decl);
+            return parse_c_style_for(parser, decl);
         }
         t!("in") => {
             parser.next();
-            let expr = parser.parse_expr()?;
+            let expr = parser.parse()?;
             ForLoopHead::In { decl, expr }
         }
         t!("of") => {
             parser.next();
-            let expr = parser.parse_assignment_expr()?;
+            let expr = parser.parse()?;
             ForLoopHead::Of { decl, expr }
         }
         //TODO 'of'
         x => unexpected!(parser, x, ";", "in"),
     };
-    let head = ast.push(head);
+    let head = parser.push(head)?;
 
     expect!(parser, ")");
-    alter_state!(parser => {
-        parser.state.insert(ParserState::Break | ParserState::Continue);
-        let body = parser.parse_stmt()?;
-    });
-    Ok(ast.push(Stmt::For { head, body }))
+    let body = parser.save_state(|parser| {
+        parser
+            .state
+            .insert(ParserState::Break | ParserState::Continue);
+        parser.parse()
+    })?;
+    Ok(parser.push(Stmt::For { head, body })?)
 }
 
-pub fn parse_switch_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_switch_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     expect!(parser, "(");
-    let cond = parser.parse_expr()?;
+    let cond = parser.parse()?;
     expect!(parser, ")");
     expect!(parser, "{");
-    let mut head = ListHead::Empty;
-    let mut prev = None;
+    let mut head = None;
+    let mut cur = None;
     let mut default = None;
     loop {
         let case = match parser.peek_kind() {
             t!("case") => {
                 parser.next();
-                Some(parser.parse_expr()?)
+                Some(parser.parse()?)
             }
             t!("default") => {
                 if default.is_some() {
@@ -403,62 +401,54 @@ pub fn parse_switch_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<St
             }
             t!("}") => {
                 parser.next();
-                return Ok(ast.push(Stmt::Switch {
+                return Ok(parser.push(Stmt::Switch {
                     cond,
                     cases: head,
                     default,
-                }));
+                })?);
             }
             x => unexpected!(parser, x, "case", "default", "}"),
         };
         expect!(parser, ":");
 
-        alter_state!(parser => {
+        let stmts = parser.save_state(|parser| -> Result<_> {
             parser.state.insert(ParserState::Break);
-            let mut stmt_head = ListHead::Empty;
-            let mut stmt_prev = None;
+            let mut stmt_head = None;
+            let mut stmt_cur = None;
             loop {
-                match peek_expect!(parser).kind() {
+                match peek_expect!(parser).kind {
                     t!("case") | t!("default") | t!("}") => break,
                     _ => {
-                        let stmt = parser.parse_stmt()?;
-                        stmt_prev = Some(ast.append_list(stmt, stmt_prev));
-                        stmt_head = stmt_head.or(stmt_prev.into())
+                        let stmt = parser.parse::<Stmt>()?;
+                        parser.push_list(&mut stmt_head, &mut stmt_cur, stmt)?;
                     }
                 }
             }
-        });
+            Ok(stmt_head)
+        })?;
 
         if let Some(expr) = case {
-            let node = ast.push(CaseItem {
-                expr,
-                stmts: stmt_head,
-            });
-            prev = Some(ast.append_list(node, prev));
-            head = head.or(prev.into())
+            let node = parser.push(CaseItem { expr, stmts })?;
+            parser.push_list(&mut head, &mut cur, node)?;
         } else {
             // Default case
-            default = Some(stmt_head)
+            default = stmts
         }
     }
 }
 
-pub fn parse_return_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_return_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     debug_assert!(parser.peek.is_none());
     if parser.eat_semicolon() {
-        Ok(ast.push(Stmt::Return { expr: None }))
+        Ok(parser.push(Stmt::Return { expr: None })?)
     } else {
-        let expr = Some(parser.parse_expr()?);
+        let expr = Some(parser.parse()?);
         parser.semicolon()?;
-        Ok(ast.push(Stmt::Return { expr }))
+        Ok(parser.push(Stmt::Return { expr })?)
     }
 }
 
-pub fn parse_cntrl_flow_stmt(
-    parser: &mut Parser,
-    ast: &mut Ast,
-    is_break: bool,
-) -> Result<NodeId<Stmt>> {
+pub fn parse_cntrl_flow_stmt(parser: &mut Parser, is_break: bool) -> Result<NodeId<Stmt>> {
     if is_break && !parser.state.contains(ParserState::Break)
         || !is_break && !parser.state.contains(ParserState::Continue)
     {
@@ -479,11 +469,11 @@ pub fn parse_cntrl_flow_stmt(
         None
     } else {
         let token = peek_expect!(parser);
-        if let t!("ident") = token.kind() {
+        if let t!("ident") = token.kind {
             parser.next();
-            Some(token.data_id().unwrap())
+            Some(token.data.unwrap().entype())
         } else {
-            unexpected!(parser, token.kind(), "ident");
+            unexpected!(parser, token.kind, "ident");
         }
     };
 
@@ -492,27 +482,27 @@ pub fn parse_cntrl_flow_stmt(
     } else {
         Stmt::Continue { label }
     };
-    Ok(ast.push(node))
+    Ok(parser.push(node)?)
 }
 
-pub fn parse_try_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_try_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     expect!(parser, "{");
-    let block = parser.parse_block_stmt()?;
+    let block = parse_block_stmt(parser)?;
     let catch = parser
         .eat(t!("catch"))
         .then(|| {
             let binding = parser
                 .eat(t!("("))
                 .then(|| {
-                    let res = parser.parse_ident_or_pattern()?;
+                    let res = parser.parse()?;
                     expect!(parser, ")");
                     Ok(res)
                 })
                 .transpose()?;
 
             expect!(parser, "{");
-            let block = parser.parse_block_stmt()?;
-            Ok(ast.push(CatchStmt { binding, block }))
+            let block = parse_block_stmt(parser)?;
+            Ok(parser.push(CatchStmt { binding, block })?)
         })
         .transpose()?;
 
@@ -520,34 +510,35 @@ pub fn parse_try_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>
         .eat(t!("finally"))
         .then(|| {
             expect!(parser, "{");
-            parser.parse_block_stmt()
+            parse_block_stmt(parser)
         })
-        .transpose()?;
+        .transpose()?
+        .and_then(|x| x);
 
-    Ok(ast.push(Stmt::Try {
+    Ok(parser.push(Stmt::Try {
         block,
         catch,
         finally,
-    }))
+    })?)
 }
 
-pub fn parse_throw_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_throw_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     peek_expect!(parser);
     parser.no_line_terminator()?;
-    let expr = parser.parse_expr()?;
+    let expr = parser.parse()?;
     parser.semicolon()?;
-    Ok(ast.push(Stmt::Throw { expr }))
+    Ok(parser.push(Stmt::Throw { expr })?)
 }
 
-pub fn parse_with_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt>> {
+pub fn parse_with_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
     if parser.state.contains(ParserState::Strict) {
         todo!("disallow with in strict mode")
     }
     expect!(parser, "(");
-    let expr = parser.parse_expr()?;
+    let expr = parser.parse()?;
     expect!(parser, ")");
-    let stmt = parser.parse_stmt()?;
-    Ok(ast.push(Stmt::With { expr, stmt }))
+    let stmt = parser.parse()?;
+    Ok(parser.push(Stmt::With { expr, stmt })?)
 }
 
 /// Parse a variable declaration, e.g. any of:
@@ -556,59 +547,54 @@ pub fn parse_with_stmt(parser: &mut Parser, ast: &mut Ast) -> Result<NodeId<Stmt
 /// let [b,,,...rest] = 1;
 /// const { c } = foo;
 /// ```
-pub fn parse_variable_decl(
-    parser: &mut Parser,
-    ast: &mut Ast,
-    kind: VariableKind,
-) -> Result<NodeId<Stmt>> {
+pub fn parse_variable_decl(parser: &mut Parser, kind: VariableKind) -> Result<NodeId<Stmt>> {
     let span = parser.peek().span;
 
-    let decl = parser.parse_ident_or_pattern()?;
+    let decl = parser.parse::<IdentOrPattern>()?;
     let decl_span = span.covers(parser.last_span());
 
-    let initializer = parser
-        .eat(t!("="))
-        .then(|| parser.parse_assignment_expr())
-        .transpose()?;
+    let initializer = parser.eat(t!("=")).then(|| parser.parse()).transpose()?;
 
     if initializer.is_none() {
         if kind == VariableKind::Const {
             return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
         }
-        if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+        if matches!(parser[decl], IdentOrPattern::Pattern { .. }) {
             return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
         }
     }
 
-    let decl = ast.push(VariableDecl { decl, initializer });
+    let decl = parser.push(VariableDecl { decl, initializer })?;
 
-    let head = ast.append_list(decl, None);
-    let mut prev = head;
+    let mut head = None;
+    let mut cur = None;
+
+    parser.push_list(&mut head, &mut cur, decl)?;
     while parser.eat(t!(",")) {
         let span = parser.peek().span;
-        let decl = parser.parse_ident_or_pattern()?;
+        let decl = parser.parse::<IdentOrPattern>()?;
         let decl_span = span.covers(parser.last_span());
 
-        let initializer = parser
-            .eat(t!("="))
-            .then(|| parser.parse_assignment_expr())
-            .transpose()?;
+        let initializer = parser.eat(t!("=")).then(|| parser.parse()).transpose()?;
 
         if initializer.is_none() {
             if kind == VariableKind::Const {
                 return Err(Error::new(ErrorKind::ConstNotInitialized, decl_span));
             }
-            if matches!(ast[decl], IdentOrPattern::Pattern(_)) {
+            if matches!(parser[decl], IdentOrPattern::Pattern { .. }) {
                 return Err(Error::new(ErrorKind::DestructringNotInitalized, decl_span));
             }
         }
 
-        let decl = ast.push(VariableDecl { decl, initializer });
-        prev = ast.append_list(decl, Some(prev));
+        let decl = parser.push(VariableDecl { decl, initializer })?;
+        parser.push_list(&mut head, &mut cur, decl);
     }
     parser.semicolon()?;
 
-    let res = ast.push(Stmt::VariableDecl { kind, decl: head });
+    let res = parser.push(Stmt::VariableDecl {
+        kind,
+        decl: head.unwrap(),
+    })?;
 
     Ok(res)
 }

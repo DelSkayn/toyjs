@@ -175,7 +175,7 @@ macro_rules! match_next {
         })*
     }) => {
         let token = next_expect!($parser,$($kind),*);
-        match token.kind(){
+        match token.kind{
             $(
                 t!($kind) => {
                     $($inner)*
@@ -196,7 +196,7 @@ macro_rules! match_peek{
         })*
     }) => {
         let token = peek_expect!($parser,$($kind),*);
-        match token.kind(){
+        match token.kind{
             $(
                 t!($kind) => {
                     $($inner)*
@@ -214,8 +214,8 @@ macro_rules! match_peek{
 macro_rules! create_test_parser {
     ($source:expr,$parser:ident) => {
         let text = common::string::String::from_std_str($source);
-        let mut interners = common::structs::Interners::default();
-        let lexer = lexer::Lexer::new(text.encoding(), &mut interners);
+        let mut ast = ::ast::Ast::new();
+        let lexer = lexer::Lexer::new(text.encoding(), &mut ast);
         let mut $parser = $crate::Parser::new(lexer);
     };
 }

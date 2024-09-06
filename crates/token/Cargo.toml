@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 bytemuck = { version = "1.13.1", features = ["derive"] }
 common = { package="toyjs_common", version = "0.1.0", path = "../common" }
+ast = { version = "0.1.0", path = "../ast", package = "toyjs_ast" }
