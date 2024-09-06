@@ -2,29 +2,14 @@ use core::fmt;
 use std::num::NonZeroU32;
 
 use ast::NodeId;
-use common::{id::IdVec, key, string::StringId};
+use common::{id, id::collections::IdVec, string::String};
 
 mod resolve;
 pub use resolve::resolve_script;
 
-key!(
-    #[derive(Ord,PartialOrd)]
-    pub struct ScopeId(#[non_zero] NonZeroU32)
-);
-key!(pub struct SymbolId(#[non_zero] NonZeroU32));
-key!(pub struct LoopId(#[non_zero] NonZeroU32));
-
-impl ScopeId {
-    fn next(self) -> Self {
-        Self(self.0.checked_add(1).unwrap())
-    }
-}
-
-impl SymbolId {
-    pub fn to_u32(self) -> u32 {
-        u32::from(self.0) - 1
-    }
-}
+id!(pub struct ScopeId);
+id!(pub struct SymbolId);
+id!(pub struct LoopId);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct SymbolUseOrder(NonZeroU32);
@@ -104,7 +89,7 @@ pub enum LastUse {
 #[derive(Clone, Copy, Debug)]
 pub struct Symbol {
     /// The identifier of the variable.
-    pub ident: StringId,
+    pub ident: NodeId<String>,
     /// Is the variable captured by a closure.
     pub captured: bool,
     /// How is the variable declared.
@@ -204,14 +189,16 @@ impl Variables {
 
     pub fn push_global_scope(&mut self, strict: bool) -> ScopeId {
         // TODO: limits check.
-        self.scopes.push(Scope {
-            parent: None,
-            kind: ScopeKind::Global { strict },
-            num_scope_children: 0,
-            scope_child_offset: 0,
-            num_decl_children: 0,
-            decl_child_offset: 0,
-        })
+        self.scopes
+            .push(Scope {
+                parent: None,
+                kind: ScopeKind::Global { strict },
+                num_scope_children: 0,
+                scope_child_offset: 0,
+                num_decl_children: 0,
+                decl_child_offset: 0,
+            })
+            .unwrap()
     }
 
     pub fn symbol_of_ast(&self, ast: NodeId<ast::Symbol>) -> SymbolId {
@@ -249,8 +236,8 @@ impl Variables {
     }
 
     pub fn new_symbol(&mut self, origin: NodeId<ast::Symbol>, sym: Symbol) -> SymbolId {
-        let id = self.symbols.push(sym);
-        self.ast_to_symbol.insert_grow_default(
+        let id = self.symbols.push(sym).unwrap();
+        self.ast_to_symbol.insert_fill_default(
             origin,
             UseInfo {
                 use_order: SymbolUseOrder::first(),
@@ -261,7 +248,7 @@ impl Variables {
     }
 
     pub fn resolve_use(&mut self, origin: NodeId<ast::Symbol>, to: SymbolId) {
-        self.ast_to_symbol.insert_grow_default(
+        self.ast_to_symbol.insert_fill_default(
             origin,
             UseInfo {
                 use_order: SymbolUseOrder::first(),

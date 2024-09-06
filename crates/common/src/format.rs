@@ -46,6 +46,14 @@ where
         Ok(())
     }
 
+    pub fn increase_depth(&mut self) {
+        self.depth += 1;
+    }
+
+    pub fn decrease_depth(&mut self) {
+        self.depth += 1;
+    }
+
     pub fn indent<F>(&mut self, f: F) -> fmt::Result
     where
         F: FnOnce(&mut IndentFormatter<W>) -> fmt::Result,

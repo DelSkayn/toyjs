@@ -1,4 +1,4 @@
-use ast::{ListHead, NodeId};
+use ast::NodeId;
 use bc::{Instruction, LongOffset, Reg};
 
 use crate::{Compiler, Result};
@@ -7,7 +7,7 @@ impl<'a> Compiler<'a> {
     pub fn compile_stmt(&mut self, stmt: NodeId<ast::Stmt>) -> Result<Option<Reg>> {
         match self.ast[stmt] {
             ast::Stmt::Block { list } => {
-                let ListHead::Present(mut head) = list else {
+                let Some(mut head) = list else {
                     return Ok(None);
                 };
                 loop {
@@ -153,13 +153,13 @@ impl<'a> Compiler<'a> {
         let expr = self.compile_expr(expr)?;
         let decl = self.ast[decl].decl;
         match self.ast[decl] {
-            ast::IdentOrPattern::Ident(sym) => {
-                let sym_id = self.variables.symbol_of_ast(sym);
+            ast::IdentOrPattern::Ident { name } => {
+                let sym_id = self.variables.symbol_of_ast(name);
                 self.store_symbol(sym_id, expr)?;
                 // TODO: Expression
                 Ok(None)
             }
-            ast::IdentOrPattern::Pattern(_) => todo!(),
+            ast::IdentOrPattern::Pattern { .. } => todo!(),
         }
     }
 }

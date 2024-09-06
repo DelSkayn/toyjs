@@ -1,5 +1,5 @@
-use ast::Ast;
-use common::{hashmap::hash_map::HashMap, string::StringId};
+use ast::{Ast, NodeId};
+use common::{hashmap::hash_map::HashMap, string::String};
 
 use super::driver::VariableVisitor;
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
 pub struct UsePass<'a, 'b> {
     ast: &'a Ast,
     vars: &'b mut Variables,
-    lookup: HashMap<StringId, SymbolId>,
+    lookup: HashMap<NodeId<String>, SymbolId>,
     root: ScopeId,
     current: ScopeId,
     current_function: ScopeId,
@@ -82,7 +82,7 @@ impl VariableVisitor for UsePass<'_, '_> {
         let ident = self.ast[ast_node].name;
         if let Some(s) = self.lookup.get(&ident).copied() {
             let use_order = self.advance_use()?;
-            self.vars.ast_to_symbol.insert_grow_default(
+            self.vars.ast_to_symbol.insert_fill_default(
                 ast_node,
                 UseInfo {
                     id: Some(s),
@@ -134,17 +134,21 @@ impl VariableVisitor for UsePass<'_, '_> {
             }
         } else {
             let defined = self.advance_use()?;
-            let symbol_id = self.vars.symbols.push(Symbol {
-                ident,
-                captured: false,
-                kind: Kind::Unresolved,
-                declared: Some(SymbolUseOrder::first()),
-                defined: Some(defined),
-                last_use: LastUse::Direct(SymbolUseOrder::last()),
-                scope: self.root,
-                shadows: None,
-                ast_node,
-            });
+            let symbol_id = self
+                .vars
+                .symbols
+                .push(Symbol {
+                    ident,
+                    captured: false,
+                    kind: Kind::Unresolved,
+                    declared: Some(SymbolUseOrder::first()),
+                    defined: Some(defined),
+                    last_use: LastUse::Direct(SymbolUseOrder::last()),
+                    scope: self.root,
+                    shadows: None,
+                    ast_node,
+                })
+                .unwrap();
 
             self.lookup.insert(ident, symbol_id);
 
@@ -153,7 +157,7 @@ impl VariableVisitor for UsePass<'_, '_> {
 
             let use_order = self.advance_use()?;
 
-            self.vars.ast_to_symbol.insert_grow_default(
+            self.vars.ast_to_symbol.insert_fill_default(
                 ast_node,
                 UseInfo {
                     use_order,
@@ -166,7 +170,7 @@ impl VariableVisitor for UsePass<'_, '_> {
     }
 
     fn push_scope(&mut self, kind: ScopeKind) -> Result<()> {
-        self.last = self.last.next();
+        self.last = self.last.next().unwrap();
         self.current = self.last;
 
         if self.vars.scopes[self.current].kind.is_function_scope() {
@@ -189,11 +193,16 @@ impl VariableVisitor for UsePass<'_, '_> {
         }
 
         if let ScopeKind::Block { has_loop: true } = kind {
-            self.current_loop = Some(self.vars.loop_use.push(LoopInfo {
-                parent: self.current_loop,
-                use_order: None,
-                scope: self.current,
-            }));
+            self.current_loop = Some(
+                self.vars
+                    .loop_use
+                    .push(LoopInfo {
+                        parent: self.current_loop,
+                        use_order: None,
+                        scope: self.current,
+                    })
+                    .unwrap(),
+            );
         }
 
         debug_assert_eq!(self.vars.scopes[self.current].kind, kind);

@@ -1,21 +1,18 @@
-use ast::ListHead;
-use common::{string::String, structs::Interners};
+use common::string::String;
 use iai::black_box;
 use lexer::Lexer;
-use parser::Parser;
+use parser::{parse_script, Parser};
 use toyjs_compiler::variables::{self, Variables};
 
 pub fn bench(source: &str) {
     let source = String::from_std_str(source);
     let source = common::source::Source::new(source, Some("parse_script"));
-    let mut interners = Interners::default();
-    let lexer = Lexer::new(source.source(), &mut interners);
-    let mut parser = Parser::new(lexer);
-    let res = parser.parse_script().expect("parsing failed");
-    let ast = parser.into_ast();
+    let mut ast = ast::Ast::new();
+    let lexer = Lexer::new(source.source(), &mut ast);
+    let res = Parser::parse_syntax(lexer, parse_script).unwrap();
     let mut variables = Variables::new();
     let root = variables.push_global_scope(false);
-    if let ListHead::Present(stmt) = res.stmt {
+    if let Some(stmt) = res.stmt {
         variables::resolve_script(stmt, &ast, &mut variables, root).unwrap();
     }
     black_box(variables);

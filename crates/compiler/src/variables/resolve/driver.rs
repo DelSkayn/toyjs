@@ -1,6 +1,9 @@
 use std::mem;
 
-use ast::{visitor::Visitor, Ast, Expr, ListHead, NodeId};
+use ast::{
+    visitor::{self, Visitor},
+    Ast, Expr, NodeId, NodeListId,
+};
 
 use crate::{
     variables::{Kind, ScopeKind},
@@ -51,27 +54,29 @@ impl<V: VariableVisitor> VisitorDriver<V> {
 
     fn resolve_params(
         &mut self,
-        params: ListHead<ast::BindingElement>,
+        params: Option<NodeListId<ast::BindingElement>>,
         rest: Option<NodeId<ast::IdentOrPattern>>,
     ) -> Result<()> {
         let before = self.declaring.replace(Kind::Arg);
-        if let ListHead::Present(p) = params {
-            self.super_binding_element_list(p)?;
+        if let Some(p) = params {
+            self.visit_binding_element_list(p)?;
         }
         if let Some(p) = rest {
-            self.super_ident_or_pattern(p)?;
+            self.visit_ident_or_pattern(p)?;
         }
         self.declaring = before;
         Ok(())
     }
 }
 
-impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
+impl<V: VariableVisitor> Visitor for VisitorDriver<V> {
+    type Error = Error;
+
     fn ast(&self) -> &Ast {
         self.driven.ast()
     }
 
-    fn super_function(&mut self, func: NodeId<ast::Function>) -> Result<()> {
+    fn visit_function(&mut self, func: NodeId<ast::Function>) -> Result<()> {
         match self.ast()[func] {
             ast::Function::Arrow {
                 params,
@@ -82,10 +87,10 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 self.driven.push_scope(ScopeKind::Function(func))?;
                 self.resolve_params(params, rest_param)?;
                 match body {
-                    ast::ArrowFunctionBody::Expr(x) => self.super_expr(x)?,
-                    ast::ArrowFunctionBody::Stmt(x) => {
-                        if let ListHead::Present(x) = x {
-                            self.super_stmt_list(x)?;
+                    ast::ArrowFunctionBody::Expr { expr } => self.visit_expr(expr)?,
+                    ast::ArrowFunctionBody::Stmt { body } => {
+                        if let Some(x) = body {
+                            self.visit_stmt_list(x)?;
                         }
                     }
                 }
@@ -100,8 +105,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             } => {
                 self.driven.push_scope(ScopeKind::Function(func))?;
                 self.resolve_params(params, rest_param)?;
-                if let ListHead::Present(x) = body {
-                    self.super_stmt_list(x)?;
+                if let Some(x) = body {
+                    self.visit_stmt_list(x)?;
                 }
                 self.driven.pop_scope()?;
                 self.driven.declare(name, Kind::Function)?;
@@ -122,8 +127,8 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 } else {
                     self.resolve_params(params, rest_param)?;
                 }
-                if let ListHead::Present(x) = body {
-                    self.super_stmt_list(x)?;
+                if let Some(x) = body {
+                    self.visit_stmt_list(x)?;
                 }
                 if name.is_some() {
                     self.driven.pop_scope()?;
@@ -135,43 +140,43 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
         Ok(())
     }
 
-    fn super_stmt(&mut self, stmt: NodeId<ast::Stmt>) -> std::prelude::v1::Result<(), Error> {
+    fn visit_stmt(&mut self, stmt: NodeId<ast::Stmt>) -> std::prelude::v1::Result<(), Error> {
         match self.ast()[stmt] {
             ast::Stmt::Block { .. } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: false })?;
-                self.visit_stmt(stmt)?;
+                visitor::visit_stmt(self, stmt)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
             ast::Stmt::VariableDecl { kind, decl } => {
                 let before = self.declaring.replace(kind.into());
-                self.super_variable_decl_list(decl)?;
+                self.visit_variable_decl_list(decl)?;
                 self.declaring = before;
                 return Ok(());
             }
             ast::Stmt::For { head, body } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: true })?;
-                self.super_head_pre(head)?;
-                self.super_stmt(body)?;
-                self.super_head_post(head)?;
+                self.visit_head_pre(head)?;
+                self.visit_stmt(body)?;
+                self.visit_head_post(head)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
             ast::Stmt::While { cond, body } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: true })?;
-                self.visit_expr_list(cond)?;
-                self.visit_stmt(body)?;
+                visitor::visit_expr_list(self, cond)?;
+                visitor::visit_stmt(self, body)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
             ast::Stmt::DoWhile { body, cond } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: true })?;
-                self.visit_stmt(body)?;
-                self.visit_expr_list(cond)?;
+                visitor::visit_stmt(self, body)?;
+                visitor::visit_expr_list(self, cond)?;
                 self.driven.pop_scope()?;
                 return Ok(());
             }
@@ -183,19 +188,19 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
             } => {
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: false })?;
-                if let ListHead::Present(stmt) = block {
-                    self.super_stmt_list(stmt)?;
+                if let Some(stmt) = block {
+                    self.visit_stmt_list(stmt)?;
                 }
                 self.driven.pop_scope()?;
 
                 if let Some(catch) = catch {
-                    self.super_catch(catch)?;
+                    self.visit_catch(catch)?;
                 }
 
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: false })?;
-                if let Some(ListHead::Present(stmt)) = finally {
-                    self.super_stmt_list(stmt)?;
+                if let Some(stmt) = finally {
+                    self.visit_stmt_list(stmt)?;
                 }
                 self.driven.pop_scope()?;
 
@@ -206,24 +211,24 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 cases,
                 default,
             } => {
-                self.visit_expr_list(cond)?;
+                visitor::visit_expr_list(self, cond)?;
                 self.driven
                     .push_scope(ScopeKind::Block { has_loop: false })?;
-                if let ListHead::Present(cases) = cases {
-                    self.super_cases(cases)?;
+                if let Some(cases) = cases {
+                    self.visit_cases(cases)?;
                 }
-                if let Some(ListHead::Present(stmt)) = default {
-                    self.super_stmt_list(stmt)?;
+                if let Some(stmt) = default {
+                    self.visit_stmt_list(stmt)?;
                 }
                 self.driven.pop_scope()?;
                 return Ok(());
             }
             _ => (),
         }
-        self.visit_stmt(stmt)
+        visitor::visit_stmt(self, stmt)
     }
 
-    fn super_head_pre(
+    fn visit_head_pre(
         &mut self,
         head: NodeId<ast::ForLoopHead>,
     ) -> std::prelude::v1::Result<(), Error> {
@@ -232,92 +237,92 @@ impl<V: VariableVisitor> Visitor<Error> for VisitorDriver<V> {
                 if let ast::InOfDecl::Decl { kind, binding } = decl {
                     let before = self.declaring.replace(kind.into());
                     let before_init = mem::replace(&mut self.decl_initialized, true);
-                    self.super_ident_or_pattern(binding)?;
+                    self.visit_ident_or_pattern(binding)?;
                     self.decl_initialized = before_init;
                     self.declaring = before;
                 }
-                self.super_expr_list(expr)?;
+                self.visit_expr_list(expr)?;
             }
             ast::ForLoopHead::Of { decl, expr } => {
                 if let ast::InOfDecl::Decl { kind, binding } = decl {
                     let before = self.declaring.replace(kind.into());
                     let before_init = mem::replace(&mut self.decl_initialized, true);
-                    self.super_ident_or_pattern(binding)?;
+                    self.visit_ident_or_pattern(binding)?;
                     self.decl_initialized = before_init;
                     self.declaring = before;
                 }
-                self.super_expr(expr)?;
+                self.visit_expr(expr)?;
             }
             ast::ForLoopHead::CStyle { decl, cond, .. } => {
                 match decl {
                     ast::CstyleDecl::Empty => {}
-                    ast::CstyleDecl::Expr(x) => {
-                        self.super_expr_list(x)?;
+                    ast::CstyleDecl::Expr { expr } => {
+                        self.visit_expr_list(expr)?;
                     }
                     ast::CstyleDecl::Decl { kind, decl } => {
                         let before = self.declaring.replace(kind.into());
-                        self.super_variable_decl_list(decl)?;
+                        self.visit_variable_decl_list(decl)?;
                         self.declaring = before;
                     }
                 }
                 if let Some(cond) = cond {
-                    self.super_expr_list(cond)?;
+                    self.visit_expr_list(cond)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn super_catch(&mut self, catch: NodeId<ast::CatchStmt>) -> Result<()> {
+    fn visit_catch(&mut self, catch: NodeId<ast::CatchStmt>) -> Result<()> {
         self.driven
             .push_scope(ScopeKind::Block { has_loop: false })?;
         if let Some(binding) = self.ast()[catch].binding {
             let before = self.declaring.replace(Kind::Let);
-            self.super_ident_or_pattern(binding)?;
+            self.visit_ident_or_pattern(binding)?;
             self.declaring = before;
         }
-        if let ListHead::Present(block) = self.ast()[catch].block {
-            self.super_stmt_list(block)?;
+        if let Some(block) = self.ast()[catch].block {
+            self.visit_stmt_list(block)?;
         }
         self.driven.pop_scope()?;
         Ok(())
     }
 
-    fn super_class_member(
+    fn visit_class_member(
         &mut self,
         cls_mem: NodeId<ast::ClassMember>,
     ) -> std::prelude::v1::Result<(), Error> {
         if let ast::ClassMember::StaticBlock { .. } = self.ast()[cls_mem] {
             self.driven.push_scope(ScopeKind::Static)?;
-            self.visit_class_member(cls_mem)?;
+            visitor::visit_class_member(self, cls_mem)?;
             self.driven.pop_scope()?;
             return Ok(());
         }
-        self.visit_class_member(cls_mem)
+        visitor::visit_class_member(self, cls_mem)
     }
 
-    fn super_expr(&mut self, expr: NodeId<ast::Expr>) -> Result<()> {
+    fn visit_expr(&mut self, expr: NodeId<ast::Expr>) -> Result<()> {
         if let Expr::Destructure { pattern, expr } = self.ast()[expr] {
-            self.super_binding_pattern(pattern)?;
-            self.super_expr(expr)?;
+            self.visit_binding_pattern(pattern)?;
+            self.visit_expr(expr)?;
             return Ok(());
         }
 
         let before = self.declaring.take();
-        self.visit_expr(expr)?;
+        visitor::visit_expr(self, expr)?;
         self.declaring = before;
         Ok(())
     }
 
-    fn super_variable_decl(&mut self, decl: NodeId<ast::VariableDecl>) -> Result<()> {
+    fn visit_variable_decl(&mut self, decl: NodeId<ast::VariableDecl>) -> Result<()> {
         let new = self.ast()[decl].initializer.is_some();
         let old = std::mem::replace(&mut self.decl_initialized, new);
-        self.visit_variable_decl(decl)?;
+        visitor::visit_variable_decl(self, decl)?;
         self.decl_initialized = old;
         Ok(())
     }
 
-    fn super_symbol(&mut self, s: NodeId<ast::Symbol>) -> Result<()> {
+    fn visit_symbol(&mut self, s: NodeId<ast::Symbol>) -> Result<()> {
         if let Some(d) = self.declaring {
             self.driven.declare(s, d)?;
             if self.decl_initialized {

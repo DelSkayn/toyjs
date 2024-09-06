@@ -5,9 +5,9 @@ use std::{
     time::Instant,
 };
 
-use common::{result::ContextError, source::Source, string::String, structs::Interners};
+use common::{result::ContextError, source::Source, string::String};
 use lexer::Lexer;
-use parser::Parser;
+use parser::{parse_script, Parser};
 use toyjs_compiler::Compiler;
 
 pub enum Error {
@@ -36,12 +36,10 @@ fn get_input() -> Result<Box<dyn Read>, io::Error> {
 }
 
 fn compile(source: &Source) -> Result<bc::ByteCode, Error> {
-    let mut interners = Interners::default();
-    let lexer = Lexer::new(source.source(), &mut interners);
-    let mut parser = Parser::new(lexer);
-    let res = parser.parse_script()?;
-    let mut ast = parser.into_ast();
-    let compiler = Compiler::new(&mut interners, &mut ast);
+    let mut ast = ast::Ast::new();
+    let lexer = Lexer::new(source.source(), &mut ast);
+    let res = Parser::parse_syntax(lexer, parse_script)?;
+    let compiler = Compiler::new(&mut ast);
     Ok(compiler.compile_script(res.strict, res.stmt)?)
 }
 

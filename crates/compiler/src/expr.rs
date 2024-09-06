@@ -1,6 +1,6 @@
 use core::panic;
 
-use ast::{AssignOp, ListId, NodeId};
+use ast::{AssignOp, NodeId, NodeListId};
 use bc::{Instruction, LongOffset, OpCode, Primitive, Reg};
 
 use crate::{Compiler, InstrOffset, Result};
@@ -172,7 +172,7 @@ impl ExprResult {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn compile_exprs(&mut self, mut expr: ListId<ast::Expr>) -> Result<ExprResult> {
+    pub fn compile_exprs(&mut self, mut expr: NodeListId<ast::Expr>) -> Result<ExprResult> {
         loop {
             let item = self.ast[expr].item;
             if let Some(x) = self.ast[expr].next {
@@ -324,8 +324,8 @@ impl<'a> Compiler<'a> {
                 ast::PostfixOp::AddOne => to_do!(),
                 ast::PostfixOp::SubOne => to_do!(),
             },
-            ast::Expr::Ternary(x) => {
-                let tenary = self.ast[x];
+            ast::Expr::Ternary { ternary } => {
+                let tenary = self.ast[ternary];
                 let mut cond = self.compile_expr(tenary.cond)?;
                 let cond_reg = cond.to_cond_register(self)?;
                 let cond_jump = self.emit(Instruction::LongJumpFalse {
@@ -403,12 +403,12 @@ impl<'a> Compiler<'a> {
         let mut cur = args;
         let mut offset = 2;
         while let Some(n) = cur {
-            let arg = &self.ast[n].data;
-            if arg.is_spread {
+            let arg = self.ast[n].item;
+            if self.ast[arg].is_spread {
                 to_do!()
             }
 
-            let arg = self.compile_expr(arg.expr)?.into_instr(self)?;
+            let arg = self.compile_expr(self.ast[arg].expr)?.into_instr(self)?;
             self.push_arg(arg, offset);
             offset += 1;
 
@@ -435,7 +435,7 @@ impl<'a> Compiler<'a> {
                 ast::Expr::Binary { .. }
                 | ast::Expr::Prefix { .. }
                 | ast::Expr::Postfix { .. }
-                | ast::Expr::Ternary(_)
+                | ast::Expr::Ternary { .. }
                 | ast::Expr::Yield { .. }
                 | ast::Expr::Destructure { .. }
                 | ast::Expr::TaggedTemplate { .. }
@@ -451,26 +451,26 @@ impl<'a> Compiler<'a> {
                     break (obj, key);
                 }
                 ast::Expr::Prime { expr } => match self.ast[expr] {
-                    ast::PrimeExpr::Number(_)
-                    | ast::PrimeExpr::String(_)
-                    | ast::PrimeExpr::Template(_)
-                    | ast::PrimeExpr::Regex(_)
-                    | ast::PrimeExpr::Boolean(_)
-                    | ast::PrimeExpr::Function(_)
-                    | ast::PrimeExpr::Class(_)
-                    | ast::PrimeExpr::Object(_)
-                    | ast::PrimeExpr::Array(_)
+                    ast::PrimeExpr::Number { .. }
+                    | ast::PrimeExpr::String { .. }
+                    | ast::PrimeExpr::Template { .. }
+                    | ast::PrimeExpr::Regex { .. }
+                    | ast::PrimeExpr::Boolean { .. }
+                    | ast::PrimeExpr::Function { .. }
+                    | ast::PrimeExpr::Class { .. }
+                    | ast::PrimeExpr::Object { .. }
+                    | ast::PrimeExpr::Array { .. }
                     | ast::PrimeExpr::NewTarget
                     | ast::PrimeExpr::Null
                     | ast::PrimeExpr::This
                     | ast::PrimeExpr::Super => unreachable!(),
-                    ast::PrimeExpr::Ident(x) => {
-                        let sym = self.variables.symbol_of_ast(x);
+                    ast::PrimeExpr::Ident { symbol } => {
+                        let sym = self.variables.symbol_of_ast(symbol);
                         self.store_symbol(sym, right.into())?;
                         return Ok(right.into());
                     }
-                    ast::PrimeExpr::Covered(x) => {
-                        left = self.ast[x].item;
+                    ast::PrimeExpr::Covered { expr } => {
+                        left = self.ast[expr].item;
                     }
                 },
             };

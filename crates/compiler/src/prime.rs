@@ -1,10 +1,6 @@
-use ast::{ArrayLiteralEntry, ListHead, NodeId, ObjectLiteral};
+use ast::{ArrayLiteralEntry, NodeId, NodeListId, ObjectLiteral};
 use bc::{FunctionId, Instruction, Primitive, Reg};
-use common::{
-    number::{Number, NumberId},
-    span::Span,
-    string::StringId,
-};
+use common::{number::Number, span::Span, string::String};
 
 use crate::{
     expr::{ExprPosition, ExprResult},
@@ -15,13 +11,17 @@ impl<'a> Compiler<'a> {
     pub fn compile_prime(&mut self, expr: NodeId<ast::PrimeExpr>) -> Result<ExprResult> {
         let dst = Reg::this_reg();
         match self.ast[expr] {
-            ast::PrimeExpr::Number(id) => self.compile_number(id).map(|x| x.into()),
-            ast::PrimeExpr::String(x) => Ok(self.compile_string(x).map(ExprResult::from)?),
-            ast::PrimeExpr::Template(_) => to_do!(),
-            ast::PrimeExpr::Regex(_) => to_do!(),
-            ast::PrimeExpr::Ident(sym) => self.load_symbol(self.variables.symbol_of_ast(sym)),
-            ast::PrimeExpr::Boolean(x) => {
-                let instr = if x {
+            ast::PrimeExpr::Number { value } => self.compile_number(value).map(|x| x.into()),
+            ast::PrimeExpr::String { value } => {
+                Ok(self.compile_string(value).map(ExprResult::from)?)
+            }
+            ast::PrimeExpr::Template { .. } => to_do!(),
+            ast::PrimeExpr::Regex { .. } => to_do!(),
+            ast::PrimeExpr::Ident { symbol } => {
+                self.load_symbol(self.variables.symbol_of_ast(symbol))
+            }
+            ast::PrimeExpr::Boolean { value } => {
+                let instr = if value {
                     self.emit(Instruction::LoadPrim {
                         dst,
                         imm: Primitive::t(),
@@ -34,10 +34,14 @@ impl<'a> Compiler<'a> {
                 };
                 Ok(instr.into())
             }
-            ast::PrimeExpr::Function(func) => self.compile_function_load(func).map(|x| x.into()),
-            ast::PrimeExpr::Class(_) => to_do!(),
-            ast::PrimeExpr::Object(obj) => self.compile_object_literal(obj).map(|x| x.into()),
-            ast::PrimeExpr::Array(array) => self.compile_array_literal(array),
+            ast::PrimeExpr::Function { function } => {
+                self.compile_function_load(function).map(|x| x.into())
+            }
+            ast::PrimeExpr::Class { .. } => to_do!(),
+            ast::PrimeExpr::Object { object } => {
+                self.compile_object_literal(object).map(|x| x.into())
+            }
+            ast::PrimeExpr::Array { array } => self.compile_array_literal(array),
             ast::PrimeExpr::NewTarget | ast::PrimeExpr::This => Ok(Reg::this_reg().into()),
             ast::PrimeExpr::Null => self
                 .emit(Instruction::LoadPrim {
@@ -46,7 +50,7 @@ impl<'a> Compiler<'a> {
                 })
                 .map(Into::into),
             ast::PrimeExpr::Super => to_do!(),
-            ast::PrimeExpr::Covered(x) => self.compile_exprs(x),
+            ast::PrimeExpr::Covered { expr } => self.compile_exprs(expr),
         }
     }
 
@@ -69,8 +73,8 @@ impl<'a> Compiler<'a> {
         Ok(ExprPosition::InstrDst(instr))
     }
 
-    pub fn compile_number(&mut self, id: NumberId) -> Result<ExprPosition> {
-        let number = self.interners.numbers[id];
+    pub fn compile_number(&mut self, id: NodeId<Number>) -> Result<ExprPosition> {
+        let number = self.ast[id];
         self.compile_number_value(number)
     }
 
@@ -95,18 +99,18 @@ impl<'a> Compiler<'a> {
             dst: Reg::this_reg(),
         })?;
 
-        let ObjectLiteral::Item(mut cur) = object else {
+        let ObjectLiteral::Item { mut definition } = object else {
             return Ok(ExprPosition::InstrDst(instr));
         };
 
         let tmp = self.alloc_tmp_register()?;
         loop {
-            let item = self.ast[cur].item;
+            let item = self.ast[definition].item;
             self.compile_object_prop_definition(tmp, item)?;
-            let Some(next) = self.ast[cur].next else {
+            let Some(next) = self.ast[definition].next else {
                 break;
             };
-            cur = next;
+            definition = next;
         }
 
         self.patch_dst(instr, tmp);
@@ -115,13 +119,13 @@ impl<'a> Compiler<'a> {
 
     pub fn compile_array_literal(
         &mut self,
-        array: ListHead<ArrayLiteralEntry>,
+        array: Option<NodeListId<ArrayLiteralEntry>>,
     ) -> Result<ExprResult> {
         let instr = self.emit(Instruction::NewArray {
             dst: Reg::this_reg(),
         })?;
 
-        let ListHead::Present(mut entry) = array else {
+        let Some(mut entry) = array else {
             return Ok(ExprPosition::InstrDst(instr).into());
         };
         let tmp = self.alloc_tmp_register()?;
@@ -175,8 +179,9 @@ impl<'a> Compiler<'a> {
             ast::PropertyDefinition::Define { property, expr } => {
                 let src = self.compile_expr(expr)?.into_register(self)?;
                 match property {
-                    ast::PropertyName::Ident(x) | ast::PropertyName::String(x) => {
-                        let str = self.map_string(x);
+                    ast::PropertyName::Ident { name }
+                    | ast::PropertyName::String { value: name } => {
+                        let str = self.map_string(name);
                         let key = self.alloc_tmp_register()?;
                         self.free_tmp_register(src);
                         self.emit(Instruction::LoadString {
@@ -188,15 +193,16 @@ impl<'a> Compiler<'a> {
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
-                    ast::PropertyName::Number(num) => {
-                        let key = ExprResult::new(self.compile_number(num)?).into_register(self)?;
+                    ast::PropertyName::Number { value } => {
+                        let key =
+                            ExprResult::new(self.compile_number(value)?).into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
-                    ast::PropertyName::Computed(c) => {
-                        let key = self.compile_expr(c)?.into_register(self)?;
+                    ast::PropertyName::Computed { expr } => {
+                        let key = self.compile_expr(expr)?.into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
@@ -208,23 +214,25 @@ impl<'a> Compiler<'a> {
                 let src = ExprResult::new(self.compile_function_load(func)?).into_register(self)?;
 
                 match property {
-                    ast::PropertyName::Ident(x) | ast::PropertyName::String(x) => {
-                        let str_instr = self.compile_string(x)?;
+                    ast::PropertyName::Ident { name }
+                    | ast::PropertyName::String { value: name } => {
+                        let str_instr = self.compile_string(name)?;
                         let key = self.next_free_register()?;
                         self.free_tmp_register(src);
                         self.patch_dst(str_instr, key);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
-                    ast::PropertyName::Number(num) => {
-                        let key = ExprResult::new(self.compile_number(num)?).into_register(self)?;
+                    ast::PropertyName::Number { value } => {
+                        let key =
+                            ExprResult::new(self.compile_number(value)?).into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
                         Ok(())
                     }
-                    ast::PropertyName::Computed(c) => {
-                        let key = self.compile_expr(c)?.into_register(self)?;
+                    ast::PropertyName::Computed { expr } => {
+                        let key = self.compile_expr(expr)?.into_register(self)?;
                         self.free_tmp_register(key);
                         self.free_tmp_register(src);
                         self.emit(Instruction::IndexStore { obj, key, src })?;
@@ -234,13 +242,13 @@ impl<'a> Compiler<'a> {
             }
             ast::PropertyDefinition::Getter { property, func } => to_do!(),
             ast::PropertyDefinition::Setter { property, func } => to_do!(),
-            ast::PropertyDefinition::Rest(_) => to_do!(),
+            ast::PropertyDefinition::Rest { .. } => to_do!(),
             // should already be removed by the compiler
             ast::PropertyDefinition::Covered { .. } => unreachable!(),
         }
     }
 
-    pub fn compile_string(&mut self, s: StringId) -> Result<InstrOffset> {
+    pub fn compile_string(&mut self, s: NodeId<String>) -> Result<InstrOffset> {
         let str = self.map_string(s);
         self.emit(Instruction::LoadString {
             dst: Reg::tmp(),

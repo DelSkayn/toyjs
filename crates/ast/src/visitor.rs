@@ -1,19 +1,15 @@
 use crate::{
     Argument, ArrayLiteralEntry, Ast, BindingElement, BindingPattern, BindingProperty, CaseItem,
     CatchStmt, Class, ClassMember, CstyleDecl, Expr, ForLoopHead, Function, IdentOrPattern,
-    InOfDecl, NodeId, NodeList, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Stmt,
-    Symbol, Template, Tenary, VariableDecl,
+    InOfDecl, NodeId, NodeList, NodeListId, ObjectLiteral, OptionNodeList, PrimeExpr,
+    PropertyDefinition, PropertyName, Stmt, Symbol, Template, Tenary, VariableDecl,
 };
 
 macro_rules! visit_list {
     ($this:expr=>$method:ident($value:expr)) => {{
-        let mut cur = $value;
-        loop {
-            $this.$method($this.ast()[cur].item)?;
-            let Some(next) = $this.ast()[cur].next else {
-                return Ok(());
-            };
-            cur = next;
+        let mut cur = Some($value);
+        while let Some(x) = $this.ast().next_list(&mut cur) {
+            $this.$method(x)?;
         }
     }};
 }
@@ -28,687 +24,818 @@ impl VisitValue for () {
     fn none() -> Self {}
 }
 
-pub trait Visitor<E> {
+pub trait Visitor {
+    type Error;
+
     fn ast(&self) -> &Ast;
 
-    fn super_stmt_list(&mut self, stmt: ListId<Stmt>) -> Result<(), E> {
-        self.visit_stmt_list(stmt)
+    fn visit_stmt_list(&mut self, stmt: NodeListId<Stmt>) -> Result<(), Self::Error> {
+        visit_stmt_list(self, stmt)
     }
 
-    fn visit_stmt_list(&mut self, stmt: ListId<Stmt>) -> Result<(), E> {
-        visit_list!(self=>super_stmt(stmt));
-    }
-
-    fn super_variable_decl_list(&mut self, decl: ListId<VariableDecl>) -> Result<(), E> {
-        self.visit_variable_decl_list(decl)
-    }
-
-    fn visit_variable_decl_list(&mut self, decl: ListId<VariableDecl>) -> Result<(), E> {
-        visit_list!(self=>super_variable_decl(decl));
-    }
-
-    fn super_expr_list(&mut self, expr: ListId<Expr>) -> Result<(), E> {
-        self.visit_expr_list(expr)
-    }
-
-    fn visit_expr_list(&mut self, expr: ListId<Expr>) -> Result<(), E> {
-        visit_list!(self=>super_expr(expr));
-    }
-
-    fn super_binding_property_list(&mut self, prop: ListId<BindingProperty>) -> Result<(), E> {
-        self.visit_binding_property_list(prop)
-    }
-
-    fn visit_binding_property_list(&mut self, prop: ListId<BindingProperty>) -> Result<(), E> {
-        visit_list!(self=>super_binding_property(prop));
-    }
-
-    fn super_element_list(
+    fn visit_variable_decl_list(
         &mut self,
-        elem: NodeId<NodeList<Option<NodeId<BindingElement>>>>,
-    ) -> Result<(), E> {
-        self.visit_element_list(elem)
+        decl: NodeListId<VariableDecl>,
+    ) -> Result<(), Self::Error> {
+        visit_variable_decl_list(self, decl)
+    }
+
+    fn visit_expr_list(&mut self, expr: NodeListId<Expr>) -> Result<(), Self::Error> {
+        visit_expr_list(self, expr)
+    }
+
+    fn visit_binding_property_list(
+        &mut self,
+        prop: NodeListId<BindingProperty>,
+    ) -> Result<(), Self::Error> {
+        visit_binding_property_list(self, prop)
     }
 
     fn visit_element_list(
         &mut self,
-        mut elem: NodeId<NodeList<Option<NodeId<BindingElement>>>>,
-    ) -> Result<(), E> {
-        loop {
-            if let Some(elem) = self.ast()[elem].data {
-                self.super_binding_element(elem)?;
-            }
-            let Some(n) = self.ast()[elem].next else {
-                return Ok(());
-            };
-            elem = n;
-        }
+        elem: NodeId<OptionNodeList<BindingElement>>,
+    ) -> Result<(), Self::Error> {
+        visit_element_list(self, elem)
     }
 
-    fn super_binding_element_list(&mut self, elem: ListId<BindingElement>) -> Result<(), E> {
-        self.visit_binding_element_list(elem)
+    fn visit_binding_element_list(
+        &mut self,
+        elem: NodeListId<BindingElement>,
+    ) -> Result<(), Self::Error> {
+        visit_binding_element_list(self, elem)
     }
 
-    fn visit_binding_element_list(&mut self, elem: ListId<BindingElement>) -> Result<(), E> {
-        visit_list!(self=>super_binding_element(elem));
+    fn visit_argument_list(&mut self, args: NodeId<NodeList<Argument>>) -> Result<(), Self::Error> {
+        visit_argument_list(self, args)
     }
 
-    fn super_argument_list(&mut self, args: NodeId<NodeList<Argument>>) -> Result<(), E> {
-        self.visit_argument_list(args)
+    fn visit_cases(&mut self, case: NodeListId<CaseItem>) -> Result<(), Self::Error> {
+        visit_cases(self, case)
     }
 
-    fn visit_argument_list(&mut self, mut args: NodeId<NodeList<Argument>>) -> Result<(), E> {
-        loop {
-            self.super_expr(self.ast()[args].data.expr)?;
-            let Some(n) = self.ast()[args].next else {
-                return Ok(());
-            };
-            args = n;
-        }
+    fn visit_stmt(&mut self, stmt: NodeId<Stmt>) -> Result<(), Self::Error> {
+        visit_stmt(self, stmt)
     }
 
-    fn super_cases(&mut self, case: ListId<CaseItem>) -> Result<(), E> {
-        self.visit_cases(case)
+    fn visit_expr(&mut self, expr: NodeId<Expr>) -> Result<(), Self::Error> {
+        visit_expr(self, expr)
     }
 
-    fn visit_cases(&mut self, case: ListId<CaseItem>) -> Result<(), E> {
-        visit_list!(self=>visit_case(case));
+    fn visit_catch(&mut self, catch: NodeId<CatchStmt>) -> Result<(), Self::Error> {
+        visit_catch(self, catch)
     }
 
-    fn super_stmt(&mut self, stmt: NodeId<Stmt>) -> Result<(), E> {
-        self.visit_stmt(stmt)
+    fn visit_ident_or_pattern(&mut self, decl: NodeId<IdentOrPattern>) -> Result<(), Self::Error> {
+        visit_ident_or_pattern(self, decl)
     }
 
-    fn visit_stmt(&mut self, stmt: NodeId<Stmt>) -> Result<(), E> {
-        match self.ast()[stmt] {
-            Stmt::Block { list } => {
-                if let ListHead::Present(x) = list {
-                    self.super_stmt_list(x)?;
-                }
-            }
-            Stmt::VariableDecl { decl, .. } => self.super_variable_decl_list(decl)?,
-            Stmt::Empty => {}
-            Stmt::Expr { expr } => self.super_expr_list(expr)?,
-            Stmt::DoWhile { body, cond } => {
-                self.super_stmt(body)?;
-                self.super_expr_list(cond)?
-            }
-            Stmt::If { cond, body, r#else } => {
-                self.super_expr_list(cond)?;
-                self.super_stmt(body)?;
-                if let Some(r#else) = r#else {
-                    self.super_stmt(r#else)?;
-                }
-            }
-            Stmt::While { cond, body } => {
-                self.super_expr_list(cond)?;
-                self.super_stmt(body)?;
-            }
-            Stmt::For { head, body } => {
-                self.super_head_pre(head)?;
-                self.super_stmt(body)?;
-                self.super_head_post(head)?;
-            }
-            Stmt::Switch {
-                cond,
-                cases,
-                default,
-            } => {
-                self.super_expr_list(cond)?;
-                if let ListHead::Present(x) = cases {
-                    self.super_cases(x)?;
-                }
-                if let Some(ListHead::Present(default)) = default {
-                    self.super_stmt_list(default)?;
-                }
-            }
-            Stmt::Throw { expr } => self.super_expr_list(expr)?,
-            Stmt::Try {
-                block,
-                catch,
-                finally,
-            } => {
-                if let ListHead::Present(x) = block {
-                    self.super_stmt_list(x)?;
-                }
-                if let Some(x) = catch {
-                    self.super_catch(x)?;
-                }
-                if let Some(ListHead::Present(x)) = finally {
-                    self.super_stmt_list(x)?;
-                }
-            }
-            Stmt::With { expr, stmt } => {
-                self.super_expr_list(expr)?;
-                self.super_stmt(stmt)?;
-            }
-            Stmt::Break { .. } | Stmt::Continue { .. } => {}
-            Stmt::Return { expr } => {
-                if let Some(x) = expr {
-                    self.super_expr_list(x)?;
-                }
-            }
-            Stmt::Labeled { stmt, .. } => self.super_stmt(stmt)?,
-            Stmt::Function { func } => self.super_function(func)?,
-            Stmt::Class { class } => self.super_class(class)?,
-            Stmt::Debugger => {}
-        }
+    fn visit_symbol(&mut self, _s: NodeId<Symbol>) -> Result<(), Self::Error> {
         Ok(())
     }
 
-    fn super_expr(&mut self, expr: NodeId<Expr>) -> Result<(), E> {
-        self.visit_expr(expr)
+    fn visit_binding_property(&mut self, prop: NodeId<BindingProperty>) -> Result<(), Self::Error> {
+        visit_binding_property(self, prop)
     }
 
-    fn visit_expr(&mut self, expr: NodeId<Expr>) -> Result<(), E> {
-        match self.ast()[expr] {
-            Expr::Binary { left, right, .. } => {
-                self.super_expr(left)?;
-                self.super_expr(right)?;
-            }
-            Expr::Prefix { expr, .. } => {
-                self.super_expr(expr)?;
-            }
-            Expr::Postfix { expr, .. } => {
-                self.super_expr(expr)?;
-            }
-            Expr::Tenary(tenary) => {
-                self.super_tenary(tenary)?;
-            }
-            Expr::Index { index, expr } => {
-                self.super_expr(expr)?;
-                self.super_expr(index)?;
-            }
-            Expr::Dot { expr, .. } => self.super_expr(expr)?,
-            Expr::Call { args, expr } => {
-                self.super_expr(expr)?;
-                if let Some(a) = args {
-                    self.super_argument_list(a)?;
-                }
-            }
-            Expr::Prime { expr } => {
-                self.super_prime_expr(expr)?;
-            }
-            Expr::Yield { expr, .. } => {
-                self.super_expr(expr)?;
-            }
-            Expr::Destructure { expr, pattern } => {
-                self.super_expr(expr)?;
-                self.super_binding_pattern(pattern)?;
-            }
-            Expr::TaggedTemplate { template, tag } => {
-                self.super_expr(tag)?;
-                self.super_template(template)?;
+    fn visit_binding_pattern(&mut self, pat: NodeId<BindingPattern>) -> Result<(), Self::Error> {
+        visit_binding_pattern(self, pat)
+    }
+
+    fn visit_binding_element(&mut self, elem: NodeId<BindingElement>) -> Result<(), Self::Error> {
+        visit_binding_element(self, elem)
+    }
+
+    fn visit_variable_decl(&mut self, decl: NodeId<VariableDecl>) -> Result<(), Self::Error> {
+        visit_variable_decl(self, decl)
+    }
+
+    fn visit_head_pre(&mut self, head: NodeId<ForLoopHead>) -> Result<(), Self::Error> {
+        visit_head_pre(self, head)
+    }
+
+    fn visit_head_post(&mut self, head: NodeId<ForLoopHead>) -> Result<(), Self::Error> {
+        visit_head_post(self, head)
+    }
+
+    fn visit_case(&mut self, case: NodeId<CaseItem>) -> Result<(), Self::Error> {
+        visit_case(self, case)
+    }
+
+    fn visit_function(&mut self, func: NodeId<Function>) -> Result<(), Self::Error> {
+        visit_function(self, func)
+    }
+
+    fn visit_class(&mut self, cls: NodeId<Class>) -> Result<(), Self::Error> {
+        visit_class(self, cls)
+    }
+
+    fn visit_class_member_list(
+        &mut self,
+        cls_mem: NodeListId<ClassMember>,
+    ) -> Result<(), Self::Error> {
+        visit_class_member_list(self, cls_mem)
+    }
+
+    fn visit_class_member(&mut self, cls_mem: NodeId<ClassMember>) -> Result<(), Self::Error> {
+        visit_class_member(self, cls_mem)
+    }
+
+    fn visit_ternary(&mut self, ten: NodeId<Tenary>) -> Result<(), Self::Error> {
+        visit_tenary(self, ten)
+    }
+
+    fn visit_prime_expr(&mut self, expr: NodeId<PrimeExpr>) -> Result<(), Self::Error> {
+        visit_prime_expr(self, expr)
+    }
+
+    fn visit_propery_definition_list(
+        &mut self,
+        prop: NodeListId<PropertyDefinition>,
+    ) -> Result<(), Self::Error> {
+        visit_propery_definition_list(self, prop)
+    }
+
+    fn visit_propery_definition(
+        &mut self,
+        prop: NodeId<PropertyDefinition>,
+    ) -> Result<(), Self::Error> {
+        visit_propery_definition(self, prop)
+    }
+
+    fn visit_array_literal_entry_list(
+        &mut self,
+        prop: NodeListId<ArrayLiteralEntry>,
+    ) -> Result<(), Self::Error> {
+        visit_array_literal_entry_list(self, prop)
+    }
+    fn visit_array_literal_entry(
+        &mut self,
+        entry: NodeId<ArrayLiteralEntry>,
+    ) -> Result<(), Self::Error> {
+        visit_array_literal_entry(self, entry)
+    }
+
+    fn visit_template(&mut self, tem: NodeId<Template>) -> Result<(), Self::Error> {
+        visit_template(self, tem)
+    }
+}
+
+pub fn visit_stmt_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    stmt: NodeListId<Stmt>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_stmt(stmt));
+    Ok(())
+}
+
+pub fn visit_variable_decl_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    decl: NodeListId<VariableDecl>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_variable_decl(decl));
+    Ok(())
+}
+
+pub fn visit_expr_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    expr: NodeListId<Expr>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_expr(expr));
+    Ok(())
+}
+
+pub fn visit_binding_property_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    prop: NodeListId<BindingProperty>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_binding_property(prop));
+    Ok(())
+}
+
+pub fn visit_element_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    mut elem: NodeId<OptionNodeList<BindingElement>>,
+) -> Result<(), V::Error> {
+    loop {
+        if let Some(elem) = visitor.ast()[elem].item {
+            visitor.visit_binding_element(elem)?;
+        }
+        let Some(n) = visitor.ast()[elem].next else {
+            return Ok(());
+        };
+        elem = n;
+    }
+}
+
+pub fn visit_binding_element_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    elem: NodeListId<BindingElement>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_binding_element(elem));
+    Ok(())
+}
+
+pub fn visit_argument_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    args: NodeId<NodeList<Argument>>,
+) -> Result<(), V::Error> {
+    let mut cur = Some(args);
+    while let Some(item) = visitor.ast().next_list(&mut cur) {
+        visitor.visit_expr(item.index(visitor.ast()).expr)?;
+    }
+    Ok(())
+}
+
+pub fn visit_cases<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    case: NodeListId<CaseItem>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_case(case));
+    Ok(())
+}
+
+pub fn visit_stmt<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    stmt: NodeId<Stmt>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[stmt] {
+        Stmt::Block { list } => {
+            if let Some(x) = list {
+                visitor.visit_stmt_list(x)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_catch(&mut self, catch: NodeId<CatchStmt>) -> Result<(), E> {
-        self.visit_catch(catch)
-    }
-
-    fn visit_catch(&mut self, catch: NodeId<CatchStmt>) -> Result<(), E> {
-        if let Some(binding) = self.ast()[catch].binding {
-            self.super_ident_or_pattern(binding)?;
+        Stmt::VariableDecl { decl, .. } => visitor.visit_variable_decl_list(decl)?,
+        Stmt::Empty => {}
+        Stmt::Expr { expr } => visitor.visit_expr_list(expr)?,
+        Stmt::DoWhile { body, cond } => {
+            visitor.visit_stmt(body)?;
+            visitor.visit_expr_list(cond)?
         }
-        if let ListHead::Present(b) = self.ast()[catch].block {
-            self.super_stmt_list(b)?;
-        }
-        Ok(())
-    }
-
-    fn super_ident_or_pattern(&mut self, decl: NodeId<IdentOrPattern>) -> Result<(), E> {
-        self.visit_ident_or_pattern(decl)
-    }
-
-    fn visit_ident_or_pattern(&mut self, decl: NodeId<IdentOrPattern>) -> Result<(), E> {
-        match self.ast()[decl] {
-            IdentOrPattern::Ident(x) => {
-                self.super_symbol(x)?;
-            }
-            IdentOrPattern::Pattern(x) => {
-                self.super_binding_pattern(x)?;
+        Stmt::If { cond, body, r#else } => {
+            visitor.visit_expr_list(cond)?;
+            visitor.visit_stmt(body)?;
+            if let Some(r#else) = r#else {
+                visitor.visit_stmt(r#else)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_symbol(&mut self, _s: NodeId<Symbol>) -> Result<(), E> {
-        Ok(())
-    }
-
-    fn super_binding_property(&mut self, prop: NodeId<BindingProperty>) -> Result<(), E> {
-        self.visit_binding_property(prop)
-    }
-
-    fn visit_binding_property(&mut self, prop: NodeId<BindingProperty>) -> Result<(), E> {
-        match self.ast()[prop] {
-            BindingProperty::Binding {
-                symbol,
-                initializer,
-            } => {
-                if let Some(init) = initializer {
-                    self.super_expr(init)?;
-                }
-                self.super_symbol(symbol)?;
+        Stmt::While { cond, body } => {
+            visitor.visit_expr_list(cond)?;
+            visitor.visit_stmt(body)?;
+        }
+        Stmt::For { head, body } => {
+            visitor.visit_head_pre(head)?;
+            visitor.visit_stmt(body)?;
+            visitor.visit_head_post(head)?;
+        }
+        Stmt::Switch {
+            cond,
+            cases,
+            default,
+        } => {
+            visitor.visit_expr_list(cond)?;
+            if let Some(x) = cases {
+                visitor.visit_cases(x)?;
             }
-            BindingProperty::Property { name, element } => {
-                self.super_binding_element(element)?;
-                {
-                    match name {
-                        PropertyName::Ident(_)
-                        | PropertyName::String(_)
-                        | PropertyName::Number(_) => {}
-                        PropertyName::Computed(expr) => self.super_expr(expr)?,
-                    }
-                }
+            if let Some(default) = default {
+                visitor.visit_stmt_list(default)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_binding_pattern(&mut self, pat: NodeId<BindingPattern>) -> Result<(), E> {
-        self.visit_binding_pattern(pat)
-    }
-
-    fn visit_binding_pattern(&mut self, pat: NodeId<BindingPattern>) -> Result<(), E> {
-        match self.ast()[pat] {
-            BindingPattern::Object { properties, rest } => {
-                if let Some(r) = rest {
-                    self.super_symbol(r)?;
-                }
-                if let ListHead::Present(x) = properties {
-                    self.super_binding_property_list(x)?;
-                }
+        Stmt::Throw { expr } => visitor.visit_expr_list(expr)?,
+        Stmt::Try {
+            block,
+            catch,
+            finally,
+        } => {
+            if let Some(x) = block {
+                visitor.visit_stmt_list(x)?;
             }
-            BindingPattern::Array { elements, rest } => {
-                if let Some(r) = rest {
-                    self.super_ident_or_pattern(r)?;
-                }
-                if let Some(elem) = elements {
-                    self.super_element_list(elem)?;
-                }
+            if let Some(x) = catch {
+                visitor.visit_catch(x)?;
+            }
+            if let Some(x) = finally {
+                visitor.visit_stmt_list(x)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_binding_element(&mut self, elem: NodeId<BindingElement>) -> Result<(), E> {
-        self.visit_binding_element(elem)
-    }
-
-    fn visit_binding_element(&mut self, elem: NodeId<BindingElement>) -> Result<(), E> {
-        match self.ast()[elem] {
-            BindingElement::SingleName {
-                symbol,
-                initializer,
-            } => {
-                if let Some(init) = initializer {
-                    self.super_expr(init)?;
-                }
-                self.super_symbol(symbol)?;
-            }
-            BindingElement::Pattern {
-                pattern,
-                initializer,
-            } => {
-                if let Some(init) = initializer {
-                    self.super_expr(init)?;
-                }
-                self.super_binding_pattern(pattern)?;
+        Stmt::With { expr, stmt } => {
+            visitor.visit_expr_list(expr)?;
+            visitor.visit_stmt(stmt)?;
+        }
+        Stmt::Break { .. } | Stmt::Continue { .. } => {}
+        Stmt::Return { expr } => {
+            if let Some(x) = expr {
+                visitor.visit_expr_list(x)?;
             }
         }
-        Ok(())
+        Stmt::Labeled { stmt, .. } => visitor.visit_stmt(stmt)?,
+        Stmt::Function { func } => visitor.visit_function(func)?,
+        Stmt::Class { class } => visitor.visit_class(class)?,
+        Stmt::Debugger => {}
     }
+    Ok(())
+}
 
-    fn super_variable_decl(&mut self, decl: NodeId<VariableDecl>) -> Result<(), E> {
-        self.visit_variable_decl(decl)
-    }
-
-    fn visit_variable_decl(&mut self, decl: NodeId<VariableDecl>) -> Result<(), E> {
-        if let Some(x) = self.ast()[decl].initializer {
-            self.super_expr(x)?;
+pub fn visit_expr<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    expr: NodeId<Expr>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[expr] {
+        Expr::Binary { left, right, .. } => {
+            visitor.visit_expr(left)?;
+            visitor.visit_expr(right)?;
         }
-        self.super_ident_or_pattern(self.ast()[decl].decl)?;
-        Ok(())
-    }
-
-    fn super_head_pre(&mut self, head: NodeId<ForLoopHead>) -> Result<(), E> {
-        self.visit_head_pre(head)
-    }
-
-    fn visit_head_pre(&mut self, head: NodeId<ForLoopHead>) -> Result<(), E> {
-        match self.ast()[head] {
-            ForLoopHead::CStyle { decl, cond, .. } => {
-                match decl {
-                    CstyleDecl::Expr(x) => {
-                        self.super_expr_list(x)?;
-                    }
-                    CstyleDecl::Decl { decl, .. } => {
-                        self.super_variable_decl_list(decl)?;
-                    }
-                    CstyleDecl::Empty => {}
-                }
-                if let Some(cond) = cond {
-                    self.super_expr_list(cond)?;
-                }
-            }
-            ForLoopHead::In { decl, expr } => {
-                match decl {
-                    InOfDecl::Expr(x) => self.super_expr(x)?,
-                    InOfDecl::Decl { binding, .. } => self.super_ident_or_pattern(binding)?,
-                }
-                self.super_expr_list(expr)?;
-            }
-            ForLoopHead::Of { decl, expr } => {
-                match decl {
-                    InOfDecl::Expr(x) => self.super_expr(x)?,
-                    InOfDecl::Decl { binding, .. } => self.super_ident_or_pattern(binding)?,
-                }
-                self.super_expr(expr)?;
+        Expr::Prefix { expr, .. } => {
+            visitor.visit_expr(expr)?;
+        }
+        Expr::Postfix { expr, .. } => {
+            visitor.visit_expr(expr)?;
+        }
+        Expr::Ternary { ternary } => {
+            visitor.visit_ternary(ternary)?;
+        }
+        Expr::Index { index, expr } => {
+            visitor.visit_expr(expr)?;
+            visitor.visit_expr(index)?;
+        }
+        Expr::Dot { expr, .. } => visitor.visit_expr(expr)?,
+        Expr::Call { args, expr } => {
+            visitor.visit_expr(expr)?;
+            if let Some(a) = args {
+                visitor.visit_argument_list(a)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_head_post(&mut self, head: NodeId<ForLoopHead>) -> Result<(), E> {
-        self.visit_head_post(head)
-    }
-
-    fn visit_head_post(&mut self, head: NodeId<ForLoopHead>) -> Result<(), E> {
-        match self.ast()[head] {
-            ForLoopHead::CStyle { post, .. } => {
-                if let Some(post) = post {
-                    self.super_expr_list(post)?;
-                }
-            }
-            ForLoopHead::In { .. } | ForLoopHead::Of { .. } => {}
+        Expr::Prime { expr } => {
+            visitor.visit_prime_expr(expr)?;
         }
-        Ok(())
-    }
-
-    fn super_case(&mut self, case: NodeId<CaseItem>) -> Result<(), E> {
-        self.visit_case(case)
-    }
-
-    fn visit_case(&mut self, case: NodeId<CaseItem>) -> Result<(), E> {
-        self.super_expr_list(self.ast()[case].expr)?;
-        if let ListHead::Present(stmt) = self.ast()[case].stmts {
-            self.super_stmt_list(stmt)?;
+        Expr::Yield { expr, .. } => {
+            visitor.visit_expr(expr)?;
         }
-        Ok(())
-    }
-
-    fn super_function(&mut self, func: NodeId<Function>) -> Result<(), E> {
-        self.visit_function(func)
-    }
-
-    fn visit_function(&mut self, func: NodeId<Function>) -> Result<(), E> {
-        match self.ast()[func] {
-            Function::Arrow {
-                params,
-                rest_param,
-                body,
-                ..
-            } => {
-                if let ListHead::Present(param) = params {
-                    self.super_binding_element_list(param)?;
-                }
-                if let Some(rest) = rest_param {
-                    self.super_ident_or_pattern(rest)?;
-                }
-                match body {
-                    crate::ArrowFunctionBody::Expr(x) => {
-                        self.super_expr(x)?;
-                    }
-                    crate::ArrowFunctionBody::Stmt(ListHead::Present(x)) => {
-                        self.super_stmt_list(x)?;
-                    }
-                    _ => {}
-                }
-                Ok(())
-            }
-            Function::Declared {
-                params,
-                rest_param,
-                body,
-                ..
-            } => {
-                if let ListHead::Present(param) = params {
-                    self.super_binding_element_list(param)?;
-                }
-                if let Some(rest) = rest_param {
-                    self.super_ident_or_pattern(rest)?;
-                }
-                if let ListHead::Present(x) = body {
-                    self.super_stmt_list(x)?;
-                }
-                Ok(())
-            }
-            Function::Expr {
-                params,
-                rest_param,
-                body,
-                ..
-            } => {
-                if let ListHead::Present(param) = params {
-                    self.super_binding_element_list(param)?;
-                }
-                if let Some(rest) = rest_param {
-                    self.super_ident_or_pattern(rest)?;
-                }
-                if let ListHead::Present(x) = body {
-                    self.super_stmt_list(x)?;
-                }
-                Ok(())
-            }
+        Expr::Destructure { expr, pattern } => {
+            visitor.visit_expr(expr)?;
+            visitor.visit_binding_pattern(pattern)?;
+        }
+        Expr::TaggedTemplate { template, tag } => {
+            visitor.visit_expr(tag)?;
+            visitor.visit_template(template)?;
         }
     }
+    Ok(())
+}
 
-    fn super_class(&mut self, cls: NodeId<Class>) -> Result<(), E> {
-        self.visit_class(cls)
+pub fn visit_catch<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    catch: NodeId<CatchStmt>,
+) -> Result<(), V::Error> {
+    if let Some(binding) = visitor.ast()[catch].binding {
+        visitor.visit_ident_or_pattern(binding)?;
     }
+    if let Some(b) = visitor.ast()[catch].block {
+        visitor.visit_stmt_list(b)?;
+    }
+    Ok(())
+}
 
-    fn visit_class(&mut self, cls: NodeId<Class>) -> Result<(), E> {
-        if let Some(name) = self.ast()[cls].name {
-            self.super_symbol(name)?;
+pub fn visit_ident_or_pattern<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    decl: NodeId<IdentOrPattern>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[decl] {
+        IdentOrPattern::Ident { name } => {
+            visitor.visit_symbol(name)?;
         }
-        if let Some(heritage) = self.ast()[cls].heritage {
-            self.super_expr(heritage)?;
+        IdentOrPattern::Pattern { pattern } => {
+            visitor.visit_binding_pattern(pattern)?;
         }
-        if let ListHead::Present(mem) = self.ast()[cls].body {
-            self.super_class_member_list(mem)?;
+    }
+    Ok(())
+}
+
+pub fn visit_binding_property<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    prop: NodeId<BindingProperty>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[prop] {
+        BindingProperty::Binding {
+            symbol,
+            initializer,
+        } => {
+            if let Some(init) = initializer {
+                visitor.visit_expr(init)?;
+            }
+            visitor.visit_symbol(symbol)?;
         }
-        Ok(())
-    }
-
-    fn super_class_member_list(&mut self, cls_mem: ListId<ClassMember>) -> Result<(), E> {
-        self.visit_class_member_list(cls_mem)
-    }
-
-    fn visit_class_member_list(&mut self, cls_mem: ListId<ClassMember>) -> Result<(), E> {
-        visit_list!(self=>super_class_member(cls_mem));
-    }
-
-    fn super_class_member(&mut self, cls_mem: NodeId<ClassMember>) -> Result<(), E> {
-        self.visit_class_member(cls_mem)
-    }
-
-    fn visit_class_member(&mut self, cls_mem: NodeId<ClassMember>) -> Result<(), E> {
-        match self.ast()[cls_mem] {
-            ClassMember::StaticBlock { stmts } => {
-                if let ListHead::Present(x) = stmts {
-                    self.super_stmt_list(x)?;
-                }
-            }
-            ClassMember::Method { property, func, .. } => {
-                self.super_function(func)?;
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(x) => {
-                        self.super_expr(x)?;
-                    }
-                }
-            }
-            ClassMember::Field {
-                property,
-                initializer,
-                ..
-            } => {
-                if let Some(init) = initializer {
-                    self.super_expr(init)?;
-                }
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(x) => {
-                        self.super_expr(x)?;
-                    }
-                }
-            }
-            ClassMember::Getter { property, func, .. } => {
-                self.super_function(func)?;
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(x) => {
-                        self.super_expr(x)?;
-                    }
-                }
-            }
-            ClassMember::Setter { property, func, .. } => {
-                self.super_function(func)?;
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(x) => {
-                        self.super_expr(x)?;
-                    }
+        BindingProperty::Property { name, element } => {
+            visitor.visit_binding_element(element)?;
+            {
+                match name {
+                    PropertyName::Ident { .. }
+                    | PropertyName::String { .. }
+                    | PropertyName::Number { .. } => {}
+                    PropertyName::Computed { expr } => visitor.visit_expr(expr)?,
                 }
             }
         }
-        Ok(())
     }
+    Ok(())
+}
 
-    fn super_tenary(&mut self, ten: NodeId<Tenary>) -> Result<(), E> {
-        self.visit_tenary(ten)
-    }
-
-    fn visit_tenary(&mut self, ten: NodeId<Tenary>) -> Result<(), E> {
-        self.super_expr(self.ast()[ten].cond)?;
-        self.super_expr(self.ast()[ten].then)?;
-        self.super_expr(self.ast()[ten].r#else)?;
-        Ok(())
-    }
-
-    fn super_prime_expr(&mut self, expr: NodeId<PrimeExpr>) -> Result<(), E> {
-        self.visit_prime_expr(expr)
-    }
-
-    fn visit_prime_expr(&mut self, expr: NodeId<PrimeExpr>) -> Result<(), E> {
-        match self.ast()[expr] {
-            PrimeExpr::Number(_) => {}
-            PrimeExpr::String(_) => {}
-            PrimeExpr::Template(tem) => self.super_template(tem)?,
-            PrimeExpr::Regex(_) => {}
-            PrimeExpr::Ident(s) => self.super_symbol(s)?,
-            PrimeExpr::Boolean(_) => {}
-            PrimeExpr::Function(func) => self.super_function(func)?,
-            PrimeExpr::Class(cls) => self.super_class(cls)?,
-            PrimeExpr::Object(obj) => match obj {
-                ObjectLiteral::Empty => {}
-                ObjectLiteral::Item(prop) => {
-                    self.super_propery_definition_list(prop)?;
-                }
-            },
-            PrimeExpr::Array(array) => {
-                if let ListHead::Present(x) = array {
-                    self.super_array_literal_entry_list(x)?;
-                }
+pub fn visit_binding_pattern<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    pat: NodeId<BindingPattern>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[pat] {
+        BindingPattern::Object { properties, rest } => {
+            if let Some(r) = rest {
+                visitor.visit_symbol(r)?;
             }
-            PrimeExpr::NewTarget => {}
-            PrimeExpr::Null => {}
-            PrimeExpr::This => {}
-            PrimeExpr::Super => {}
-            PrimeExpr::Covered(expr) => self.super_expr_list(expr)?,
-        }
-        Ok(())
-    }
-
-    fn super_propery_definition_list(&mut self, prop: ListId<PropertyDefinition>) -> Result<(), E> {
-        self.visit_propery_definition_list(prop)
-    }
-
-    fn visit_propery_definition_list(&mut self, prop: ListId<PropertyDefinition>) -> Result<(), E> {
-        visit_list!(self=>visit_propery_definition(prop))
-    }
-
-    fn super_propery_definition(&mut self, prop: NodeId<PropertyDefinition>) -> Result<(), E> {
-        self.visit_propery_definition(prop)
-    }
-
-    fn visit_propery_definition(&mut self, prop: NodeId<PropertyDefinition>) -> Result<(), E> {
-        match self.ast()[prop] {
-            PropertyDefinition::Ident { ident } => self.super_symbol(ident)?,
-            PropertyDefinition::Covered {
-                symbol,
-                initializer,
-            } => {
-                self.super_symbol(symbol)?;
-                self.super_expr(initializer)?;
-            }
-            PropertyDefinition::Define { property, expr } => {
-                self.super_expr(expr)?;
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(expr) => self.super_expr(expr)?,
-                }
-            }
-            PropertyDefinition::Method { property, func }
-            | PropertyDefinition::Getter { property, func }
-            | PropertyDefinition::Setter { property, func } => {
-                self.super_function(func)?;
-                match property {
-                    PropertyName::Ident(_) | PropertyName::String(_) | PropertyName::Number(_) => {}
-                    PropertyName::Computed(expr) => self.super_expr(expr)?,
-                }
-            }
-            PropertyDefinition::Rest(rest) => {
-                self.super_expr(rest)?;
+            if let Some(x) = properties {
+                visitor.visit_binding_property_list(x)?;
             }
         }
-        Ok(())
-    }
-
-    fn super_array_literal_entry_list(&mut self, prop: ListId<ArrayLiteralEntry>) -> Result<(), E> {
-        self.visit_array_literal_entry_list(prop)
-    }
-
-    fn visit_array_literal_entry_list(&mut self, prop: ListId<ArrayLiteralEntry>) -> Result<(), E> {
-        visit_list!(self=>visit_array_literal_entry(prop))
-    }
-
-    fn super_array_literal_entry(&mut self, entry: NodeId<ArrayLiteralEntry>) -> Result<(), E> {
-        self.visit_array_literal_entry(entry)
-    }
-
-    fn visit_array_literal_entry(&mut self, entry: NodeId<ArrayLiteralEntry>) -> Result<(), E> {
-        if let Some(ent) = self.ast()[entry].expr {
-            self.super_expr(ent)?;
-        }
-        Ok(())
-    }
-
-    fn super_template(&mut self, tem: NodeId<Template>) -> Result<(), E> {
-        self.visit_template(tem)
-    }
-
-    fn visit_template(&mut self, tem: NodeId<Template>) -> Result<(), E> {
-        match self.ast()[tem] {
-            Template::Head { expr, next, .. } => {
-                self.super_expr_list(expr)?;
-                self.super_template(next)?;
+        BindingPattern::Array { elements, rest } => {
+            if let Some(r) = rest {
+                visitor.visit_ident_or_pattern(r)?;
             }
-            Template::Tail { .. } => {}
+            if let Some(elem) = elements {
+                visitor.visit_element_list(elem)?;
+            }
         }
-        Ok(())
     }
+    Ok(())
+}
+
+pub fn visit_binding_element<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    elem: NodeId<BindingElement>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[elem] {
+        BindingElement::SingleName {
+            symbol,
+            initializer,
+        } => {
+            if let Some(init) = initializer {
+                visitor.visit_expr(init)?;
+            }
+            visitor.visit_symbol(symbol)?;
+        }
+        BindingElement::Pattern {
+            pattern,
+            initializer,
+        } => {
+            if let Some(init) = initializer {
+                visitor.visit_expr(init)?;
+            }
+            visitor.visit_binding_pattern(pattern)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn visit_variable_decl<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    decl: NodeId<VariableDecl>,
+) -> Result<(), V::Error> {
+    if let Some(x) = visitor.ast()[decl].initializer {
+        visitor.visit_expr(x)?;
+    }
+    visitor.visit_ident_or_pattern(visitor.ast()[decl].decl)?;
+    Ok(())
+}
+
+pub fn visit_head_pre<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    head: NodeId<ForLoopHead>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[head] {
+        ForLoopHead::CStyle { decl, cond, .. } => {
+            match decl {
+                CstyleDecl::Expr { expr } => {
+                    visitor.visit_expr_list(expr)?;
+                }
+                CstyleDecl::Decl { decl, .. } => {
+                    visitor.visit_variable_decl_list(decl)?;
+                }
+                CstyleDecl::Empty => {}
+            }
+            if let Some(cond) = cond {
+                visitor.visit_expr_list(cond)?;
+            }
+        }
+        ForLoopHead::In { decl, expr } => {
+            match decl {
+                InOfDecl::Expr { expr } => visitor.visit_expr(expr)?,
+                InOfDecl::Decl { binding, .. } => visitor.visit_ident_or_pattern(binding)?,
+            }
+            visitor.visit_expr_list(expr)?;
+        }
+        ForLoopHead::Of { decl, expr } => {
+            match decl {
+                InOfDecl::Expr { expr } => visitor.visit_expr(expr)?,
+                InOfDecl::Decl { binding, .. } => visitor.visit_ident_or_pattern(binding)?,
+            }
+            visitor.visit_expr(expr)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn visit_head_post<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    head: NodeId<ForLoopHead>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[head] {
+        ForLoopHead::CStyle { post, .. } => {
+            if let Some(post) = post {
+                visitor.visit_expr_list(post)?;
+            }
+        }
+        ForLoopHead::In { .. } | ForLoopHead::Of { .. } => {}
+    }
+    Ok(())
+}
+
+pub fn visit_case<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    case: NodeId<CaseItem>,
+) -> Result<(), V::Error> {
+    visitor.visit_expr_list(visitor.ast()[case].expr)?;
+    if let Some(stmt) = visitor.ast()[case].stmts {
+        visitor.visit_stmt_list(stmt)?;
+    }
+    Ok(())
+}
+
+pub fn visit_function<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    func: NodeId<Function>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[func] {
+        Function::Arrow {
+            params,
+            rest_param,
+            body,
+            ..
+        } => {
+            if let Some(param) = params {
+                visitor.visit_binding_element_list(param)?;
+            }
+            if let Some(rest) = rest_param {
+                visitor.visit_ident_or_pattern(rest)?;
+            }
+            match body {
+                crate::ArrowFunctionBody::Expr { expr } => {
+                    visitor.visit_expr(expr)?;
+                }
+                crate::ArrowFunctionBody::Stmt { body: Some(x) } => {
+                    visitor.visit_stmt_list(x)?;
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+        Function::Declared {
+            params,
+            rest_param,
+            body,
+            ..
+        } => {
+            if let Some(param) = params {
+                visitor.visit_binding_element_list(param)?;
+            }
+            if let Some(rest) = rest_param {
+                visitor.visit_ident_or_pattern(rest)?;
+            }
+            if let Some(x) = body {
+                visitor.visit_stmt_list(x)?;
+            }
+            Ok(())
+        }
+        Function::Expr {
+            params,
+            rest_param,
+            body,
+            ..
+        } => {
+            if let Some(param) = params {
+                visitor.visit_binding_element_list(param)?;
+            }
+            if let Some(rest) = rest_param {
+                visitor.visit_ident_or_pattern(rest)?;
+            }
+            if let Some(x) = body {
+                visitor.visit_stmt_list(x)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+pub fn visit_class<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    cls: NodeId<Class>,
+) -> Result<(), V::Error> {
+    if let Some(name) = visitor.ast()[cls].name {
+        visitor.visit_symbol(name)?;
+    }
+    if let Some(heritage) = visitor.ast()[cls].heritage {
+        visitor.visit_expr(heritage)?;
+    }
+    if let Some(mem) = visitor.ast()[cls].body {
+        visitor.visit_class_member_list(mem)?;
+    }
+    Ok(())
+}
+
+pub fn visit_class_member_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    cls_mem: NodeListId<ClassMember>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_class_member(cls_mem));
+    Ok(())
+}
+
+pub fn visit_class_member<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    cls_mem: NodeId<ClassMember>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[cls_mem] {
+        ClassMember::StaticBlock { stmts } => {
+            if let Some(x) = stmts {
+                visitor.visit_stmt_list(x)?;
+            }
+        }
+        ClassMember::Method { property, func, .. } => {
+            visitor.visit_function(func)?;
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => {
+                    visitor.visit_expr(expr)?;
+                }
+            }
+        }
+        ClassMember::Field {
+            property,
+            initializer,
+            ..
+        } => {
+            if let Some(init) = initializer {
+                visitor.visit_expr(init)?;
+            }
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => {
+                    visitor.visit_expr(expr)?;
+                }
+            }
+        }
+        ClassMember::Getter { property, func, .. } => {
+            visitor.visit_function(func)?;
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => {
+                    visitor.visit_expr(expr)?;
+                }
+            }
+        }
+        ClassMember::Setter { property, func, .. } => {
+            visitor.visit_function(func)?;
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => {
+                    visitor.visit_expr(expr)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn visit_tenary<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    ten: NodeId<Tenary>,
+) -> Result<(), V::Error> {
+    visitor.visit_expr(visitor.ast()[ten].cond)?;
+    visitor.visit_expr(visitor.ast()[ten].then)?;
+    visitor.visit_expr(visitor.ast()[ten].r#else)?;
+    Ok(())
+}
+
+pub fn visit_prime_expr<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    expr: NodeId<PrimeExpr>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[expr] {
+        PrimeExpr::Number { .. } => {}
+        PrimeExpr::String { .. } => {}
+        PrimeExpr::Template { template } => visitor.visit_template(template)?,
+        PrimeExpr::Regex { .. } => {}
+        PrimeExpr::Ident { symbol } => visitor.visit_symbol(symbol)?,
+        PrimeExpr::Boolean { .. } => {}
+        PrimeExpr::Function { function } => visitor.visit_function(function)?,
+        PrimeExpr::Class { class } => visitor.visit_class(class)?,
+        PrimeExpr::Object { object } => match object {
+            ObjectLiteral::Empty => {}
+            ObjectLiteral::Item { definition } => {
+                visitor.visit_propery_definition_list(definition)?;
+            }
+        },
+        PrimeExpr::Array { array } => {
+            if let Some(x) = array {
+                visitor.visit_array_literal_entry_list(x)?;
+            }
+        }
+        PrimeExpr::NewTarget => {}
+        PrimeExpr::Null => {}
+        PrimeExpr::This => {}
+        PrimeExpr::Super => {}
+        PrimeExpr::Covered { expr } => visitor.visit_expr_list(expr)?,
+    }
+    Ok(())
+}
+
+pub fn visit_propery_definition_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    prop: NodeListId<PropertyDefinition>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_propery_definition(prop));
+    Ok(())
+}
+
+pub fn visit_propery_definition<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    prop: NodeId<PropertyDefinition>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[prop] {
+        PropertyDefinition::Ident { ident } => visitor.visit_symbol(ident)?,
+        PropertyDefinition::Covered {
+            symbol,
+            initializer,
+        } => {
+            visitor.visit_symbol(symbol)?;
+            visitor.visit_expr(initializer)?;
+        }
+        PropertyDefinition::Define { property, expr } => {
+            visitor.visit_expr(expr)?;
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => visitor.visit_expr(expr)?,
+            }
+        }
+        PropertyDefinition::Method { property, func }
+        | PropertyDefinition::Getter { property, func }
+        | PropertyDefinition::Setter { property, func } => {
+            visitor.visit_function(func)?;
+            match property {
+                PropertyName::Ident { .. }
+                | PropertyName::String { .. }
+                | PropertyName::Number { .. } => {}
+                PropertyName::Computed { expr } => visitor.visit_expr(expr)?,
+            }
+        }
+        PropertyDefinition::Rest { rest } => {
+            visitor.visit_expr(rest)?;
+        }
+    }
+    Ok(())
+}
+
+pub fn visit_array_literal_entry_list<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    prop: NodeListId<ArrayLiteralEntry>,
+) -> Result<(), V::Error> {
+    visit_list!(visitor=>visit_array_literal_entry(prop));
+    Ok(())
+}
+
+pub fn visit_array_literal_entry<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    entry: NodeId<ArrayLiteralEntry>,
+) -> Result<(), V::Error> {
+    if let Some(ent) = visitor.ast()[entry].expr {
+        visitor.visit_expr(ent)?;
+    }
+    Ok(())
+}
+
+pub fn visit_template<V: Visitor + ?Sized>(
+    visitor: &mut V,
+    tem: NodeId<Template>,
+) -> Result<(), V::Error> {
+    match visitor.ast()[tem] {
+        Template::Head { expr, next, .. } => {
+            visitor.visit_expr_list(expr)?;
+            visitor.visit_template(next)?;
+        }
+        Template::Tail { .. } => {}
+    }
+    Ok(())
 }

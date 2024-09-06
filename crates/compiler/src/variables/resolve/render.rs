@@ -1,29 +1,27 @@
-use std::fmt;
+use std::fmt::{self, Write as _};
 
-use ast::{visitor::Visitor as _, Ast, ListId};
-use common::{source::Source, structs::Interners};
-
-use crate::{variables::ScopeKind, Result};
+use ast::{visitor::Visitor as _, Ast, NodeListId};
+use common::{format::IndentFormatter, source::Source};
 
 use super::{
     driver::{VariableVisitor, VisitorDriver},
     ScopeId, Variables,
 };
+use crate::{variables::ScopeKind, Result};
 
 #[derive(Clone, Copy)]
 pub struct RenderVariables<'a> {
-    root: ListId<ast::Stmt>,
+    root: NodeListId<ast::Stmt>,
     root_scope: ScopeId,
     variables: &'a Variables,
     ast: &'a Ast,
-    interners: &'a Interners,
     source: &'a Source,
 }
 
 impl fmt::Display for RenderVariables<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut inner = RenderVariablesWriter {
-            writer: f,
+            fmt: IndentFormatter::new(f, 2),
             inner: *self,
             last: self.root_scope,
             current: self.root_scope,
@@ -37,33 +35,24 @@ impl fmt::Display for RenderVariables<'_> {
     }
 }
 
-pub struct RenderVariablesWriter<'a, 'b, 'c> {
-    writer: &'b mut fmt::Formatter<'c>,
+pub struct RenderVariablesWriter<'a, W> {
+    fmt: IndentFormatter<W>,
     inner: RenderVariables<'a>,
     last: ScopeId,
     current: ScopeId,
 }
 
-impl RenderVariablesWriter<'_, '_, '_> {
-    fn write_spacing(&mut self) {
-        let mut current = self.current;
-        while let Some(p) = self.inner.variables.scopes[current].parent {
-            write!(self.writer, "    ").unwrap();
-            current = p;
-        }
-    }
-
+impl<W: fmt::Write> RenderVariablesWriter<'_, W> {
     fn write_decls(&mut self) {
         for sym_id in self.inner.variables.declared_vars(self.current) {
             let sym = &self.inner.variables.symbols[*sym_id];
-            self.write_spacing();
             let last_use = self.inner.variables.last_use_of(*sym_id);
             writeln!(
-                self.writer,
+                self.fmt,
                 "DECL #{} {:?} {} ${}..${}",
-                sym_id.to_u32(),
+                sym_id.into_u32(),
                 sym.kind,
-                self.inner.interners.strings.get(sym.ident).unwrap(),
+                self.inner.ast[sym.ident],
                 sym.defined.map(|x| x.to_u32() as i64).unwrap_or(-1),
                 last_use.map(|x| x.to_u32() as i64).unwrap_or(-1),
             )
@@ -72,16 +61,16 @@ impl RenderVariablesWriter<'_, '_, '_> {
     }
 }
 
-impl VariableVisitor for RenderVariablesWriter<'_, '_, '_> {
+impl<W: fmt::Write> VariableVisitor for RenderVariablesWriter<'_, W> {
     fn ast(&self) -> &Ast {
         self.inner.ast
     }
 
     fn push_scope(&mut self, kind: ScopeKind) -> Result<()> {
-        self.write_spacing();
-        writeln!(self.writer, "BLOCK {{").unwrap();
+        self.fmt.increase_depth();
+        writeln!(self.fmt, "BLOCK {{").unwrap();
 
-        self.last = self.last.next();
+        self.last = self.last.next().unwrap();
         self.current = self.last;
 
         self.write_decls();
@@ -90,12 +79,12 @@ impl VariableVisitor for RenderVariablesWriter<'_, '_, '_> {
     }
 
     fn pop_scope(&mut self) -> Result<()> {
+        self.fmt.decrease_depth();
         self.current = self.inner.variables.scopes[self.current]
             .parent
             .expect("tried to pop root scope");
 
-        self.write_spacing();
-        writeln!(self.writer, "}}").unwrap();
+        writeln!(self.fmt, "}}").unwrap();
 
         Ok(())
     }
@@ -103,11 +92,10 @@ impl VariableVisitor for RenderVariablesWriter<'_, '_, '_> {
     fn use_symbol(&mut self, ast_node: ast::NodeId<ast::Symbol>) -> Result<()> {
         let use_info = &self.inner.variables.ast_to_symbol[ast_node];
 
-        self.write_spacing();
         writeln!(
-            self.writer,
+            self.fmt,
             "USE #{} @ ${} {}",
-            use_info.id.unwrap().to_u32(),
+            use_info.id.unwrap().into_u32(),
             use_info.use_order.to_u32(),
             self.inner
                 .source
@@ -124,19 +112,17 @@ impl VariableVisitor for RenderVariablesWriter<'_, '_, '_> {
 impl Variables {
     pub fn render<'a>(
         &'a self,
-        root: ListId<ast::Stmt>,
+        root: NodeListId<ast::Stmt>,
         root_scope: ScopeId,
         ast: &'a Ast,
-        interners: &'a Interners,
         source: &'a Source,
-    ) -> RenderVariables {
+    ) -> RenderVariables<'a> {
         RenderVariables {
             source,
             root_scope,
             root,
             variables: self,
             ast,
-            interners,
         }
     }
 }

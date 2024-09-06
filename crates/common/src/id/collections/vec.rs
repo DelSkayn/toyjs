@@ -108,6 +108,31 @@ impl<I: Id, T> IdVec<I, T> {
     }
 }
 
+impl<I: Id, T: Default> IdVec<I, T> {
+    /// Inserts the value the given index.
+    ///
+    /// If the current length is less then the index of where this value should be inserted all the
+    /// other values will be filled with the given callback.
+    pub fn insert_fill_default(&mut self, at: I, value: T) {
+        let idx = at.idx();
+        match idx.cmp(&self.inner.len()) {
+            Ordering::Less => {
+                self[at] = value;
+            }
+            Ordering::Equal => {
+                self.inner.push(value);
+            }
+            Ordering::Greater => {
+                self.inner.reserve(idx - self.inner.len());
+                for _ in self.inner.len()..idx {
+                    self.inner.push(Default::default());
+                }
+                self.inner.push(value);
+            }
+        }
+    }
+}
+
 impl<I: Id, T> Index<I> for IdVec<I, T> {
     type Output = T;
 

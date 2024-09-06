@@ -54,7 +54,11 @@ impl fmt::Display for IdRangeError {
 /// A macro which implements a newtype index.
 #[macro_export]
 macro_rules! id {
-    ($vis:vis struct $name:ident $( < $($gen:ident),* $(,)? > )? ) => {
+    (
+        $(#[$m:meta])*
+        $vis:vis struct $name:ident $( < $($gen:ident),* $(,)? > )? ) => {
+
+        $(#[$m])*
         $vis struct $name $( < $( $gen, )* > )?{
             id: ::std::num::NonZeroU32,
             $(
@@ -69,7 +73,7 @@ macro_rules! id {
             }
 
             #[inline]
-            fn from_idx(idx: usize) -> Result<Self, $crate::id::IdRangeError>{
+            fn from_idx(idx: usize) -> ::std::result::Result<Self, $crate::id::IdRangeError>{
                 let id = ::std::num::NonZeroU32::from_idx(idx)?;
                 Ok(Self{
                     id,

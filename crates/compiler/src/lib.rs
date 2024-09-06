@@ -2,15 +2,10 @@
 #![allow(dead_code)]
 #![allow(clippy::new_without_default)]
 
-use ast::{Ast, ListHead, NodeId};
+use ast::{Ast, NodeId, NodeListId};
 use bc::{ByteCode, Instruction, InstructionType, LongOffset, OpCode, Reg};
 use bytemuck::NoUninit;
-use common::{
-    hashmap::hash_map::HashMap,
-    key,
-    string::{String, StringId},
-    structs::Interners,
-};
+use common::{hashmap::hash_map::HashMap, id, string::String};
 
 macro_rules! to_do {
     () => {
@@ -34,9 +29,9 @@ use symbol::RegisterInfo;
 pub mod variables;
 use variables::{resolve_script, SymbolId, Variables};
 
-key!(
+id!(
     /// Offset into the instruction buffer in bytes.
-    pub struct InstrOffset(u32)
+    pub struct InstrOffset
 );
 
 /// An argument whose location is an offset from the end of the function frame.
@@ -55,7 +50,6 @@ struct TempLoadedSymbol {
 pub struct Compiler<'a> {
     // static structures used for compiling
     ast: &'a mut Ast,
-    interners: &'a mut Interners,
     variables: Variables,
 
     // functions we still need to compile.
@@ -70,7 +64,7 @@ pub struct Compiler<'a> {
     arg_patch: Vec<PendingArg>,
     max_arg: u16,
     /// Strings which were referenced in compilation along with the id assigned to them
-    strings: HashMap<StringId, u32>,
+    strings: HashMap<NodeId<String>, u32>,
     /// The id for the next string.
     next_string_id: u32,
     /// Data regarding register allocation and symbol placement.
@@ -78,9 +72,8 @@ pub struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(interners: &'a mut Interners, ast: &'a mut Ast) -> Self {
+    pub fn new(ast: &'a mut Ast) -> Self {
         Self {
-            interners,
             ast,
             variables: Variables::new(),
 
@@ -119,20 +112,22 @@ impl<'a> Compiler<'a> {
     #[inline(always)]
     fn emit(&mut self, instr: Instruction) -> Result<InstrOffset> {
         let res = self.instructions.len();
-        let id = InstrOffset(
-            res.try_into()
-                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
-        );
+        let id = res
+            .try_into()
+            .ok()
+            .and_then(InstrOffset::from_u32)
+            .ok_or(Error::Limit(Limits::BytecodeSize))?;
         instr.write(&mut self.instructions);
         Ok(id)
     }
 
     pub fn push_instr_byte<B: NoUninit>(&mut self, b: B) -> Result<InstrOffset> {
         let res = self.instructions.len();
-        let id = InstrOffset(
-            res.try_into()
-                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
-        );
+        let id = res
+            .try_into()
+            .ok()
+            .and_then(InstrOffset::from_u32)
+            .ok_or(Error::Limit(Limits::BytecodeSize))?;
         self.instructions.push(bytemuck::cast(b));
         Ok(id)
     }
@@ -146,48 +141,49 @@ impl<'a> Compiler<'a> {
 
     fn next_instruction(&self) -> Result<InstrOffset> {
         let res = self.instructions.len();
-        let id = InstrOffset(
-            res.try_into()
-                .map_err(|_| Error::Limit(Limits::BytecodeSize))?,
-        );
+        let id = res
+            .try_into()
+            .ok()
+            .and_then(InstrOffset::from_u32)
+            .ok_or(Error::Limit(Limits::BytecodeSize))?;
         Ok(id)
     }
 
     fn patch_dst(&mut self, instr: InstrOffset, to: Reg) {
         debug_assert!(
-            OpCode::from_u8(self.instructions[instr.0 as usize])
+            OpCode::from_u8(self.instructions[instr.into_u32() as usize])
                 .unwrap()
                 .has_dst_register(),
             "tried to patch dst register of opcode {:?} with no dst register",
-            OpCode::from_u8(self.instructions[instr.0 as usize]).unwrap()
+            OpCode::from_u8(self.instructions[instr.into_u32() as usize]).unwrap()
         );
 
         // dst registers are always the first register after the opcode.
-        self.instructions[instr.0 as usize + 1] = to.0 as u8;
+        self.instructions[instr.into_u32() as usize + 1] = to.0 as u8;
     }
 
     /// Patch a jump instruction to jump to a give instruction.
     fn patch_jump(&mut self, instr: InstrOffset, to: InstrOffset) -> Result<()> {
-        let opcode = OpCode::from_u8(self.instructions[instr.0 as usize]).unwrap();
+        let opcode = OpCode::from_u8(self.instructions[instr.into_u32() as usize]).unwrap();
         match opcode {
             OpCode::LongJump | OpCode::TryLong => {
-                let from_point = instr.0 as i64 + bc::types::LongJump::SIZE as i64;
+                let from_point = instr.into_u32() as i64 + bc::types::LongJump::SIZE as i64;
                 let offset = LongOffset(
-                    i32::try_from(to.0 as i64 - from_point)
+                    i32::try_from(to.into_u32() as i64 - from_point)
                         .map_err(|_| Error::Limit(Limits::JumpOffset))?,
                 );
-                let instr_start = instr.0 as usize + 1;
+                let instr_start = instr.into_u32() as usize + 1;
                 self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
                     .copy_from_slice(bytemuck::bytes_of(&offset));
                 Ok(())
             }
             OpCode::LongJumpTrue | OpCode::LongJumpFalse => {
-                let from_point = instr.0 as i64 + bc::types::LongJumpTrue::SIZE as i64;
+                let from_point = instr.into_u32() as i64 + bc::types::LongJumpTrue::SIZE as i64;
                 let offset = LongOffset(
-                    i32::try_from(to.0 as i64 - from_point)
+                    i32::try_from(to.into_u32() as i64 - from_point)
                         .map_err(|_| Error::Limit(Limits::JumpOffset))?,
                 );
-                let instr_start = instr.0 as usize + 2;
+                let instr_start = instr.into_u32() as usize + 2;
                 self.instructions[instr_start..(instr_start + std::mem::size_of::<LongOffset>())]
                     .copy_from_slice(bytemuck::bytes_of(&offset));
                 Ok(())
@@ -201,7 +197,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    pub fn map_string(&mut self, id: StringId) -> u32 {
+    pub fn map_string(&mut self, id: NodeId<String>) -> u32 {
         *self.strings.entry(id).or_insert_with(|| {
             let res = self.next_string_id;
             self.next_string_id += 1;
@@ -209,17 +205,21 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    pub fn compile_script(mut self, strict: bool, stmt: ListHead<ast::Stmt>) -> Result<ByteCode> {
+    pub fn compile_script(
+        mut self,
+        strict: bool,
+        stmt: Option<NodeListId<ast::Stmt>>,
+    ) -> Result<ByteCode> {
         let root_scope = self.variables.push_global_scope(strict);
 
         // resolve all variables in the statement.
-        if let ListHead::Present(root) = stmt {
+        if let Some(root) = stmt {
             resolve_script(root, self.ast, &mut self.variables, root_scope)?;
         }
 
         // compile the main function or the root of the script.
         let mut expr = None;
-        if let ListHead::Present(s) = stmt {
+        if let Some(s) = stmt {
             let mut s = Some(s);
             while let Some(stmt_item) = s {
                 let stmt = &self.ast[stmt_item];
@@ -251,7 +251,7 @@ impl<'a> Compiler<'a> {
         // Push all the used strings into a single slice.
         let mut strings = vec![String::new(); self.next_string_id as usize];
         for (id, k) in self.strings {
-            strings[k as usize] = self.interners.strings.get(id).unwrap().clone();
+            strings[k as usize] = self.ast[id].clone();
         }
 
         Ok(ByteCode {
@@ -279,7 +279,7 @@ impl<'a> Compiler<'a> {
             ast::FunctionKind::Simple => {}
         }
 
-        let expr = if let ListHead::Present(mut cur) = body {
+        let expr = if let Some(mut cur) = body {
             let mut expr;
             loop {
                 expr = self.compile_stmt(self.ast[cur].item)?;

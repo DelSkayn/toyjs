@@ -5,10 +5,9 @@ use std::{
     time::Instant,
 };
 
-use ast::ListHead;
-use common::{result::ContextError, source::Source, string::String, structs::Interners};
+use common::{result::ContextError, source::Source, string::String};
 use lexer::Lexer;
-use parser::Parser;
+use parser::{parse_script, Parser};
 use toyjs_compiler::variables::{self, Kind, Variables};
 
 pub enum Error {
@@ -38,22 +37,17 @@ fn get_input() -> Result<Box<dyn Read>, io::Error> {
 
 fn compile(source: &Source) -> Result<(), Error> {
     let before = Instant::now();
-    let mut interners = Interners::default();
-    let lexer = Lexer::new(source.source(), &mut interners);
-    let mut parser = Parser::new(lexer);
-    let res = parser.parse_script()?;
-    let ast = parser.into_ast();
+    let mut ast = ast::Ast::new();
+    let lexer = Lexer::new(source.source(), &mut ast);
+    let res = Parser::parse_syntax(lexer, parse_script)?;
     let mut variables = Variables::new();
     let root_scope = variables.push_global_scope(false);
-    if let ListHead::Present(stmt) = res.stmt {
+    if let Some(stmt) = res.stmt {
         variables::resolve_script(stmt, &ast, &mut variables, root_scope)?;
     }
     let elapsed = before.elapsed();
-    if let ListHead::Present(stmt) = res.stmt {
-        println!(
-            "{}",
-            variables.render(stmt, root_scope, &ast, &interners, source)
-        );
+    if let Some(stmt) = res.stmt {
+        println!("{}", variables.render(stmt, root_scope, &ast, source));
     }
 
     let mut first = true;

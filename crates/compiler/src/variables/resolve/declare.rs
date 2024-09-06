@@ -1,8 +1,8 @@
 use ast::{Ast, NodeId};
 use common::{
     hashmap::hash_map::{Entry, HashMap},
-    key,
-    string::StringId,
+    id,
+    string::String,
 };
 
 use super::driver::VariableVisitor;
@@ -14,8 +14,8 @@ use crate::{
     Error, Limits, Result,
 };
 
-key!(pub struct FunctionSymbolStackId(u32));
-key!(pub struct BlockSymbolStackId(u32));
+id!(pub struct FunctionSymbolStackId);
+id!(pub struct BlockSymbolStackId);
 
 /// Pass which resolves all declared variables in the ast and creates the scopes.
 pub struct DeclarePass<'a, 'b> {
@@ -24,7 +24,7 @@ pub struct DeclarePass<'a, 'b> {
     function_decl_stack: Vec<SymbolId>,
     block_decl_stack: Vec<SymbolId>,
     scope_stack: Vec<ScopeId>,
-    lookup: HashMap<StringId, SymbolId>,
+    lookup: HashMap<NodeId<String>, SymbolId>,
     current_block: ScopeId,
     current_function: ScopeId,
 }
@@ -98,7 +98,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
         let id = self
             .vars
             .scopes
-            .try_push(Scope {
+            .push(Scope {
                 parent: Some(self.current_block),
                 kind,
                 num_scope_children: 0,
@@ -174,7 +174,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                 {
                     // redeclaration, no new symbol needed.
 
-                    self.vars.ast_to_symbol.insert_grow_default(
+                    self.vars.ast_to_symbol.insert_fill_default(
                         ast_node,
                         UseInfo {
                             use_order: SymbolUseOrder::first(),
@@ -192,17 +192,21 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                     self.current_function
                 };
 
-                let symbol_id = self.vars.symbols.push(Symbol {
-                    ident,
-                    captured: false,
-                    kind,
-                    declared: None,
-                    defined: None,
-                    last_use: LastUse::Unused,
-                    scope,
-                    shadows: Some(old_symbol_id),
-                    ast_node,
-                });
+                let symbol_id = self
+                    .vars
+                    .symbols
+                    .push(Symbol {
+                        ident,
+                        captured: false,
+                        kind,
+                        declared: None,
+                        defined: None,
+                        last_use: LastUse::Unused,
+                        scope,
+                        shadows: Some(old_symbol_id),
+                        ast_node,
+                    })
+                    .unwrap();
 
                 entry.insert(symbol_id);
 
@@ -215,17 +219,21 @@ impl VariableVisitor for DeclarePass<'_, '_> {
                     self.current_function
                 };
 
-                let symbol_id = self.vars.symbols.push(Symbol {
-                    ident,
-                    captured: false,
-                    kind,
-                    declared: None,
-                    defined: None,
-                    last_use: LastUse::Unused,
-                    scope,
-                    shadows: None,
-                    ast_node,
-                });
+                let symbol_id = self
+                    .vars
+                    .symbols
+                    .push(Symbol {
+                        ident,
+                        captured: false,
+                        kind,
+                        declared: None,
+                        defined: None,
+                        last_use: LastUse::Unused,
+                        scope,
+                        shadows: None,
+                        ast_node,
+                    })
+                    .unwrap();
 
                 entry.insert(symbol_id);
 
@@ -233,7 +241,7 @@ impl VariableVisitor for DeclarePass<'_, '_> {
             }
         };
 
-        self.vars.ast_to_symbol.insert_grow_default(
+        self.vars.ast_to_symbol.insert_fill_default(
             ast_node,
             UseInfo {
                 use_order: SymbolUseOrder::first(),

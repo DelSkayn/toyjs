@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 print = []
 visitor = []
-default = ["print"]
+default = ["print","visitor"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
