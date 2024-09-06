@@ -94,6 +94,7 @@ impl<'a> Lexer<'a> {
             .library_mut()
             .strings
             .push_ref(&self.builder.encoding());
+        self.builder.clear();
         let Some(id) = id.ok().and_then(NodeId::from_u32) else {
             return self.finish_token(TokenKind::Unknown);
         };

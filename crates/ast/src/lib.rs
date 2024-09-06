@@ -1,6 +1,6 @@
 use std::hash::BuildHasherDefault;
 
-use ast::{ListStorage, OptionListStorage};
+use ast::{impl_display_debug, ListStorage, OptionListStorage};
 use common::{
     hasher::Hasher, id::collections::IdSet, number::Number, span::Span, string::String,
     thinvec::ThinVec,
@@ -8,7 +8,7 @@ use common::{
 
 mod ast;
 pub use ast::{
-    Ast as GenAst, Node, NodeId, NodeList, NodeListId, OptionNodeList, OptionNodeListId,
+    Ast as GenAst, AstRender, Node, NodeId, NodeList, NodeListId, OptionNodeList, OptionNodeListId,
 };
 
 #[cfg(feature = "visitor")]
@@ -69,6 +69,9 @@ pub enum VariableKind {
     Var,
     Let,
 }
+
+#[cfg(feature = "print")]
+impl_display_debug!(VariableKind);
 
 ast_enum! {
     pub enum IdentOrPattern {
@@ -282,6 +285,9 @@ pub enum FunctionKind {
     AsyncGenerator,
 }
 
+#[cfg(feature = "print")]
+ast::impl_display_debug!(FunctionKind);
+
 impl FunctionKind {
     pub fn set_async(&mut self) {
         match *self {
@@ -394,6 +400,9 @@ pub enum BaseOp {
     StrictNotEqual,
 }
 
+#[cfg(feature = "print")]
+ast::impl_display_debug!(BaseOp);
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub enum AssignOp {
     Assign,
@@ -411,6 +420,9 @@ pub enum AssignOp {
     BitwiseXor,
 }
 
+#[cfg(feature = "print")]
+ast::impl_display_debug!(AssignOp);
+
 impl AssignOp {
     /// Returns true if the operation requires a load.
     pub fn loads(self) -> bool {
@@ -424,11 +436,17 @@ pub enum BinaryOp {
     Assign(AssignOp),
 }
 
+#[cfg(feature = "print")]
+ast::impl_display_debug!(BinaryOp);
+
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub enum PostfixOp {
     AddOne,
     SubOne,
 }
+
+#[cfg(feature = "print")]
+ast::impl_display_debug!(PostfixOp);
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug, Hash)]
 pub enum PrefixOp {
@@ -444,6 +462,9 @@ pub enum PrefixOp {
     TypeOf,
     Await,
 }
+
+#[cfg(feature = "print")]
+ast::impl_display_debug!(PrefixOp);
 
 ast_struct! {
     pub struct Argument {

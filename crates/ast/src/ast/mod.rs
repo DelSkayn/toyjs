@@ -20,6 +20,13 @@ pub use list::{
     ListStorage, NodeList, NodeListId, OptionListStorage, OptionNodeList, OptionNodeListId,
 };
 
+#[cfg(feature = "print")]
+mod print;
+#[cfg(feature = "print")]
+pub(crate) use print::impl_display_debug;
+#[cfg(feature = "print")]
+pub use print::{AstDisplay, AstFormatter, AstRender};
+
 id!(pub struct NodeId<T>);
 
 impl<T: Node> NodeId<T> {
@@ -517,17 +524,28 @@ macro_rules! ast_enum{
             where L: crate::ast::NodeLibrary,
                   W: ::std::fmt::Write,
         {
-            fn fmt(&self, fmt: &mut crate::ast::AstFormatter<L,W>) -> ::std::fmt::Result{
-                match self{
-                    $(
-                    $name::$variant(x) => {
-                        write!(fmt,concat!(stringify!($name),"::",stringify!($variant),"("))?;
-                        x.fmt(fmt)?;
-                        write!(fmt,")")
-                    }
-                    )*
-                }
-            }
+          fn fmt(&self, fmt: &mut crate::ast::AstFormatter<L,W>) -> ::std::fmt::Result{
+              match self{
+                  $(
+                      $name::$variant$({$($field),*})* => {
+                          write!(fmt,concat!(stringify!($name),"::",stringify!($variant)))?;
+                          $(
+                              writeln!(fmt,"{{")?;
+                              fmt.indent(|fmt|{
+                                  $(
+                                      write!(fmt,concat!(stringify!($field),": "))?;
+                                      crate::ast::AstDisplay::fmt($field, fmt)?;
+                                      writeln!(fmt,",")?;
+                                  )*
+                                      Ok(())
+                              })?;
+                              write!(fmt,"}}")?;
+                          )*
+                      }
+                  )*
+              }
+              Ok(())
+          }
         }
     };
 

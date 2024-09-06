@@ -1,8 +1,8 @@
 use crate::{
     Argument, ArrayLiteralEntry, Ast, BindingElement, BindingPattern, BindingProperty, CaseItem,
     CatchStmt, Class, ClassMember, CstyleDecl, Expr, ForLoopHead, Function, IdentOrPattern,
-    InOfDecl, ListHead, ListId, NodeId, NodeList, ObjectLiteral, PrimeExpr, PropertyDefinition,
-    PropertyName, Stmt, Symbol, Template, Tenary, VariableDecl,
+    InOfDecl, NodeId, NodeList, ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Stmt,
+    Symbol, Template, Tenary, VariableDecl,
 };
 
 macro_rules! visit_list {

@@ -5,7 +5,8 @@ use std::{
     time::Instant,
 };
 
-use common::{result::ContextResultExt, string::String, structs::Interners};
+use ast::AstRender;
+use common::{result::ContextResultExt, string::String};
 use lexer::Lexer;
 use toyjs_parser::{parse_script, Parser};
 
@@ -27,16 +28,11 @@ fn main() -> Result<(), io::Error> {
     let mut ast = ast::Ast::new();
     let lexer = Lexer::new(source.source(), &mut ast);
     let before = Instant::now();
-    let mut parser = Parser::parse_syntax(lexer, parse_script);
+    let res = Parser::parse_syntax(lexer, parse_script);
     let elapsed = before.elapsed();
     match res.supply_context(&source) {
         Ok(x) => {
-            let ctx = RenderCtx::new(
-                &parser.ast,
-                &parser.lexer.data.strings,
-                &parser.lexer.data.numbers,
-            );
-            println!("{}", x.stmt.display(ctx))
+            println!("{}", AstRender::new(&ast, x.stmt));
         }
         Err(e) => {
             eprintln!("{}", e)

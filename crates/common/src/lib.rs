@@ -22,6 +22,7 @@ pub mod result;
 //pub mod smaller_vec;
 #[macro_use]
 pub mod assert;
+pub mod format;
 pub mod source;
 pub mod span;
 pub mod string;
