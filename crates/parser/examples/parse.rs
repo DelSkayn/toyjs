@@ -5,10 +5,9 @@ use std::{
     time::Instant,
 };
 
-use ast::{RenderAst, RenderCtx};
 use common::{result::ContextResultExt, string::String, structs::Interners};
 use lexer::Lexer;
-use toyjs_parser::Parser;
+use toyjs_parser::{parse_script, Parser};
 
 fn get_input() -> Result<Box<dyn Read>, io::Error> {
     if let Some(x) = env::args().nth(1) {
@@ -25,11 +24,10 @@ fn main() -> Result<(), io::Error> {
 
     let source = String::from_std_str(&buffer);
     let source = common::source::Source::new(source, Some("parse_script"));
-    let mut interners = Interners::default();
-    let lexer = Lexer::new(source.source(), &mut interners);
+    let mut ast = ast::Ast::new();
+    let lexer = Lexer::new(source.source(), &mut ast);
     let before = Instant::now();
-    let mut parser = Parser::new(lexer);
-    let res = parser.parse_script();
+    let mut parser = Parser::parse_syntax(lexer, parse_script);
     let elapsed = before.elapsed();
     match res.supply_context(&source) {
         Ok(x) => {

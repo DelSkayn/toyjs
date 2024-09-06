@@ -1,5 +1,5 @@
 use ast::NodeId;
-use common::{number::Number, span::Span, string::String};
+use common::{span::Span, string::String};
 
 mod r#macro;
 

@@ -2,7 +2,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use ast::{Ast, Expr, Node, NodeId, NodeListId, PrimeExpr, Stmt};
+use ast::{Ast, Expr, NodeId, NodeListId, PrimeExpr, Stmt};
 use common::{span::Span, string::String};
 use lexer::Lexer;
 use token::{t, Token, TokenKind};
@@ -67,6 +67,14 @@ impl<'a> Parser<'a> {
             ate_line_terminator: false,
             state: ParserState::In | ParserState::YieldIdent | ParserState::AwaitIdent,
         }
+    }
+
+    pub fn parse_syntax<R, F>(lexer: Lexer<'a>, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut Self) -> Result<R>,
+    {
+        let mut parser = Parser::new(lexer);
+        f(&mut parser)
     }
 
     // Return the span
@@ -169,7 +177,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    pub fn save_state<F, R>(&mut self, f: F) -> R
+    fn save_state<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,
     {
@@ -179,7 +187,7 @@ impl<'a> Parser<'a> {
         r
     }
 
-    pub fn parse<P: Parse>(&mut self) -> Result<NodeId<P>> {
+    fn parse<P: Parse>(&mut self) -> Result<NodeId<P>> {
         P::parse(self)
     }
 }
@@ -198,29 +206,27 @@ impl DerefMut for Parser<'_> {
     }
 }
 
-impl Parse for ParsedScript {
-    /// Parse a javascript script.
-    fn parse(parser: &mut Parser) -> Result<NodeId<ParsedScript>> {
-        let mut head = None;
-        let mut cur = None;
-        let mut strict = false;
-        loop {
-            let peek = parser.peek();
-            if let t!("eof") = peek.kind {
-                break;
-            }
-            let stmt = parser.parse()?;
-            if !parser.state.contains(ParserState::Strict)
-                && head.is_none()
-                && is_strict_directive(parser, stmt)
-            {
-                strict = true;
-                parser.state.insert(ParserState::Strict);
-            }
-            parser.push_list(&mut head, &mut cur, stmt);
+/// Parse a javascript script.
+pub fn parse_script(parser: &mut Parser) -> Result<ParsedScript> {
+    let mut head = None;
+    let mut cur = None;
+    let mut strict = false;
+    loop {
+        let peek = parser.peek();
+        if let t!("eof") = peek.kind {
+            break;
         }
-        Ok(parser.push(ParsedScript { stmt: head, strict })?)
+        let stmt = parser.parse()?;
+        if !parser.state.contains(ParserState::Strict)
+            && head.is_none()
+            && is_strict_directive(parser, stmt)
+        {
+            strict = true;
+            parser.state.insert(ParserState::Strict);
+        }
+        parser.push_list(&mut head, &mut cur, stmt)?;
     }
+    Ok(ParsedScript { stmt: head, strict })
 }
 
 /// Checks if a statement contains the strict directive `"use strict"`.

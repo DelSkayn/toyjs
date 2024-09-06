@@ -1,6 +1,6 @@
 use ast::{
-    Ast, CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern,
-    InOfDecl, NodeId, NodeList, NodeListId, PrimeExpr, Stmt, VariableDecl, VariableKind,
+    CaseItem, CatchStmt, CstyleDecl, Expr, ForLoopHead, FunctionKind, IdentOrPattern, InOfDecl,
+    NodeId, NodeList, NodeListId, PrimeExpr, Stmt, VariableDecl, VariableKind,
 };
 use common::span::Span;
 use token::t;
@@ -239,10 +239,11 @@ pub fn parse_c_style_decl(
     }
 
     let decl = parser.push(VariableDecl { decl, initializer })?;
-    let mut head = None;
-    let mut cur = None;
-
-    parser.push_list(&mut head, &mut cur, None)?;
+    let head = parser.push(NodeList {
+        item: decl,
+        next: None,
+    })?;
+    let mut cur = head;
 
     while parser.eat(t!(",")) {
         let start = *parser.last_span();
@@ -260,9 +261,14 @@ pub fn parse_c_style_decl(
         }
 
         let decl = parser.push(VariableDecl { decl, initializer })?;
-        parser.push_list(&mut head, &mut cur, decl)?;
+        let new_cur = parser.push(NodeList {
+            item: decl,
+            next: None,
+        })?;
+        parser[cur].next = Some(new_cur);
+        cur = new_cur;
     }
-    Ok(head.unwrap())
+    Ok(head)
 }
 
 /// Parse a c style for loop:
@@ -323,7 +329,7 @@ pub fn parse_for_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
 
             if parser.eat(t!(",")) {
                 let next = Some(parser.parse()?);
-                let expr = parser.push(List { item: expr, next });
+                let expr = parser.push(NodeList { item: expr, next })?;
                 parser.state = state;
                 return parse_c_style_for(parser, CstyleDecl::Expr { expr });
             }
@@ -346,8 +352,11 @@ pub fn parse_for_stmt(parser: &mut Parser) -> Result<NodeId<Stmt>> {
                     let decl = parser.push(VariableDecl {
                         decl: binding,
                         initializer: None,
-                    });
-                    let decl = parser.append_list(decl, None);
+                    })?;
+                    let decl = parser.push(NodeList {
+                        item: decl,
+                        next: None,
+                    })?;
                     CstyleDecl::Decl { kind, decl }
                 }
             };
@@ -587,7 +596,7 @@ pub fn parse_variable_decl(parser: &mut Parser, kind: VariableKind) -> Result<No
         }
 
         let decl = parser.push(VariableDecl { decl, initializer })?;
-        parser.push_list(&mut head, &mut cur, decl);
+        parser.push_list(&mut head, &mut cur, decl)?;
     }
     parser.semicolon()?;
 

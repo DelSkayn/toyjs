@@ -1,7 +1,7 @@
 use ast::{
     ArrayLiteralEntry, ArrowFunctionBody, AssignOp, BinaryOp, BindingElement, BindingPattern,
     BindingProperty, Expr, Function, FunctionKind, IdentOrPattern, NodeId, NodeList, NodeListId,
-    ObjectLiteral, PrimeExpr, PropertyDefinition, PropertyName, Symbol, Template,
+    ObjectLiteral, OptionNodeList, PrimeExpr, PropertyDefinition, PropertyName, Symbol, Template,
 };
 use common::{
     span::Span,
@@ -277,10 +277,13 @@ fn parse_object_literal(parser: &mut Parser) -> Result<(ObjectLiteral, Option<Sp
                 }
                 let (property, new_span) = parse_property_definition(parser)?;
                 span = span.or(new_span);
-                last = parser.push(NodeList {
+
+                let new_last = parser.push(NodeList {
                     item: property,
-                    next: Some(last),
+                    next: None,
                 })?;
+                parser[last].next = Some(new_last);
+                last = new_last;
             }
             x => {
                 unexpected!(parser, x, ",", "}")
@@ -691,7 +694,11 @@ pub fn reparse_array_lit(
         } else {
             None
         };
-        parser.push_list(&mut head, &mut prev, element)?;
+        prev = Some(parser.push(OptionNodeList {
+            item: element,
+            next: prev,
+        })?);
+        head = head.or(prev);
     }
 
     Ok(Some(BindingPattern::Array {
@@ -814,11 +821,10 @@ fn parse_async_function(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
                 symbol,
                 initializer: None,
             })?;
-            let element = parser.push(NodeList {
+            let element = Some(parser.push(NodeList {
                 item: element,
                 next: None,
-            })?;
-            let element = Some(element);
+            })?);
             parser.peek();
             // TODO: Improve error her if no => is found
             parser.no_line_terminator()?;

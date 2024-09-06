@@ -228,7 +228,7 @@ impl Error {
                         .as_block()
                 )?;
             }
-            ErrorKind::IdRange(x) => {
+            ErrorKind::IdRange(_) => {
                 write!(w, "Id range overflowed, source code to large to parse.")?;
             }
         }

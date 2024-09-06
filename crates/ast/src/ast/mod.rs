@@ -15,6 +15,11 @@ use common::{
     thinvec::ThinVec,
 };
 
+mod list;
+pub use list::{
+    ListStorage, NodeList, NodeListId, OptionListStorage, OptionNodeList, OptionNodeListId,
+};
+
 id!(pub struct NodeId<T>);
 
 impl<T: Node> NodeId<T> {
@@ -48,48 +53,6 @@ impl NodeId<()> {
             id: self.id,
             _marker: PhantomData,
         }
-    }
-}
-
-/// A generic list node
-pub struct NodeList<T> {
-    /// The id of the current item
-    pub item: NodeId<T>,
-    /// The id of the next item, if it exists.
-    pub next: Option<NodeListId<T>>,
-}
-
-impl<T> PartialEq for NodeList<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.item == other.item && self.next == other.next
-    }
-}
-impl<T> Eq for NodeList<T> {}
-impl<T> Hash for NodeList<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.item.hash(state);
-        self.next.hash(state);
-    }
-}
-
-/// Shorthand for `NodeId<NodeList<T>>`;
-pub type NodeListId<T> = NodeId<NodeList<T>>;
-
-pub type ListStorage = NodeList<()>;
-
-unsafe impl<T: Any> Node for NodeList<T> {
-    type Storage = ListStorage;
-
-    fn into_storage(self) -> Self::Storage {
-        unsafe { std::mem::transmute(self) }
-    }
-
-    fn from_storage_ref(storage: &Self::Storage) -> &Self {
-        unsafe { std::mem::transmute(storage) }
-    }
-
-    fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
-        unsafe { std::mem::transmute(storage) }
     }
 }
 
@@ -274,6 +237,24 @@ where
         item: NodeId<T>,
     ) -> Result<(), IdRangeError> {
         let list_idx = self.push(NodeList { item, next: None })?;
+
+        if let Some(x) = *current {
+            self[x].next = Some(list_idx);
+        }
+
+        *current = Some(list_idx);
+        *head = head.or(*current);
+
+        Ok(())
+    }
+
+    pub fn push_option_list<T: Node>(
+        &mut self,
+        head: &mut Option<OptionNodeListId<T>>,
+        current: &mut Option<OptionNodeListId<T>>,
+        item: Option<NodeId<T>>,
+    ) -> Result<(), IdRangeError> {
+        let list_idx = self.push(OptionNodeList { item, next: None })?;
 
         if let Some(x) = *current {
             self[x].next = Some(list_idx);

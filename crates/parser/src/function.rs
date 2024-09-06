@@ -63,7 +63,7 @@ pub fn parse_function(
             }
             _ => {
                 let elem = parser.parse()?;
-                parser.push_list(&mut head, &mut cur, elem);
+                parser.push_list(&mut head, &mut cur, elem)?;
                 if !parser.eat(t!(",")) {
                     break;
                 }
@@ -121,7 +121,7 @@ pub fn parse_setter(parser: &mut Parser) -> Result<NodeId<Function>> {
     expect!(parser,"(" => "expected start of setter parameters");
     let param = parser.parse()?;
     let mut head = None;
-    parser.push_list(&mut head, &mut None, param);
+    parser.push_list(&mut head, &mut None, param)?;
     expect!(parser,")" => "setter must have a single parameter");
 
     let body = parse_function_body(parser)?;

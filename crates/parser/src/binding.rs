@@ -151,7 +151,7 @@ pub fn parse_object_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern
             _ => {
                 let prop = parse_binding_property(parser)?;
                 let item = parser.push(prop)?;
-                parser.push_list(&mut head, &mut cur, item);
+                parser.push_list(&mut head, &mut cur, item)?;
                 head = head.or(cur.into());
             }
         }
@@ -235,11 +235,11 @@ pub fn parse_array_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern>
             }
             t!(",") => {
                 parser.next();
-                parser.push_list(&mut head, &mut cur, None);
+                parser.push_option_list(&mut head, &mut cur, None)?;
             }
             _ => {
                 let item = parser.parse()?;
-                parser.push_list(&mut head, &mut cur, Some(item));
+                parser.push_option_list(&mut head, &mut cur, Some(item))?;
                 if !parser.eat(t!(",")) {
                     break;
                 }

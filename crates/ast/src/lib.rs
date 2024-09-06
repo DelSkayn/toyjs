@@ -1,13 +1,15 @@
 use std::hash::BuildHasherDefault;
 
-use ast::ListStorage;
+use ast::{ListStorage, OptionListStorage};
 use common::{
     hasher::Hasher, id::collections::IdSet, number::Number, span::Span, string::String,
     thinvec::ThinVec,
 };
 
 mod ast;
-pub use ast::{Ast as GenAst, Node, NodeId, NodeList, NodeListId};
+pub use ast::{
+    Ast as GenAst, Node, NodeId, NodeList, NodeListId, OptionNodeList, OptionNodeListId,
+};
 
 #[cfg(feature = "visitor")]
 pub mod visitor;
@@ -46,6 +48,7 @@ library! {Library{
     symbol: ThinVec<Symbol>,
 
     lists: ThinVec<ListStorage>,
+    option_lists: ThinVec<OptionListStorage>,
 
     numbers: LibrarySet<Number>,
     strings: LibrarySet<String>,
@@ -85,7 +88,7 @@ ast_enum! {
             rest: Option<NodeId<Symbol>>,
         },
         Array {
-            elements: Option<NodeListId<Option<NodeId<BindingElement>>>>,
+            elements: Option<OptionNodeListId<BindingElement>>,
             rest: Option<NodeId<IdentOrPattern>>,
         },
     }

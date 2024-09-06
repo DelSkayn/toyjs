@@ -77,11 +77,11 @@ impl Parse for NodeList<Expr> {
         let mut head: Option<NodeListId<Expr>> = None;
         let mut cur = None;
 
-        parser.push_list(&mut head, &mut cur, first);
+        parser.push_list(&mut head, &mut cur, first)?;
 
         while parser.eat(t!(",")) {
             let first = parser.parse()?;
-            parser.push_list(&mut head, &mut cur, first);
+            parser.push_list(&mut head, &mut cur, first)?;
         }
 
         Ok(head.unwrap())
