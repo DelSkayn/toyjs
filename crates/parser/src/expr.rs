@@ -77,11 +77,11 @@ impl Parse for NodeList<Expr> {
         let mut head: Option<NodeListId<Expr>> = None;
         let mut cur = None;
 
-        parser.push_list(&mut head, &mut cur, first)?;
+        parser.push_list(&mut head, &mut cur, first);
 
         while parser.eat(t!(",")) {
             let first = parser.parse()?;
-            parser.push_list(&mut head, &mut cur, first)?;
+            parser.push_list(&mut head, &mut cur, first);
         }
 
         Ok(head.unwrap())
@@ -93,7 +93,7 @@ impl Parse for Expr {
         if !parser.state.contains(ParserState::YieldIdent) && parser.eat(t!("yield")) {
             let star = parser.eat(t!("*"));
             let expr = parser.parse()?;
-            return Ok(parser.push(Expr::Yield { star, expr })?);
+            return Ok(parser.push(Expr::Yield { star, expr }));
         }
         pratt_parse_expr(parser, 0)
     }
@@ -115,19 +115,19 @@ fn parse_prefix_op(parser: &mut Parser, r_bp: u8) -> Result<NodeId<Expr>> {
                 if token.kind != t!("target") {
                     unexpected!(parser, token.kind, "target");
                 }
-                let expr = parser.push(PrimeExpr::NewTarget)?;
-                return Ok(parser.push(Expr::Prime { expr })?);
+                let expr = parser.push(PrimeExpr::NewTarget);
+                return Ok(parser.push(Expr::Prime { expr }));
             }
             let expr = pratt_parse_expr(parser, r_bp)?;
             return Ok(parser.push(Expr::Prefix {
                 op: PrefixOp::New,
                 expr,
-            })?);
+            }));
         }
         t!("await") => {
             if parser.state.contains(ParserState::AwaitIdent) {
                 let (expr, _) = parse_prime(parser)?;
-                return Ok(parser.push(Expr::Prime { expr })?);
+                return Ok(parser.push(Expr::Prime { expr }));
             } else {
                 PrefixOp::Await
             }
@@ -145,7 +145,7 @@ fn parse_prefix_op(parser: &mut Parser, r_bp: u8) -> Result<NodeId<Expr>> {
     parser.next();
 
     let expr = pratt_parse_expr(parser, r_bp)?;
-    Ok(parser.push(Expr::Prefix { op: operator, expr })?)
+    Ok(parser.push(Expr::Prefix { op: operator, expr }))
 }
 
 /// Parsers any postfix operator, called in a pratt parser.
@@ -160,27 +160,27 @@ fn parse_postfix_op(parser: &mut Parser, _l_bp: u8, lhs: NodeId<Expr>) -> Result
             parser.next();
             let index = parser.parse()?;
             expect!(parser, "]");
-            return Ok(parser.push(Expr::Index { index, expr: lhs })?);
+            return Ok(parser.push(Expr::Index { index, expr: lhs }));
         }
         t!(".") => {
             parser.next();
             let ident = parse_ident_name(parser)?;
-            return Ok(parser.push(Expr::Dot { ident, expr: lhs })?);
+            return Ok(parser.push(Expr::Dot { ident, expr: lhs }));
         }
         t!("(") => {
             parser.next();
             let args = parse_arguments(parser)?;
-            return Ok(parser.push(Expr::Call { args, expr: lhs })?);
+            return Ok(parser.push(Expr::Call { args, expr: lhs }));
         }
         t!("` ${") | t!("``") => {
             let template = parse_template(parser)?;
-            return Ok(parser.push(Expr::TaggedTemplate { tag: lhs, template })?);
+            return Ok(parser.push(Expr::TaggedTemplate { tag: lhs, template }));
         }
         x => panic!("`parse_postfix_op` called with not a token {:?}", x),
     };
     parser.next();
 
-    Ok(parser.push(Expr::Postfix { op, expr: lhs })?)
+    Ok(parser.push(Expr::Postfix { op, expr: lhs }))
 }
 
 /// Parsers any infix operator, called in a pratt parser.
@@ -227,7 +227,7 @@ fn parse_infix_op(
                     let res = parser.push(Expr::Destructure {
                         pattern,
                         expr: right,
-                    })?;
+                    });
                     return Ok(res);
                 }
             }
@@ -253,8 +253,8 @@ fn parse_infix_op(
                 cond: lhs,
                 then,
                 r#else,
-            })?;
-            return Ok(parser.push(Expr::Ternary { ternary })?);
+            });
+            return Ok(parser.push(Expr::Ternary { ternary }));
         }
         _ => {
             panic!("`parse_infix_op` called without a infix operator")
@@ -272,7 +272,7 @@ fn parse_infix_op(
         op,
         left: lhs,
         right,
-    })?)
+    }))
 }
 
 /// The pratt parser, uses binding power to parse operator with correct precedence.
@@ -295,14 +295,14 @@ fn pratt_parse_expr(parser: &mut Parser, min_bp: u8) -> Result<NodeId<Expr>> {
                 let res = parser.push(Expr::Destructure {
                     pattern,
                     expr: right,
-                })?;
+                });
                 return Ok(res);
             } else {
                 return Err(Error::new(ErrorKind::CoveredObjectLiteral, span));
             }
         }
 
-        parser.push(Expr::Prime { expr })?
+        parser.push(Expr::Prime { expr })
     };
 
     let mut lhs_span = start_span.covers(parser.last_span());
@@ -350,8 +350,8 @@ fn parse_arguments(parser: &mut Parser) -> Result<Option<NodeId<NodeList<Argumen
             _ => {}
         };
         let expr = parser.parse()?;
-        let argument = parser.push(Argument { is_spread, expr })?;
-        parser.push_list(&mut head, &mut cur, argument)?;
+        let argument = parser.push(Argument { is_spread, expr });
+        parser.push_list(&mut head, &mut cur, argument);
         if !parser.eat(t!(",")) {
             break;
         }
@@ -410,7 +410,7 @@ pub fn reparse_destructuring(
             .ok_or_else(|| Error::new(ErrorKind::InvalidDestructuringAssigment, span))?,
         _ => return Ok(None),
     };
-    Ok(Some(parser.push(pat)?))
+    Ok(Some(parser.push(pat)))
 }
 
 #[cfg(test)]

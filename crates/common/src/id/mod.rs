@@ -63,10 +63,12 @@ macro_rules! id {
         }
 
         impl$( <$($gen),* > )? $crate::id::Id for $name$( <$($gen),* > )?{
+            #[inline]
             fn idx(self) -> usize{
                 self.id.idx()
             }
 
+            #[inline]
             fn from_idx(idx: usize) -> Result<Self, $crate::id::IdRangeError>{
                 let id = ::std::num::NonZeroU32::from_idx(idx)?;
                 Ok(Self{
@@ -97,6 +99,7 @@ macro_rules! id {
                     }
             };
 
+            #[inline]
             $vis const fn from_u32(index: u32) -> Option<Self> {
                 if index > (u32::MAX - 1) {
                     return None;
@@ -112,10 +115,12 @@ macro_rules! id {
                 }
             }
 
+            #[inline]
             $vis const fn into_u32(self) -> u32 {
                 self.id.get() ^ u32::MAX
             }
 
+            #[inline]
             $vis fn next(self) -> Option<Self>{
                 Self::from_u32(self.into_u32() + 1)
             }

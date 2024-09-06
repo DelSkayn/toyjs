@@ -224,7 +224,7 @@ pub fn parse_script(parser: &mut Parser) -> Result<ParsedScript> {
             strict = true;
             parser.state.insert(ParserState::Strict);
         }
-        parser.push_list(&mut head, &mut cur, stmt)?;
+        parser.push_list(&mut head, &mut cur, stmt);
     }
     Ok(ParsedScript { stmt: head, strict })
 }

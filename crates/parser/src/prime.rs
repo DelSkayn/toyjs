@@ -33,16 +33,16 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
                 let param = parser.push(BindingElement::SingleName {
                     symbol,
                     initializer: None,
-                })?;
+                });
                 let params = Some(parser.push(NodeList {
                     item: param,
                     next: None,
-                })?);
+                }));
                 let function = parse_arrow_function(parser, params, None, FunctionKind::Simple)?;
-                let id = parser.push(PrimeExpr::Function { function })?;
+                let id = parser.push(PrimeExpr::Function { function });
                 Ok((id, None))
             } else {
-                let id = parser.push(PrimeExpr::Ident { symbol })?;
+                let id = parser.push(PrimeExpr::Ident { symbol });
                 Ok((id, None))
             }
         }
@@ -50,29 +50,29 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
             parser.next();
             let id = parser.push(PrimeExpr::Number {
                 value: token.data.unwrap().entype(),
-            })?;
+            });
             Ok((id, None))
         }
         t!("string") | t!("``") => {
             parser.next();
             let id = parser.push(PrimeExpr::String {
                 value: token.data.unwrap().entype(),
-            })?;
+            });
             Ok((id, None))
         }
         t!("` ${") => {
             let template = parse_template(parser)?;
-            let id = parser.push(PrimeExpr::Template { template })?;
+            let id = parser.push(PrimeExpr::Template { template });
             Ok((id, None))
         }
         t!("true") => {
             parser.next();
-            let id = parser.push(PrimeExpr::Boolean { value: true })?;
+            let id = parser.push(PrimeExpr::Boolean { value: true });
             Ok((id, None))
         }
         t!("false") => {
             parser.next();
-            let id = parser.push(PrimeExpr::Boolean { value: false })?;
+            let id = parser.push(PrimeExpr::Boolean { value: false });
             Ok((id, None))
         }
         t!("/") | t!("/=") => {
@@ -83,33 +83,33 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
             }
             let id = parser.push(PrimeExpr::Regex {
                 regex: token.data.unwrap().entype(),
-            })?;
+            });
             Ok((id, None))
         }
         t!("null") => {
             parser.next();
-            let id = parser.push(PrimeExpr::Null)?;
+            let id = parser.push(PrimeExpr::Null);
             Ok((id, None))
         }
         t!("this") => {
             parser.next();
-            let id = parser.push(PrimeExpr::This)?;
+            let id = parser.push(PrimeExpr::This);
             Ok((id, None))
         }
         t!("super") => {
             parser.next();
-            let id = parser.push(PrimeExpr::Super)?;
+            let id = parser.push(PrimeExpr::Super);
             Ok((id, None))
         }
         t!("{") => {
             parser.next();
             let (object, span) = parse_object_literal(parser)?;
-            Ok((parser.push(PrimeExpr::Object { object })?, span))
+            Ok((parser.push(PrimeExpr::Object { object }), span))
         }
         t!("[") => {
             parser.next();
             let array = parse_array_literal(parser)?;
-            Ok((parser.push(PrimeExpr::Array { array })?, None))
+            Ok((parser.push(PrimeExpr::Array { array }), None))
         }
         t!("function") => {
             parser.next();
@@ -119,13 +119,13 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
                 FunctionKind::Simple
             };
             let function = parse_function(parser, FunctionCtx::Expression, kind)?;
-            Ok((parser.push(PrimeExpr::Function { function })?, None))
+            Ok((parser.push(PrimeExpr::Function { function }), None))
         }
         t!("async") => parse_async_function(parser).map(|x| (x, None)),
         t!("class") => {
             parser.next();
             let class = parse_class(parser, false)?;
-            Ok((parser.push(PrimeExpr::Class { class })?, None))
+            Ok((parser.push(PrimeExpr::Class { class }), None))
         }
         t!("(") => {
             parser.next();
@@ -139,16 +139,16 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
                 let param = parser.push(BindingElement::SingleName {
                     symbol,
                     initializer: None,
-                })?;
+                });
                 let params = Some(parser.push(NodeList {
                     item: param,
                     next: None,
-                })?);
+                }));
                 let function = parse_arrow_function(parser, params, None, FunctionKind::Simple)?;
-                let id = parser.push(PrimeExpr::Function { function })?;
+                let id = parser.push(PrimeExpr::Function { function });
                 Ok((id, None))
             } else {
-                let id = parser.push(PrimeExpr::Ident { symbol })?;
+                let id = parser.push(PrimeExpr::Ident { symbol });
                 Ok((id, None))
             }
         }
@@ -183,7 +183,7 @@ fn parse_covered_expression(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
             parser.state.insert(ParserState::In);
             let expr = parser.parse()?;
         });
-        parser.push_list(&mut head, &mut cur, expr)?;
+        parser.push_list(&mut head, &mut cur, expr);
         if !parser.eat(t!(",")) {
             break;
         }
@@ -206,7 +206,7 @@ fn parse_covered_expression(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
         let Some(expr) = head else {
             unreachable!();
         };
-        let id = parser.push(PrimeExpr::Covered { expr })?;
+        let id = parser.push(PrimeExpr::Covered { expr });
         Ok(id)
     }
 }
@@ -217,13 +217,13 @@ pub fn parse_template(parser: &mut Parser) -> Result<NodeId<Template>> {
     match token.kind {
         t!("``") => {
             let text = token.data.unwrap().entype();
-            Ok(parser.push(Template::Tail { text })?)
+            Ok(parser.push(Template::Tail { text }))
         }
         t!("` ${") => {
             let expr = parser.parse()?;
             let text = token.data.unwrap().entype();
             let next = parse_template(parser)?;
-            Ok(parser.push(Template::Head { text, expr, next })?)
+            Ok(parser.push(Template::Head { text, expr, next }))
         }
         t!("}") => {
             let token = parser.lexer.relex_template(token);
@@ -232,11 +232,11 @@ pub fn parse_template(parser: &mut Parser) -> Result<NodeId<Template>> {
                     let expr = parser.parse()?;
                     let text = token.data.unwrap().entype();
                     let next = parse_template(parser)?;
-                    Ok(parser.push(Template::Head { text, expr, next })?)
+                    Ok(parser.push(Template::Head { text, expr, next }))
                 }
                 t!("} `") => {
                     let text = token.data.unwrap().entype();
-                    Ok(parser.push(Template::Tail { text })?)
+                    Ok(parser.push(Template::Tail { text }))
                 }
                 x => unexpected!(parser, x, "} `"),
             }
@@ -261,7 +261,7 @@ fn parse_object_literal(parser: &mut Parser) -> Result<(ObjectLiteral, Option<Sp
     let mut last = parser.push(NodeList {
         item: property,
         next: None,
-    })?;
+    });
     let res = ObjectLiteral::Item { definition: last };
     loop {
         match parser.peek_kind() {
@@ -281,7 +281,7 @@ fn parse_object_literal(parser: &mut Parser) -> Result<(ObjectLiteral, Option<Sp
                 let new_last = parser.push(NodeList {
                     item: property,
                     next: None,
-                })?;
+                });
                 parser[last].next = Some(new_last);
                 last = new_last;
             }
@@ -318,7 +318,7 @@ fn parse_property_definition(
         t!("...") => {
             parser.next();
             let expr = parser.parse()?;
-            let id = parser.push(PropertyDefinition::Rest { rest: expr })?;
+            let id = parser.push(PropertyDefinition::Rest { rest: expr });
             return Ok((id, None));
         }
         t!("*") => {
@@ -326,7 +326,7 @@ fn parse_property_definition(
             let property = parse_property_name(parser)?;
             let func = parse_function(parser, FunctionCtx::Method, FunctionKind::Generator)?;
             return Ok((
-                parser.push(PropertyDefinition::Method { property, func })?,
+                parser.push(PropertyDefinition::Method { property, func }),
                 None,
             ));
         }
@@ -336,12 +336,12 @@ fn parse_property_definition(
                 let property = parse_property_name(parser)?;
                 let func = parse_getter(parser)?;
                 return Ok((
-                    parser.push(PropertyDefinition::Getter { property, func })?,
+                    parser.push(PropertyDefinition::Getter { property, func }),
                     None,
                 ));
             }
             PropertyName::Ident {
-                name: parser.push(String::new_const("get"))?,
+                name: parser.push(String::new_const("get")),
             }
         }
         t!("set") => {
@@ -350,19 +350,19 @@ fn parse_property_definition(
                 let property = parse_property_name(parser)?;
                 let func = parse_setter(parser)?;
                 return Ok((
-                    parser.push(PropertyDefinition::Setter { property, func })?,
+                    parser.push(PropertyDefinition::Setter { property, func }),
                     None,
                 ));
             }
             PropertyName::Ident {
-                name: parser.push(String::new_const("set"))?,
+                name: parser.push(String::new_const("set")),
             }
         }
         t!("async") => {
             parser.next();
             if let t!(":") = parser.peek_kind() {
                 PropertyName::Ident {
-                    name: parser.push(String::new_const("async"))?,
+                    name: parser.push(String::new_const("async")),
                 }
             } else {
                 parser.no_line_terminator()?;
@@ -374,7 +374,7 @@ fn parse_property_definition(
                 let property = parse_property_name(parser)?;
                 let func = parse_function(parser, FunctionCtx::Method, kind)?;
                 return Ok((
-                    parser.push(PropertyDefinition::Method { property, func })?,
+                    parser.push(PropertyDefinition::Method { property, func }),
                     None,
                 ));
             }
@@ -386,7 +386,7 @@ fn parse_property_definition(
         t!(":") => {
             parser.next();
             let expr = parser.parse()?;
-            let id = parser.push(PropertyDefinition::Define { property, expr })?;
+            let id = parser.push(PropertyDefinition::Define { property, expr });
             Ok((id, None))
         }
         t!("=") => {
@@ -396,12 +396,12 @@ fn parse_property_definition(
                 let symbol = parser.push(Symbol {
                     name,
                     span: token.span,
-                })?;
+                });
 
                 let id = parser.push(PropertyDefinition::Covered {
                     symbol,
                     initializer: expr,
-                })?;
+                });
                 Ok((id, Some(span)))
             } else {
                 unexpected!(parser, t!("="), ":")
@@ -410,7 +410,7 @@ fn parse_property_definition(
         t!("(") => {
             let func = parse_function(parser, FunctionCtx::Method, FunctionKind::Simple)?;
             Ok((
-                parser.push(PropertyDefinition::Method { property, func })?,
+                parser.push(PropertyDefinition::Method { property, func }),
                 None,
             ))
         }
@@ -419,8 +419,8 @@ fn parse_property_definition(
                 let ident = parser.push(Symbol {
                     name,
                     span: token.span,
-                })?;
-                let id = parser.push(PropertyDefinition::Ident { ident })?;
+                });
+                let id = parser.push(PropertyDefinition::Ident { ident });
                 Ok((id, None))
             } else {
                 unexpected!(parser, x, ":")
@@ -471,8 +471,8 @@ fn parse_array_literal(parser: &mut Parser) -> Result<Option<NodeListId<ArrayLit
                 let node = parser.push(ArrayLiteralEntry {
                     expr: None,
                     is_spread: false,
-                })?;
-                parser.push_list(&mut head, &mut cur, node)?;
+                });
+                parser.push_list(&mut head, &mut cur, node);
             }
             t!("...") => {
                 parser.next();
@@ -480,8 +480,8 @@ fn parse_array_literal(parser: &mut Parser) -> Result<Option<NodeListId<ArrayLit
                 let node = parser.push(ArrayLiteralEntry {
                     expr: Some(expr),
                     is_spread: true,
-                })?;
-                parser.push_list(&mut head, &mut cur, node)?;
+                });
+                parser.push_list(&mut head, &mut cur, node);
                 if !parser.eat(t!(",")) {
                     break;
                 }
@@ -491,8 +491,8 @@ fn parse_array_literal(parser: &mut Parser) -> Result<Option<NodeListId<ArrayLit
                 let node = parser.push(ArrayLiteralEntry {
                     expr: Some(expr),
                     is_spread: false,
-                })?;
-                parser.push_list(&mut head, &mut cur, node)?;
+                });
+                parser.push_list(&mut head, &mut cur, node);
                 if !parser.eat(t!(",")) {
                     break;
                 }
@@ -516,12 +516,12 @@ pub fn reparse_arrow_function(
         let Some(param) = reparse_binding_element(parser, parser[expr].item)? else {
             unexpected!(parser,t!("=>") => "covered expression can't be parsed as parameters");
         };
-        let param = parser.push(param)?;
-        parser.push_list(&mut head, &mut prev, param)?;
+        let param = parser.push(param);
+        parser.push_list(&mut head, &mut prev, param);
         cur = parser[expr].next;
     }
     let function = parse_arrow_function(parser, head, rest, FunctionKind::Simple)?;
-    Ok(parser.push(PrimeExpr::Function { function })?)
+    Ok(parser.push(PrimeExpr::Function { function }))
 }
 
 fn reparse_binding_element(
@@ -538,7 +538,7 @@ fn reparse_binding_element(
                 let Some(pattern) = reparse_object_lit(parser, object)? else {
                     return Ok(None);
                 };
-                let pattern = parser.push(pattern)?;
+                let pattern = parser.push(pattern);
                 Ok(Some(BindingElement::Pattern {
                     pattern,
                     initializer: None,
@@ -548,7 +548,7 @@ fn reparse_binding_element(
                 let Some(pattern) = reparse_array_lit(parser, array)? else {
                     return Ok(None);
                 };
-                let pattern = parser.push(pattern)?;
+                let pattern = parser.push(pattern);
                 Ok(Some(BindingElement::Pattern {
                     pattern,
                     initializer: None,
@@ -617,7 +617,7 @@ pub fn reparse_object_lit(
                 let Some(element) = reparse_binding_element(parser, expr)? else {
                     return Ok(None);
                 };
-                let element = parser.push(element)?;
+                let element = parser.push(element);
                 BindingProperty::Property {
                     name: property,
                     element,
@@ -642,8 +642,8 @@ pub fn reparse_object_lit(
                 break;
             }
         };
-        let prop = parser.push(prop)?;
-        parser.push_list(&mut head, &mut cur, prop)?;
+        let prop = parser.push(prop);
+        parser.push_list(&mut head, &mut cur, prop);
 
         let Some(next) = parser[definition].next else {
             break;
@@ -682,14 +682,14 @@ pub fn reparse_array_lit(
                     let Some(elem) = reparse_ident_or_pattern(parser, x)? else {
                         return Ok(None);
                     };
-                    rest = Some(parser.push(elem)?);
+                    rest = Some(parser.push(elem));
                     break;
                 }
             } else {
                 let Some(elem) = reparse_binding_element(parser, x)? else {
                     return Ok(None);
                 };
-                Some(parser.push(elem)?)
+                Some(parser.push(elem))
             }
         } else {
             None
@@ -697,7 +697,7 @@ pub fn reparse_array_lit(
         prev = Some(parser.push(OptionNodeList {
             item: element,
             next: prev,
-        })?);
+        }));
         head = head.or(prev);
     }
 
@@ -720,14 +720,14 @@ fn reparse_ident_or_pattern(
             let Some(pat) = reparse_object_lit(parser, object)? else {
                 return Ok(None);
             };
-            let pattern = parser.push(pat)?;
+            let pattern = parser.push(pat);
             Ok(Some(IdentOrPattern::Pattern { pattern }))
         }
         PrimeExpr::Array { array } => {
             let Some(pat) = reparse_array_lit(parser, array)? else {
                 return Ok(None);
             };
-            let pattern = parser.push(pat)?;
+            let pattern = parser.push(pat);
             Ok(Some(IdentOrPattern::Pattern { pattern }))
         }
         _ => Ok(None),
@@ -759,7 +759,7 @@ fn parse_arrow_function(
             {
                 parser.state.insert(ParserState::Strict);
             }
-            parser.push_list(&mut head, &mut cur, stmt)?;
+            parser.push_list(&mut head, &mut cur, stmt);
         }
         ArrowFunctionBody::Stmt { body: head }
     } else {
@@ -776,7 +776,7 @@ fn parse_arrow_function(
         params,
         rest_param,
         body,
-    })?)
+    }))
 }
 
 fn parse_async_function(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
@@ -793,7 +793,7 @@ fn parse_async_function(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
                 FunctionKind::Async
             };
             let function = parse_function(parser, FunctionCtx::Expression, kind)?;
-            Ok(parser.push(PrimeExpr::Function { function })?)
+            Ok(parser.push(PrimeExpr::Function { function }))
         }
         t!("(") => {
             parser.next();
@@ -805,7 +805,7 @@ fn parse_async_function(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
                     rest = Some(parser.parse()?);
                 } else {
                     let element = parser.parse()?;
-                    parser.push_list(&mut head, &mut cur, element)?;
+                    parser.push_list(&mut head, &mut cur, element);
                 }
             }
             parser.peek();
@@ -813,24 +813,24 @@ fn parse_async_function(parser: &mut Parser) -> Result<NodeId<PrimeExpr>> {
             parser.no_line_terminator()?;
             expect!(parser, "=>");
             let function = parse_arrow_function(parser, head, rest, FunctionKind::Async)?;
-            Ok(parser.push(PrimeExpr::Function { function })?)
+            Ok(parser.push(PrimeExpr::Function { function }))
         }
         _ => {
             let symbol = parser.parse()?;
             let element = parser.push(BindingElement::SingleName {
                 symbol,
                 initializer: None,
-            })?;
+            });
             let element = Some(parser.push(NodeList {
                 item: element,
                 next: None,
-            })?);
+            }));
             parser.peek();
             // TODO: Improve error her if no => is found
             parser.no_line_terminator()?;
             expect!(parser, "=>");
             let function = parse_arrow_function(parser, element, None, FunctionKind::Async)?;
-            Ok(parser.push(PrimeExpr::Function { function })?)
+            Ok(parser.push(PrimeExpr::Function { function }))
         }
     }
 }

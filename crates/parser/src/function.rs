@@ -63,7 +63,7 @@ pub fn parse_function(
             }
             _ => {
                 let elem = parser.parse()?;
-                parser.push_list(&mut head, &mut cur, elem)?;
+                parser.push_list(&mut head, &mut cur, elem);
                 if !parser.eat(t!(",")) {
                     break;
                 }
@@ -88,7 +88,7 @@ pub fn parse_function(
             rest_param,
             body: body.body,
             is_strict: body.is_strict,
-        })?,
+        }),
         FunctionCtx::Stmt => parser.push(Function::Declared {
             name: name.unwrap(),
             kind,
@@ -96,7 +96,7 @@ pub fn parse_function(
             rest_param,
             body: body.body,
             is_strict: body.is_strict,
-        })?,
+        }),
     };
     Ok(function)
 }
@@ -113,7 +113,7 @@ pub fn parse_getter(parser: &mut Parser) -> Result<NodeId<Function>> {
         params: None,
         rest_param: None,
         body: body.body,
-    })?)
+    }))
 }
 
 /// Parses the parameters and body of a setter method:
@@ -121,7 +121,7 @@ pub fn parse_setter(parser: &mut Parser) -> Result<NodeId<Function>> {
     expect!(parser,"(" => "expected start of setter parameters");
     let param = parser.parse()?;
     let mut head = None;
-    parser.push_list(&mut head, &mut None, param)?;
+    parser.push_list(&mut head, &mut None, param);
     expect!(parser,")" => "setter must have a single parameter");
 
     let body = parse_function_body(parser)?;
@@ -132,7 +132,7 @@ pub fn parse_setter(parser: &mut Parser) -> Result<NodeId<Function>> {
         params: head,
         rest_param: None,
         body: body.body,
-    })?)
+    }))
 }
 
 /// Parses the body of a function:
@@ -159,7 +159,7 @@ pub fn parse_function_body(parser: &mut Parser) -> Result<FunctionBody> {
         {
             parser.state.insert(ParserState::Strict);
         }
-        parser.push_list(&mut head, &mut cur, stmt)?;
+        parser.push_list(&mut head, &mut cur, stmt);
     }
     let is_strict = parser.state.contains(ParserState::Strict);
     parser.state = state;

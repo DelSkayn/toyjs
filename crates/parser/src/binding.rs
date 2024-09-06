@@ -11,11 +11,11 @@ impl Parse for IdentOrPattern {
         match parser.peek_kind() {
             t!("{") | t!("[") => {
                 let pattern = parser.parse()?;
-                Ok(parser.push(IdentOrPattern::Pattern { pattern })?)
+                Ok(parser.push(IdentOrPattern::Pattern { pattern }))
             }
             _ => {
                 let name = parser.parse()?;
-                Ok(parser.push(IdentOrPattern::Ident { name })?)
+                Ok(parser.push(IdentOrPattern::Ident { name }))
             }
         }
     }
@@ -35,8 +35,8 @@ pub fn parse_ident_name(parser: &mut Parser) -> Result<NodeId<String>> {
     let next = parser.next();
     match next.kind {
         TokenKind::Ident => return Ok(next.data.unwrap().entype()),
-        TokenKind::Keyword(x) => return Ok(parser.push(x.to_string())?),
-        TokenKind::UnreservedKeyword(x) => return Ok(parser.push(x.to_string())?),
+        TokenKind::Keyword(x) => return Ok(parser.push(x.to_string())),
+        TokenKind::UnreservedKeyword(x) => return Ok(parser.push(x.to_string())),
         x => unexpected!(parser, x, "ident"),
     }
 }
@@ -45,7 +45,7 @@ impl Parse for Symbol {
     fn parse(parser: &mut Parser) -> Result<NodeId<Symbol>> {
         let name = parse_ident(parser)?;
         let span = *parser.last_span();
-        let res = parser.push(Symbol { name, span })?;
+        let res = parser.push(Symbol { name, span });
         Ok(res)
     }
 }
@@ -56,14 +56,14 @@ pub fn parse_ident(parser: &mut Parser) -> Result<NodeId<String>> {
         t!("ident") => Ok(next.data.unwrap().entype()),
         t!("yield") => {
             if parser.state.contains(ParserState::YieldIdent) {
-                Ok(parser.push(String::new_const("yield"))?)
+                Ok(parser.push(String::new_const("yield")))
             } else {
                 unexpected!(parser,t!("yield"),"ident" => "not allowed as an identifier in this context");
             }
         }
         t!("await") => {
             if parser.state.contains(ParserState::AwaitIdent) {
-                Ok(parser.push(String::new_const("await"))?)
+                Ok(parser.push(String::new_const("await")))
             } else {
                 unexpected!(parser,t!("await"),"ident" => "not allowed as an identifier in this context");
             }
@@ -72,60 +72,60 @@ pub fn parse_ident(parser: &mut Parser) -> Result<NodeId<String>> {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("let"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("let"))?)
+                Ok(parser.push(String::new_const("let")))
             }
         }
         t!("static") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("static"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("static"))?)
+                Ok(parser.push(String::new_const("static")))
             }
         }
         t!("implements") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("implements"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("implements"))?)
+                Ok(parser.push(String::new_const("implements")))
             }
         }
         t!("interface") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("interface"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("interface"))?)
+                Ok(parser.push(String::new_const("interface")))
             }
         }
         t!("package") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("package"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("package"))?)
+                Ok(parser.push(String::new_const("package")))
             }
         }
         t!("private") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("private"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("private"))?)
+                Ok(parser.push(String::new_const("private")))
             }
         }
         t!("protected") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("protected"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("protected"))?)
+                Ok(parser.push(String::new_const("protected")))
             }
         }
         t!("public") => {
             if parser.state.contains(ParserState::Strict) {
                 unexpected!(parser,t!("public"),"ident" => "not allowed as an identifier in strict mode");
             } else {
-                Ok(parser.push(String::new_const("public"))?)
+                Ok(parser.push(String::new_const("public")))
             }
         }
         // Next keywords are always allowed as identifiers.
-        TokenKind::UnreservedKeyword(x) => Ok(parser.push(x.to_string())?),
+        TokenKind::UnreservedKeyword(x) => Ok(parser.push(x.to_string())),
         x => unexpected!(parser, x, "ident"),
     }
 }
@@ -150,8 +150,8 @@ pub fn parse_object_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern
             }
             _ => {
                 let prop = parse_binding_property(parser)?;
-                let item = parser.push(prop)?;
-                parser.push_list(&mut head, &mut cur, item)?;
+                let item = parser.push(prop);
+                parser.push_list(&mut head, &mut cur, item);
                 head = head.or(cur.into());
             }
         }
@@ -164,7 +164,7 @@ pub fn parse_object_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern
     Ok(parser.push(BindingPattern::Object {
         properties: head,
         rest,
-    })?)
+    }))
 }
 
 pub fn parse_binding_property(parser: &mut Parser) -> Result<BindingProperty> {
@@ -186,7 +186,7 @@ pub fn parse_binding_property(parser: &mut Parser) -> Result<BindingProperty> {
                 value: next.data.unwrap().entype(),
             };
             let element = parse_binding_element(parser)?;
-            let element = parser.push(element)?;
+            let element = parser.push(element);
             Ok(BindingProperty::Property { name, element })
         }
         t!("[") => {
@@ -208,7 +208,7 @@ pub fn parse_binding_property(parser: &mut Parser) -> Result<BindingProperty> {
             } else {
                 let initializer = parser.eat(t!("=")).then(|| parser.parse()).transpose()?;
 
-                let symbol = parser.push(Symbol { name, span })?;
+                let symbol = parser.push(Symbol { name, span });
 
                 Ok(BindingProperty::Binding {
                     symbol,
@@ -235,11 +235,11 @@ pub fn parse_array_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern>
             }
             t!(",") => {
                 parser.next();
-                parser.push_option_list(&mut head, &mut cur, None)?;
+                parser.push_option_list(&mut head, &mut cur, None);
             }
             _ => {
                 let item = parser.parse()?;
-                parser.push_option_list(&mut head, &mut cur, Some(item))?;
+                parser.push_option_list(&mut head, &mut cur, Some(item));
                 if !parser.eat(t!(",")) {
                     break;
                 }
@@ -251,13 +251,13 @@ pub fn parse_array_pattern(parser: &mut Parser) -> Result<NodeId<BindingPattern>
     Ok(parser.push(BindingPattern::Array {
         elements: head,
         rest,
-    })?)
+    }))
 }
 
 impl Parse for BindingElement {
     fn parse(parser: &mut Parser) -> Result<NodeId<Self>> {
         let p = parse_binding_element(parser)?;
-        Ok(parser.push(p)?)
+        Ok(parser.push(p))
     }
 }
 

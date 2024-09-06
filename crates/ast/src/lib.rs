@@ -1,10 +1,7 @@
 use std::hash::BuildHasherDefault;
 
 use ast::{impl_display_debug, ListStorage, OptionListStorage};
-use common::{
-    hasher::Hasher, id::collections::IdSet, number::Number, span::Span, string::String,
-    thinvec::ThinVec,
-};
+use common::{hasher::Hasher, id::collections::IdSet, number::Number, span::Span, string::String};
 
 mod ast;
 pub use ast::{
@@ -17,38 +14,38 @@ pub mod visitor;
 type LibrarySet<T> = IdSet<u32, T, BuildHasherDefault<Hasher>>;
 
 library! {Library{
-    stmt: ThinVec<Stmt>,
+    stmt: Vec<Stmt>,
 
-    catch: ThinVec<CatchStmt>,
-    for_loop_head: ThinVec<ForLoopHead>,
+    catch: Vec<CatchStmt>,
+    for_loop_head: Vec<ForLoopHead>,
 
-    expr: ThinVec<Expr>,
-    exprs: ThinVec<NodeListId<Expr>>,
-    prime_exprs: ThinVec<PrimeExpr>,
-    tenary: ThinVec<Tenary>,
-    template: ThinVec<Template>,
+    expr: Vec<Expr>,
+    exprs: Vec<NodeListId<Expr>>,
+    prime_exprs: Vec<PrimeExpr>,
+    tenary: Vec<Tenary>,
+    template: Vec<Template>,
 
-    case: ThinVec<CaseItem>,
+    case: Vec<CaseItem>,
 
-    var_decl: ThinVec<VariableDecl>,
+    var_decl: Vec<VariableDecl>,
 
-    ident_pattern: ThinVec<IdentOrPattern>,
-    element: ThinVec<BindingElement>,
-    elements: ThinVec<NodeList<BindingElement>>,
-    property: ThinVec<BindingProperty>,
-    pattern: ThinVec<BindingPattern>,
+    ident_pattern: Vec<IdentOrPattern>,
+    element: Vec<BindingElement>,
+    elements: Vec<NodeList<BindingElement>>,
+    property: Vec<BindingProperty>,
+    pattern: Vec<BindingPattern>,
 
-    function: ThinVec<Function>,
-    argument: ThinVec<Argument>,
-    class: ThinVec<Class>,
-    class_member: ThinVec<ClassMember>,
-    array_literal: ThinVec<ArrayLiteralEntry>,
-    propery_definition: ThinVec<PropertyDefinition>,
+    function: Vec<Function>,
+    argument: Vec<Argument>,
+    class: Vec<Class>,
+    class_member: Vec<ClassMember>,
+    array_literal: Vec<ArrayLiteralEntry>,
+    propery_definition: Vec<PropertyDefinition>,
 
-    symbol: ThinVec<Symbol>,
+    symbol: Vec<Symbol>,
 
-    lists: ThinVec<ListStorage>,
-    option_lists: ThinVec<OptionListStorage>,
+    lists: Vec<ListStorage>,
+    option_lists: Vec<OptionListStorage>,
 
     numbers: LibrarySet<Number>,
     strings: LibrarySet<String>,

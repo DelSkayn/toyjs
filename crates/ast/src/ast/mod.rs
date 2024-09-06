@@ -7,18 +7,14 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use common::{
-    id,
-    id::{collections::IdSet, IdRangeError},
-    number::Number,
-    string::String,
-    thinvec::ThinVec,
-};
+use common::{id, id::collections::IdSet, number::Number, string::String, thinvec::ThinVec};
 
 mod list;
 pub use list::{
     ListStorage, NodeList, NodeListId, OptionListStorage, OptionNodeList, OptionNodeListId,
 };
+
+const TOO_MANY_NODES: &str = "The number of nodes exceeded the maximum number of u32::MAX - 1";
 
 #[cfg(feature = "print")]
 mod print;
@@ -30,6 +26,7 @@ pub use print::{AstDisplay, AstFormatter, AstRender};
 id!(pub struct NodeId<T>);
 
 impl<T: Node> NodeId<T> {
+    #[inline]
     pub fn index<L>(self, ast: &Ast<L>) -> &T
     where
         L: NodeLibrary + 'static,
@@ -38,6 +35,7 @@ impl<T: Node> NodeId<T> {
         &ast[self]
     }
 
+    #[inline]
     pub fn index_mut<L>(self, ast: &mut Ast<L>) -> &mut T
     where
         L: NodeLibrary + 'static,
@@ -46,6 +44,7 @@ impl<T: Node> NodeId<T> {
         &mut ast[self]
     }
 
+    #[inline]
     pub fn erase(self) -> NodeId<()> {
         NodeId {
             id: self.id,
@@ -68,21 +67,23 @@ pub trait NodeStorage<T: Node> {
 
     fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T>;
 
-    fn storage_push(&mut self, value: T) -> Option<u32>
+    fn storage_push(&mut self, value: T) -> u32
     where
         T::Storage: Eq + Hash;
 }
 
 impl<T: Node> NodeStorage<T> for Vec<T::Storage> {
-    fn storage_push(&mut self, value: T) -> Option<u32>
+    #[inline]
+    fn storage_push(&mut self, value: T) -> u32
     where
         T::Storage: Eq + Hash,
     {
-        let idx = self.len().try_into().ok()?;
+        let idx = self.len().try_into().expect(TOO_MANY_NODES);
         self.push(value.into_storage());
-        Some(idx)
+        idx
     }
 
+    #[inline]
     fn storage_get(&self, idx: u32) -> Option<&T> {
         let Some(x) = self.get(idx as usize) else {
             return None;
@@ -90,6 +91,7 @@ impl<T: Node> NodeStorage<T> for Vec<T::Storage> {
         Some(T::from_storage_ref(x))
     }
 
+    #[inline]
     fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
         let Some(x) = self.get_mut(idx as usize) else {
             return None;
@@ -99,15 +101,17 @@ impl<T: Node> NodeStorage<T> for Vec<T::Storage> {
 }
 
 impl<T: Node> NodeStorage<T> for ThinVec<T::Storage> {
-    fn storage_push(&mut self, value: T) -> Option<u32>
+    #[inline]
+    fn storage_push(&mut self, value: T) -> u32
     where
         T::Storage: Eq + Hash,
     {
-        let idx = self.len().try_into().ok()?;
+        let idx = self.len().try_into().expect(TOO_MANY_NODES);
         self.push(value.into_storage());
-        Some(idx)
+        idx
     }
 
+    #[inline]
     fn storage_get(&self, idx: u32) -> Option<&T> {
         let Some(x) = self.get(idx) else {
             return None;
@@ -115,6 +119,7 @@ impl<T: Node> NodeStorage<T> for ThinVec<T::Storage> {
         Some(T::from_storage_ref(x))
     }
 
+    #[inline]
     fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
         let Some(x) = self.get_mut(idx) else {
             return None;
@@ -124,13 +129,15 @@ impl<T: Node> NodeStorage<T> for ThinVec<T::Storage> {
 }
 
 impl<T: Node, S: BuildHasher + Default> NodeStorage<T> for IdSet<u32, T::Storage, S> {
-    fn storage_push(&mut self, value: T) -> Option<u32>
+    #[inline]
+    fn storage_push(&mut self, value: T) -> u32
     where
         T::Storage: Eq + Hash,
     {
-        self.push(value.into_storage()).ok()
+        self.push(value.into_storage()).unwrap()
     }
 
+    #[inline]
     fn storage_get(&self, idx: u32) -> Option<&T> {
         let Some(x) = self.get(idx) else {
             return None;
@@ -138,6 +145,7 @@ impl<T: Node, S: BuildHasher + Default> NodeStorage<T> for IdSet<u32, T::Storage
         Some(T::from_storage_ref(x))
     }
 
+    #[inline]
     fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
         let Some(x) = self.get_mut(idx) else {
             return None;
@@ -159,14 +167,17 @@ pub unsafe trait Node: Any {
 unsafe impl Node for String {
     type Storage = Self;
 
+    #[inline]
     fn into_storage(self) -> Self::Storage {
         self
     }
 
+    #[inline]
     fn from_storage_ref(storage: &Self::Storage) -> &Self {
         storage
     }
 
+    #[inline]
     fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
         storage
     }
@@ -175,14 +186,17 @@ unsafe impl Node for String {
 unsafe impl Node for Number {
     type Storage = Self;
 
+    #[inline]
     fn into_storage(self) -> Self::Storage {
         self
     }
 
+    #[inline]
     fn from_storage_ref(storage: &Self::Storage) -> &Self {
         storage
     }
 
+    #[inline]
     fn from_storage_mut(storage: &mut Self::Storage) -> &mut Self {
         storage
     }
@@ -196,7 +210,7 @@ pub trait NodeLibrary {
 
     fn get_mut<T: Node>(&mut self, idx: u32) -> Option<&mut T>;
 
-    fn push<T: Node>(&mut self, value: T) -> Option<u32>
+    fn push<T: Node>(&mut self, value: T) -> u32
     where
         T::Storage: Eq + Hash;
 
@@ -227,23 +241,24 @@ where
         &mut self.library
     }
 
-    pub fn push<T: Node>(&mut self, value: T) -> Result<NodeId<T>, IdRangeError>
+    #[inline]
+    pub fn push<T: Node>(&mut self, value: T) -> NodeId<T>
     where
         T::Storage: Eq + Hash,
     {
-        self.library
-            .push(value)
-            .and_then(NodeId::from_u32)
-            .ok_or(IdRangeError)
+        let id = self.library.push(value);
+
+        NodeId::from_u32(id).expect(TOO_MANY_NODES)
     }
 
+    #[inline]
     pub fn push_list<T: Node>(
         &mut self,
         head: &mut Option<NodeListId<T>>,
         current: &mut Option<NodeListId<T>>,
         item: NodeId<T>,
-    ) -> Result<(), IdRangeError> {
-        let list_idx = self.push(NodeList { item, next: None })?;
+    ) {
+        let list_idx = self.push(NodeList { item, next: None });
 
         if let Some(x) = *current {
             self[x].next = Some(list_idx);
@@ -251,17 +266,16 @@ where
 
         *current = Some(list_idx);
         *head = head.or(*current);
-
-        Ok(())
     }
 
+    #[inline]
     pub fn push_option_list<T: Node>(
         &mut self,
         head: &mut Option<OptionNodeListId<T>>,
         current: &mut Option<OptionNodeListId<T>>,
         item: Option<NodeId<T>>,
-    ) -> Result<(), IdRangeError> {
-        let list_idx = self.push(OptionNodeList { item, next: None })?;
+    ) {
+        let list_idx = self.push(OptionNodeList { item, next: None });
 
         if let Some(x) = *current {
             self[x].next = Some(list_idx);
@@ -269,10 +283,9 @@ where
 
         *current = Some(list_idx);
         *head = head.or(*current);
-
-        Ok(())
     }
 
+    #[inline]
     pub fn clear(&mut self) {
         self.library.clear()
     }
@@ -284,6 +297,7 @@ where
         }
     }
 
+    #[inline]
     pub fn next_list<'a, T: 'static>(
         &'a self,
         id: &mut Option<NodeListId<T>>,
@@ -296,6 +310,7 @@ where
         Some(v)
     }
 
+    #[inline]
     pub fn next_list_mut<'a, T: 'static>(
         &'a mut self,
         id: &mut Option<NodeListId<T>>,
@@ -395,7 +410,7 @@ macro_rules! library {
                 panic!("type '{}' not part of node library",std::any::type_name::<T>());
             }
 
-            fn push<T: $crate::ast::Node>(&mut self, value: T) -> Option<u32>
+            fn push<T: $crate::ast::Node>(&mut self, value: T) -> u32
                 where T::Storage: Eq + ::std::hash::Hash
             {
                 let type_id = std::any::TypeId::of::<T::Storage>();

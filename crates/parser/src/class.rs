@@ -40,12 +40,12 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                         is_static,
                         property,
                         func,
-                    })?;
-                    parser.push_list(&mut head, &mut cur, item)?;
+                    });
+                    parser.push_list(&mut head, &mut cur, item);
                     continue;
                 } else {
                     PropertyName::Ident {
-                        name: parser.push(String::new_const("get"))?,
+                        name: parser.push(String::new_const("get")),
                     }
                 }
             }
@@ -58,12 +58,12 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                         is_static,
                         property,
                         func,
-                    })?;
-                    parser.push_list(&mut head, &mut cur, item)?;
+                    });
+                    parser.push_list(&mut head, &mut cur, item);
                     continue;
                 } else {
                     PropertyName::Ident {
-                        name: parser.push(String::new_const("get"))?,
+                        name: parser.push(String::new_const("get")),
                     }
                 }
             }
@@ -81,8 +81,8 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                     is_static,
                     property,
                     func,
-                })?;
-                parser.push_list(&mut head, &mut cur, item)?;
+                });
+                parser.push_list(&mut head, &mut cur, item);
                 continue;
             }
             t!("*") => {
@@ -95,8 +95,8 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                     is_static,
                     property,
                     func,
-                })?;
-                parser.push_list(&mut head, &mut cur, item)?;
+                });
+                parser.push_list(&mut head, &mut cur, item);
                 continue;
             }
             _ => parse_property_name(parser)?,
@@ -109,7 +109,7 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                     is_static,
                     property,
                     func,
-                })?
+                })
             }
             t!("=") => {
                 parser.next();
@@ -118,7 +118,7 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                     is_static,
                     property,
                     initializer,
-                })?
+                })
             }
             _ => {
                 parser.semicolon()?;
@@ -126,15 +126,15 @@ pub fn parse_class(parser: &mut Parser, stmt: bool) -> Result<NodeId<Class>> {
                     is_static,
                     property,
                     initializer: None,
-                })?
+                })
             }
         };
-        parser.push_list(&mut head, &mut cur, item)?;
+        parser.push_list(&mut head, &mut cur, item);
     }
 
     Ok(parser.push(Class {
         name,
         heritage,
         body: head,
-    })?)
+    }))
 }
