@@ -69,7 +69,7 @@ macro_rules! id {
         impl$( <$($gen),* > )? $crate::id::Id for $name$( <$($gen),* > )?{
             #[inline]
             fn idx(self) -> usize{
-                self.id.idx()
+                (self.id.get() ^ u32::MAX) as usize
             }
 
             #[inline]
