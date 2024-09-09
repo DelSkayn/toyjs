@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck = {version = "1.13.1", features = ["derive"]}
+bytemuck = {version = "1.18", features = ["derive"]}
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 
 [features]

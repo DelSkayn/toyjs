@@ -7,7 +7,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use common::{id, id::collections::IdSet, number::Number, string::String, thinvec::ThinVec};
+use common::{id, id::collections::IdSet, number::Number, string::String};
 
 mod list;
 pub use list::{
@@ -94,34 +94,6 @@ impl<T: Node> NodeStorage<T> for Vec<T::Storage> {
     #[inline]
     fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
         let Some(x) = self.get_mut(idx as usize) else {
-            return None;
-        };
-        Some(T::from_storage_mut(x))
-    }
-}
-
-impl<T: Node> NodeStorage<T> for ThinVec<T::Storage> {
-    #[inline]
-    fn storage_push(&mut self, value: T) -> u32
-    where
-        T::Storage: Eq + Hash,
-    {
-        let idx = self.len().try_into().expect(TOO_MANY_NODES);
-        self.push(value.into_storage());
-        idx
-    }
-
-    #[inline]
-    fn storage_get(&self, idx: u32) -> Option<&T> {
-        let Some(x) = self.get(idx) else {
-            return None;
-        };
-        Some(T::from_storage_ref(x))
-    }
-
-    #[inline]
-    fn storage_get_mut(&mut self, idx: u32) -> Option<&mut T> {
-        let Some(x) = self.get_mut(idx) else {
             return None;
         };
         Some(T::from_storage_mut(x))

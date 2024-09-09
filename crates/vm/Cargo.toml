@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 bc = { version = "0.1.0", path = "../bc", package = "toyjs_bc"}
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
-bytemuck = {version = "1.13.1"}
 
 [features]
 slow_assert = ["bc/slow_assert", "common/slow_assert"]

@@ -123,7 +123,6 @@ pub(crate) fn parse_prime(parser: &mut Parser) -> Result<(NodeId<PrimeExpr>, Opt
         }
         t!("async") => parse_async_function(parser).map(|x| (x, None)),
         t!("class") => {
-            parser.next();
             let class = parse_class(parser, false)?;
             Ok((parser.push(PrimeExpr::Class { class }), None))
         }

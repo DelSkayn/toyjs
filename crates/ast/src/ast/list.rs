@@ -69,7 +69,7 @@ pub type OptionNodeListId<T> = NodeId<OptionNodeList<T>>;
 pub type OptionListStorage = OptionNodeList<()>;
 
 unsafe impl<T: Any> Node for OptionNodeList<T> {
-    type Storage = ListStorage;
+    type Storage = OptionListStorage;
 
     fn into_storage(self) -> Self::Storage {
         unsafe { std::mem::transmute(self) }

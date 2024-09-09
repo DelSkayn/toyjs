@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 ast = { package = "toyjs_ast", version = "0.1.0", path = "../ast", features = ["visitor"] }
 bc = { package = "toyjs_bc", version = "0.1.0", path = "../bc" }
-bytemuck = { version = "1.13.1", features = ["derive"] }
+bytemuck = { version = "1.18", features = ["derive"] }
 common = { package = "toyjs_common", version = "0.1.0", path = "../common" }
 
 [dev-dependencies]
@@ -17,8 +17,7 @@ parser = { package = "toyjs_parser", version = "0.1.0", path = "../parser" }
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-criterion = "0.4.0"
-iai = { git = "https://github.com/sigaloid/iai", rev = "6c83e942" }
+criterion = "0.5"
 
 [features]
 slow_assert = ["bc/slow_assert"]
