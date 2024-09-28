@@ -3,89 +3,41 @@
 #![allow(dead_code)]
 #![allow(clippy::missing_safety_doc)]
 
-use bc::ByteCode;
-use common::{interner::Interner, string::StringId};
-use dreck::{Gc, Trace};
-use object::GcObject;
+use std::rc::Rc;
 
-pub mod exec;
-pub mod object;
-pub mod stack;
-pub mod value;
+use atom::AtomMap;
+use gc::{Arena, Free, OwnedRoot, RootState, Rooted, Trace};
 
-pub struct Error;
+mod atom;
+mod gc;
+mod object;
+mod util;
+mod value;
 
-pub trait Compiler {
-    fn compile(&self, source: String, context: Option<()>) -> Result<ByteCode, Error>;
+use object::{GcObject, GcShape};
+
+pub enum Error {
+    Gc(gc::Error),
 }
 
-pub type GcVm<'gc, 'own> = Gc<'gc, 'own, Vm>;
-pub struct Vm {
-    // A list of jobs to be executed,
-    jobs: (),
-    // Interned strings.
-    interner: Interner<String, StringId>,
-
-    compiler: Option<Box<dyn Compiler>>,
+pub struct Vm<R: RootState> {
+    root_shape: GcShape<R>,
+    arena: Arena,
+    atoms: AtomMap,
 }
 
-impl Vm {
-    pub fn new() -> Self {
-        Vm {
-            jobs: (),
-            interner: Interner::new(),
-            compiler: None,
-        }
+unsafe impl<R: RootState> Trace for Vm<R> {
+    type Free<'a> = Vm<Free<'a>>;
+    type Rooted = Vm<Rooted>;
+
+    const NEEDS_TRACE: bool = true;
+
+    fn trace(&self, marker: &gc::Marker) -> Result<(), gc::Error> {
+        marker.mark(&self.root_shape)
     }
 }
 
-impl Default for Vm {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-unsafe impl<'own> Trace<'own> for Vm {
-    type Gc<'r> = Vm;
-
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        false
-    }
-
-    fn trace(&self, _marker: dreck::Marker<'own, '_>) {}
-}
-
-pub type GcContext<'gc, 'own> = Gc<'gc, 'own, Context<'gc, 'own>>;
-pub struct Context<'gc, 'own> {
-    /// The global object,
-    global: GcObject<'gc, 'own>,
-    /// The vm this context belongs to.
-    vm: GcVm<'gc, 'own>,
-    // A list of builtin functions
-    //builtins: [GcObject<'gc,'own>; <bc::Builtin as Contiguous>::MAX_VALUE];
-}
-
-unsafe impl<'gc, 'own> Trace<'own> for Context<'gc, 'own> {
-    type Gc<'r> = Context<'r, 'own>;
-
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        true
-    }
-
-    fn trace(&self, marker: dreck::Marker<'own, '_>) {
-        marker.mark(self.global);
-        marker.mark(self.vm);
-    }
-}
-
-impl<'gc, 'own> Context<'gc, 'own> {
-    pub fn new(global: GcObject<'gc, 'own>, vm: GcVm<'gc, 'own>) -> Self {
-        Context { global, vm }
-    }
+pub struct Context<R: RootState> {
+    runtime: Rc<OwnedRoot<Vm<Rooted>>>,
+    global: GcObject<R>,
 }

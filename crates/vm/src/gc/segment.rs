@@ -1,34 +1,25 @@
 use std::mem::{self, offset_of};
 
 use bitflags::bitflags;
-use common::{bitmap::BitMap, map_ptr, ptr::Raw};
+use common::{
+    bitmap::BitMap,
+    map_ptr,
+    ptr::{Mut, Raw},
+};
 
-use super::{
-    list::{IntrusiveList, ListNode},
-    MB,
+use crate::{
+    gc::{
+        constants::{
+            ALLOC_ALIGNMENT, MAX_ALLOCATION, RETAINED_MAP_RANGE, RETAINED_MAP_SHIFT, SEGMENT_MAGIC,
+            SEGMENT_MASK, SEGMENT_SIZE,
+        },
+        segment,
+    },
+    util::list::{IntrusiveList, ListNode},
 };
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct MapIdx(pub u32);
-
-/// The value which indicates the start of a segment.
-pub const SEGMENT_MAGIC: usize = 0xBABA_E5CA_FEE5_BABA as usize;
-/// Threshold at which a segment is considered partially filled.
-pub const PARTIAL_THRESHOLD: usize = 512;
-/// Size of a single segment
-pub const SEGMENT_SIZE: usize = 4 * MB;
-/// Amount of values that fit into a single map
-pub const RETAINED_MAP_MAX: usize = i8::MAX as usize + 1;
-/// Minimum aligment of an allocation.
-pub const MIN_ALIGNMENT: usize = std::mem::size_of::<usize>();
-/// The amount of bytes a map can conver.
-pub const RETAINED_MAP_RANGE: usize = RETAINED_MAP_MAX * MIN_ALIGNMENT;
-/// The amount to shift an address by to get index of the map.
-pub const RETAINED_MAP_SHIFT: usize = RETAINED_MAP_RANGE.ilog2() as usize;
-/// A mask to get the address of a segment.
-pub const SEGMENT_MASK: usize = !(SEGMENT_SIZE - 1);
-/// The maximum allocation that can be handled.
-pub const MAX_ALLOCATION: usize = SEGMENT_SIZE - mem::size_of::<RetainedSegment>();
 
 bitflags! {
     #[derive(Clone,Copy,Debug,Eq, PartialEq)]
@@ -36,7 +27,7 @@ bitflags! {
         /// Segment is actively used.
         const USED = 0b01;
         /// Segment is part of the nursery for young objects.
-        const NURSERY = 0b10;
+        const RETAINED = 0b10;
     }
 }
 
@@ -59,7 +50,7 @@ pub struct NurserySegment {
 /// A segment for retained objects.
 #[repr(C)]
 pub struct RetainedSegment {
-    header: SegmentHeader,
+    nursery: NurserySegment,
     /// Bitmap marking a map as having a dirty value.
     dirty: BitMap<usize, { SEGMENT_SIZE / std::mem::size_of::<usize>() / 8 }>,
     /// Map for finding start of the start of allocations.
@@ -75,6 +66,14 @@ pub unsafe fn ptr_to_segment_header(ptr: Raw<u8>) -> Raw<SegmentHeader> {
         "Tried to get the segment header of a non-gc pointer"
     );
     ptr.cast()
+}
+
+/// Checks if the pointer is very likely to point to a valid segment.
+pub unsafe fn is_valid(ptr: Raw<u8>) -> bool {
+    ptr_to_segment_header(ptr)
+        .map_ptr(map_ptr!(SegmentHeader, magic))
+        .read()
+        == SEGMENT_MAGIC
 }
 
 /// Initialize a pointer to a
@@ -97,20 +96,35 @@ pub unsafe fn init_nursery(ptr: Raw<SegmentHeader>) -> Raw<NurserySegment> {
     let mut ptr = ptr.cast::<NurserySegment>();
     ptr.map_ptr(map_ptr!(NurserySegment, offset))
         .write(SEGMENT_SIZE as u32);
-    ptr.as_mut()
-        .header
-        .flags
-        .insert(SegmentFlags::NURSERY | SegmentFlags::USED);
+    ptr.as_borrow_mut().header.flags.insert(SegmentFlags::USED);
     ptr
 }
 
 pub unsafe fn init_retained(ptr: Raw<SegmentHeader>) -> Raw<RetainedSegment> {
     let mut ptr = ptr.cast::<RetainedSegment>();
+    ptr.map_ptr(map_ptr!(RetainedSegment, nursery))
+        .map_ptr(map_ptr!(NurserySegment, offset))
+        .write(mem::size_of::<RetainedSegment>() as u32);
     ptr.map_ptr(map_ptr!(RetainedSegment, dirty)).fill(0);
     ptr.map_ptr(map_ptr!(RetainedSegment, maps))
         .fill(i8::MIN as u8);
-    ptr.as_mut().header.flags.insert(SegmentFlags::USED);
+    ptr.as_borrow_mut()
+        .nursery
+        .header
+        .flags
+        .insert(SegmentFlags::USED | SegmentFlags::RETAINED);
     ptr
+}
+
+pub unsafe fn alloc_nursery(mut ptr: Mut<NurserySegment>, size: usize) -> Option<Raw<u8>> {
+    debug_assert!(size < MAX_ALLOCATION);
+    let size = size as u32;
+    let offset = ptr.as_borrow().offset;
+    if offset + size > SEGMENT_SIZE as u32 {
+        return None;
+    }
+    ptr.as_borrow_mut().offset = offset + size;
+    Some(ptr.into_raw().cast::<u8>().add_bytes(offset as usize))
 }
 
 pub unsafe fn ptr_to_map_index(ptr: Raw<u8>) -> MapIdx {
@@ -121,10 +135,27 @@ pub unsafe fn ptr_to_map_offset(ptr: Raw<u8>) -> u8 {
     ((ptr.addr().get() & (1 << RETAINED_MAP_SHIFT) - 1) >> 3) as u8
 }
 
+pub unsafe fn is_retained(ptr: Raw<u8>) -> bool {
+    let segment = ptr_to_segment_header(ptr);
+    segment.as_borrow().flags.contains(SegmentFlags::RETAINED)
+}
+
 pub unsafe fn map_index_to_pointer(segment: Raw<RetainedSegment>, idx: MapIdx) -> Raw<u8> {
     segment
         .cast::<u8>()
         .add((idx.0 as usize) * RETAINED_MAP_RANGE)
+}
+
+pub unsafe fn write_barrier_retained_pointer(ptr: Raw<u8>) {
+    let header = segment::ptr_to_segment_header(ptr);
+    if header.as_borrow().flags.contains(SegmentFlags::RETAINED) {
+        let idx = ptr_to_map_index(ptr);
+        header
+            .cast::<RetainedSegment>()
+            .as_borrow_mut()
+            .dirty
+            .set(idx.0 as usize);
+    }
 }
 
 pub unsafe fn find_first_allocation_in_map(
@@ -141,18 +172,21 @@ pub unsafe fn find_first_allocation_in_map(
             map.0 -= (-offset) as u32;
             continue;
         }
-        return Some(map_index_to_pointer(segment, map).add((offset as usize) * MIN_ALIGNMENT));
+        return Some(map_index_to_pointer(segment, map).add((offset as usize) * ALLOC_ALIGNMENT));
     }
 }
 
 pub unsafe fn insert_retained_alloc(ptr: Raw<u8>, size: usize) {
     let segment_ptr = ptr_to_segment_header(ptr);
     debug_assert!(
-        segment_ptr.as_ref().flags.contains(SegmentFlags::USED),
+        segment_ptr.as_borrow().flags.contains(SegmentFlags::USED),
         "Tried to allocated in a segment not in use"
     );
     debug_assert!(
-        !segment_ptr.as_ref().flags.contains(SegmentFlags::NURSERY),
+        segment_ptr
+            .as_borrow()
+            .flags
+            .contains(SegmentFlags::RETAINED),
         "Tried to alloc a retained value in a nursery segment"
     );
     debug_assert_eq!(ptr.addr().get() % 8, 0, "Pointer not properly aligned");
@@ -178,6 +212,32 @@ pub unsafe fn insert_retained_alloc(ptr: Raw<u8>, size: usize) {
     }
 }
 
+/// Calls the given callback for each value that is inside a dirty map.
+/// The callback should return the size of the allocated value in the segment.
+pub unsafe fn for_each_dirty_map_clear<F>(mut segment: Mut<RetainedSegment>, mut f: F)
+where
+    F: FnMut(Raw<u8>) -> usize,
+{
+    let base = segment.reborrow().into_raw().cast::<u8>();
+    let seg = segment.as_borrow_mut();
+    for i in seg.dirty.drain() {
+        let mut map = i;
+        while seg.maps[map] < 0 {
+            map -= -(seg.maps[map] as isize) as usize;
+        }
+
+        let mut offset_in_map = seg.maps[map] as usize;
+        let offset = i * RETAINED_MAP_RANGE;
+        loop {
+            let size = f(base.add(offset + offset_in_map));
+            offset_in_map += size;
+            if offset_in_map >= RETAINED_MAP_RANGE {
+                break;
+            }
+        }
+    }
+}
+
 unsafe impl IntrusiveList for SegmentHeader {
     const OFFSET: usize = offset_of!(SegmentHeader, list);
 }
@@ -199,7 +259,7 @@ mod test {
     use super::{init_retained, insert_retained_alloc};
     use crate::gc::segment::{
         find_first_allocation_in_map, init_segment, ptr_to_map_index, ptr_to_map_offset,
-        ptr_to_segment_header, MapIdx, MIN_ALIGNMENT, RETAINED_MAP_RANGE, SEGMENT_SIZE,
+        ptr_to_segment_header, MapIdx, ALLOC_ALIGNMENT, RETAINED_MAP_RANGE, SEGMENT_SIZE,
     };
 
     #[test]
@@ -244,7 +304,7 @@ mod test {
             assert_eq!(ptr_to_map_index(segment.cast()), MapIdx(0));
             let ptr = segment.cast::<u8>();
             for i in 0..RETAINED_MAP_RANGE {
-                assert_eq!(ptr_to_map_offset(ptr.add(i)), (i / MIN_ALIGNMENT) as u8);
+                assert_eq!(ptr_to_map_offset(ptr.add(i)), (i / ALLOC_ALIGNMENT) as u8);
             }
         }
     }
@@ -265,10 +325,10 @@ mod test {
             insert_retained_alloc(test_alloc_ptr, RETAINED_MAP_RANGE);
 
             assert_eq!(
-                segment.as_ref().maps[2] as usize * MIN_ALIGNMENT,
+                segment.as_borrow().maps[2] as usize * ALLOC_ALIGNMENT,
                 RETAINED_MAP_RANGE / 2
             );
-            assert_eq!(segment.as_ref().maps[3], -1);
+            assert_eq!(segment.as_borrow().maps[3], -1);
 
             assert_eq!(
                 Some(test_alloc_ptr),
@@ -282,13 +342,13 @@ mod test {
 
             insert_retained_alloc(test_alloc_ptr, RETAINED_MAP_RANGE * 4);
             assert_eq!(
-                segment.as_ref().maps[4] as usize * MIN_ALIGNMENT,
+                segment.as_borrow().maps[4] as usize * ALLOC_ALIGNMENT,
                 RETAINED_MAP_RANGE - 8
             );
-            assert_eq!(segment.as_ref().maps[5], -1);
-            assert_eq!(segment.as_ref().maps[6], -2);
-            assert_eq!(segment.as_ref().maps[7], -3);
-            assert_eq!(segment.as_ref().maps[8], -4);
+            assert_eq!(segment.as_borrow().maps[5], -1);
+            assert_eq!(segment.as_borrow().maps[6], -2);
+            assert_eq!(segment.as_borrow().maps[7], -3);
+            assert_eq!(segment.as_borrow().maps[8], -4);
 
             assert_eq!(
                 Some(test_alloc_ptr),

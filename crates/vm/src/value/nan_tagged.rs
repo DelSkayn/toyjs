@@ -4,12 +4,23 @@
 
 //mod tagged_union;
 //pub use tagged_union::TaggedValue;
-use std::{cmp, fmt, marker::PhantomData, ptr::NonNull};
+use std::{
+    cmp, fmt,
+    marker::PhantomData,
+    num::{NonZeroU64, NonZeroUsize},
+    ptr::NonNull,
+};
 
 use bc::Primitive;
-use dreck::{marker::Invariant, Gc, Marker, Trace};
+use common::{
+    map_ptr,
+    ptr::{Raw, RawCell},
+};
 
-use crate::object::GcObject;
+use crate::{
+    gc::{self, Free, Gc, RootState, Rooted, Trace},
+    object::GcObject,
+};
 
 pub const VALUE_EMPTY: u64 = 0x0;
 pub const VALUE_NULL: u64 = 0x02;
@@ -37,7 +48,7 @@ pub union ValueUnion {
     float: f64,
     int: i32,
     pub bits: u64,
-    ptr: *mut NonNull<u8>,
+    ptr: Raw<u8>,
 }
 
 impl cmp::Eq for ValueUnion {}
@@ -50,145 +61,147 @@ impl cmp::PartialEq<ValueUnion> for ValueUnion {
 /// The value representation used in the VM.
 ///
 /// Toyjs uses nan-tagging for its value.
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub struct Value<'gc, 'own> {
-    value: ValueUnion,
-    marker: PhantomData<&'gc ()>,
-    id: Invariant<'own>,
+pub struct Value<R: RootState> {
+    value: RawCell<ValueUnion>,
+    marker: PhantomData<R>,
 }
 
-impl<'gc, 'own> Value<'gc, 'own> {
+impl<R: RootState> Clone for Value<R> {
+    fn clone(&self) -> Self {
+        let v = unsafe { self.value.get().read() };
+        Self {
+            value: RawCell::new(v),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<R: RootState> Value<R> {
+    #[inline]
+    pub fn bits(&self) -> u64 {
+        unsafe { self.value.get().map_ptr(map_ptr!(ValueUnion, bits)).read() }
+    }
+
+    #[inline]
+    pub fn tag(&self) -> u64 {
+        self.bits() & TAG_MASK
+    }
+
     unsafe fn from_value(v: ValueUnion) -> Self {
         Value {
-            value: v,
+            value: RawCell::new(v),
             marker: PhantomData,
-            id: Invariant::new(),
         }
     }
 
+    /// Turns a value into a rooted value if the internal value is not gc allocated.
     #[inline]
-    pub fn empty_to_undefined(self) -> Self {
-        unsafe {
-            if self.value.bits == VALUE_EMPTY {
-                Value::undefined()
-            } else {
-                self
-            }
+    pub fn to_rooted(self) -> Option<Value<Rooted>> {
+        let tag = self.tag();
+        if tag == TAG_OBJECT || tag == TAG_STRING {
+            return None;
         }
-    }
 
-    #[inline]
-    pub fn to_static(self) -> Option<Value<'static, 'own>> {
-        unsafe {
-            let tag = self.value.bits & TAG_MASK;
-            if tag == TAG_OBJECT || tag == TAG_STRING {
-                return None;
-            }
-
-            Some(Value {
-                value: self.value,
-                marker: PhantomData,
-                id: Invariant::new(),
-            })
-        }
+        Some(Value {
+            value: self.value,
+            marker: PhantomData,
+        })
     }
 
     /// Returns wether two values have the same data type.
     #[inline]
-    pub fn same_type(self, other: Value) -> bool {
-        unsafe {
-            let tag = self.value.bits & TAG_MASK;
-            if tag != other.value.bits & TAG_MASK {
-                return self.is_float() && other.is_float();
-            }
-            if tag == TAG_BASE {
-                return self.value.bits == other.value.bits;
-            }
-            true
+    pub fn same_type<O: RootState>(self, other: &Value<O>) -> bool {
+        let tag = self.tag();
+        if tag != other.tag() {
+            return self.is_float() && other.is_float();
         }
+        if tag == TAG_BASE {
+            return self.bits() == other.bits();
+        }
+        true
     }
 
     /// Is this value a gc allocated value.
     #[inline]
-    pub fn requires_gc(self) -> bool {
+    pub fn requires_gc(&self) -> bool {
         self.is_object() || self.is_string()
     }
 
     /// Is this value a boolean.
     #[inline]
-    pub fn is_empty(self) -> bool {
-        unsafe { self.value.bits == VALUE_EMPTY }
+    pub fn is_empty(&self) -> bool {
+        self.bits() == VALUE_EMPTY
     }
 
     /// Is this value a boolean.
     #[inline]
-    pub fn is_bool(self) -> bool {
-        unsafe { (self.value.bits & !1) == VALUE_FALSE }
+    pub fn is_bool(&self) -> bool {
+        (self.bits() & !1) == VALUE_FALSE
     }
 
     /// Is this value the value false.
     #[inline]
-    pub fn is_false(self) -> bool {
-        unsafe { self.value.bits == VALUE_FALSE }
+    pub fn is_false(&self) -> bool {
+        self.bits() == VALUE_FALSE
     }
 
     /// Is this value the value true.
     #[inline]
-    pub fn is_true(self) -> bool {
-        unsafe { self.value.bits == VALUE_TRUE }
+    pub fn is_true(&self) -> bool {
+        self.bits() == VALUE_TRUE
     }
 
     /// Is this value the value null.
     #[inline]
-    pub fn is_null(self) -> bool {
-        unsafe { self.value.bits == VALUE_NULL }
+    pub fn is_null(&self) -> bool {
+        self.bits() == VALUE_NULL
     }
 
     /// Is this value the value null.
     #[inline]
-    pub fn is_undefined(self) -> bool {
-        unsafe { self.value.bits == VALUE_UNDEFINED }
+    pub fn is_undefined(&self) -> bool {
+        self.bits() == VALUE_UNDEFINED
     }
 
     /// Is this value null like.
     #[inline]
-    pub fn is_nullish(self) -> bool {
-        unsafe { (self.value.bits & !8) == VALUE_NULL }
+    pub fn is_nullish(&self) -> bool {
+        (self.bits() & !8) == VALUE_NULL
     }
 
     /// Is this value a number type.
     #[inline]
-    pub fn is_number(self) -> bool {
-        unsafe { self.value.bits >= MIN_NUMBER }
+    pub fn is_number(&self) -> bool {
+        self.bits() >= MIN_NUMBER
     }
 
     /// Is this value a number integer.
     #[inline]
-    pub fn is_int(self) -> bool {
-        unsafe { self.value.bits & TAG_MASK == TAG_INT }
+    pub fn is_int(&self) -> bool {
+        self.tag() == TAG_INT
     }
 
     /// Is this value a number float.
     #[inline]
-    pub fn is_float(self) -> bool {
-        unsafe { self.value.bits >= MIN_FLOAT }
+    pub fn is_float(&self) -> bool {
+        self.bits() >= MIN_FLOAT
     }
 
     /// Is this value a object.
     #[inline]
-    pub fn is_object(self) -> bool {
-        unsafe { self.value.bits & TAG_MASK == TAG_OBJECT }
+    pub fn is_object(&self) -> bool {
+        self.tag() == TAG_OBJECT
     }
 
     /// Is this value a string.
     #[inline]
-    pub fn is_string(self) -> bool {
-        unsafe { self.value.bits & TAG_MASK == TAG_STRING }
+    pub fn is_string(&self) -> bool {
+        self.tag() == TAG_STRING
     }
 
     #[inline]
-    pub fn is_atom(self) -> bool {
-        unsafe { self.value.bits & TAG_MASK == TAG_ATOM }
+    pub fn is_atom(&self) -> bool {
+        self.tag() == TAG_ATOM
     }
 
     /// Create a new value containing the undefined javascript value.
@@ -224,46 +237,44 @@ impl<'gc, 'own> Value<'gc, 'own> {
     }
 
     #[inline]
-    pub fn ensure_float(v: f64) -> Self {
+    pub fn ensure_float(v: f64) -> Value<Rooted> {
         Value {
-            value: ValueUnion {
+            value: RawCell::new(ValueUnion {
                 bits: v.to_bits() + MIN_FLOAT,
-            },
+            }),
             marker: PhantomData,
-            id: Invariant::new(),
         }
     }
 
     #[inline]
-    pub fn into_int(self) -> Option<i32> {
+    pub fn into_int(&self) -> Option<i32> {
         if self.is_int() {
-            unsafe { Some(self.value.int) }
+            unsafe { Some(self.value.get().map_ptr(map_ptr!(ValueUnion, int)).read()) }
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn into_float(mut self) -> Option<f64> {
+    pub fn into_float(&self) -> Option<f64> {
         if self.is_float() {
-            unsafe {
-                self.value.bits -= MIN_FLOAT;
-                Some(self.value.float)
-            }
+            let v = self.bits() - MIN_FLOAT;
+            Some(f64::from_bits(v))
         } else {
             None
         }
     }
 
     #[inline]
-    pub fn into_bool(self) -> Option<bool> {
+    pub fn into_bool(&self) -> Option<bool> {
         if self.is_bool() {
-            unsafe { Some(self.value.bits == VALUE_TRUE) }
+            Some(self.bits() == VALUE_TRUE)
         } else {
             None
         }
     }
 
+    /*
     #[inline]
     pub fn into_string(self) -> Option<Gc<'gc, 'own, String>> {
         unsafe {
@@ -276,17 +287,18 @@ impl<'gc, 'own> Value<'gc, 'own> {
             }
         }
     }
+    */
 
     #[inline]
-    pub fn into_object(self) -> Option<GcObject<'gc, 'own>> {
-        unsafe {
-            if self.is_object() {
-                let ptr = (self.value.bits & PTR_MASK) as *mut _;
-                let ptr = NonNull::new_unchecked(ptr);
-                Some(Gc::from_gc_box(ptr))
-            } else {
-                None
+    pub fn as_object(&self) -> Option<GcObject<R>> {
+        if self.is_object() {
+            unsafe {
+                let addr = NonZeroUsize::new_unchecked((self.bits() & PTR_MASK) as usize);
+                let ptr = Raw::from_exposed_addr(addr);
+                Some(Gc::from_raw(ptr))
             }
+        } else {
+            None
         }
     }
 
@@ -302,7 +314,7 @@ impl<'gc, 'own> Value<'gc, 'own> {
     */
 }
 
-impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
+impl From<bool> for Value<Rooted> {
     #[inline]
     fn from(v: bool) -> Self {
         unsafe {
@@ -313,14 +325,14 @@ impl<'gc, 'own> From<bool> for Value<'gc, 'own> {
     }
 }
 
-impl<'gc, 'own> From<Primitive> for Value<'gc, 'own> {
+impl From<Primitive> for Value<Rooted> {
     #[inline]
     fn from(v: Primitive) -> Self {
         unsafe { Value::from_value(ValueUnion { bits: v.0 as u64 }) }
     }
 }
 
-impl<'gc, 'own> From<i32> for Value<'gc, 'own> {
+impl From<i32> for Value<Rooted> {
     #[inline]
     fn from(v: i32) -> Self {
         unsafe {
@@ -331,7 +343,7 @@ impl<'gc, 'own> From<i32> for Value<'gc, 'own> {
     }
 }
 
-impl<'gc, 'own> From<f64> for Value<'gc, 'own> {
+impl From<f64> for Value<Rooted> {
     #[inline]
     fn from(v: f64) -> Self {
         if v as i32 as f64 == v {
@@ -342,23 +354,23 @@ impl<'gc, 'own> From<f64> for Value<'gc, 'own> {
     }
 }
 
-impl<'gc, 'own> From<Gc<'gc, 'own, String>> for Value<'gc, 'own> {
+impl<R: RootState> From<Gc<R, String>> for Value<R> {
     #[inline]
-    fn from(v: Gc<String>) -> Self {
+    fn from(v: Gc<R, String>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_STRING | Gc::into_gc_box(v).as_ptr() as u64,
+                bits: TAG_STRING | Gc::as_raw(v).expose_addr().get() as u64,
             })
         }
     }
 }
 
-impl<'gc, 'own> From<GcObject<'gc, 'own>> for Value<'gc, 'own> {
+impl<R: RootState> From<GcObject<R>> for Value<R> {
     #[inline]
-    fn from(v: GcObject<'gc, 'own>) -> Self {
+    fn from(v: GcObject<R>) -> Self {
         unsafe {
             Value::from_value(ValueUnion {
-                bits: TAG_OBJECT | Gc::into_gc_box(v).as_ptr() as u64,
+                bits: TAG_OBJECT | Gc::as_raw(v).expose_addr().get() as u64,
             })
         }
     }
@@ -377,59 +389,46 @@ impl<'gc, 'own> From<Atom<'gc, 'own>> for Value<'gc, 'own> {
 }
 */
 
-unsafe impl<'gc, 'own> Trace<'own> for Value<'gc, 'own> {
-    type Gc<'r> = Value<'r, 'own>;
+unsafe impl<R: RootState> Trace for Value<R> {
+    type Free<'a> = Value<Free<'a>>;
+    type Rooted = Value<Rooted>;
 
-    fn needs_trace() -> bool
-    where
-        Self: Sized,
-    {
-        true
-    }
+    const NEEDS_TRACE: bool = true;
 
-    fn trace(&self, tracer: Marker<'own, '_>) {
-        /*
-        if let Some(obj) = self.into_object() {
-            tracer.mark(obj);
-
-        } else */
-        if let Some(s) = self.into_string() {
-            tracer.mark(s);
-        }
+    fn trace(&self, marker: &gc::Marker) -> Result<(), gc::Error> {
+        marker.mark_value(self)
     }
 }
 
-impl<'gc, 'own> fmt::Debug for Value<'gc, 'own> {
+impl<R: RootState> fmt::Debug for Value<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        unsafe {
-            match self.value.bits & TAG_MASK {
-                TAG_BASE => match self.value.bits {
-                    VALUE_TRUE => f.debug_tuple("JSValue::Bool").field(&true).finish(),
-                    VALUE_FALSE => f.debug_tuple("JSValue::Bool").field(&false).finish(),
-                    VALUE_NULL => f.debug_tuple("JSValue::Null").finish(),
-                    VALUE_UNDEFINED => f.debug_tuple("JSValue::Undefined").finish(),
-                    VALUE_EMPTY => f.debug_tuple("JSValue::Empty").finish(),
-                    VALUE_DELETED => f.debug_tuple("JSValue::Deleted").finish(),
-                    _ => f.debug_tuple("JSvalue::INVALID_VALUE").finish(),
-                },
-                TAG_STRING => f.debug_tuple("JSValue::String").finish(),
-                TAG_OBJECT => f.debug_tuple("JSValue::Object").finish(),
-                TAG_BIGINT => todo!("big int"),
-                /*
-                TAG_ATOM => f
-                    .debug_tuple("JSValue::ATOM")
-                    .field(&self.into_atom().unwrap())
-                    .finish(),
-                    */
-                TAG_INT => f
-                    .debug_tuple("JSValue::Int")
-                    .field(&self.into_int().unwrap())
-                    .finish(),
-                _ => f
-                    .debug_tuple("JSValue::Float")
-                    .field(&self.into_float().unwrap())
-                    .finish(),
-            }
+        match self.bits() & TAG_MASK {
+            TAG_BASE => match self.bits() {
+                VALUE_TRUE => f.debug_tuple("JSValue::Bool").field(&true).finish(),
+                VALUE_FALSE => f.debug_tuple("JSValue::Bool").field(&false).finish(),
+                VALUE_NULL => f.debug_tuple("JSValue::Null").finish(),
+                VALUE_UNDEFINED => f.debug_tuple("JSValue::Undefined").finish(),
+                VALUE_EMPTY => f.debug_tuple("JSValue::Empty").finish(),
+                VALUE_DELETED => f.debug_tuple("JSValue::Deleted").finish(),
+                _ => f.debug_tuple("JSvalue::INVALID_VALUE").finish(),
+            },
+            TAG_STRING => f.debug_tuple("JSValue::String").finish(),
+            TAG_OBJECT => f.debug_tuple("JSValue::Object").finish(),
+            TAG_BIGINT => todo!("big int"),
+            /*
+            TAG_ATOM => f
+                .debug_tuple("JSValue::ATOM")
+                .field(&self.into_atom().unwrap())
+                .finish(),
+                */
+            TAG_INT => f
+                .debug_tuple("JSValue::Int")
+                .field(&self.clone().into_int().unwrap())
+                .finish(),
+            _ => f
+                .debug_tuple("JSValue::Float")
+                .field(&self.clone().into_float().unwrap())
+                .finish(),
         }
     }
 }

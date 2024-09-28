@@ -5,12 +5,20 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+
 [dependencies]
 bc = { version = "0.1.0", path = "../bc", package = "toyjs_bc"}
+bitflags = "2.6.0"
 common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
+rustix = { version = "0.38.36", default-features = false, features = ["mm"] }
+hashbrown = {version = "0.14", features = ["raw"] }
+ahash = { version = "0.8", default-features = false }
 
 [features]
 slow_assert = ["bc/slow_assert", "common/slow_assert"]
+tagged_union = []
+mmap = []
+default = ["mmap"]
 
 [dev-dependencies]
 lexer = { path = "../lexer", package = "toyjs_lexer" }

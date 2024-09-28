@@ -1,13 +1,13 @@
 //! The javascript value implementation.
 
-#[cfg(all(not(feature = "tagged-union"), target_pointer_width = "64"))]
+#[cfg(all(not(feature = "tagged_union"), target_pointer_width = "64"))]
 mod nan_tagged;
-#[cfg(all(not(feature = "tagged-union"), target_pointer_width = "64"))]
+#[cfg(all(not(feature = "tagged_union"), target_pointer_width = "64"))]
 pub use nan_tagged::Value;
 
-#[cfg(any(feature = "tagged-union", not(target_pointer_width = "64")))]
+#[cfg(any(feature = "tagged_union", not(target_pointer_width = "64")))]
 mod tagged_union;
-#[cfg(any(feature = "tagged-union", not(target_pointer_width = "64")))]
+#[cfg(any(feature = "tagged_union", not(target_pointer_width = "64")))]
 pub use tagged_union::Value;
 
 //mod tagged_union;
@@ -16,6 +16,7 @@ pub use tagged_union::Value;
 #[cfg(test)]
 mod test {
     use super::Value;
+    use crate::gc::Rooted;
 
     macro_rules! test_int {
         ($v:expr) => {
@@ -37,7 +38,9 @@ mod test {
     macro_rules! test_float {
         ($v:expr) => {
             let a = Some(($v as f64).to_bits());
-            let b = Value::ensure_float($v).into_float().map(f64::to_bits);
+            let b = Value::<Rooted>::ensure_float($v)
+                .into_float()
+                .map(f64::to_bits);
             assert_eq!(a, b, stringify!($v));
         };
     }

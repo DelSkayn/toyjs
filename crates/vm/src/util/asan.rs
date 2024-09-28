@@ -1,3 +1,7 @@
+//! address sanitizer functions
+//!
+//! implements stub functions when the `asan` feature is not enabled.
+
 #[cfg(not(feature = "asan"))]
 pub use self::stub::*;
 #[cfg(not(feature = "asan"))]
