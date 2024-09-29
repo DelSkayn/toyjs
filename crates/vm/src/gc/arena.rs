@@ -1,17 +1,20 @@
+use std::mem;
+
 use common::ptr::Raw;
 
 use super::{
     cell::GcCell,
-    constants::{self, SEGMENT_SIZE},
-    mem::SegmentAlloc,
+    constants::SEGMENT_SIZE,
+    memory::SegmentAlloc,
     segment::{self, SegmentHeader},
     Arena, Error,
 };
+use crate::gc::segment::NurserySegment;
 
 impl Arena {
-    pub fn alloc_size(&mut self, cell_size: usize) -> Result<Raw<GcCell<()>>, Error> {
+    pub fn alloc_size(&mut self, cell_size: usize) -> Result<(bool, Raw<GcCell<()>>), Error> {
         if let Some(x) = self.alloc_nusery_size(cell_size)? {
-            return Ok(x);
+            return Ok((true, x));
         }
 
         todo!()
@@ -19,13 +22,13 @@ impl Arena {
 
     /// Allocates a certain amount of bytes from the nursery segment.
     fn alloc_nusery_size(&mut self, cell_size: usize) -> Result<Option<Raw<GcCell<()>>>, Error> {
-        let nursery_segment = if let Some(x) = self.nusery_segment {
+        let nursery_segment = if let Some(x) = self.nursery_segment {
             x
         } else {
             // allocate a segment
             let segment = self.get_unused_segment().ok_or(Error::OutOfMemory)?;
             let segment = unsafe { segment::init_nursery(segment) };
-            self.nusery_segment = Some(segment);
+            self.nursery_segment = Some(segment);
             segment
         };
 
@@ -33,14 +36,17 @@ impl Arena {
             let mut nursery_segment = nursery_segment.into_mut();
             let offset = nursery_segment.as_borrow().offset;
             let size = cell_size as u32;
-            // shouldn't overflow since MAX_ALLOCATION < (u32::MAX / 2)
-            let new_offset = offset + size;
-            if new_offset > constants::SEGMENT_SIZE as u32 {
+            if offset as usize - mem::size_of::<NurserySegment>() < size as usize {
                 return Ok(None);
             }
+
+            let new_offset = offset - size;
             nursery_segment.as_borrow_mut().offset = new_offset;
-            let ptr = nursery_segment.cast::<u8>().add(new_offset as usize);
-            Ok(Some(ptr.into_raw().cast()))
+            let ptr = nursery_segment
+                .into_raw()
+                .cast::<u8>()
+                .add_bytes(new_offset as usize);
+            Ok(Some(ptr.cast()))
         }
     }
 
@@ -51,7 +57,7 @@ impl Arena {
         }
 
         unsafe {
-            match super::mem::alloc_segment(SEGMENT_SIZE)? {
+            match super::memory::alloc_segment(SEGMENT_SIZE)? {
                 SegmentAlloc::Single(x) => Some(segment::init_segment(x)),
                 SegmentAlloc::Double(x) => {
                     let a = segment::init_segment(x);

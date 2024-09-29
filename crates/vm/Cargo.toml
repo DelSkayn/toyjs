@@ -13,14 +13,17 @@ common = { version = "0.1.0", path = "../common", package = "toyjs_common" }
 rustix = { version = "0.38.36", default-features = false, features = ["mm"] }
 hashbrown = {version = "0.14", features = ["raw"] }
 ahash = { version = "0.8", default-features = false }
+pin-project-lite = "0.2.14"
 
 [features]
 slow_assert = ["bc/slow_assert", "common/slow_assert"]
 tagged_union = []
 mmap = []
-default = ["mmap"]
+asan = []
+default = []
 
 [dev-dependencies]
+ast = { path = "../ast", package = "toyjs_ast" }
 lexer = { path = "../lexer", package = "toyjs_lexer" }
 parser = { package = "toyjs_parser", path = "../parser" }
 compiler = { package = "toyjs_compiler", path = "../compiler" }

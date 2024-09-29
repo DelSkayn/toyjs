@@ -1,6 +1,6 @@
-use common::ptr::{Raw, Ref};
+use common::ptr::{Mut, Raw, Ref};
 
-use super::{Error, Marker, RootState, Rooted, Trace};
+use super::{Error, Marker, Rooted, Trace};
 use crate::{
     gc::constants::ALLOC_ALIGNMENT,
     object::{Object, PropertyMap, Shape},
@@ -47,11 +47,12 @@ impl From<ForwardPtr> for Raw<GcCell<()>> {
     }
 }
 
-#[derive(Clone, Copy)]
+/// TODO: fix big endian.
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct KindSize {
-    kind: TraceKind,
     size: u32,
+    kind: TraceKind,
 }
 
 impl KindSize {
@@ -116,9 +117,9 @@ impl ForwardKind {
     }
 }
 
-#[repr(C)]
 /// A wrapper around a value allocated in the GC storing a v-table as well as the size of the
 /// value.
+#[repr(C)]
 pub struct GcCell<T> {
     pub(super) forward_kind: ForwardKind,
     pub(super) value: T,
@@ -143,6 +144,7 @@ unsafe impl Trace for FreeCell {
 pub struct VTable {
     pub(super) needs_trace: bool,
     pub(super) trace: Option<unsafe fn(this: Ref<()>, marker: &Marker) -> Result<(), Error>>,
+    pub(super) drop: Option<unsafe fn(this: Mut<()>)>,
 }
 
 impl VTable {
@@ -150,11 +152,20 @@ impl VTable {
         this.cast::<T>().as_borrow().trace(marker)
     }
 
+    unsafe fn drop_impl<T: Trace>(this: Mut<()>) {
+        std::ptr::drop_in_place(this.cast::<T>().as_ptr())
+    }
+
     pub const fn get<T: Trace>() -> Self {
         VTable {
             needs_trace: T::NEEDS_TRACE,
             trace: if T::NEEDS_TRACE {
                 Some(Self::trace_impl::<T>)
+            } else {
+                None
+            },
+            drop: if std::mem::needs_drop::<T>() {
+                Some(Self::drop_impl::<T>)
             } else {
                 None
             },
@@ -177,7 +188,7 @@ impl VTable {
 macro_rules! impl_trace {
     ($($name:ident$(<$gen:ident>)?),*) => {
         #[repr(u8)]
-        #[derive(Clone,Copy)]
+        #[derive(Clone,Copy,Debug, Eq,PartialEq)]
         pub enum TraceKind{
             $($name),*
         }
@@ -201,4 +212,21 @@ impl_trace! {
     Shape<Rooted>,
     Object<Rooted>,
     PropertyMap
+}
+
+#[cfg(test)]
+mod test {
+    use super::ForwardKind;
+    use crate::{
+        gc::{cell::TraceKind, Rooted},
+        object::Shape,
+    };
+
+    #[test]
+    pub fn forward_kind() {
+        let kind = ForwardKind::from_kind::<Shape<Rooted>>();
+        let kind = kind.to_kind().unwrap();
+        assert_eq!(kind.size as usize, std::mem::size_of::<Shape<Rooted>>());
+        assert_eq!(kind.kind, TraceKind::Shape);
+    }
 }

@@ -62,8 +62,6 @@ mod non_stub {
     }
 
     pub unsafe fn address_is_poisoned(addr: *mut ()) -> bool {
-        dbg!(__asan_address_is_poisoned(
-            addr.cast::<c_void>() as *const c_void
-        )) != 0
+        __asan_address_is_poisoned(addr.cast::<c_void>() as *const c_void) != 0
     }
 }

@@ -1,8 +1,22 @@
 use common::{hashmap::HashMap, ptr::Ref};
 
-use super::{cell::TraceImpl, Free, Gc, Marker, RootState, Rooted};
+use super::Marker;
 use crate::{atom::Atom, gc::Error};
 
+/// A trait marking an object as one the can be traced by the GC.
+///
+/// Implementing this trait is unsafe as it requires very specific invariants to be upheld:
+/// - When the trace method is called it must mark all GC pointers held within the reciever object.
+/// - the types free and trace must the same as the type on which this trait is being implemented
+/// with the exception of the RootState generics. For `type Free<'a>` this generic must be replaced
+/// with `Free<'a>` and for `type Rooted` it must be replaced with `Rooted`.
+/// - Pinning must not be structural for any of it's containing types with the exception of any Gc
+/// pointer contained within.
+/// - If the type contains a Gc pointer the `NEEDS_TRACE` constant must be set to true.
+/// - the methods assert_rooted, assert_rooted_ref and free_root must not be adjusted.
+///
+/// It is not unsafe to fail to mark atoms contained within the type but failing to do so can
+/// result in unexpected results on panics.
 pub unsafe trait Trace {
     type Free<'a>: Trace;
     type Rooted: Trace;
@@ -56,6 +70,28 @@ pub unsafe trait Trace {
             "Invalid rooted type definition, align_of<T>() != align_of::<T::Rooted>()"
         );
         let r = unsafe { Ref::from(&self).cast::<Self::Free<'a>>().read() };
+        std::mem::forget(self);
+        r
+    }
+}
+
+/// A trait indicating types which can be traced while not allocated within the gc.
+pub unsafe trait OwnedTrace: Trace {
+    type Owned: Trace;
+
+    unsafe fn assert_owned(self) -> Self::Owned
+    where
+        Self: Sized,
+    {
+        assert!(
+            const { std::mem::size_of::<Self>() == std::mem::size_of::<Self::Owned>() },
+            "Invalid owned type definition, size_of<T>() != size_of::<T::Owned>()"
+        );
+        assert!(
+            const { std::mem::align_of::<Self>() == std::mem::align_of::<Self::Owned>() },
+            "Invalid owend type definition, align_of<T>() != align_of::<T::Owned>()"
+        );
+        let r = unsafe { Ref::from(&self).cast::<Self::Owned>().read() };
         std::mem::forget(self);
         r
     }

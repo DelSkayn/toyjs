@@ -10,9 +10,24 @@ use hashbrown::{raw::RawTable, Equivalent};
 #[derive(Clone, Copy, Hash, Eq, PartialEq)]
 pub struct Atom(u32);
 
+impl Atom {
+    pub const INVALID: Atom = Atom(u32::MAX);
+}
+
+pub enum Mark {
+    Marked,
+    Unmarked,
+}
+
 pub enum AtomMapSlot {
-    Free { next: Option<u32> },
-    Used { hash: u64, string: String },
+    Free {
+        next: Option<u32>,
+    },
+    Used {
+        hash: u64,
+        string: String,
+        mark: Mark,
+    },
 }
 
 pub struct AtomMap {
@@ -22,6 +37,38 @@ pub struct AtomMap {
 }
 
 impl AtomMap {
+    pub const MAX_ATOM: Atom = Atom(u32::MAX - 1);
+
+    pub fn new() -> Self {
+        AtomMap {
+            map: RawTable::new(),
+            storage: Vec::new(),
+            free: None,
+        }
+    }
+
+    pub fn sweep(&mut self) {
+        for (idx, i) in self.storage.iter_mut().enumerate() {
+            let idx = idx as u32;
+            let AtomMapSlot::Used { hash, mark, .. } = i else {
+                continue;
+            };
+            if let Mark::Marked = std::mem::replace(mark, Mark::Unmarked) {
+                continue;
+            }
+            self.map.remove_entry(*hash, |x| x.0 == idx).unwrap();
+            let free = self.free.replace(idx);
+            *i = AtomMapSlot::Free { next: free };
+        }
+    }
+
+    pub fn mark(&mut self, atom: Atom) {
+        let AtomMapSlot::Used { ref mut mark, .. } = self.storage[atom.0 as usize] else {
+            panic!("tried to mark atom which was already free");
+        };
+        *mark = Mark::Marked;
+    }
+
     /// Get the atom value for the given string.
     ///
     /// Returns None if the atom map storage is full.
@@ -63,7 +110,7 @@ impl AtomMap {
         match lookup {
             Ok(bucket) => Some(unsafe { *bucket.as_ref() }),
             Err(slot) => {
-                if self.storage.len() == u32::MAX as usize {
+                if self.storage.len() == Self::MAX_ATOM.0 as usize {
                     return None;
                 }
 
@@ -75,6 +122,7 @@ impl AtomMap {
                 self.storage.push(AtomMapSlot::Used {
                     hash,
                     string: String::from(key),
+                    mark: Mark::Unmarked,
                 });
 
                 Some(atom)

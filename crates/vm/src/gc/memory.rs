@@ -82,12 +82,16 @@ pub use mmap::*;
 mod alloc {
     use std::alloc::Layout;
 
+    use common::ptr::Raw;
+
+    use super::SegmentAlloc;
+
     pub unsafe fn alloc_segment(alignment: usize) -> Option<SegmentAlloc> {
         let layout = Layout::from_size_align(alignment, alignment).unwrap();
 
         let alloc = Raw::from_ptr(std::alloc::alloc(layout))?;
 
-        Some(SegmentAlloc::Single(ptr))
+        Some(SegmentAlloc::Single(alloc))
     }
 
     pub unsafe fn free_segment(segment_ptr: Raw<u8>, alignment: usize) {
